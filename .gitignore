@@ -1,0 +1,66 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Logs
+*.log
+*.nvimlog
+
+# Local settings (private configuration)
+*.local
+*.local.*
+*.private
+.env
+.env.*
+secrets/
+private/
+
+# Backups
+*.backup
+*.bak
+*~
+automatic_backups/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude
+.claude/
+
+# GitHub CLI (exclude personal auth info)
+gh/hosts.yml
+
+# Fish shell (auto-generated)
+fish/conf.d/
+fish/fish_variables
+
+# Git (personal config)
+git/attributes
+
+# System
+Thumbs.db
+Desktop.ini
+
+# Git
+.git/
+
+# Build artifacts
+result
+.devenv
+.devenv.flake.nix
+devenv.lock
+.mypy_cache/
+.luarc.json

@@ -1,0 +1,52 @@
+# Global gitignore
+# https://github.com/github/gitignore
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Windows
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# Editors
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+*.sublime-workspace
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.*
+*.local
+
+# Build
+node_modules/
+dist/
+build/
+target/
+*.pyc
+__pycache__/
+.mypy_cache/
+.pytest_cache/
