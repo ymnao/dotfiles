@@ -5,9 +5,8 @@ local keys = require("keymaps")
 require("on")
 
 ---------------------------------------------------------------
---- load local_config
+--- local_config
 ---------------------------------------------------------------
--- Write settings you don't want to make public, such as ssh_domains
 local function load_local_config()
 	local ok, re = pcall(require, "local")
 	if not ok then

@@ -23,17 +23,17 @@ set -gx SAVEHIST 10000
 fish_add_path -g $HOME/.local/bin
 fish_add_path -g $HOME/bin
 
-# Homebrew (macOS)
+# Homebrew
 if test -e /opt/homebrew/bin/brew
     eval (/opt/homebrew/bin/brew shellenv)
 end
 
-# Load local configuration if exists
+# Local configuration
 if test -f $XDG_CONFIG_HOME/fish/config.local.fish
     source $XDG_CONFIG_HOME/fish/config.local.fish
 end
 
-# Load additional configurations from config directory
+# Additional configurations
 for file in $XDG_CONFIG_HOME/fish/config/*.fish
     source $file
 end

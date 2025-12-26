@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-# Colors for output
+# Colors
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
@@ -20,13 +20,13 @@ skip() {
     echo -e "${BLUE}[SKIP]${NC} $1"
 }
 
-# Get the dotfiles directory
+# Dotfiles directory
 DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Ensure ~/.config exists
 mkdir -p "$HOME/.config"
 
-# Link function with backup
+# Link function
 link_file() {
     local src="$1"
     local dest="$2"
@@ -70,7 +70,7 @@ if [[ -d "$DOTFILES_DIR/fish" ]]; then
     link_file "$DOTFILES_DIR/fish" "$HOME/.config/fish"
 fi
 
-# Link Git configuration files (XDG-compliant)
+# Git configuration
 mkdir -p "$HOME/.config/git"
 
 if [[ -f "$DOTFILES_DIR/git/config" ]]; then

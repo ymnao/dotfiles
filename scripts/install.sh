@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-# Colors for output
+# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -21,12 +21,12 @@ error() {
     exit 1
 }
 
-# Get the dotfiles directory
+# Dotfiles directory
 DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 info "Dotfiles directory: $DOTFILES_DIR"
 
-# Detect OS
+# OS
 OS="$(uname -s)"
 case "$OS" in
     Darwin)
@@ -42,7 +42,7 @@ case "$OS" in
         ;;
 esac
 
-# Install Homebrew (macOS only)
+# Homebrew
 if [[ "$OS_TYPE" == "macos" ]]; then
     if ! command -v brew &> /dev/null; then
         info "Installing Homebrew..."
@@ -58,11 +58,11 @@ if [[ "$OS_TYPE" == "macos" ]]; then
     fi
 fi
 
-# Create symlinks
+# Symlinks
 info "Creating symlinks..."
 bash "$DOTFILES_DIR/scripts/link.sh"
 
-# Create local Git config if it doesn't exist (XDG-compliant)
+# Local Git config
 mkdir -p "$HOME/.config/git"
 if [[ ! -f "$HOME/.config/git/config.local" ]]; then
     warn "~/.config/git/config.local not found"

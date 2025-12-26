@@ -3,6 +3,7 @@
 # ========================================
 brew "git"
 brew "gh"
+brew "lazygit"
 brew "neovim"
 brew "ripgrep"
 brew "fd"
@@ -52,6 +53,7 @@ brew "pkgconf"
 # ========================================
 # GUI Applications
 # ========================================
+cask "alfred"
 cask "wezterm"
 cask "google-chrome"
 cask "visual-studio-code"

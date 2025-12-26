@@ -16,8 +16,7 @@ Icon
 *.log
 *.nvimlog
 
-# Local settings (private configuration)
-# Note: Excludes *.local but NOT *.local.template files
+# Local settings
 *.local
 !*.local.template
 *.local.*
@@ -43,15 +42,19 @@ automatic_backups/
 # Claude
 .claude/
 
-# GitHub CLI (exclude personal auth info)
+# GitHub CLI
 gh/hosts.yml
 
-# Fish shell (auto-generated)
+# Fish shell
 fish/conf.d/
 fish/fish_variables
 
-# Git (personal config)
+# Git
 git/attributes
+
+# Karabiner
+karabiner/automatic_backups/
+karabiner/assets/complex_modifications/*.json.bak
 
 # System
 Thumbs.db

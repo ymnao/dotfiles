@@ -24,10 +24,8 @@ vim.opt.sidescrolloff = 8
 
 vim.opt.virtualedit = "onemore"
 
--- スムーズスクロール（Neovim 0.10+）
 vim.opt.smoothscroll = true
 
--- ウィンドウ分割時の見た目
 vim.opt.splitbelow = true
 vim.opt.splitright = true
 
@@ -99,4 +97,7 @@ vim.opt.laststatus = 3
 
 -- 仮想編集
 vim.opt.virtualedit = "block"
+
+-- ファイル末尾
+vim.opt.fixendofline = true
 

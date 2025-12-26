@@ -1,5 +1,4 @@
-# Public Git configuration
-# Personal settings (user.name, user.email) should be in ~/.config/git/config.local
+# Git configuration
 
 [core]
 	editor = nvim
@@ -53,10 +52,6 @@
 	last = log -1 HEAD
 	visual = log --graph --oneline --decorate --all
 
-# Include local/private config (not tracked in git)
-# Create ~/.config/git/config.local with:
-# [user]
-#     name = Your Name
-#     email = your@email.com
+# Local config
 [include]
 	path = ~/.config/git/config.local
