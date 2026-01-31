@@ -99,7 +99,7 @@ function editprofile {
 
 # Quick edit dotfiles
 function dotfiles {
-    Set-Location "$env:USERPROFILE\dotfiles"
+    Set-Location "$env:USERPROFILE\development\important\dotfiles"
 }
 
 #---------------------------------------------------------------

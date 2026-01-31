@@ -134,7 +134,7 @@ winget list --id AutoHotkey.AutoHotkey
 winget install --id AutoHotkey.AutoHotkey --force
 
 # 手動起動してエラーを確認
-& "$env:USERPROFILE\dotfiles\keyboard\autohotkey\dotfiles.ahk"
+& "$env:USERPROFILE\development\important\dotfiles\keyboard\autohotkey\dotfiles.ahk"
 ```
 
 ### IME切り替えが動作しない

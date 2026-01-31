@@ -32,8 +32,8 @@ brew bundle install
 
 ```powershell
 # リポジトリをクローン
-git clone https://github.com/YOUR_USERNAME/dotfiles.git $env:USERPROFILE\dotfiles
-cd $env:USERPROFILE\dotfiles
+git clone https://github.com/YOUR_USERNAME/dotfiles.git $env:USERPROFILE\development\important\dotfiles
+cd $env:USERPROFILE\development\important\dotfiles
 
 # 実行ポリシー設定（初回のみ）
 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
