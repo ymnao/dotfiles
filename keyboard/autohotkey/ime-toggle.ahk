@@ -32,6 +32,10 @@ SetCapsLockState "AlwaysOff"
 global ctrlUsedWithOtherKey := false
 
 ; When any key is pressed while Ctrl is down, mark it as used
+; Note: Explicit listing is used instead of a loop for:
+;   1. Easier debugging (can comment out individual keys)
+;   2. Explicit visibility of which keys are handled
+;   3. Ability to customize individual key behavior if needed
 ; Letters (a-z)
 ~LCtrl & a::ctrlUsedWithOtherKey := true
 ~LCtrl & b::ctrlUsedWithOtherKey := true

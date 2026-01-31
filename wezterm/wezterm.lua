@@ -82,6 +82,7 @@ elseif is_macos then
 	config.macos_forward_to_ime_modifier_mask = "SHIFT|CTRL"
 
 	-- Find fish in common macOS locations (Apple Silicon and Intel)
+	-- Note: io.open is idiomatic Lua for file existence check; os.execute is less portable
 	local fish_paths = {"/opt/homebrew/bin/fish", "/usr/local/bin/fish"}
 	for _, fish_path in ipairs(fish_paths) do
 		local f = io.open(fish_path, "r")

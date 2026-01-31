@@ -59,7 +59,16 @@ function New-DirectoryLink {
 
     # Backup existing destination
     if (Test-Path $Destination) {
-        if ((Get-Item $Destination).LinkType) {
+        $isLink = $false
+        try {
+            $item = Get-Item $Destination -ErrorAction Stop
+            $isLink = [bool]$item.LinkType
+        } catch {
+            Write-Warn "Cannot access destination (may be locked): $Destination"
+            return $false
+        }
+
+        if ($isLink) {
             # Remove existing link
             Remove-Item $Destination -Force
             Write-Info "Removed existing link: $Destination"
@@ -121,7 +130,16 @@ function New-FileLink {
 
     # Backup existing destination
     if (Test-Path $Destination) {
-        if ((Get-Item $Destination).LinkType) {
+        $isLink = $false
+        try {
+            $item = Get-Item $Destination -ErrorAction Stop
+            $isLink = [bool]$item.LinkType
+        } catch {
+            Write-Warn "Cannot access destination (may be locked): $Destination"
+            return $false
+        }
+
+        if ($isLink) {
             # Remove existing link
             Remove-Item $Destination -Force
             Write-Info "Removed existing link: $Destination"

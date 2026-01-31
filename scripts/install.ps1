@@ -80,12 +80,25 @@ if (-not $SkipPackages) {
             $currentPackage++
             Write-Info "[$currentPackage/$totalPackages] Installing $package..."
 
-            try {
-                winget install --id $package --accept-package-agreements --accept-source-agreements --silent
+            $output = winget install --id $package --accept-package-agreements --accept-source-agreements --silent 2>&1
+            $exitCode = $LASTEXITCODE
+
+            if ($exitCode -eq 0) {
                 Write-Success "Installed $package"
-            } catch {
-                Write-Warn "Failed to install $package : $_"
-                Write-Info "You can manually install it later with: winget install --id $package"
+            } else {
+                Write-Warn "Failed to install $package (exit code: $exitCode)"
+                $outputText = $output | Out-String
+
+                # Provide specific guidance based on error type
+                if ($outputText -match 'administrator|elevation|access denied') {
+                    Write-Info "  -> Try running PowerShell as Administrator"
+                } elseif ($outputText -match 'No package found|No applicable') {
+                    Write-Info "  -> Package ID may be incorrect. Search with: winget search $package"
+                } elseif ($outputText -match 'network|internet|0x80072') {
+                    Write-Info "  -> Check your internet connection"
+                } else {
+                    Write-Info "  -> Manual install: winget install --id $package"
+                }
             }
         }
 
@@ -121,16 +134,28 @@ if (-not $SkipPackages -and -not $SkipScoop) {
         Write-Info "Scoop installs to ~/scoop (no admin required)"
 
         try {
-            # Download Scoop installer to temp file first (safer than direct Invoke-Expression)
+            # Download Scoop installer to temp file (safer than direct Invoke-Expression)
+            # Note: Scoop is not available via winget, so we must download from official source.
+            # Security mitigations:
+            #   1. TLS 1.2+ enforced (prevents downgrade attacks)
+            #   2. SHA256 hash displayed (allows manual verification)
+            #   3. 5-second delay (allows user to abort)
+            #   4. Downloaded to file first (can be inspected before execution)
+
             $scoopInstaller = Join-Path $env:TEMP "scoop-install.ps1"
             Write-Info "Downloading Scoop installer from https://get.scoop.sh ..."
+
+            # Enforce TLS 1.2+ to prevent downgrade attacks
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
             Invoke-WebRequest -Uri "https://get.scoop.sh" -OutFile $scoopInstaller -UseBasicParsing
 
-            # Show hash for verification (user can compare with official)
+            # Show hash for verification
             $hash = (Get-FileHash $scoopInstaller -Algorithm SHA256).Hash
             Write-Warn "Security Notice: You are about to execute a downloaded script."
             Write-Info "Installer SHA256: $hash"
-            Write-Info "Compare with official: https://github.com/ScoopInstaller/Install"
+            Write-Info "Verify at: https://github.com/ScoopInstaller/Install"
+            Write-Info "Inspect script: notepad $scoopInstaller"
             Write-Info "Press Ctrl+C within 5 seconds to abort..."
             Start-Sleep -Seconds 5
 
@@ -168,10 +193,35 @@ if (-not $SkipPackages -and -not $SkipScoop) {
             } | Where-Object { $_ -and $_.ToString().Trim() -ne "" }
         }
 
+        # Check for unauthorized buckets
+        $unauthorizedBuckets = @()
         foreach ($bucket in $currentBuckets) {
             if ($bucket -and $bucket -notin $allowedBuckets) {
-                Write-Warn "Removing unauthorized bucket: $bucket"
-                scoop bucket rm $bucket 2>$null
+                $unauthorizedBuckets += $bucket
+            }
+        }
+
+        if ($unauthorizedBuckets.Count -gt 0) {
+            Write-Warn "Found unauthorized Scoop buckets: $($unauthorizedBuckets -join ', ')"
+            Write-Info "Allowed buckets: $($allowedBuckets -join ', ')"
+
+            if ($Force) {
+                Write-Info "Force flag specified - removing unauthorized buckets..."
+                foreach ($bucket in $unauthorizedBuckets) {
+                    Write-Warn "Removing: $bucket"
+                    scoop bucket rm $bucket 2>$null
+                }
+            } else {
+                Write-Warn "These buckets may contain unverified packages."
+                $confirm = Read-Host "Remove unauthorized buckets? (y/N)"
+                if ($confirm -eq 'y') {
+                    foreach ($bucket in $unauthorizedBuckets) {
+                        Write-Warn "Removing: $bucket"
+                        scoop bucket rm $bucket 2>$null
+                    }
+                } else {
+                    Write-Info "Keeping existing buckets. Proceed with caution."
+                }
             }
         }
 

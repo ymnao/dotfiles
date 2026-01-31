@@ -20,8 +20,10 @@ elseif is_macos then
 	wezterm.log_info("Loading macOS keymaps")
 	platform_keys = require("keymaps_macos")
 elseif is_linux then
-	wezterm.log_info("Loading Linux keymaps (using macOS keymaps)")
-	-- Linux uses the same keymaps as macOS (CMD key may be mapped to Super/Meta)
+	wezterm.log_info("Loading Linux keymaps (reusing macOS keymaps)")
+	-- Note: Linux uses Super/Meta key instead of CMD.
+	-- WezTerm maps "CMD" modifier to Super on Linux, so macOS keymaps work.
+	-- If shortcuts don't work, verify your system's Super key configuration.
 	platform_keys = require("keymaps_macos")
 else
 	wezterm.log_warn("Unknown platform, using macOS keymaps as fallback")

@@ -2,10 +2,12 @@
 # Fish-style git shortcuts
 #
 # WARNING: These aliases override some built-in PowerShell aliases:
-#   gc  (Get-Content)    -> git commit
-#   gp  (Get-ItemProperty) -> git push
-#   gl  (Get-Location)   -> git log --oneline
-# If you need the original cmdlets, use their full names.
+#   gc  (Get-Content)      -> git commit      (use 'Get-Content' or 'cat' instead)
+#   gp  (Get-ItemProperty) -> git push        (use 'Get-ItemProperty' instead)
+#   gl  (Get-Location)     -> git log         (use 'Get-Location' or 'pwd' instead)
+#
+# To disable specific aliases, comment them out or create config.local.ps1 with:
+#   Remove-Item Alias:gc -Force -ErrorAction SilentlyContinue
 
 #---------------------------------------------------------------
 # Basic Operations

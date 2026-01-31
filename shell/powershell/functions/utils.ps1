@@ -110,11 +110,20 @@ function dotfiles {
 # Note: This makes an external request to api.ipify.org
 function pubip {
     Write-Host "Querying external service (api.ipify.org)..." -ForegroundColor DarkGray
+
+    # Enforce TLS 1.2+ and restore original setting after
+    $originalProtocol = [Net.ServicePointManager]::SecurityProtocol
     try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         $ip = (Invoke-WebRequest -Uri "https://api.ipify.org" -UseBasicParsing -TimeoutSec 5).Content
         Write-Host $ip
     } catch {
         Write-Host "Failed to get public IP" -ForegroundColor Red
+        if ($_.Exception.Message) {
+            Write-Host "  Details: $($_.Exception.Message)" -ForegroundColor DarkGray
+        }
+    } finally {
+        [Net.ServicePointManager]::SecurityProtocol = $originalProtocol
     }
 }
 

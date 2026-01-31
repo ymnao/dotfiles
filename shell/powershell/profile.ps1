@@ -70,7 +70,17 @@ if (Get-Module -ListAvailable -Name PSReadLine) {
 # Load Function Modules
 #---------------------------------------------------------------
 
-$functionsDir = Join-Path $PSScriptRoot "functions"
+# Resolve dotfiles directory robustly (handles symlink edge cases)
+$dotfilesDir = $PSScriptRoot
+if (-not $dotfilesDir) {
+    # Fallback: resolve from profile symlink target
+    $profileItem = Get-Item -LiteralPath $PROFILE.CurrentUserAllHosts -ErrorAction SilentlyContinue
+    if ($profileItem -and $profileItem.Target) {
+        $dotfilesDir = Split-Path -LiteralPath $profileItem.Target
+    }
+}
+
+$functionsDir = Join-Path $dotfilesDir "functions"
 
 if (Test-Path $functionsDir) {
     Get-ChildItem -Path $functionsDir -Filter "*.ps1" -ErrorAction SilentlyContinue | ForEach-Object {
@@ -108,7 +118,10 @@ if (Test-Path $pythonBase) {
 }
 
 foreach ($path in $pathsToAdd) {
-    if ((Test-Path $path) -and ($env:PATH -notlike "*$path*")) {
+    # Use exact match instead of -notlike to avoid false positives
+    # (e.g., "C:\bin" incorrectly matching "C:\binary")
+    $pathList = $env:PATH -split ';'
+    if ((Test-Path $path) -and ($pathList -notcontains $path)) {
         $env:PATH = "$path;$env:PATH"
     }
 }
@@ -167,7 +180,7 @@ if (Get-Command dotnet -ErrorAction SilentlyContinue) {
 # Load Local Configuration
 #---------------------------------------------------------------
 
-$localConfig = Join-Path $PSScriptRoot "config.local.ps1"
+$localConfig = Join-Path $dotfilesDir "config.local.ps1"
 if (Test-Path $localConfig) {
     . $localConfig
     Write-Verbose "Loaded local configuration"
