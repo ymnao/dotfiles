@@ -28,7 +28,9 @@ SetCapsLockState "AlwaysOff"
 
 ~LCtrl up:: {
     ; A_PriorKey contains the name of the last key pressed before the current one
-    ; If it's "LControl", that means Ctrl was pressed and released without other keys
+    ; If it's "LControl", that means Left Ctrl was pressed and released without other keys.
+    ; Because CapsLock is remapped to LCtrl at the scan code level (line 22),
+    ; releasing CapsLock alone also results in A_PriorKey being "LControl".
     if (A_PriorKey = "LControl") {
         ; Send IME Off key
         ; vkF3 = 無変換 (Muhenkan) - works with Microsoft IME
@@ -40,17 +42,14 @@ SetCapsLockState "AlwaysOff"
 ; Left Control + Space → IME On
 ;---------------------------------------------------------------
 
-; Use $ prefix to prevent the hotkey from triggering itself
-$^Space:: {
-    ; Only trigger for Left Ctrl (check if LCtrl is physically down)
-    if GetKeyState("LControl", "P") {
-        ; Send IME On key
-        ; vkF4 = 変換 (Henkan) - works with Microsoft IME
-        Send "{vkF4}"
-    } else {
-        ; Right Ctrl + Space: pass through original behavior
-        Send "^{Space}"
-    }
+; Use LCtrl & Space syntax so remapped CapsLock→LCtrl also works correctly.
+; Note: Having just this one custom combination is fine - the original issue
+; was caused by defining 80+ LCtrl & key combinations which interfered with
+; normal Ctrl shortcuts.
+LCtrl & Space:: {
+    ; Send IME On key
+    ; vkF4 = 変換 (Henkan) - works with Microsoft IME
+    Send "{vkF4}"
 }
 
 ;---------------------------------------------------------------
