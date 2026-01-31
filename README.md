@@ -37,6 +37,9 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 
 # 自動セットアップ（Winget、シンボリックリンク、AutoHotkey）
 .\scripts\install.ps1
+
+# Scoopも含める場合（CLIツール: lazygit, delta, fzf等）
+.\scripts\install.ps1 -InstallScoop
 ```
 
 または手動で：

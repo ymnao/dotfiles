@@ -11,7 +11,8 @@ param(
     [switch]$SkipPackages,
     [switch]$SkipScoop,
     [switch]$SkipLinks,
-    [switch]$Force
+    [switch]$Force,
+    [switch]$InstallScoop  # Opt-in: explicitly request Scoop installation
 )
 
 $ErrorActionPreference = "Stop"
@@ -111,12 +112,14 @@ if (-not $SkipPackages) {
 }
 
 # Scoop installation (CLI dev tools)
+# SECURITY: Scoop installation requires downloading and executing a remote script.
+# This is disabled by default due to supply-chain risks. Use -InstallScoop to opt-in.
 if (-not $SkipPackages -and -not $SkipScoop) {
     Write-Info "`n=========================================="
-    Write-Info "Setting up Scoop (CLI development tools)..."
+    Write-Info "Scoop (CLI development tools)"
     Write-Info "==========================================`n"
 
-    # Check if Scoop is installed
+    # Check if Scoop is already installed
     $scoopInstalled = $false
     try {
         $scoopVersion = scoop --version 2>$null
@@ -128,75 +131,75 @@ if (-not $SkipPackages -and -not $SkipScoop) {
         # Scoop not found
     }
 
-    # Install Scoop if not present
+    # Install Scoop only if explicitly requested (-InstallScoop flag)
     if (-not $scoopInstalled) {
-        Write-Info "Installing Scoop..."
-        Write-Info "Scoop installs to ~/scoop (no admin required)"
+        if ($InstallScoop) {
+            Write-Info "Installing Scoop (opt-in via -InstallScoop flag)..."
+            Write-Info "Scoop installs to ~/scoop (no admin required)"
 
-        try {
-            # Download Scoop installer to temp file (safer than direct Invoke-Expression)
-            # Note: Scoop is not available via winget, so we must download from official source.
-            # Security mitigations:
-            #   1. TLS 1.2+ enforced (prevents downgrade attacks)
-            #   2. SHA256 hash displayed (allows manual verification)
-            #   3. Explicit user confirmation required
-            #   4. Downloaded to file first (can be inspected before execution)
-            #   5. Option to skip and install manually
+            try {
+                # Download Scoop installer to temp file
+                # SECURITY NOTE: This executes a remote script. While we enforce TLS 1.2
+                # and display the hash, there is no programmatic integrity verification.
+                # The hash changes with each Scoop update, making pinning impractical.
+                # By requiring -InstallScoop flag, users explicitly accept this risk.
 
-            $scoopInstaller = Join-Path $env:TEMP "scoop-install.ps1"
-            Write-Info "Downloading Scoop installer from https://get.scoop.sh ..."
+                $scoopInstaller = Join-Path $env:TEMP "scoop-install.ps1"
+                Write-Info "Downloading Scoop installer from https://get.scoop.sh ..."
 
-            # Enforce TLS 1.2+ to prevent downgrade attacks
-            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+                # Enforce TLS 1.2+ to prevent downgrade attacks
+                [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-            Invoke-WebRequest -Uri "https://get.scoop.sh" -OutFile $scoopInstaller -UseBasicParsing
+                Invoke-WebRequest -Uri "https://get.scoop.sh" -OutFile $scoopInstaller -UseBasicParsing
 
-            # Show hash and require explicit confirmation
-            $hash = (Get-FileHash $scoopInstaller -Algorithm SHA256).Hash
-            Write-Host ""
-            Write-Warn "=== Security Notice ==="
-            Write-Warn "You are about to execute a downloaded script."
-            Write-Info "Installer SHA256: $hash"
-            Write-Info "Verify hash at: https://github.com/ScoopInstaller/Install"
-            Write-Info "Inspect script: notepad $scoopInstaller"
-            Write-Host ""
+                # Show hash for manual verification
+                $hash = (Get-FileHash $scoopInstaller -Algorithm SHA256).Hash
+                Write-Host ""
+                Write-Warn "=== Security Notice ==="
+                Write-Info "Installer SHA256: $hash"
+                Write-Info "Verify at: https://github.com/ScoopInstaller/Install"
+                Write-Host ""
 
-            $runInstaller = $false
-            if ($Force) {
-                Write-Info "Force flag specified - proceeding with installation."
-                $runInstaller = $true
-            } else {
-                Write-Host "Options:" -ForegroundColor Cyan
-                Write-Host "  [Y] Yes, run the installer"
-                Write-Host "  [N] No, skip Scoop (install manually later)"
-                Write-Host "  [I] Inspect the script first (opens in notepad)"
-                $choice = Read-Host "Your choice"
+                if (-not $Force) {
+                    Write-Host "Options:" -ForegroundColor Cyan
+                    Write-Host "  [Y] Yes, run the installer"
+                    Write-Host "  [I] Inspect the script first"
+                    Write-Host "  [N] Cancel"
+                    $choice = Read-Host "Your choice"
 
-                switch ($choice.ToUpper()) {
-                    'Y' { $runInstaller = $true }
-                    'I' {
+                    if ($choice.ToUpper() -eq 'I') {
                         Start-Process notepad $scoopInstaller -Wait
-                        $confirm = Read-Host "Run the installer now? (y/N)"
-                        if ($confirm -eq 'y') { $runInstaller = $true }
+                        $choice = Read-Host "Run installer? (y/N)"
                     }
-                    default {
-                        Write-Info "Skipping Scoop installation."
-                        Write-Info "To install manually: irm get.scoop.sh | iex"
+
+                    if ($choice.ToUpper() -ne 'Y') {
+                        Write-Info "Installation cancelled."
+                        Remove-Item $scoopInstaller -Force -ErrorAction SilentlyContinue
+                        throw "User cancelled Scoop installation"
                     }
                 }
-            }
 
-            if ($runInstaller) {
                 & $scoopInstaller
                 Write-Success "Scoop installed successfully!"
                 $scoopInstalled = $true
+                Remove-Item $scoopInstaller -Force -ErrorAction SilentlyContinue
+            } catch {
+                Write-Warn "Failed to install Scoop: $_"
+                Write-Info "Manual installation: https://scoop.sh"
             }
-
-            Remove-Item $scoopInstaller -Force -ErrorAction SilentlyContinue
-        } catch {
-            Write-Warn "Failed to install Scoop: $_"
-            Write-Info "You can manually install from: https://scoop.sh"
-            Write-Info "Continuing without Scoop packages..."
+        } else {
+            # Default: Skip Scoop installation with guidance
+            Write-Warn "Scoop is not installed."
+            Write-Info "Scoop provides CLI tools: lazygit, delta, fzf, bat, etc."
+            Write-Host ""
+            Write-Info "To install Scoop (accepts supply-chain risk):"
+            Write-Info "  Option 1: Re-run with -InstallScoop flag"
+            Write-Info "    .\scripts\install.ps1 -InstallScoop"
+            Write-Host ""
+            Write-Info "  Option 2: Install manually (recommended for security):"
+            Write-Info "    irm get.scoop.sh | iex"
+            Write-Host ""
+            Write-Info "Skipping Scoop packages for now."
         }
     }
 

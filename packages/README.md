@@ -17,8 +17,12 @@
 | GUIアプリ、言語ランタイム | Winget | `winget-packages.txt` |
 | CLI開発ツール | Scoop | `scoop-packages.txt` |
 
-- **インストール**: `scripts/install.ps1` が両方を自動処理
+- **インストール（Wingetのみ）**: `scripts/install.ps1`
+- **インストール（Scoop含む）**: `scripts/install.ps1 -InstallScoop`
 - **Scoopスキップ**: `.\scripts\install.ps1 -SkipScoop`
+
+> **セキュリティ注意**: Scoopのインストールはリモートスクリプトの実行を伴うため、
+> デフォルトでは無効です。`-InstallScoop`フラグで明示的にオプトインしてください。
 
 ## Windowsパッケージ管理
 
@@ -112,8 +116,12 @@ scoop bucket rm <bucket-name>
 ### Scoopパッケージのインストール
 
 ```powershell
-# Scoopインストール（初回のみ）
+# Scoopインストール（手動 - 推奨）
+# セキュリティ上、手動インストールを推奨します
 irm get.scoop.sh | iex
+
+# または install.ps1 経由（オプトイン）
+.\scripts\install.ps1 -InstallScoop
 
 # バケット追加
 scoop bucket add main
