@@ -16,8 +16,7 @@ set -gx PAGER less
 set -gx MANPAGER "nvim +Man!"
 
 # History
-set -gx HISTSIZE 10000
-set -gx SAVEHIST 10000
+set -g fish_history_max 10000
 
 # Path additions
 fish_add_path -g $HOME/.local/bin
