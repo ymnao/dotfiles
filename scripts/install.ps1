@@ -123,13 +123,16 @@ if (-not $SkipPackages -and -not $SkipScoop) {
         try {
             # Download Scoop installer to temp file first (safer than direct Invoke-Expression)
             $scoopInstaller = Join-Path $env:TEMP "scoop-install.ps1"
-            Write-Info "Downloading Scoop installer..."
+            Write-Info "Downloading Scoop installer from https://get.scoop.sh ..."
             Invoke-WebRequest -Uri "https://get.scoop.sh" -OutFile $scoopInstaller -UseBasicParsing
 
             # Show hash for verification (user can compare with official)
             $hash = (Get-FileHash $scoopInstaller -Algorithm SHA256).Hash
+            Write-Warn "Security Notice: You are about to execute a downloaded script."
             Write-Info "Installer SHA256: $hash"
-            Write-Info "Verify at: https://github.com/ScoopInstaller/Install"
+            Write-Info "Compare with official: https://github.com/ScoopInstaller/Install"
+            Write-Info "Press Ctrl+C within 5 seconds to abort..."
+            Start-Sleep -Seconds 5
 
             # Execute the downloaded script
             & $scoopInstaller
@@ -149,7 +152,21 @@ if (-not $SkipPackages -and -not $SkipScoop) {
         # Security: Check for unauthorized buckets
         Write-Info "Checking Scoop buckets for security..."
         $allowedBuckets = @("main", "extras")
-        $currentBuckets = scoop bucket list 2>$null | ForEach-Object { $_.Name }
+
+        # Robust parsing: handle both object and string output formats
+        $bucketOutput = scoop bucket list 2>$null
+        $currentBuckets = @()
+        if ($bucketOutput) {
+            # Try object output first (with Name property)
+            $currentBuckets = $bucketOutput | ForEach-Object {
+                if ($_ -is [PSCustomObject] -and $_.Name) {
+                    $_.Name
+                } elseif ($_ -is [string] -and $_.Trim()) {
+                    # Parse text: first whitespace-separated token is bucket name
+                    ($_ -split '\s+')[0]
+                }
+            } | Where-Object { $_ -and $_.ToString().Trim() -ne "" }
+        }
 
         foreach ($bucket in $currentBuckets) {
             if ($bucket -and $bucket -notin $allowedBuckets) {

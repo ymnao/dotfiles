@@ -95,7 +95,16 @@ elseif is_linux then
 	-- Linux uses X11/Wayland compositors for transparency
 
 	-- Try to find fish in common Linux locations
-	config.default_prog = {"/usr/bin/fish"}
+	local fish_paths = {"/usr/bin/fish", "/bin/fish", "/usr/local/bin/fish"}
+	for _, fish_path in ipairs(fish_paths) do
+		local f = io.open(fish_path, "r")
+		if f then
+			f:close()
+			config.default_prog = {fish_path}
+			break
+		end
+	end
+	-- If fish not found, WezTerm will use default shell
 end
 
 config = utils.merge_tables(config, require("tab_bar"))

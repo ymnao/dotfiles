@@ -44,9 +44,10 @@ function New-DirectoryLink {
     )
 
     # Resolve full paths
+    $originalSource = $Source
     $Source = Resolve-Path $Source -ErrorAction SilentlyContinue
     if (-not $Source) {
-        Write-Warn "Source directory does not exist: $Source"
+        Write-Warn "Source directory does not exist: $originalSource"
         return $false
     }
 
@@ -99,9 +100,10 @@ function New-FileLink {
     )
 
     # Resolve full paths
+    $originalSource = $Source
     $Source = Resolve-Path $Source -ErrorAction SilentlyContinue
     if (-not $Source) {
-        Write-Warn "Source file does not exist: $Source"
+        Write-Warn "Source file does not exist: $originalSource"
         return $false
     }
 

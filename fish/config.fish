@@ -15,8 +15,7 @@ set -gx GIT_EDITOR nvim
 set -gx PAGER less
 set -gx MANPAGER "nvim +Man!"
 
-# History
-set -g fish_history_max 10000
+# History (Fish manages history size automatically, no configuration needed)
 
 # Path additions
 fish_add_path -g $HOME/.local/bin

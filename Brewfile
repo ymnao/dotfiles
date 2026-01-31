@@ -8,7 +8,7 @@ brew "neovim"
 brew "ripgrep"
 brew "fd"
 brew "tree"
-# brew "p7zip"  # Excluded due to security vulnerabilities (CVE-2025-11001, CVE-2025-11002)
+# brew "p7zip"  # Excluded due to known archive extraction vulnerabilities
                 # Use macOS built-in compression or The Unarchiver instead
 
 # ========================================

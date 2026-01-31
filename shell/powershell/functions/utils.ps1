@@ -244,12 +244,20 @@ function open {
 }
 
 # Open in VS Code
-function code {
+# Note: If VS Code is installed, 'code' command is already available in PATH
+# This function is only needed if you want to ensure VS Code is called
+function Open-VSCode {
     param(
         [string]$Path = "."
     )
-    & code $Path
+    $vscode = Get-Command code -CommandType Application -ErrorAction SilentlyContinue
+    if ($vscode) {
+        & $vscode.Source $Path
+    } else {
+        Write-Host "VS Code is not installed or not in PATH" -ForegroundColor Red
+    }
 }
+Set-Alias vsc Open-VSCode
 
 #---------------------------------------------------------------
 # Development Helpers

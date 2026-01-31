@@ -31,6 +31,7 @@ SetCapsLockState "AlwaysOff"
 global ctrlUsedWithOtherKey := false
 
 ; When any key is pressed while Ctrl is down, mark it as used
+; Letters (a-z)
 ~LCtrl & a::ctrlUsedWithOtherKey := true
 ~LCtrl & b::ctrlUsedWithOtherKey := true
 ~LCtrl & c::ctrlUsedWithOtherKey := true
@@ -57,6 +58,60 @@ global ctrlUsedWithOtherKey := false
 ~LCtrl & x::ctrlUsedWithOtherKey := true
 ~LCtrl & y::ctrlUsedWithOtherKey := true
 ~LCtrl & z::ctrlUsedWithOtherKey := true
+
+; Numbers (0-9)
+~LCtrl & 0::ctrlUsedWithOtherKey := true
+~LCtrl & 1::ctrlUsedWithOtherKey := true
+~LCtrl & 2::ctrlUsedWithOtherKey := true
+~LCtrl & 3::ctrlUsedWithOtherKey := true
+~LCtrl & 4::ctrlUsedWithOtherKey := true
+~LCtrl & 5::ctrlUsedWithOtherKey := true
+~LCtrl & 6::ctrlUsedWithOtherKey := true
+~LCtrl & 7::ctrlUsedWithOtherKey := true
+~LCtrl & 8::ctrlUsedWithOtherKey := true
+~LCtrl & 9::ctrlUsedWithOtherKey := true
+
+; Common punctuation and brackets
+~LCtrl & [::ctrlUsedWithOtherKey := true
+~LCtrl & ]::ctrlUsedWithOtherKey := true
+~LCtrl & `;::ctrlUsedWithOtherKey := true
+~LCtrl & '::ctrlUsedWithOtherKey := true
+~LCtrl & ,::ctrlUsedWithOtherKey := true
+~LCtrl & .::ctrlUsedWithOtherKey := true
+~LCtrl & /::ctrlUsedWithOtherKey := true
+~LCtrl & \::ctrlUsedWithOtherKey := true
+~LCtrl & -::ctrlUsedWithOtherKey := true
+~LCtrl & =::ctrlUsedWithOtherKey := true
+~LCtrl & `::ctrlUsedWithOtherKey := true
+
+; Function keys
+~LCtrl & F1::ctrlUsedWithOtherKey := true
+~LCtrl & F2::ctrlUsedWithOtherKey := true
+~LCtrl & F3::ctrlUsedWithOtherKey := true
+~LCtrl & F4::ctrlUsedWithOtherKey := true
+~LCtrl & F5::ctrlUsedWithOtherKey := true
+~LCtrl & F6::ctrlUsedWithOtherKey := true
+~LCtrl & F7::ctrlUsedWithOtherKey := true
+~LCtrl & F8::ctrlUsedWithOtherKey := true
+~LCtrl & F9::ctrlUsedWithOtherKey := true
+~LCtrl & F10::ctrlUsedWithOtherKey := true
+~LCtrl & F11::ctrlUsedWithOtherKey := true
+~LCtrl & F12::ctrlUsedWithOtherKey := true
+
+; Navigation and editing keys
+~LCtrl & Tab::ctrlUsedWithOtherKey := true
+~LCtrl & Enter::ctrlUsedWithOtherKey := true
+~LCtrl & Backspace::ctrlUsedWithOtherKey := true
+~LCtrl & Delete::ctrlUsedWithOtherKey := true
+~LCtrl & Home::ctrlUsedWithOtherKey := true
+~LCtrl & End::ctrlUsedWithOtherKey := true
+~LCtrl & PgUp::ctrlUsedWithOtherKey := true
+~LCtrl & PgDn::ctrlUsedWithOtherKey := true
+~LCtrl & Up::ctrlUsedWithOtherKey := true
+~LCtrl & Down::ctrlUsedWithOtherKey := true
+~LCtrl & Left::ctrlUsedWithOtherKey := true
+~LCtrl & Right::ctrlUsedWithOtherKey := true
+~LCtrl & Insert::ctrlUsedWithOtherKey := true
 
 ; When Left Control is released
 ~LCtrl up:: {

@@ -63,7 +63,7 @@ Anthropic.ClaudeCode
 # ========================================
 # Excluded - Security Risk
 # ========================================
-# 7zip: CVE-2025-11001, CVE-2025-11002 (remote code execution)
+# 7zip: Known archive extraction vulnerabilities (remote code execution)
 # Use Windows built-in: Compress-Archive / Expand-Archive
 
 # ========================================

@@ -89,9 +89,21 @@ if (Test-Path $functionsDir) {
 $pathsToAdd = @(
     "$env:USERPROFILE\.cargo\bin",           # Rust
     "$env:USERPROFILE\go\bin",                # Go
-    "$env:LOCALAPPDATA\Programs\Python\Python312\Scripts",  # Python
-    "$env:APPDATA\npm",                       # npm global
+    "$env:APPDATA\npm"                        # npm global
 )
+
+# Find Python Scripts directory (version-agnostic)
+$pythonBase = Join-Path $env:LOCALAPPDATA "Programs\Python"
+if (Test-Path $pythonBase) {
+    $pythonDirs = Get-ChildItem -Path $pythonBase -Directory -Filter "Python3*" -ErrorAction SilentlyContinue |
+        Sort-Object Name -Descending
+    if ($pythonDirs -and $pythonDirs[0]) {
+        $pythonScripts = Join-Path $pythonDirs[0].FullName "Scripts"
+        if (Test-Path $pythonScripts) {
+            $pathsToAdd += $pythonScripts
+        }
+    }
+}
 
 foreach ($path in $pathsToAdd) {
     if ((Test-Path $path) -and ($env:PATH -notlike "*$path*")) {
