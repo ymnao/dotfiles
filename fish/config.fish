@@ -17,7 +17,7 @@ set -gx MANPAGER "nvim +Man!"
 
 # History (Fish manages history size automatically, no configuration needed)
 
-# Path additions
+# Path additions (fish_add_path is idempotent - won't add duplicates)
 fish_add_path -g $HOME/.local/bin
 fish_add_path -g $HOME/bin
 

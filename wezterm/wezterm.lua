@@ -77,10 +77,20 @@ if is_windows then
 
 elseif is_macos then
 	-- macOS-specific settings
-	config.default_prog = {"/opt/homebrew/bin/fish"}
 	config.window_background_opacity = 0.7
 	config.macos_window_background_blur = 20
 	config.macos_forward_to_ime_modifier_mask = "SHIFT|CTRL"
+
+	-- Find fish in common macOS locations (Apple Silicon and Intel)
+	local fish_paths = {"/opt/homebrew/bin/fish", "/usr/local/bin/fish"}
+	for _, fish_path in ipairs(fish_paths) do
+		local f = io.open(fish_path, "r")
+		if f then
+			f:close()
+			config.default_prog = {fish_path}
+			break
+		end
+	end
 
 	-- macOS-specific unix domain socket
 	config.unix_domains = {

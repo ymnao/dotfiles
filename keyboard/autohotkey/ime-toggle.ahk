@@ -19,8 +19,9 @@
 SetCapsLockState "AlwaysOff"
 
 ; Remap CapsLock to Left Control
-; The ~ prefix allows the key to retain its native function
-; (in this case, the native CapsLock is disabled above)
+; * = Fire regardless of modifier state
+; Note: A_PriorKey will be "LControl" when CapsLock (remapped to LCtrl) is released,
+; because the remapping happens at the scan code level.
 *CapsLock::LCtrl
 
 ;---------------------------------------------------------------
@@ -112,6 +113,10 @@ global ctrlUsedWithOtherKey := false
 ~LCtrl & Left::ctrlUsedWithOtherKey := true
 ~LCtrl & Right::ctrlUsedWithOtherKey := true
 ~LCtrl & Insert::ctrlUsedWithOtherKey := true
+~LCtrl & Escape::ctrlUsedWithOtherKey := true
+
+; Note: Space is handled by the dedicated LCtrl & Space:: handler below,
+; which already sets ctrlUsedWithOtherKey := true
 
 ; When Left Control is released
 ~LCtrl up:: {

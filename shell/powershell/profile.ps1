@@ -1,5 +1,7 @@
 # PowerShell Profile for dotfiles
-# This file is symlinked to $PROFILE.CurrentUserAllHosts
+# IMPORTANT: This file must be SYMLINKED (not copied) to $PROFILE.CurrentUserAllHosts
+# $PSScriptRoot resolves to the symlink target (dotfiles directory), enabling relative paths
+# to the functions/ directory. If copied, relative paths will break.
 
 #---------------------------------------------------------------
 # Environment Variables

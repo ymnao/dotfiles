@@ -1,5 +1,11 @@
 # Git Aliases for PowerShell
 # Fish-style git shortcuts
+#
+# WARNING: These aliases override some built-in PowerShell aliases:
+#   gc  (Get-Content)    -> git commit
+#   gp  (Get-ItemProperty) -> git push
+#   gl  (Get-Location)   -> git log --oneline
+# If you need the original cmdlets, use their full names.
 
 #---------------------------------------------------------------
 # Basic Operations
