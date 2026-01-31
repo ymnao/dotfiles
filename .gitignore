@@ -21,6 +21,7 @@ Icon
 !*.local.template
 *.local.*
 !*.local.template
+!*.local.*.template
 *.private
 .env
 .env.*
@@ -59,6 +60,18 @@ karabiner/assets/complex_modifications/*.json.bak
 # System
 Thumbs.db
 Desktop.ini
+
+# Windows
+desktop.ini
+*.lnk
+$RECYCLE.BIN/
+*.stackdump
+ehthumbs.db
+ehthumbs_vista.db
+
+# PowerShell
+shell/powershell/config.local.ps1
+**/history.txt
 
 # Git
 .git/

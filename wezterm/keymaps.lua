@@ -1,101 +1,46 @@
+-- Platform-aware keymap loader
+-- Loads common keymaps and platform-specific keymaps based on OS
+
 local wezterm = require("wezterm")
-local act = wezterm.action
 
----------------------------------------------------------------
---- keymaps
----------------------------------------------------------------
-local keys = {
-	{ key = "a", mods = "LEADER|CTRL", action = act({ SendString = "\x01" }) },
-	{ key = "d", mods = "CMD|SHIFT", action = act({ SplitVertical = { domain = "CurrentPaneDomain" } }) },
-	{ key = "d", mods = "CMD", action = act.SplitHorizontal({ domain = "CurrentPaneDomain" }) },
-	{ key = "t", mods = "CMD", action = act.SpawnTab("CurrentPaneDomain") },
-	{ key = "w", mods = "CMD", action = act.CloseCurrentPane({ confirm = true }) },
-	{ key = "x", mods = "LEADER", action = act.CloseCurrentPane({ confirm = true }) },
-	{ key = "W", mods = "CMD|SHIFT", action = act.CloseCurrentTab({ confirm = true }) },
-	{ key = "z", mods = "LEADER", action = act.TogglePaneZoomState },
-	{ key = "h", mods = "CMD", action = act.ActivatePaneDirection("Left") },
-	{ key = "j", mods = "CMD", action = act.ActivatePaneDirection("Down") },
-	{ key = "k", mods = "CMD", action = act.ActivatePaneDirection("Up") },
-	{ key = "l", mods = "CMD", action = act.ActivatePaneDirection("Right") },
-	{ key = "H", mods = "CMD|SHIFT", action = act.AdjustPaneSize({ "Left", 5 }) },
-	{ key = "J", mods = "CMD|SHIFT", action = act.AdjustPaneSize({ "Down", 5 }) },
-	{ key = "K", mods = "CMD|SHIFT", action = act.AdjustPaneSize({ "Up", 5 }) },
-	{ key = "L", mods = "CMD|SHIFT", action = act.AdjustPaneSize({ "Right", 5 }) },
-	{ key = "(", mods = "CMD|SHIFT", action = act.MoveTabRelative(-1) },
-	{ key = ")", mods = "CMD|SHIFT", action = act.MoveTabRelative(1) },
-	{ key = "Space", mods = "LEADER", action = act.QuickSelect },
-	{ key = "b", mods = "CMD|SHIFT", action = act.EmitEvent("toggle-blur") },
-	{ key = "f", mods = "CMD|CTRL", action = act.EmitEvent("toggle-maximize") },
-	--- workspace
-	{ key = "n", mods = "CMD|SHIFT", action = act.SwitchWorkspaceRelative(1) },
-	{ key = "p", mods = "CMD|SHIFT", action = act.SwitchWorkspaceRelative(-1) },
-	{
-		key = "S",
-		mods = "CMD|SHIFT",
-		action = act.PromptInputLine({
-			description = "(wezterm) Create new workspace:",
-			action = wezterm.action_callback(function(window, pane, line)
-				if line then
-					window:perform_action(
-						act.SwitchToWorkspace({
-							name = line,
-						}),
-						pane
-					)
-				end
-			end),
-		}),
-	},
-	{
-		key = "s",
-		mods = "LEADER",
-		action = act.PromptInputLine({
-			description = "(wezterm) Set workspace title:",
-			action = wezterm.action_callback(function(win, pane, line)
-				if line then
-					wezterm.mux.rename_workspace(wezterm.mux.get_active_workspace(), line)
-				end
-			end),
-		}),
-	},
-	{
-		key = "s",
-		mods = "CMD",
-		action = wezterm.action_callback(function(win, pane)
-			local workspaces = {}
-			for i, name in ipairs(wezterm.mux.get_workspace_names()) do
-				table.insert(workspaces, {
-					id = name,
-					label = string.format("%d. %s", i, name),
-				})
-			end
-			win:perform_action(
-				act.InputSelector({
-					action = wezterm.action_callback(function(_, _, id, label)
-						if not id and not label then
-							wezterm.log_info("Workspace selection canceled")
-						else
-							win:perform_action(act.SwitchToWorkspace({ name = id }), pane)
-						end
-					end),
-					title = "Select workspace",
-					choices = workspaces,
-					fuzzy = true,
-				}),
-				pane
-			)
-		end),
-	},
-	{ key = "Enter", mods = "SHIFT", action = wezterm.action({ SendString = "\x1b\r" }) },
-}
+-- Detect platform
+local is_windows = wezterm.target_triple:find("windows") ~= nil
+local is_macos = wezterm.target_triple:find("darwin") ~= nil
+local is_linux = wezterm.target_triple:find("linux") ~= nil
 
--- activate tab
-for i = 1, 9 do
-	table.insert(keys, {
-		key = tostring(i),
-		mods = "LEADER",
-		action = act.ActivateTab(i - 1),
-	})
+-- Load common keymaps
+local common_keys = require("keymaps_common")
+
+-- Load platform-specific keymaps
+local platform_keys = {}
+if is_windows then
+	wezterm.log_info("Loading Windows keymaps")
+	platform_keys = require("keymaps_windows")
+elseif is_macos then
+	wezterm.log_info("Loading macOS keymaps")
+	platform_keys = require("keymaps_macos")
+elseif is_linux then
+	wezterm.log_info("Loading Linux keymaps (reusing macOS keymaps)")
+	-- Note: Linux uses Super/Meta key instead of CMD.
+	-- WezTerm maps "CMD" modifier to Super on Linux, so macOS keymaps work.
+	-- If shortcuts don't work, verify your system's Super key configuration.
+	platform_keys = require("keymaps_macos")
+else
+	wezterm.log_warn("Unknown platform, using macOS keymaps as fallback")
+	platform_keys = require("keymaps_macos")
+end
+
+-- Merge common and platform-specific keymaps
+local keys = {}
+
+-- Add common keys first
+for _, key in ipairs(common_keys) do
+	table.insert(keys, key)
+end
+
+-- Add platform-specific keys
+for _, key in ipairs(platform_keys) do
+	table.insert(keys, key)
 end
 
 return keys

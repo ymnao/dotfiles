@@ -8,7 +8,8 @@ brew "neovim"
 brew "ripgrep"
 brew "fd"
 brew "tree"
-brew "p7zip"
+# brew "p7zip"  # Excluded due to known archive extraction vulnerabilities
+                # Use macOS built-in compression or The Unarchiver instead
 
 # ========================================
 # Development Languages & Tools

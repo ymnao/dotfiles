@@ -1,0 +1,53 @@
+# Scoop Package List for dotfiles
+# CLI development tools - installed per-user, no admin required
+#
+# Security Policy:
+# - Only use official buckets (main, extras)
+# - Packages are verified by Scoop community
+# - No third-party buckets for security reasons
+
+# ========================================
+# Bucket Configuration
+# ========================================
+# Required buckets (add before installing):
+#   scoop bucket add main
+#   scoop bucket add extras
+#
+# DO NOT add untrusted third-party buckets
+
+# ========================================
+# CLI Development Tools (main bucket)
+# ========================================
+lazygit
+delta
+fzf
+bat
+eza
+jq
+yq
+
+# ========================================
+# Search & Navigation (main bucket)
+# ========================================
+# ripgrep and fd are also available here, but we use Winget versions
+# for consistency with Microsoft-verified packages
+
+# ========================================
+# Git Tools (main bucket)
+# ========================================
+gh
+git-lfs
+
+# ========================================
+# Optional Tools (uncomment if needed)
+# ========================================
+# neovim          # Use Winget version for stability
+# nodejs          # Use Winget version for LTS support
+# python          # Use Winget version for better PATH handling
+# go              # Use Winget version for official builds
+
+# ========================================
+# Excluded for Security
+# ========================================
+# 7zip - Known archive extraction vulnerabilities (remote code execution)
+# Use Windows built-in: Compress-Archive / Expand-Archive

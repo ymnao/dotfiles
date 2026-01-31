@@ -1,0 +1,113 @@
+# PowerShell Local Configuration Template
+# Copy this file to config.local.ps1 and customize for your machine
+# This file is not tracked by git
+
+#---------------------------------------------------------------
+# Custom Environment Variables
+#---------------------------------------------------------------
+
+# Example: Set custom environment variables
+# $env:MY_CUSTOM_VAR = "value"
+# $env:API_KEY = "secret-key"
+
+#---------------------------------------------------------------
+# Custom PATH Additions
+#---------------------------------------------------------------
+
+# Example: Add custom directories to PATH
+# $env:PATH = "C:\MyTools;$env:PATH"
+# $env:PATH = "D:\Projects\bin;$env:PATH"
+
+#---------------------------------------------------------------
+# Custom Aliases
+#---------------------------------------------------------------
+
+# Example: Override default editor
+# $env:EDITOR = "code"
+# $env:VISUAL = "code --wait"
+
+# Example: Create custom aliases
+# Set-Alias -Name vim -Value nvim
+# Set-Alias -Name python -Value python3
+
+#---------------------------------------------------------------
+# Custom Functions
+#---------------------------------------------------------------
+
+# Example: Define machine-specific functions
+# function MyFunction {
+#     Write-Host "Hello from my custom function!"
+# }
+
+# Example: Quick navigation to project directories
+# function myproject { Set-Location "C:\Projects\MyProject" }
+
+#---------------------------------------------------------------
+# Tool-Specific Configuration
+#---------------------------------------------------------------
+
+# Example: Python virtual environment
+# $env:PYTHONPATH = "C:\Projects\python-libs"
+# $env:VIRTUAL_ENV_DISABLE_PROMPT = "1"
+
+# Example: Node.js configuration
+# $env:NODE_OPTIONS = "--max-old-space-size=4096"
+
+# Example: Go configuration
+# $env:GOPATH = "C:\Go"
+# $env:GOBIN = "$env:GOPATH\bin"
+
+# Example: Rust configuration
+# $env:RUSTUP_HOME = "C:\Rust\rustup"
+# $env:CARGO_HOME = "C:\Rust\cargo"
+
+#---------------------------------------------------------------
+# Proxy Configuration (if behind corporate proxy)
+#---------------------------------------------------------------
+
+# Example: Set proxy for terminal tools
+# $env:HTTP_PROXY = "http://proxy.company.com:8080"
+# $env:HTTPS_PROXY = "http://proxy.company.com:8080"
+# $env:NO_PROXY = "localhost,127.0.0.1,.local"
+
+#---------------------------------------------------------------
+# PSReadLine Customization
+#---------------------------------------------------------------
+
+# Example: Switch to Vi mode
+# Set-PSReadLineOption -EditMode Vi
+
+# Example: Custom colors
+# Set-PSReadLineOption -Colors @{
+#     Command   = 'Blue'
+#     Parameter = 'DarkGray'
+#     String    = 'DarkYellow'
+#     Operator  = 'Magenta'
+# }
+
+#---------------------------------------------------------------
+# Custom Prompt
+#---------------------------------------------------------------
+
+# Example: Override the default prompt
+# function prompt {
+#     $currentPath = Get-Location
+#     Write-Host "PS " -NoNewline -ForegroundColor Green
+#     Write-Host $currentPath -NoNewline -ForegroundColor Cyan
+#     return "> "
+# }
+
+#---------------------------------------------------------------
+# Startup Commands
+#---------------------------------------------------------------
+
+# Example: Run commands on profile load
+# Write-Host "Welcome, $env:USERNAME!" -ForegroundColor Cyan
+
+# Example: Display system info on startup
+# Get-SystemInfo
+
+# Example: Auto-activate Python virtual environment
+# if (Test-Path ".\venv\Scripts\Activate.ps1") {
+#     & .\venv\Scripts\Activate.ps1
+# }

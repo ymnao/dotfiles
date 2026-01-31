@@ -6,6 +6,7 @@ set -euo pipefail
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+RED='\033[0;31m'
 NC='\033[0m' # No Color
 
 info() {
@@ -19,6 +20,21 @@ warn() {
 skip() {
     echo -e "${BLUE}[SKIP]${NC} $1"
 }
+
+error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+    exit 1
+}
+
+# Check for Windows
+case "$(uname -s)" in
+    CYGWIN*|MINGW*|MSYS*|Windows_NT)
+        error "Windows detected. Please use PowerShell script instead:
+    .\\scripts\\link.ps1
+
+For detailed Windows setup instructions, see README.md"
+        ;;
+esac
 
 # Dotfiles directory
 DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

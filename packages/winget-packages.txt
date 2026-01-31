@@ -1,0 +1,74 @@
+# Winget Package List for dotfiles
+# GUI apps and Microsoft-verified packages
+#
+# Security Policy:
+# - Winget packages are verified by Microsoft
+# - Used for GUI apps and official language runtimes
+# - CLI dev tools are installed via Scoop (see scoop-packages.txt)
+
+# ========================================
+# Core Development Tools (Microsoft-verified)
+# ========================================
+Git.Git
+Neovim.Neovim
+
+# ========================================
+# Terminal & Shell
+# ========================================
+wez.wezterm
+Microsoft.PowerShell
+
+# ========================================
+# Search & File Tools (Official builds)
+# ========================================
+BurntSushi.ripgrep.MSVC
+sharkdp.fd
+
+# ========================================
+# Programming Languages (Official builds)
+# ========================================
+GoLang.Go
+Python.Python.3
+OpenJS.NodeJS
+Rustlang.Rustup
+
+# ========================================
+# Java Development Kits (Microsoft builds)
+# ========================================
+Microsoft.OpenJDK.11
+Microsoft.OpenJDK.17
+
+# ========================================
+# AWS Tools (Amazon official)
+# ========================================
+Amazon.SAM-CLI
+Amazon.AWSCLI
+
+# ========================================
+# GUI Applications
+# ========================================
+Microsoft.VisualStudioCode
+
+# ========================================
+# AI Tools
+# ========================================
+Anthropic.ClaudeCode
+
+# ========================================
+# Excluded - Use Scoop Instead
+# ========================================
+# lazygit, delta, fzf, bat, eza, jq, yq
+# See: packages/scoop-packages.txt
+
+# ========================================
+# Excluded - Security Risk
+# ========================================
+# 7zip: Known archive extraction vulnerabilities (remote code execution)
+# Use Windows built-in: Compress-Archive / Expand-Archive
+
+# ========================================
+# Fonts (manual installation required)
+# ========================================
+# - JetBrainsMono Nerd Font: https://github.com/ryanoasis/nerd-fonts/releases
+# - Cica: https://github.com/miiton/Cica/releases
+# - UDEV Gothic: https://github.com/yuru7/udev-gothic/releases

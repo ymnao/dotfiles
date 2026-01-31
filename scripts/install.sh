@@ -37,6 +37,12 @@ case "$OS" in
         info "Detected Linux"
         OS_TYPE="linux"
         ;;
+    CYGWIN*|MINGW*|MSYS*|Windows_NT)
+        error "Windows detected. Please use PowerShell script instead:
+    .\\scripts\\install.ps1
+
+For detailed Windows setup instructions, see README.md"
+        ;;
     *)
         error "Unsupported OS: $OS"
         ;;

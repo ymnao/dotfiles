@@ -1,0 +1,38 @@
+# Git local configuration template for Windows
+# Copy this file to ~/.config/git/config.local and customize
+
+[user]
+	name = Your Name
+	email = your.email@example.com
+
+[core]
+	# Windows line ending handling
+	# true: convert LF to CRLF on checkout, CRLF to LF on commit
+	# input: convert CRLF to LF on commit, no conversion on checkout
+	# false: no conversion
+	autocrlf = true
+
+	# Enable symbolic link support (requires Developer Mode)
+	symlinks = true
+
+	# Windows editors (uncomment your preference)
+	# editor = notepad
+	# editor = code --wait
+	# editor = nvim
+
+[credential]
+	# Use Windows Credential Manager for Git credentials
+	# Note: "manager" is the current name (manager-core was renamed)
+	helper = manager
+
+[diff]
+	# Handle Windows paths correctly in diffs
+	noprefix = false
+
+[merge]
+	# Prevent CRLF issues during merge
+	renormalize = true
+
+# Include private configuration (add machine-specific settings here)
+# [include]
+# 	path = ~/.config/git/config.private
