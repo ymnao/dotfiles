@@ -18,7 +18,7 @@ SendMode "Input"
 SetWorkingDir A_ScriptDir
 
 ; Startup notification
-TrayTip "Dotfiles keyboard customization loaded", "AutoHotkey", "Icon1 Mute"
+TrayTip "Dotfiles keyboard customization loaded", "AutoHotkey", "17"
 
 ;---------------------------------------------------------------
 ; Load Modules
@@ -55,7 +55,7 @@ A_TrayMenu.Default := "Reload Script"
 
 ; Win+Shift+R: Reload this script
 #+r:: {
-    TrayTip "Reloading...", "AutoHotkey", "Icon1 Mute"
+    TrayTip "Reloading...", "AutoHotkey", "17"
     Sleep 500
     Reload
 }
@@ -68,8 +68,8 @@ A_TrayMenu.Default := "Reload Script"
 #+p:: {
     Suspend
     if (A_IsSuspended) {
-        TrayTip "Hotkeys suspended", "AutoHotkey", "Icon3 Mute"
+        TrayTip "Hotkeys suspended", "AutoHotkey", "19"
     } else {
-        TrayTip "Hotkeys resumed", "AutoHotkey", "Icon1 Mute"
+        TrayTip "Hotkeys resumed", "AutoHotkey", "17"
     }
 }
