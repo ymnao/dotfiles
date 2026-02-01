@@ -12,53 +12,56 @@
 #Requires AutoHotkey v2.0
 
 ;---------------------------------------------------------------
-; IME Control Functions (using Windows IMM32 API)
+; IME Control Constants
+;---------------------------------------------------------------
+global WM_IME_CONTROL := 0x283
+global IMC_SETOPENSTATUS := 0x6
+global IMC_SETCONVERSIONMODE := 0x2
+global IME_CMODE_NATIVE := 0x0001
+global IME_CMODE_FULLSHAPE := 0x0008
+global IME_CMODE_HIRAGANA := IME_CMODE_NATIVE | IME_CMODE_FULLSHAPE
+
+;---------------------------------------------------------------
+; IME Control Functions (using WM_IME_CONTROL)
 ;
-; Uses ImmSetOpenStatus / ImmSetConversionStatus for reliable
-; IME control. This is more reliable than WM_IME_CONTROL messages
-; or sending virtual keys (vkF3/vkF4) which may toggle instead of
-; setting a specific state depending on IME configuration.
+; Uses ImmGetDefaultIMEWnd + WM_IME_CONTROL for IME control.
+; This approach was confirmed working for IME Off.
 ;
 ; Note: These are best-effort operations. IME behavior can vary
 ; depending on the IME implementation (Microsoft IME, Google IME, etc.)
 ;---------------------------------------------------------------
 
-; Turn IME Off (半角/英数)
-IME_Off(winTitle := "A") {
+; Get IME window handle for the active window
+IME_GetWindow(winTitle := "A") {
     hwnd := WinExist(winTitle)
     if !hwnd
-        return
-
-    hIMC := DllCall("imm32\ImmGetContext", "Ptr", hwnd, "Ptr")
-    if !hIMC
-        return
-
-    DllCall("imm32\ImmSetOpenStatus", "Ptr", hIMC, "Int", 0)
-    DllCall("imm32\ImmReleaseContext", "Ptr", hwnd, "Ptr", hIMC)
+        return 0
+    return DllCall("imm32\ImmGetDefaultIMEWnd", "Ptr", hwnd, "Ptr")
 }
 
-; Turn IME On and set to Hiragana mode (ひらがな/全角)
-IME_On(winTitle := "A") {
-    static IME_CMODE_NATIVE := 0x0001      ; Japanese mode
-    static IME_CMODE_FULLSHAPE := 0x0008   ; Full-width characters
-    static IME_CMODE_HIRAGANA := IME_CMODE_NATIVE | IME_CMODE_FULLSHAPE
+; Turn IME Off
+IME_Off(winTitle := "A") {
+    global WM_IME_CONTROL, IMC_SETOPENSTATUS
 
-    hwnd := WinExist(winTitle)
-    if !hwnd
+    imeWnd := IME_GetWindow(winTitle)
+    if !imeWnd
         return
 
-    hIMC := DllCall("imm32\ImmGetContext", "Ptr", hwnd, "Ptr")
-    if !hIMC
+    DllCall("user32\SendMessageW", "Ptr", imeWnd, "UInt", WM_IME_CONTROL, "Ptr", IMC_SETOPENSTATUS, "Ptr", 0)
+}
+
+; Turn IME On (to Hiragana mode)
+IME_On(winTitle := "A") {
+    global WM_IME_CONTROL, IMC_SETOPENSTATUS, IMC_SETCONVERSIONMODE, IME_CMODE_HIRAGANA
+
+    imeWnd := IME_GetWindow(winTitle)
+    if !imeWnd
         return
 
     ; Turn IME on
-    DllCall("imm32\ImmSetOpenStatus", "Ptr", hIMC, "Int", 1)
-
-    ; Set conversion mode to Hiragana
-    ; Second parameter: conversion mode, Third parameter: sentence mode (0 = default)
-    DllCall("imm32\ImmSetConversionStatus", "Ptr", hIMC, "UInt", IME_CMODE_HIRAGANA, "UInt", 0)
-
-    DllCall("imm32\ImmReleaseContext", "Ptr", hwnd, "Ptr", hIMC)
+    DllCall("user32\SendMessageW", "Ptr", imeWnd, "UInt", WM_IME_CONTROL, "Ptr", IMC_SETOPENSTATUS, "Ptr", 1)
+    ; Set to Hiragana mode
+    DllCall("user32\SendMessageW", "Ptr", imeWnd, "UInt", WM_IME_CONTROL, "Ptr", IMC_SETCONVERSIONMODE, "Ptr", IME_CMODE_HIRAGANA)
 }
 
 ;---------------------------------------------------------------
