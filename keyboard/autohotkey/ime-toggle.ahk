@@ -65,7 +65,7 @@ SetCapsLockState "AlwaysOff"
 ~LCtrl up:: {
     ; A_PriorKey contains the name of the last key pressed before the current one
     ; If it's "LControl", that means Left Ctrl was pressed and released without other keys.
-    ; Because CapsLock is remapped to LCtrl at the scan code level,
+    ; Because CapsLock is remapped to LCtrl by AutoHotkey,
     ; releasing CapsLock alone also results in A_PriorKey being "LControl".
     if (A_PriorKey = "LControl") {
         ; Use API to reliably turn IME Off
