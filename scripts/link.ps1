@@ -11,7 +11,7 @@ $ErrorActionPreference = "Stop"
 
 # Import platform detection
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-Import-Module "$scriptDir\detect-platform.ps1" -Force
+Import-Module "$scriptDir\detect-platform.psm1" -Force
 
 # Colors
 function Write-Info { param($Message) Write-Host "[INFO] $Message" -ForegroundColor Green }
