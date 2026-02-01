@@ -36,22 +36,22 @@ IME_GetState(winTitle := "A") {
 }
 
 ; Set IME status (0 = Off, 1 = On)
-; Returns: true on success, false on failure
+; Note: This is a best-effort operation. The IME API return value is
+; IME-implementation-defined and not reliable for success/failure detection.
 IME_SetState(state, winTitle := "A") {
     static WM_IME_CONTROL := 0x283
     static IMC_SETOPENSTATUS := 0x6
 
     hwnd := WinGetID(winTitle)
     if !hwnd
-        return false
+        return
 
     imeWnd := DllCall("imm32\ImmGetDefaultIMEWnd", "Ptr", hwnd, "Ptr")
     if !imeWnd
-        return false
+        return
 
-    ; Use DllCall to send message directly to IME window handle
-    result := DllCall("SendMessage", "Ptr", imeWnd, "UInt", WM_IME_CONTROL, "Ptr", IMC_SETOPENSTATUS, "Ptr", state, "Ptr")
-    return result != 0
+    ; Send message directly to IME window handle
+    DllCall("SendMessage", "Ptr", imeWnd, "UInt", WM_IME_CONTROL, "Ptr", IMC_SETOPENSTATUS, "Ptr", state, "Ptr")
 }
 
 ;---------------------------------------------------------------
