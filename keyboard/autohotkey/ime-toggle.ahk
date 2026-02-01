@@ -12,6 +12,16 @@
 #Requires AutoHotkey v2.0
 
 ;---------------------------------------------------------------
+; IME Control Constants
+;---------------------------------------------------------------
+global WM_IME_CONTROL := 0x283
+global IMC_SETOPENSTATUS := 0x6
+global IMC_SETCONVERSIONMODE := 0x2
+global IME_CMODE_NATIVE := 0x0001
+global IME_CMODE_FULLSHAPE := 0x0008
+global IME_CMODE_HIRAGANA := IME_CMODE_NATIVE | IME_CMODE_FULLSHAPE
+
+;---------------------------------------------------------------
 ; IME Control Functions (using WM_IME_CONTROL)
 ;
 ; Uses ImmGetDefaultIMEWnd + WM_IME_CONTROL for IME control.
@@ -31,8 +41,7 @@ IME_GetWindow(winTitle := "A") {
 
 ; Turn IME Off
 IME_Off(winTitle := "A") {
-    static WM_IME_CONTROL := 0x283
-    static IMC_SETOPENSTATUS := 0x6
+    global WM_IME_CONTROL, IMC_SETOPENSTATUS
 
     imeWnd := IME_GetWindow(winTitle)
     if !imeWnd
@@ -43,12 +52,7 @@ IME_Off(winTitle := "A") {
 
 ; Turn IME On (to Hiragana mode)
 IME_On(winTitle := "A") {
-    static WM_IME_CONTROL := 0x283
-    static IMC_SETOPENSTATUS := 0x6
-    static IMC_SETCONVERSIONMODE := 0x2
-    static IME_CMODE_NATIVE := 0x0001
-    static IME_CMODE_FULLSHAPE := 0x0008
-    static IME_CMODE_HIRAGANA := IME_CMODE_NATIVE | IME_CMODE_FULLSHAPE
+    global WM_IME_CONTROL, IMC_SETOPENSTATUS, IMC_SETCONVERSIONMODE, IME_CMODE_HIRAGANA
 
     imeWnd := IME_GetWindow(winTitle)
     if !imeWnd
