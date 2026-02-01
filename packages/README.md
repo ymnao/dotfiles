@@ -212,10 +212,26 @@ unzip archive.zip
 - Wingetで利用不可
 - PowerShell代替: `tree` コマンドまたはカスタム関数
 
-### GCC/MinGW
-- デフォルトでは含まれていません（大規模インストール）
-- C/C++開発が必要な場合は個別にインストール
-- オプション: MSYS2、MinGW-w64、Visual Studio Build Tools
+### C/C++ツールチェーン
+
+**Visual Studio Build Tools** と **LLVM** がwinget-packages.txtに含まれています。
+
+```powershell
+# インストール
+winget install --id Microsoft.VisualStudio.2022.BuildTools
+winget install --id LLVM.LLVM
+```
+
+**Build Toolsインストール後の追加設定:**
+Visual Studio Installerを開き、以下のワークロードを追加:
+- "C++ によるデスクトップ開発" (Desktop development with C++)
+
+**確認コマンド:**
+```powershell
+cl          # MSVC
+clang --version
+clangd --version  # Neovim LSP
+```
 
 ### Watchman
 - デフォルトでは含まれていません（React Native専用ツール）
