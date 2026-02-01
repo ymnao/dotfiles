@@ -17,34 +17,38 @@
 ; keyboard shortcuts that may behave differently per IME settings.
 ;---------------------------------------------------------------
 
-; Get IME status (0 = Off, 1 = On)
+; Windows IME Control Constants
+global WM_IME_CONTROL := 0x283
+global IMC_GETOPENSTATUS := 0x5
+global IMC_SETOPENSTATUS := 0x6
+
+; Get IME status
+; Returns: 0 = Off, 1 = On, -1 = Error (window not found)
 IME_GetState(winTitle := "A") {
     hwnd := WinGetID(winTitle)
     if !hwnd
         return -1
 
-    ; Get the default IME window for this thread
     imeWnd := DllCall("imm32\ImmGetDefaultIMEWnd", "Ptr", hwnd, "Ptr")
     if !imeWnd
         return -1
 
-    ; WM_IME_CONTROL = 0x283, IMC_GETOPENSTATUS = 0x5
-    return SendMessage(0x283, 0x5, 0, imeWnd)
+    return SendMessage(WM_IME_CONTROL, IMC_GETOPENSTATUS, 0, imeWnd)
 }
 
 ; Set IME status (0 = Off, 1 = On)
+; Returns: true on success, false on failure
 IME_SetState(state, winTitle := "A") {
     hwnd := WinGetID(winTitle)
     if !hwnd
-        return -1
+        return false
 
-    ; Get the default IME window for this thread
     imeWnd := DllCall("imm32\ImmGetDefaultIMEWnd", "Ptr", hwnd, "Ptr")
     if !imeWnd
-        return -1
+        return false
 
-    ; WM_IME_CONTROL = 0x283, IMC_SETOPENSTATUS = 0x6
-    return SendMessage(0x283, 0x6, state, imeWnd)
+    result := SendMessage(WM_IME_CONTROL, IMC_SETOPENSTATUS, state, imeWnd)
+    return result != 0
 }
 
 ;---------------------------------------------------------------
