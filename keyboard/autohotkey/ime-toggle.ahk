@@ -70,6 +70,8 @@ SetCapsLockState "AlwaysOff"
 ; was caused by defining 80+ LCtrl & key combinations which interfered with
 ; normal Ctrl shortcuts.
 LCtrl & Space:: {
-    ; Use API to reliably turn IME On
-    IME_SetState(1)
+    ; Send vkF4 (変換/Henkan key) to switch to Hiragana mode
+    ; Note: IME_SetState(1) only turns IME "on" but doesn't guarantee Hiragana mode.
+    ; vkF4 reliably switches to Hiragana input on Microsoft IME.
+    Send "{vkF4}"
 }
