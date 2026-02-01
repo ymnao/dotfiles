@@ -223,27 +223,47 @@ unzip archive.zip
 
 ## フォントの手動インストール
 
-Nerd Fontsと日本語フォントは手動インストールが必要です：
+WezTermで使用するNerd Fontsと日本語フォントは手動インストールが必要です。
 
-1. **JetBrainsMono Nerd Font**
-   - ダウンロード: https://github.com/ryanoasis/nerd-fonts/releases
-   - `JetBrainsMonoNerdFont-*.ttf` ファイルを展開してインストール
+### ダウンロードページを開く（PowerShell）
 
-2. **Cica**
-   - ダウンロード: https://github.com/miiton/Cica/releases
-   - `Cica-*.ttf` ファイルを展開してインストール
+```powershell
+# UDEV Gothic 35（推奨 - 日本語対応プログラミングフォント）
+Start-Process "https://github.com/yuru7/udev-gothic/releases"
 
-3. **UDEV Gothic**
-   - ダウンロード: https://github.com/yuru7/udev-gothic/releases
-   - `UDEVGothic*.ttf` ファイルを展開してインストール
+# JetBrainsMono Nerd Font
+Start-Process "https://github.com/ryanoasis/nerd-fonts/releases"
 
-### フォントのインストール手順
+# Cica（日本語対応）
+Start-Process "https://github.com/miiton/Cica/releases"
+```
 
-1. フォントのZIPファイルをダウンロード
-2. ZIPを展開
-3. すべての `.ttf` ファイルを選択
-4. 右クリック → "すべてのユーザーに対してインストール"
-5. WezTermを再起動して新しいフォントを確認
+### フォント一覧
+
+| フォント | 用途 | ダウンロード |
+|---------|------|-------------|
+| **UDEV Gothic 35** | 日本語対応、WezTermデフォルト | [GitHub Releases](https://github.com/yuru7/udev-gothic/releases) |
+| JetBrainsMono Nerd Font | Nerd Font icons対応 | [GitHub Releases](https://github.com/ryanoasis/nerd-fonts/releases) |
+| Cica | 日本語対応 | [GitHub Releases](https://github.com/miiton/Cica/releases) |
+| Cascadia Code | Windows標準（フォールバック） | Windows 11標準搭載 |
+
+### インストール手順
+
+1. 上記リンクからZIPファイルをダウンロード
+2. ZIPを展開（右クリック → すべて展開）
+3. すべての `.ttf` または `.otf` ファイルを選択
+4. 右クリック → **"すべてのユーザーに対してインストール"**
+5. WezTermを再起動（`Ctrl+Shift+R` でリロード、または再起動）
+
+### WezTermでフォントが見つからない警告が出る場合
+
+```
+Unable to load a font specified by your font=wezterm.font('UDEV Gothic 35'...
+```
+
+この警告は、指定したフォントがインストールされていない場合に表示されます。
+WezTermはフォールバック（Cascadia Code、Consolas）を使用して動作しますが、
+上記の手順でフォントをインストールすると警告が消えます。
 
 ## トラブルシューティング
 
