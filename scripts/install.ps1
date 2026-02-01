@@ -366,6 +366,45 @@ if (Test-Path $ahkScript) {
     Write-Info "You can manually install AutoHotkey v2 from: https://www.autohotkey.com/"
 }
 
+# PATH setup for development tools
+Write-Info "Configuring PATH for development tools..."
+
+$pathsToAdd = @(
+    "C:\Program Files\LLVM\bin"  # clang, clang++, clangd (for treesitter, LSP)
+)
+
+$currentPath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+$pathsAdded = @()
+
+foreach ($pathToAdd in $pathsToAdd) {
+    if (Test-Path $pathToAdd) {
+        if ($currentPath -notlike "*$pathToAdd*") {
+            $pathsAdded += $pathToAdd
+        } else {
+            Write-Info "Already in PATH: $pathToAdd"
+        }
+    } else {
+        Write-Warn "Path not found (skipped): $pathToAdd"
+    }
+}
+
+if ($pathsAdded.Count -gt 0) {
+    if ($platformInfo.IsAdmin) {
+        $newPath = $currentPath + ";" + ($pathsAdded -join ";")
+        [Environment]::SetEnvironmentVariable("Path", $newPath, "Machine")
+        foreach ($p in $pathsAdded) {
+            Write-Success "Added to system PATH: $p"
+        }
+        Write-Warn "Restart PowerShell for PATH changes to take effect"
+    } else {
+        Write-Warn "Administrator privileges required to modify system PATH"
+        Write-Info "Run the following command as Administrator:"
+        foreach ($p in $pathsAdded) {
+            Write-Info "  [Environment]::SetEnvironmentVariable('Path', `$env:Path + ';$p', 'Machine')"
+        }
+    }
+}
+
 Write-Success "`nInstallation complete!"
 Write-Info "`nNext steps:"
 Write-Info "  1. Edit Git config: $gitConfigLocal"
