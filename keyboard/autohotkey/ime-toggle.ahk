@@ -41,7 +41,7 @@ IME_Off(winTitle := "A") {
 IME_On(winTitle := "A") {
     static IME_CMODE_NATIVE := 0x0001      ; Japanese mode
     static IME_CMODE_FULLSHAPE := 0x0008   ; Full-width characters
-    static IME_CMODE_HIRAGANA := 0x0009    ; Native + FullShape
+    static IME_CMODE_HIRAGANA := IME_CMODE_NATIVE | IME_CMODE_FULLSHAPE
 
     hwnd := WinExist(winTitle)
     if !hwnd
