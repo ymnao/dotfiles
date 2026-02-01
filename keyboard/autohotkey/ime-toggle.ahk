@@ -17,14 +17,12 @@
 ; keyboard shortcuts that may behave differently per IME settings.
 ;---------------------------------------------------------------
 
-; Windows IME Control Constants
-global WM_IME_CONTROL := 0x283
-global IMC_GETOPENSTATUS := 0x5
-global IMC_SETOPENSTATUS := 0x6
-
 ; Get IME status
 ; Returns: 0 = Off, 1 = On, -1 = Error (window not found)
 IME_GetState(winTitle := "A") {
+    static WM_IME_CONTROL := 0x283
+    static IMC_GETOPENSTATUS := 0x5
+
     hwnd := WinGetID(winTitle)
     if !hwnd
         return -1
@@ -33,12 +31,16 @@ IME_GetState(winTitle := "A") {
     if !imeWnd
         return -1
 
-    return SendMessage(WM_IME_CONTROL, IMC_GETOPENSTATUS, 0, imeWnd)
+    ; Use DllCall to send message directly to IME window handle
+    return DllCall("SendMessage", "Ptr", imeWnd, "UInt", WM_IME_CONTROL, "Ptr", IMC_GETOPENSTATUS, "Ptr", 0, "Ptr")
 }
 
 ; Set IME status (0 = Off, 1 = On)
 ; Returns: true on success, false on failure
 IME_SetState(state, winTitle := "A") {
+    static WM_IME_CONTROL := 0x283
+    static IMC_SETOPENSTATUS := 0x6
+
     hwnd := WinGetID(winTitle)
     if !hwnd
         return false
@@ -47,7 +49,8 @@ IME_SetState(state, winTitle := "A") {
     if !imeWnd
         return false
 
-    result := SendMessage(WM_IME_CONTROL, IMC_SETOPENSTATUS, state, imeWnd)
+    ; Use DllCall to send message directly to IME window handle
+    result := DllCall("SendMessage", "Ptr", imeWnd, "UInt", WM_IME_CONTROL, "Ptr", IMC_SETOPENSTATUS, "Ptr", state, "Ptr")
     return result != 0
 }
 
