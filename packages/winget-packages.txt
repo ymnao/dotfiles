@@ -30,8 +30,8 @@ sharkdp.fd
 # Visual Studio Build Tools: MSVC compiler, linker, Windows SDK
 # Required for: Python C extensions, Rust crates, Node.js native modules
 Microsoft.VisualStudio.2022.BuildTools
-# MinGW-w64: GCC compiler (treesitter compilation)
-mingw-w64.mingw-w64
+# WinLibs: MinGW-w64 GCC compiler (treesitter compilation)
+BrechtSanders.WinLibs.POSIX.UCRT
 # LLVM: clangd (LSP), clang-format, clang-tidy
 LLVM.LLVM
 

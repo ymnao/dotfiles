@@ -219,13 +219,13 @@ winget-packages.txtには以下のツールチェーンが含まれています:
 | パッケージ | 用途 |
 |-----------|------|
 | Visual Studio Build Tools | MSVC (Python C拡張, Rust, Node.jsネイティブモジュール) |
-| MinGW-w64 | GCC (treesitterコンパイル) |
+| WinLibs (MinGW-w64) | GCC (treesitterコンパイル) |
 | LLVM | clangd (LSP), clang-format, clang-tidy |
 
 ```powershell
 # インストール
 winget install --id Microsoft.VisualStudio.2022.BuildTools
-winget install --id mingw-w64.mingw-w64
+winget install --id BrechtSanders.WinLibs.POSIX.UCRT
 winget install --id LLVM.LLVM
 ```
 

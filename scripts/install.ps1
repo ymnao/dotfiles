@@ -369,10 +369,26 @@ if (Test-Path $ahkScript) {
 # PATH setup for development tools
 Write-Info "Configuring PATH for development tools..."
 
+# WinLibs (MinGW-w64) path detection
+$winlibsPath = $null
+$wingetPackagesDir = "$env:LOCALAPPDATA\Microsoft\WinGet\Packages"
+if (Test-Path $wingetPackagesDir) {
+    $winlibsDir = Get-ChildItem -Path $wingetPackagesDir -Directory -Filter "BrechtSanders.WinLibs*" | Select-Object -First 1
+    if ($winlibsDir) {
+        $mingwBin = Join-Path $winlibsDir.FullName "mingw64\bin"
+        if (Test-Path $mingwBin) {
+            $winlibsPath = $mingwBin
+            Write-Info "Found WinLibs at: $winlibsPath"
+        }
+    }
+}
+
 $pathsToAdd = @(
-    "C:\mingw64\bin"             # gcc, g++ (for treesitter)
     "C:\Program Files\LLVM\bin"  # clangd, clang-format (for LSP)
 )
+if ($winlibsPath) {
+    $pathsToAdd = @($winlibsPath) + $pathsToAdd  # gcc first
+}
 
 $currentPath = [Environment]::GetEnvironmentVariable("Path", "Machine")
 if ([string]::IsNullOrEmpty($currentPath)) {
