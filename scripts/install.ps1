@@ -389,6 +389,7 @@ if (Test-Path $wingetPackagesDir) {
         }
         if (-not $winlibsPath) {
             Write-Warn "WinLibs found at '$($winlibsDir.FullName)', but no MinGW bin directory detected"
+            Write-Info "Try reinstalling: winget uninstall --id BrechtSanders.WinLibs.POSIX.UCRT && winget install --id BrechtSanders.WinLibs.POSIX.UCRT"
         }
     }
 }
