@@ -1,3 +1,6 @@
+-- treesitter用のCコンパイラ (Windows)
+vim.env.CC = "gcc"
+
 vim.g.mapleader = " "
 vim.g.maplocalleader = " "
 
