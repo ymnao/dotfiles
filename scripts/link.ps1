@@ -33,7 +33,7 @@ if ($useDeveloperMode) {
 } else {
     Write-Warn "Developer Mode is not enabled - will use junctions for directories"
     Write-Info "File links will be skipped (symbolic links require Developer Mode)"
-    Write-Info "To enable Developer Mode: Settings > Privacy & Security > For developers > Developer Mode"
+    Write-Info "To enable Developer Mode: Settings > System > For developers > Developer Mode"
 }
 
 # Link function for directories
@@ -234,5 +234,5 @@ Write-Success "`nSymbolic link creation complete!"
 if (-not $useDeveloperMode) {
     Write-Warn "`nNote: Developer Mode is not enabled."
     Write-Info "Some file links were skipped. Enable Developer Mode for full functionality:"
-    Write-Info "  Settings > Privacy & Security > For developers > Developer Mode"
+    Write-Info "  Settings > System > For developers > Developer Mode"
 }

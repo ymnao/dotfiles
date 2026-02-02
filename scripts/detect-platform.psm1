@@ -14,14 +14,26 @@ function Get-PlatformInfo {
     $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
     $info.IsAdmin = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
-    # Check Developer Mode (Windows 10 1607+ / Windows 11)
+    # Check Developer Mode by testing file symbolic link creation
+    # Directory symlinks work with Admin privileges, but file symlinks require Developer Mode
+    # Registry key location changed in Windows 11 25H2, so we test actual capability
     try {
-        $devMode = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" -ErrorAction SilentlyContinue
-        if ($devMode -and $devMode.AllowDevelopmentWithoutDevLicense -eq 1) {
-            $info.IsDeveloperModeEnabled = $true
-        }
+        $testFile = Join-Path $env:TEMP "dotfiles-symlink-test-file-$(Get-Random).txt"
+        $testLink = Join-Path $env:TEMP "dotfiles-symlink-test-link-$(Get-Random).txt"
+        # Create a temporary file as target
+        Set-Content -Path $testFile -Value "test" -ErrorAction Stop
+        # Try to create a file symbolic link (requires Developer Mode)
+        New-Item -ItemType SymbolicLink -Path $testLink -Target $testFile -ErrorAction Stop | Out-Null
+        $info.IsDeveloperModeEnabled = $true
+        # Cleanup
+        Remove-Item -Path $testLink -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path $testFile -Force -ErrorAction SilentlyContinue
     } catch {
-        # Developer mode check failed, assume disabled
+        # File symbolic link creation failed, Developer Mode likely disabled
+        # Cleanup test file if it was created
+        if ($testFile -and (Test-Path $testFile)) {
+            Remove-Item -Path $testFile -Force -ErrorAction SilentlyContinue
+        }
     }
 
     return $info
@@ -71,7 +83,7 @@ function Show-PlatformInfo {
         Write-Host "`nWarning: Developer Mode is not enabled." -ForegroundColor Yellow
         Write-Host "Symbolic links will not work. Junctions will be used for directories instead." -ForegroundColor Yellow
         Write-Host "To enable Developer Mode:" -ForegroundColor Yellow
-        Write-Host "  Settings > Privacy & Security > For developers > Developer Mode" -ForegroundColor White
+        Write-Host "  Settings > System > For developers > Developer Mode" -ForegroundColor White
     }
 
     return $info

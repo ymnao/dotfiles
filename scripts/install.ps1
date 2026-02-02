@@ -450,5 +450,5 @@ Write-Info "  5. Install fonts manually if needed (see packages/README.md)"
 
 if (-not $platformInfo.IsDeveloperModeEnabled) {
     Write-Warn "`nDeveloper Mode is not enabled. Symbolic links may not work properly."
-    Write-Info "To enable: Settings > Privacy & Security > For developers > Developer Mode"
+    Write-Info "To enable: Settings > System > For developers > Developer Mode"
 }
