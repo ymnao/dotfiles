@@ -1,10 +1,16 @@
 -- Windows-specific keymaps
 -- Uses CTRL and ALT modifier keys (Windows standard)
+-- Design: CTRL+Shift+C/V for copy/paste (terminal standard), ALT for pane navigation
 
 local wezterm = require("wezterm")
 local act = wezterm.action
 
 local keys = {
+	-- Copy/Paste (terminal standard: Ctrl+Shift+C/V)
+	-- Note: Ctrl+C sends SIGINT to terminal apps, so we use Ctrl+Shift+C for copy
+	{ key = "c", mods = "CTRL|SHIFT", action = act.CopyTo("Clipboard") },
+	{ key = "v", mods = "CTRL|SHIFT", action = act.PasteFrom("Clipboard") },
+
 	-- Pane management (CTRL key)
 	{ key = "d", mods = "CTRL|SHIFT", action = act({ SplitVertical = { domain = "CurrentPaneDomain" } }) },
 	{ key = "d", mods = "CTRL", action = act.SplitHorizontal({ domain = "CurrentPaneDomain" }) },
@@ -16,7 +22,13 @@ local keys = {
 	{ key = "(", mods = "CTRL|SHIFT", action = act.MoveTabRelative(-1) },
 	{ key = ")", mods = "CTRL|SHIFT", action = act.MoveTabRelative(1) },
 
-	-- Pane navigation (ALT + hjkl)
+	-- Tab navigation (browser-style)
+	{ key = "Tab", mods = "CTRL", action = act.ActivateTabRelative(1) },
+	{ key = "Tab", mods = "CTRL|SHIFT", action = act.ActivateTabRelative(-1) },
+	{ key = "PageUp", mods = "CTRL", action = act.ActivateTabRelative(-1) },
+	{ key = "PageDown", mods = "CTRL", action = act.ActivateTabRelative(1) },
+
+	-- Pane navigation (ALT + hjkl) - ALT to avoid conflict with terminal control chars
 	{ key = "h", mods = "ALT", action = act.ActivatePaneDirection("Left") },
 	{ key = "j", mods = "ALT", action = act.ActivatePaneDirection("Down") },
 	{ key = "k", mods = "ALT", action = act.ActivatePaneDirection("Up") },
@@ -81,5 +93,14 @@ local keys = {
 		end),
 	},
 }
+
+-- Tab activation by number (CTRL+1~9)
+for i = 1, 9 do
+	table.insert(keys, {
+		key = tostring(i),
+		mods = "CTRL",
+		action = act.ActivateTab(i - 1),
+	})
+end
 
 return keys
