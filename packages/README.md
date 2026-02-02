@@ -235,10 +235,12 @@ Visual Studio Installerを開き、以下のワークロードを追加:
 
 **確認コマンド:**
 ```powershell
-gcc --version   # MinGW-w64 (treesitter用)
-cl              # MSVC
+gcc --version     # MinGW-w64 (treesitter用)
 clangd --version  # Neovim LSP
 ```
+
+> **Note**: MSVCの`cl`コマンドは「Developer PowerShell for VS」でのみ使用可能です。
+> Visual Studio Installerで「C++ によるデスクトップ開発」がインストールされていることを確認してください。
 
 ### Watchman
 - デフォルトでは含まれていません（React Native専用ツール）
