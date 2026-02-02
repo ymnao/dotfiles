@@ -27,27 +27,35 @@ brew bundle install
 
 ### Windows
 
-> **推奨**: シンボリックリンク作成には**開発者モード**が必要です。
-> 設定 → プライバシーとセキュリティ → 開発者向け → 開発者モード
+#### 前提条件
+
+1. **開発者モードを有効化**（シンボリックリンク作成に必要）
+   - 設定 → プライバシーとセキュリティ → 開発者向け → 開発者モード
+
+2. **PowerShellを管理者として実行**（PATH設定、パッケージインストールに必要）
+   - スタートメニューで「PowerShell」を検索 → 右クリック → 「管理者として実行」
+
+#### インストール
 
 ```powershell
-# リポジトリをクローン
+# 1. リポジトリをクローン
 git clone https://github.com/YOUR_USERNAME/dotfiles.git $env:USERPROFILE\development\important\dotfiles
+
+# 2. 自動セットアップ（管理者PowerShellで実行）
+powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\development\important\dotfiles\scripts\install.ps1"
+
+# Scoopも含める場合（CLIツール: lazygit, delta, fzf等）
+powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\development\important\dotfiles\scripts\install.ps1" -InstallScoop
+```
+
+#### 手動セットアップ
+
+```powershell
 cd $env:USERPROFILE\development\important\dotfiles
 
 # 実行ポリシー設定（初回のみ）
 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 
-# 自動セットアップ（Winget、シンボリックリンク、AutoHotkey）
-.\scripts\install.ps1
-
-# Scoopも含める場合（CLIツール: lazygit, delta, fzf等）
-.\scripts\install.ps1 -InstallScoop
-```
-
-または手動で：
-
-```powershell
 # シンボリックリンクのみ作成
 .\scripts\link.ps1
 

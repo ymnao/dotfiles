@@ -62,6 +62,7 @@ cask "slack"
 cask "zoom"
 cask "postman"
 cask "claude-code"
+cask "lm-studio"
 
 # ========================================
 # Fonts

@@ -28,8 +28,10 @@ sharkdp.fd
 # C/C++ Toolchain
 # ========================================
 # Visual Studio Build Tools: MSVC compiler, linker, Windows SDK
-# Required for: treesitter, Python C extensions, Rust crates, Node.js native modules
+# Required for: Python C extensions, Rust crates, Node.js native modules
 Microsoft.VisualStudio.2022.BuildTools
+# MinGW-w64: GCC compiler (treesitter compilation)
+mingw-w64.mingw-w64
 # LLVM: clangd (LSP), clang-format, clang-tidy
 LLVM.LLVM
 
@@ -62,6 +64,7 @@ Microsoft.VisualStudioCode
 # AI Tools
 # ========================================
 Anthropic.ClaudeCode
+ElementLabs.LMStudio
 
 # ========================================
 # Excluded - Use Scoop Instead

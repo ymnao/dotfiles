@@ -214,11 +214,18 @@ unzip archive.zip
 
 ### C/C++ツールチェーン
 
-**Visual Studio Build Tools** と **LLVM** がwinget-packages.txtに含まれています。
+winget-packages.txtには以下のツールチェーンが含まれています:
+
+| パッケージ | 用途 |
+|-----------|------|
+| Visual Studio Build Tools | MSVC (Python C拡張, Rust, Node.jsネイティブモジュール) |
+| MinGW-w64 | GCC (treesitterコンパイル) |
+| LLVM | clangd (LSP), clang-format, clang-tidy |
 
 ```powershell
 # インストール
 winget install --id Microsoft.VisualStudio.2022.BuildTools
+winget install --id mingw-w64.mingw-w64
 winget install --id LLVM.LLVM
 ```
 
@@ -228,10 +235,12 @@ Visual Studio Installerを開き、以下のワークロードを追加:
 
 **確認コマンド:**
 ```powershell
-cl          # MSVC
-clang --version
+gcc --version     # MinGW-w64 (treesitter用)
 clangd --version  # Neovim LSP
 ```
+
+> **Note**: MSVCの`cl`コマンドは「Developer PowerShell for VS」でのみ使用可能です。
+> Visual Studio Installerで「C++ によるデスクトップ開発」がインストールされていることを確認してください。
 
 ### Watchman
 - デフォルトでは含まれていません（React Native専用ツール）

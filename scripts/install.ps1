@@ -370,7 +370,8 @@ if (Test-Path $ahkScript) {
 Write-Info "Configuring PATH for development tools..."
 
 $pathsToAdd = @(
-    "C:\Program Files\LLVM\bin"  # clang, clang++, clangd (for treesitter, LSP)
+    "C:\mingw64\bin"             # gcc, g++ (for treesitter)
+    "C:\Program Files\LLVM\bin"  # clangd, clang-format (for LSP)
 )
 
 $currentPath = [Environment]::GetEnvironmentVariable("Path", "Machine")
