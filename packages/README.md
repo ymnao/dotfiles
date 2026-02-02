@@ -170,7 +170,7 @@ scoop uninstall scoop
 | ripgrep | `ripgrep` | `BurntSushi.ripgrep.MSVC` | 高速検索ツール |
 | fd | `fd` | `sharkdp.fd` | 高速find代替 |
 | Go | `go` | `GoLang.Go` | Go言語 |
-| Python | `python` | `Python.Python.3.12` | Python 3.12 |
+| Python | `python` | `Python.Python.3.12` | Python言語（3.12） |
 | Node.js | `nodejs` | `OpenJS.NodeJS` | JavaScriptランタイム |
 | Rust | `rust` | `Rustlang.Rustup` | Rust言語 |
 | OpenJDK 11 | `openjdk@11` | `Microsoft.OpenJDK.11` | Java 11 |
