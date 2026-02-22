@@ -8,14 +8,22 @@ disable-model-invocation: true
 
 ## 手順
 
-1. `bash .claude/skills/resolve/scripts/fetch-unresolved-reviews.sh` を実行して未解決のレビュースレッドを取得
+1. `bash "$HOME/.claude/skills/resolve/scripts/fetch-unresolved-reviews.sh"` を実行して未解決のレビュースレッドを取得
 2. `unresolved_threads` が空なら「未解決の指摘はありません」と報告して終了
 3. 各スレッドについて:
    - 該当ファイル・行を読んで現状を確認
    - 指摘が妥当か検討する
    - 妥当ならコードを修正する（工数がかかるかどうかは気にせず、ベストプラクティスで対応すること）
    - 不要・不適切なら理由を明確にする
-4. 修正がある場合は `npm run lint && npm run fmt:check && npm run build` を実行して確認
+4. 修正がある場合はプロジェクトで利用可能な検証をすべて実行して確認（該当するもののみ）:
+   - lint・静的解析
+   - フォーマットチェック
+   - 型チェック
+   - ビルド
+   - ユニットテスト
+   - インテグレーションテスト
+   - E2Eテスト
+   ※ package.json, Makefile, pyproject.toml, Cargo.toml 等からコマンドを判断すること
 5. コミット・プッシュ
 6. すべての対応結果を以下のフォーマットで報告
 
