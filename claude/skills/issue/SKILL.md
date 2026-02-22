@@ -1,49 +1,49 @@
 ---
 name: issue
-description: Issueからブランチを作成し実装計画を提案する
-args: <イシュー番号>
+description: Create a branch from a GitHub issue and propose an implementation plan
+args: <issue number>
 ---
 
-指定されたイシューの情報を取得し、ブランチを作成して実装計画を提案してください。
+Fetch the specified issue, create a branch, and propose an implementation plan.
 
-## 手順
+## Steps
 
-1. `bash "$HOME/.claude/skills/issue/scripts/fetch-issue.sh" $ARGUMENTS` を実行してイシュー情報を取得
-2. イシューの状態を確認:
-   - `CLOSED` の場合は「このイシューはクローズ済みです」と報告して終了
-3. 未コミットの変更がないか確認:
-   - `git status --porcelain` で未コミット変更がある場合は「未コミットの変更があります。先にコミットまたはstashしてください」と報告して終了
-4. 現在のブランチが main でない場合は main にチェックアウト
-5. ブランチタイプを判定:
-   - ラベルに `bug` が含まれる → `fix/`
-   - ラベルに `documentation` が含まれる → `docs/`
-   - ラベルに `refactor` が含まれる → `refactor/`
-   - 上記以外 → `feature/`
-   - イシュータイトルや本文の内容も参考にして判断
-6. ブランチ名を生成:
-   - `<type>/<簡潔な英語の説明>` 形式
-   - 英語小文字とハイフンを使用
-   - イシュータイトルから適切な名前を付ける（例: `feature/add-user-auth`, `fix/login-redirect-loop`）
-7. `git checkout -b <ブランチ名>` でブランチを作成
-8. プロジェクト構造を把握:
-   - リポジトリのディレクトリ構成を確認
-   - 既存のコードパターンやアーキテクチャを理解
-9. イシューの内容に基づいて実装計画を提案:
-   - 変更が必要なファイル
-   - 実装のステップ
-   - 注意点や考慮事項
+1. Run `bash "$HOME/.claude/skills/issue/scripts/fetch-issue.sh" $ARGUMENTS` to fetch issue info
+2. Check issue state:
+   - If `CLOSED`, report that the issue is already closed and stop
+3. Check for uncommitted changes:
+   - If `git status --porcelain` shows uncommitted changes, report and stop
+4. If not on main, checkout main first
+5. Determine branch type:
+   - Label contains `bug` → `fix/`
+   - Label contains `documentation` → `docs/`
+   - Label contains `refactor` → `refactor/`
+   - Otherwise → `feature/`
+   - Also consider the issue title and body content
+6. Generate branch name:
+   - Format: `<type>/<concise-english-description>`
+   - Use lowercase and hyphens
+   - Derive an appropriate name from the issue title (e.g., `feature/add-user-auth`, `fix/login-redirect-loop`)
+7. Run `git checkout -b <branch-name>` to create the branch
+8. Explore the project structure:
+   - Review directory layout
+   - Understand existing code patterns and architecture
+9. Propose an implementation plan based on the issue:
+   - Files to change
+   - Implementation steps
+   - Considerations and caveats
 
-## 報告フォーマット
+## Report format
 
-### Issue #<番号>: <タイトル>
+### Issue #<number>: <title>
 
-**ブランチ**: `<作成したブランチ名>`
+**Branch**: `<created branch name>`
 
-**実装計画**:
+**Implementation plan**:
 
 1. ...
 2. ...
 3. ...
 
-**注意点**:
+**Notes**:
 - ...

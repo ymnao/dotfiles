@@ -1,37 +1,37 @@
 #!/bin/bash
 set -euo pipefail
 
-# イシュー情報をJSON形式で取得する
+# Fetch issue information in JSON format
 
-# 引数チェック
+# Argument check
 if [ $# -ne 1 ]; then
-  echo "ERROR: イシュー番号を指定してください (例: fetch-issue.sh 42)" >&2
+  echo "ERROR: Issue number required (e.g., fetch-issue.sh 42)" >&2
   exit 1
 fi
 
 ISSUE_NUMBER="$1"
 
-# 数値バリデーション
+# Numeric validation
 if ! [[ "$ISSUE_NUMBER" =~ ^[0-9]+$ ]]; then
-  echo "ERROR: イシュー番号は数値で指定してください: $ISSUE_NUMBER" >&2
+  echo "ERROR: Issue number must be numeric: $ISSUE_NUMBER" >&2
   exit 1
 fi
 
-# 依存コマンドチェック
+# Dependency check
 for cmd in gh jq; do
   if ! command -v "$cmd" &>/dev/null; then
-    echo "ERROR: $cmd がインストールされていません" >&2
+    echo "ERROR: $cmd is not installed" >&2
     exit 1
   fi
 done
 
-# イシュー情報を取得
+# Fetch issue info
 ISSUE_JSON=$(gh issue view "$ISSUE_NUMBER" --json number,title,body,labels,state,assignees,url 2>/dev/null) || {
-  echo "ERROR: イシュー #$ISSUE_NUMBER が見つかりません" >&2
+  echo "ERROR: Issue #$ISSUE_NUMBER not found" >&2
   exit 1
 }
 
-# 必要なフィールドを整形して出力
+# Format and output
 echo "$ISSUE_JSON" | jq '{
   number: .number,
   title: .title,

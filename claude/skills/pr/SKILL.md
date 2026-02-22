@@ -1,41 +1,41 @@
 ---
 name: pr
-description: 現在のブランチからPRを作成する
+description: Create a pull request from the current branch
 ---
 
-現在のブランチの変更内容からPRを作成してください。
+Create a pull request from the current branch based on its commit history and diff.
 
-## 手順
+## Steps
 
-1. `bash "$HOME/.claude/skills/pr/scripts/gather-branch-info.sh"` を実行してブランチ情報を取得
-2. 事前チェック:
-   - `existing_pr` が null でない場合 → 「このブランチには既にPRがあります: <URL>」と報告して終了
-   - `commit_count` が 0 の場合 → 「ベースブランチからのコミットがありません」と報告して終了
-3. コミット履歴とdiff statを分析してPRタイトルと本文を生成:
-   - **タイトル**: 70文字以内、変更の要約（日本語可）
-   - **本文**: 以下のフォーマットに従う
-4. `has_remote` が false の場合、`git push -u origin <branch_name>` でリモートにpush
-5. `gh pr create` でPRを作成:
-   - `linked_issue` がある場合は本文に `Closes #<番号>` を含める
+1. Run `bash "$HOME/.claude/skills/pr/scripts/gather-branch-info.sh"` to gather branch info
+2. Pre-checks:
+   - If `existing_pr` is not null → report the existing PR URL and stop
+   - If `commit_count` is 0 → report no commits from base branch and stop
+3. Analyze commit history and diff stat to generate PR title and body:
+   - **Title**: Under 70 characters, summarizing the changes
+   - **Body**: Follow the template below
+4. If `has_remote` is false, run `git push -u origin <branch_name>` to push
+5. Create PR with `gh pr create`:
+   - If `linked_issue` exists, include `Closes #<number>` in the body
 
-## PRテンプレート
+## PR template
 
 ```
 ## Summary
-<変更内容を箇条書きで1-3項目>
+<1-3 bullet points describing the changes>
 
 ## Test plan
-<テスト方法を箇条書き>
+<Bulleted test steps>
 
-Closes #<イシュー番号>（該当する場合のみ）
+Closes #<issue number> (only if applicable)
 ```
 
-## 報告フォーマット
+## Report format
 
-PRを作成しました: <PR URL>
+Created PR: <PR URL>
 
-| 項目 | 内容 |
-|------|------|
-| ブランチ | `<branch_name>` → `<base_branch>` |
-| コミット数 | <commit_count> |
-| 変更ファイル | <files_changed> files (+<insertions> -<deletions>) |
+| Item | Detail |
+|------|--------|
+| Branch | `<branch_name>` → `<base_branch>` |
+| Commits | <commit_count> |
+| Changed files | <files_changed> files (+<insertions> -<deletions>) |
