@@ -1,35 +1,35 @@
 ---
 name: resolve
-description: 現在のPRの未解決レビューを取得し対応する
+description: Fetch and address unresolved PR review comments
 disable-model-invocation: true
 ---
 
-現在のPRの未解決レビューを取得し、対応してください。
+Fetch unresolved review threads for the current PR and address each one.
 
-## 手順
+## Steps
 
-1. `bash "$HOME/.claude/skills/resolve/scripts/fetch-unresolved-reviews.sh"` を実行して未解決のレビュースレッドを取得
-2. `unresolved_threads` が空なら「未解決の指摘はありません」と報告して終了
-3. 各スレッドについて:
-   - 該当ファイル・行を読んで現状を確認
-   - 指摘が妥当か検討する
-   - 妥当ならコードを修正する（工数がかかるかどうかは気にせず、ベストプラクティスで対応すること）
-   - 不要・不適切なら理由を明確にする
-4. 修正がある場合はプロジェクトで利用可能な検証をすべて実行して確認（該当するもののみ）:
-   - lint・静的解析
-   - フォーマットチェック
-   - 型チェック
-   - ビルド
-   - ユニットテスト
-   - インテグレーションテスト
-   - E2Eテスト
-   ※ package.json, Makefile, pyproject.toml, Cargo.toml 等からコマンドを判断すること
-5. コミット・プッシュ
-6. すべての対応結果を以下のフォーマットで報告
+1. Run `bash "$HOME/.claude/skills/resolve/scripts/fetch-unresolved-reviews.sh"` to get unresolved review threads
+2. If `unresolved_threads` is empty, report that there are no unresolved comments and stop
+3. For each thread:
+   - Read the relevant file and line to understand the current state
+   - Evaluate whether the suggestion is valid
+   - If valid, fix the code (apply best practices regardless of effort)
+   - If unnecessary or inappropriate, prepare a clear reason
+4. If any fixes were made, run all applicable verification steps for the project:
+   - Lint / static analysis
+   - Format check
+   - Type check
+   - Build
+   - Unit tests
+   - Integration tests
+   - E2E tests
+   - Determine available commands from package.json, Makefile, pyproject.toml, Cargo.toml, etc.
+5. Commit and push
+6. Report all results in the format below
 
-## 報告フォーマット
+## Report format
 
-| # | 指摘内容 | 対応 | 理由 |
-|---|---------|------|------|
-| 1 | ... | 修正済み (コミットハッシュ) | ... |
-| 2 | ... | 対応しない | ... |
+| # | Comment | Action | Reason |
+|---|---------|--------|--------|
+| 1 | ... | Fixed (commit hash) | ... |
+| 2 | ... | Won't fix | ... |

@@ -1,10 +1,10 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
-# 現在のブランチに紐づくPRの未解決レビュースレッドを取得する
+# Fetch unresolved review threads for the current branch's PR
 
 PR_JSON=$(gh pr view --json number,url 2>/dev/null) || {
-  echo "ERROR: 現在のブランチにPRが見つかりません" >&2
+  echo "ERROR: No PR found for the current branch" >&2
   exit 1
 }
 
@@ -36,7 +36,7 @@ RESULT=$(gh api graphql -f query='
   }
 ' -f owner="$OWNER" -f repo="$REPO" -F number="$PR_NUMBER")
 
-# isResolved: false のスレッドのみ抽出して出力
+# Extract only unresolved threads
 echo "$RESULT" | jq '{
   pr_number: '"$PR_NUMBER"',
   unresolved_threads: [

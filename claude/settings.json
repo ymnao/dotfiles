@@ -17,7 +17,10 @@
       "Bash(gh repo view:*)",
       "Bash(gh run list:*)",
       "Bash(gh run view:*)",
-      "Bash(npm run fmt:check:*)"
+      "Bash(npm run fmt:check:*)",
+      "Bash(bash \"$HOME/.claude/skills/issue/scripts/fetch-issue.sh\":*)",
+      "Bash(bash \"$HOME/.claude/skills/pr/scripts/gather-branch-info.sh\":*)",
+      "Bash(bash \"$HOME/.claude/skills/resolve/scripts/fetch-unresolved-reviews.sh\":*)"
     ]
   }
 }
