@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
 # Gather current branch information in JSON format
@@ -24,7 +24,10 @@ if [ "$BRANCH_NAME" = "$BASE_BRANCH" ]; then
 fi
 
 # Commits since base branch
-COMMITS=$(git log "${BASE_BRANCH}..HEAD" --pretty=format:'{"hash":"%h","subject":"%s","body":"%b"}' | jq -s '.' 2>/dev/null || echo "[]")
+COMMITS=$(git log "${BASE_BRANCH}..HEAD" --pretty=format:"%h%x1f%s%x1f%b%x1e" | jq -Rs '
+  split("\u001e") | map(select(length > 0)) |
+  map(split("\u001f") | {hash: .[0], subject: .[1], body: .[2]})
+' 2>/dev/null || echo "[]")
 COMMIT_COUNT=$(echo "$COMMITS" | jq 'length')
 
 # Diff stat
@@ -47,7 +50,7 @@ fi
 
 # Extract linked issue number from branch name (e.g., feature/add-auth-#42 → 42)
 LINKED_ISSUE="null"
-if [[ "$BRANCH_NAME" =~ \#([0-9]+) ]]; then
+if [[ "$BRANCH_NAME" =~ \#([0-9]+)$ ]]; then
   LINKED_ISSUE="${BASH_REMATCH[1]}"
 fi
 
