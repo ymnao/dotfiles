@@ -11,11 +11,46 @@ for cmd in gh jq; do
   fi
 done
 
-# Current branch name
+# Current branch name (error on detached HEAD)
 BRANCH_NAME=$(git branch --show-current)
+if [ -z "$BRANCH_NAME" ]; then
+  echo "ERROR: Not on a branch (detached HEAD). Check out a branch first" >&2
+  exit 1
+fi
 
-# Dynamically get default branch (fallback: main)
-BASE_BRANCH=$(gh repo view --json defaultBranchRef -q '.defaultBranchRef.name' 2>/dev/null || echo "main")
+# Resolve default branch: GitHub CLI → local symbolic ref → error
+resolve_default_branch() {
+  local branch
+
+  if branch=$(gh repo view --json defaultBranchRef -q '.defaultBranchRef.name' 2>/dev/null) && [ -n "$branch" ]; then
+    echo "$branch"
+    return 0
+  fi
+
+  if branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null); then
+    branch=${branch#refs/remotes/origin/}
+    if [ -n "$branch" ]; then
+      echo "$branch"
+      return 0
+    fi
+  fi
+
+  echo "ERROR: Failed to determine default branch" >&2
+  exit 1
+}
+
+BASE_BRANCH=$(resolve_default_branch)
+
+# Resolve base branch ref (prefer local, fallback to origin/)
+BASE_REF="$BASE_BRANCH"
+if ! git rev-parse --verify "$BASE_BRANCH" &>/dev/null; then
+  if git rev-parse --verify "origin/$BASE_BRANCH" &>/dev/null; then
+    BASE_REF="origin/$BASE_BRANCH"
+  else
+    echo "ERROR: Base branch '$BASE_BRANCH' not found locally or on remote. Run: git fetch origin $BASE_BRANCH" >&2
+    exit 1
+  fi
+fi
 
 # Error if on the default branch
 if [ "$BRANCH_NAME" = "$BASE_BRANCH" ]; then
@@ -24,17 +59,17 @@ if [ "$BRANCH_NAME" = "$BASE_BRANCH" ]; then
 fi
 
 # Commits since base branch
-COMMITS=$(git log "${BASE_BRANCH}..HEAD" --pretty=format:"%h%x1f%s%x1f%b%x1e" | jq -Rs '
+COMMITS=$(git log "${BASE_REF}..HEAD" --pretty=format:"%h%x1f%s%x1f%b%x1e" | jq -Rs '
   split("\u001e") | map(select(length > 0)) |
   map(split("\u001f") | {hash: .[0], subject: .[1], body: .[2]})
 ' 2>/dev/null || echo "[]")
 COMMIT_COUNT=$(echo "$COMMITS" | jq 'length')
 
 # Diff stat
-DIFF_STAT=$(git diff "${BASE_BRANCH}...HEAD" --stat 2>/dev/null || echo "")
-FILES_CHANGED=$(git diff "${BASE_BRANCH}...HEAD" --numstat 2>/dev/null | wc -l | tr -d ' ')
-INSERTIONS=$(git diff "${BASE_BRANCH}...HEAD" --numstat 2>/dev/null | awk '{s+=$1} END {print s+0}')
-DELETIONS=$(git diff "${BASE_BRANCH}...HEAD" --numstat 2>/dev/null | awk '{s+=$2} END {print s+0}')
+DIFF_STAT=$(git diff "${BASE_REF}...HEAD" --stat 2>/dev/null || echo "")
+FILES_CHANGED=$(git diff "${BASE_REF}...HEAD" --numstat 2>/dev/null | wc -l | tr -d ' ')
+INSERTIONS=$(git diff "${BASE_REF}...HEAD" --numstat 2>/dev/null | awk '{s+=$1} END {print s+0}')
+DELETIONS=$(git diff "${BASE_REF}...HEAD" --numstat 2>/dev/null | awk '{s+=$2} END {print s+0}')
 
 # Check if remote branch exists
 HAS_REMOTE=false
