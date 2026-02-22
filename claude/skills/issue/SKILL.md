@@ -23,9 +23,9 @@ Fetch the specified issue, create a branch, and propose an implementation plan.
 6. Generate branch name:
    - Format: `<type>/<concise-english-description>`
    - Use lowercase and hyphens
-   - Derive an appropriate name from the issue title (e.g., `feature/add-user-auth`, `fix/login-redirect-loop`)
+   - Derive an appropriate name from the issue title (e.g., `feature/add-user-auth-#42`, `fix/login-redirect-loop-#15`)
 7. Check if the branch name already exists with `git rev-parse --verify <branch-name>`:
-   - If it exists, report the conflict and let the user decide
+   - If it exists, report the conflict and stop
 8. Run `git checkout -b <branch-name>` to create the branch
 9. Explore the project structure:
    - Review directory layout
