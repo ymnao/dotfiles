@@ -238,7 +238,11 @@ if (-not (Test-Path $claudeDir)) {
 
 $agentsMdSource = Join-Path $DOTFILES_DIR "agents\AGENTS.md"
 $agentsMdDest = Join-Path $claudeDir "CLAUDE.md"
-New-FileLink -Source $agentsMdSource -Destination $agentsMdDest
+if (Test-Path $agentsMdSource) {
+    New-FileLink -Source $agentsMdSource -Destination $agentsMdDest
+} else {
+    Write-Warn "AI Agent guidelines file not found: $agentsMdSource"
+}
 
 # Claude Code
 Write-Info "`nLinking Claude Code configuration..."
