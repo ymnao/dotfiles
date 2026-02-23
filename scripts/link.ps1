@@ -229,20 +229,26 @@ if (Test-Path $ahkSource) {
     Write-Info "Run Phase 4 implementation to create AutoHotkey configuration"
 }
 
-# Claude Code
-Write-Info "`nLinking Claude Code configuration..."
+# AI Agent guidelines (AGENTS.md → $env:USERPROFILE\.claude\CLAUDE.md)
+Write-Info "`nLinking AI Agent guidelines..."
 $claudeDir = Join-Path $env:USERPROFILE ".claude"
 if (-not (Test-Path $claudeDir)) {
     New-Item -ItemType Directory -Path $claudeDir -Force | Out-Null
 }
 
+$agentsMdSource = Join-Path $DOTFILES_DIR "agents\AGENTS.md"
+$agentsMdDest = Join-Path $claudeDir "CLAUDE.md"
+if (Test-Path $agentsMdSource) {
+    New-FileLink -Source $agentsMdSource -Destination $agentsMdDest
+} else {
+    Write-Warn "AI Agent guidelines file not found: $agentsMdSource"
+}
+
+# Claude Code
+Write-Info "`nLinking Claude Code configuration..."
 $claudeSettingsSource = Join-Path $DOTFILES_DIR "claude\settings.json"
 $claudeSettingsDest = Join-Path $claudeDir "settings.json"
 New-FileLink -Source $claudeSettingsSource -Destination $claudeSettingsDest
-
-$claudeMdSource = Join-Path $DOTFILES_DIR "claude\CLAUDE.md"
-$claudeMdDest = Join-Path $claudeDir "CLAUDE.md"
-New-FileLink -Source $claudeMdSource -Destination $claudeMdDest
 
 $claudeSkillsSource = Join-Path $DOTFILES_DIR "claude\skills"
 $claudeSkillsDest = Join-Path $claudeDir "skills"
