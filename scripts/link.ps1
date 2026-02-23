@@ -229,7 +229,7 @@ if (Test-Path $ahkSource) {
     Write-Info "Run Phase 4 implementation to create AutoHotkey configuration"
 }
 
-# AI Agent guidelines (AGENTS.md → ~/.claude/CLAUDE.md)
+# AI Agent guidelines (AGENTS.md → $env:USERPROFILE\.claude\CLAUDE.md)
 Write-Info "`nLinking AI Agent guidelines..."
 $claudeDir = Join-Path $env:USERPROFILE ".claude"
 if (-not (Test-Path $claudeDir)) {
