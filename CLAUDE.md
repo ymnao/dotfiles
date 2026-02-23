@@ -10,8 +10,9 @@ This is a personal dotfiles repository for managing development environment conf
 
 ```
 dotfiles/
+├── agents/                  # AI agent guidelines
+│   └── AGENTS.md           # Global development guidelines (symlinked to ~/.claude/CLAUDE.md)
 ├── claude/                  # Claude Code configuration
-│   ├── CLAUDE.md           # Global development guidelines
 │   ├── settings.json       # Global settings
 │   └── skills/             # Custom skills
 ├── fish/                    # Fish shell configuration
@@ -70,11 +71,14 @@ dotfiles/
 - **Config**: `karabiner/karabiner.json`
 - Customizes keyboard mappings for macOS
 
+### AI Agent Guidelines
+- **AGENTS.md**: `agents/AGENTS.md` (symlinked to `~/.claude/CLAUDE.md`)
+- Contains global development guidelines shared across AI coding tools
+
 ### Claude Code
 - **Settings**: `claude/settings.json` (symlinked to `~/.claude/settings.json`)
-- **CLAUDE.md**: `claude/CLAUDE.md` (symlinked to `~/.claude/CLAUDE.md`)
 - **Skills**: `claude/skills/` (symlinked to `~/.claude/skills/`)
-- Contains global settings, development guidelines, and custom skills (e.g., `/resolve`)
+- Contains Claude Code specific settings and custom skills (e.g., `/resolve`)
 
 ## Installation Workflow
 

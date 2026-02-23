@@ -103,16 +103,18 @@ if [[ -f "$DOTFILES_DIR/gh/config.yml" ]]; then
     link_file "$DOTFILES_DIR/gh/config.yml" "$HOME/.config/gh/config.yml"
 fi
 
+# AI Agent guidelines (AGENTS.md → ~/.claude/CLAUDE.md)
+if [[ -f "$DOTFILES_DIR/agents/AGENTS.md" ]]; then
+    mkdir -p "$HOME/.claude"
+    link_file "$DOTFILES_DIR/agents/AGENTS.md" "$HOME/.claude/CLAUDE.md"
+fi
+
 # Claude Code configuration
 if [[ -d "$DOTFILES_DIR/claude" ]]; then
     mkdir -p "$HOME/.claude"
 
     if [[ -f "$DOTFILES_DIR/claude/settings.json" ]]; then
         link_file "$DOTFILES_DIR/claude/settings.json" "$HOME/.claude/settings.json"
-    fi
-
-    if [[ -f "$DOTFILES_DIR/claude/CLAUDE.md" ]]; then
-        link_file "$DOTFILES_DIR/claude/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
     fi
 
     if [[ -d "$DOTFILES_DIR/claude/skills" ]]; then
