@@ -89,6 +89,21 @@ if [[ "$BRANCH_NAME" =~ \#([0-9]+)$ ]]; then
   LINKED_ISSUE="${BASH_REMATCH[1]}"
 fi
 
+# Detect PR template
+REPO_ROOT=$(git rev-parse --show-toplevel)
+PR_TEMPLATE=""
+for candidate in \
+  "$REPO_ROOT/.github/pull_request_template.md" \
+  "$REPO_ROOT/.github/PULL_REQUEST_TEMPLATE.md" \
+  "$REPO_ROOT/pull_request_template.md" \
+  "$REPO_ROOT/PULL_REQUEST_TEMPLATE.md" \
+  "$REPO_ROOT/docs/pull_request_template.md"; do
+  if [ -f "$candidate" ]; then
+    PR_TEMPLATE=$(cat "$candidate")
+    break
+  fi
+done
+
 # JSON output
 jq -n \
   --arg branch_name "$BRANCH_NAME" \
@@ -102,6 +117,7 @@ jq -n \
   --argjson has_remote "$HAS_REMOTE" \
   --argjson existing_pr "$EXISTING_PR" \
   --argjson linked_issue "$LINKED_ISSUE" \
+  --arg pr_template "$PR_TEMPLATE" \
   '{
     branch_name: $branch_name,
     base_branch: $base_branch,
@@ -113,5 +129,6 @@ jq -n \
     deletions: $deletions,
     has_remote: $has_remote,
     existing_pr: $existing_pr,
-    linked_issue: $linked_issue
+    linked_issue: $linked_issue,
+    pr_template: (if $pr_template == "" then null else $pr_template end)
   }'

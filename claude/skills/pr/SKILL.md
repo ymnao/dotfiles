@@ -13,12 +13,17 @@ Create a pull request from the current branch based on its commit history and di
    - If `commit_count` is 0 → report no commits from base branch and stop
 3. Analyze commit history and diff stat to generate PR title and body:
    - **Title**: Under 70 characters, summarizing the changes
-   - **Body**: Follow the template below
+   - **Body**: Use the appropriate template (see below)
 4. If `has_remote` is false, run `git push -u origin <branch_name>` to push
 5. Create PR with `gh pr create`:
    - If `linked_issue` exists, include `Closes #<number>` in the body
 
-## PR template
+## PR template selection
+
+- If `pr_template` is not null → use it as the PR body template, filling in sections based on commit history and diff
+- If `pr_template` is null → use the default template below
+
+### Default template (fallback)
 
 ```
 ## Summary
