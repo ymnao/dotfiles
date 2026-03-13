@@ -1,5 +1,4 @@
 {
-  "alwaysThinkingEnabled": true,
   "permissions": {
     "allow": [
       "mcp__sequential-thinking__sequentialthinking",
@@ -22,5 +21,7 @@
       "Bash(bash \"$HOME/.claude/skills/pr/scripts/gather-branch-info.sh\":*)",
       "Bash(bash \"$HOME/.claude/skills/resolve/scripts/fetch-unresolved-reviews.sh\":*)"
     ]
-  }
+  },
+  "alwaysThinkingEnabled": true,
+  "effortLevel": "high"
 }
