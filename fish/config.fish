@@ -38,3 +38,8 @@ end
 
 # Suppress greeting
 set fish_greeting
+
+# Added by LM Studio CLI (lms)
+set -gx PATH $PATH /Users/nakiym/.lmstudio/bin
+# End of LM Studio CLI section
+
