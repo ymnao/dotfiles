@@ -75,6 +75,15 @@ if is_windows then
 		"Consolas"
 	})
 
+	-- Copy/Paste behavior (Windows only)
+	config.selection_word_boundary = " \t\n{}[]()\"'`,;:@"
+	config.quick_select_patterns = {
+		-- URL (support ports, paths, queries, and fragments)
+		"https?://[\\w.-]+(?:[:\\d+])?(?:/[\\w./_-]*)?(?:\\?[\\w=&%-]*)?(?:#[\\w-]*)?",
+		-- File path (require directory separator and realistic extension)
+		"[\\w/~-]+/[\\w.-]+\\.[a-zA-Z]{2,}",
+	}
+
 elseif is_macos then
 	-- macOS-specific settings
 	config.window_background_opacity = 0.7
