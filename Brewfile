@@ -2,9 +2,11 @@
 # Core Tools
 # ========================================
 brew "git"
+brew "git-delta"
 brew "gh"
 brew "lazygit"
 brew "neovim"
+brew "fish"
 brew "ripgrep"
 brew "fd"
 brew "tree"
@@ -19,6 +21,7 @@ brew "golangci-lint"
 brew "pyenv"
 brew "uv"
 brew "nodebrew"
+brew "pnpm"
 brew "rbenv"
 brew "ruby-build"
 brew "rust"
@@ -41,7 +44,13 @@ brew "watchman"
 # Media & Utilities
 # ========================================
 brew "ffmpeg"
+brew "imagemagick"
 brew "nkf"
+
+# ========================================
+# Input Method
+# ========================================
+brew "macism"
 
 # ========================================
 # Dependencies (auto-installed by other packages)
@@ -62,6 +71,7 @@ cask "slack"
 cask "zoom"
 cask "postman"
 cask "claude-code"
+cask "codex"
 cask "lm-studio"
 
 # ========================================
