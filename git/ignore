@@ -52,3 +52,6 @@ __pycache__/
 .pytest_cache/
 
 **/.claude/settings.local.json
+
+# Claude Code handoff
+HANDOFF.md
