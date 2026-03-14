@@ -16,10 +16,24 @@
       "Bash(gh repo view:*)",
       "Bash(gh run list:*)",
       "Bash(gh run view:*)",
-      "Bash(npm run fmt:check:*)",
+      "Bash(npm run *)",
+      "Bash(npm test *)",
+      "Bash(make *)",
+      "Bash(ls *)",
       "Bash(bash \"$HOME/.claude/skills/issue/scripts/fetch-issue.sh\":*)",
       "Bash(bash \"$HOME/.claude/skills/pr/scripts/gather-branch-info.sh\":*)",
       "Bash(bash \"$HOME/.claude/skills/resolve/scripts/fetch-unresolved-reviews.sh\":*)"
+    ],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(rm -r *)",
+      "Bash(sudo *)",
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "Bash(git push --force *)",
+      "Bash(git push -f *)",
+      "Bash(git reset --hard *)",
+      "Bash(chmod -R 777 *)"
     ]
   },
   "alwaysThinkingEnabled": true,
