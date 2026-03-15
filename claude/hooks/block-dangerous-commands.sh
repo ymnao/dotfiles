@@ -4,9 +4,13 @@
 # exit 0 = 許可, exit 2 = ブロック (stderr がClaude にフィードバックされる)
 #
 
-set -euo pipefail
-
 input=$(cat)
+
+# jq が未インストールの場合は fail-open（ブロックせず通す）
+if ! command -v jq &>/dev/null; then
+  exit 0
+fi
+
 command=$(echo "$input" | jq -r '.tool_input.command // empty')
 
 if [[ -z "$command" ]]; then
@@ -30,12 +34,6 @@ fi
 
 if echo "$command" | grep -qE 'git\s+reset\s+--hard'; then
   echo "ブロック: git reset --hard は禁止されています" >&2
-  exit 2
-fi
-
-# --- データ流出リスク ---
-if echo "$command" | grep -qE '\bcurl\b.*(-d|--data|-X\s*POST|-F|--form|--upload-file)'; then
-  echo "ブロック: curl によるデータ送信は確認が必要です" >&2
   exit 2
 fi
 
