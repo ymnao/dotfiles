@@ -254,6 +254,12 @@ $claudeSkillsSource = Join-Path $DOTFILES_DIR "claude\skills"
 $claudeSkillsDest = Join-Path $claudeDir "skills"
 New-DirectoryLink -Source $claudeSkillsSource -Destination $claudeSkillsDest
 
+$claudeHooksSource = Join-Path $DOTFILES_DIR "claude\hooks"
+$claudeHooksDest = Join-Path $claudeDir "hooks"
+if (Test-Path $claudeHooksSource) {
+    New-DirectoryLink -Source $claudeHooksSource -Destination $claudeHooksDest
+}
+
 Write-Success "`nSymbolic link creation complete!"
 
 if (-not $useDeveloperMode) {

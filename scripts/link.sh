@@ -122,6 +122,10 @@ if [[ -d "$DOTFILES_DIR/claude" ]]; then
     if [[ -d "$DOTFILES_DIR/claude/skills" ]]; then
         link_file "$DOTFILES_DIR/claude/skills" "$HOME/.claude/skills"
     fi
+
+    if [[ -d "$DOTFILES_DIR/claude/hooks" ]]; then
+        link_file "$DOTFILES_DIR/claude/hooks" "$HOME/.claude/hooks"
+    fi
 fi
 
 info "All symlinks created successfully!"
