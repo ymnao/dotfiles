@@ -54,7 +54,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "osascript -e 'display notification \"操作を待っています\" with title \"Claude Code\" sound name \"Funk\"'"
+            "command": "afplay /System/Library/Sounds/Funk.aiff"
           }
         ]
       }
