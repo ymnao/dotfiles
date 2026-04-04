@@ -4,7 +4,7 @@ return {
 		"nvim-treesitter/nvim-treesitter",
 	},
 	lazy = false,
-	config = function()
+	init = function()
 		vim.g.rainbow_delimiters = {
 			condition = function(bufnr)
 				local ok, parser = pcall(vim.treesitter.get_parser, bufnr)
