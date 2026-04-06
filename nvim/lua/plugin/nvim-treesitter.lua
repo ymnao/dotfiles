@@ -1,103 +1,98 @@
 return {
-  -- Treesitter
   {
     "nvim-treesitter/nvim-treesitter",
+    branch = "main",
     build = ":TSUpdate",
-    event = { "BufReadPost", "BufNewFile" },
-    dependencies = {
-      "nvim-treesitter/nvim-treesitter-textobjects",
-    },
+    lazy = false,
     config = function()
-      require("nvim-treesitter.configs").setup({
-        -- パーサー
-        ensure_installed = {
-          "lua",
-          "vim",
-          "vimdoc",
-          "javascript",
-          "typescript",
-          "tsx",
-          "json",
-          "html",
-          "css",
-          "python",
-          "go",
-          "rust",
-          "markdown",
-          "markdown_inline",
-          "bash",
-          "yaml",
-          "toml",
-        },
+      vim.schedule(function()
+        local ts = require("nvim-treesitter")
+        if ts.install then
+          ts.install({
+            "lua",
+            "vim",
+            "vimdoc",
+            "javascript",
+            "typescript",
+            "tsx",
+            "json",
+            "html",
+            "css",
+            "python",
+            "go",
+            "rust",
+            "markdown",
+            "markdown_inline",
+            "bash",
+            "yaml",
+            "toml",
+          })
+        end
+      end)
 
-        auto_install = true,
-
-        -- ハイライト
-        highlight = {
-          enable = true,
-          additional_vim_regex_highlighting = false,
-          disable = function(lang, bufnr)
-            return vim.api.nvim_buf_line_count(bufnr) > 50000
-          end,
-        },
-
-        -- インデント
-        indent = {
-          enable = true,
-        },
-
-        -- インクリメンタル選択
-        incremental_selection = {
-          enable = true,
-          keymaps = {
-            init_selection = "<C-space>",
-            node_incremental = "<C-space>",
-            scope_incremental = "<C-s>",
-            node_decremental = "<C-backspace>",
-          },
-        },
-
-        -- テキストオブジェクト
-        textobjects = {
-          select = {
-            enable = true,
-            lookahead = true,
-            keymaps = {
-              ["af"] = "@function.outer",
-              ["if"] = "@function.inner",
-              ["ac"] = "@class.outer",
-              ["ic"] = "@class.inner",
-              ["ab"] = "@block.outer",
-              ["ib"] = "@block.inner",
-              ["ai"] = "@conditional.outer",
-              ["ii"] = "@conditional.inner",
-              ["al"] = "@loop.outer",
-              ["il"] = "@loop.inner",
-            },
-          },
-          move = {
-            enable = true,
-            set_jumps = true,
-            goto_next_start = {
-              ["]f"] = "@function.outer",
-              ["]c"] = "@class.outer",
-            },
-            goto_next_end = {
-              ["]F"] = "@function.outer",
-              ["]C"] = "@class.outer",
-            },
-            goto_previous_start = {
-              ["[f"] = "@function.outer",
-              ["[c"] = "@class.outer",
-            },
-            goto_previous_end = {
-              ["[F"] = "@function.outer",
-              ["[C"] = "@class.outer",
-            },
-          },
-        },
+      vim.api.nvim_create_autocmd("FileType", {
+        callback = function(args)
+          if vim.api.nvim_buf_line_count(args.buf) > 50000 then
+            return
+          end
+          if pcall(vim.treesitter.start, args.buf) then
+            vim.bo[args.buf].indentexpr = "v:lua.require'nvim-treesitter'.indentexpr()"
+          end
+        end,
       })
     end,
   },
-}
 
+  {
+    "nvim-treesitter/nvim-treesitter-textobjects",
+    branch = "main",
+    dependencies = { "nvim-treesitter/nvim-treesitter" },
+    config = function()
+      require("nvim-treesitter-textobjects").setup({
+        select = {
+          lookahead = true,
+        },
+        move = {
+          set_jumps = true,
+        },
+      })
+
+      local ts_select = require("nvim-treesitter-textobjects.select")
+      local ts_move = require("nvim-treesitter-textobjects.move")
+
+      local select_maps = {
+        ["af"] = "@function.outer",
+        ["if"] = "@function.inner",
+        ["ac"] = "@class.outer",
+        ["ic"] = "@class.inner",
+        ["ab"] = "@block.outer",
+        ["ib"] = "@block.inner",
+        ["ai"] = "@conditional.outer",
+        ["ii"] = "@conditional.inner",
+        ["al"] = "@loop.outer",
+        ["il"] = "@loop.inner",
+      }
+      for key, query in pairs(select_maps) do
+        vim.keymap.set({ "x", "o" }, key, function()
+          ts_select.select_textobject(query, "textobjects")
+        end)
+      end
+
+      local move_maps = {
+        ["]f"] = { ts_move.goto_next_start, "@function.outer" },
+        ["]c"] = { ts_move.goto_next_start, "@class.outer" },
+        ["]F"] = { ts_move.goto_next_end, "@function.outer" },
+        ["]C"] = { ts_move.goto_next_end, "@class.outer" },
+        ["[f"] = { ts_move.goto_previous_start, "@function.outer" },
+        ["[c"] = { ts_move.goto_previous_start, "@class.outer" },
+        ["[F"] = { ts_move.goto_previous_end, "@function.outer" },
+        ["[C"] = { ts_move.goto_previous_end, "@class.outer" },
+      }
+      for key, mapping in pairs(move_maps) do
+        vim.keymap.set({ "n", "x", "o" }, key, function()
+          mapping[1](mapping[2], "textobjects")
+        end)
+      end
+    end,
+  },
+}
