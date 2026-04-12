@@ -18,15 +18,19 @@ if [[ -z "$command" ]]; then
 fi
 
 # --- 破壊的ファイル操作 ---
-# rm に再帰(-r/-R/--recursive)と強制(-f/--force)の両方が含まれるかチェック（分離指定にも対応）
-if printf '%s\n' "$command" | grep -qE '(^|[;&|[:space:]])rm[[:space:]]+(.*[[:space:]])?(--recursive|-[a-zA-Z]*[rR][a-zA-Z]*)([[:space:]]|$)' \
-  && printf '%s\n' "$command" | grep -qE '(^|[;&|[:space:]])rm[[:space:]]+(.*[[:space:]])?(--force|-[a-zA-Z]*f[a-zA-Z]*)([[:space:]]|$)'; then
-  # rm -rf のターゲットが危険なパス（/, ~, $HOME, .., .）かチェック
-  if printf '%s\n' "$command" | grep -qE '\brm\b.*[[:space:]]+(/|~/|\$HOME|\.\.(/|[[:space:]]|$)|\./?([[:space:]]|$))'; then
-    echo "ブロック: rm -rf で危険なパスが指定されています" >&2
-    exit 2
+# コマンドを区切り文字(; && || |)で分割し、同一セグメント内でrm -rfをチェック
+while IFS= read -r segment; do
+  [[ "$segment" =~ ^[[:space:]]*$ ]] && continue
+  # rm に再帰(-r/-R/--recursive)と強制(-f/--force)の両方が含まれるかチェック
+  if printf '%s\n' "$segment" | grep -qE '(^|[[:space:]])rm[[:space:]]+(.*[[:space:]])?(--recursive|-[a-zA-Z]*[rR][a-zA-Z]*)([[:space:]]|$)' \
+    && printf '%s\n' "$segment" | grep -qE '(^|[[:space:]])rm[[:space:]]+(.*[[:space:]])?(--force|-[a-zA-Z]*f[a-zA-Z]*)([[:space:]]|$)'; then
+    # rm -rf のターゲットが危険なパス（/, ~, $HOME, .., .）かチェック
+    if printf '%s\n' "$segment" | grep -qE '(^|[[:space:]])rm[[:space:]].*[[:space:]]+(/|~/|\$HOME|\.\.(/|[[:space:]]|$)|\./?([[:space:]]|$))'; then
+      echo "ブロック: rm -rf で危険なパスが指定されています" >&2
+      exit 2
+    fi
   fi
-fi
+done < <(printf '%s\n' "$command" | awk '{gsub(/\|\||&&|[;|]/, "\n"); print}')
 
 # --- Git 破壊的操作 ---
 if printf '%s\n' "$command" | grep -qE 'git[[:space:]]+push[[:space:]]+(.*[[:space:]])?(--force|--force-with-lease(=[^[:space:]]*)?|-[a-zA-Z]*f[a-zA-Z]*)([[:space:]]|$)'; then
@@ -34,7 +38,7 @@ if printf '%s\n' "$command" | grep -qE 'git[[:space:]]+push[[:space:]]+(.*[[:spa
   exit 2
 fi
 
-if printf '%s\n' "$command" | grep -qE '\bgit\b[[:space:]]+\breset\b[[:space:]]+--hard\b'; then
+if printf '%s\n' "$command" | grep -qE '(^|[;&|[:space:]])git[[:space:]]+reset[[:space:]]+--hard([[:space:]]|$)'; then
   echo "ブロック: git reset --hard は禁止されています" >&2
   exit 2
 fi
