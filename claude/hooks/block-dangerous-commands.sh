@@ -27,7 +27,7 @@ if echo "$command" | grep -qE '\brm\b.*-[a-zA-Z]*r[a-zA-Z]*f|rm\b.*-[a-zA-Z]*f[a
 fi
 
 # --- Git 破壊的操作 ---
-if echo "$command" | grep -qE 'git\s+push\s+(.*\s)?(-f|--force|--force-with-lease)(\s|$)'; then
+if echo "$command" | grep -qE 'git\s+push\s+(.*\s)?(--force|--force-with-lease(=[^\s]*)?|-[a-zA-Z]*f[a-zA-Z]*)(\s|$)'; then
   echo "ブロック: git push --force は禁止されています" >&2
   exit 2
 fi
