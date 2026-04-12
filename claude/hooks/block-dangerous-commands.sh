@@ -20,19 +20,19 @@ fi
 # --- 破壊的ファイル操作 ---
 if echo "$command" | grep -qE '\brm\b.*-[a-zA-Z]*r[a-zA-Z]*f|rm\b.*-[a-zA-Z]*f[a-zA-Z]*r'; then
   # rm -rf のターゲットが危険なパス（/, ~, $HOME, .）かチェック
-  if echo "$command" | grep -qE '\brm\b.*\s+(/|~/|\$HOME|\.\./)'; then
+  if echo "$command" | grep -qE '\brm\b.*[[:space:]]+(/|~/|\$HOME|\.\./)'; then
     echo "ブロック: rm -rf で危険なパスが指定されています" >&2
     exit 2
   fi
 fi
 
 # --- Git 破壊的操作 ---
-if echo "$command" | grep -qE 'git\s+push\s+(.*\s)?(--force|--force-with-lease(=[^\s]*)?|-[a-zA-Z]*f[a-zA-Z]*)(\s|$)'; then
+if echo "$command" | grep -qE 'git[[:space:]]+push[[:space:]]+(.*[[:space:]])?(--force|--force-with-lease(=[^[:space:]]*)?|-[a-zA-Z]*f[a-zA-Z]*)([[:space:]]|$)'; then
   echo "ブロック: git push --force は禁止されています" >&2
   exit 2
 fi
 
-if echo "$command" | grep -qE 'git\s+reset\s+--hard'; then
+if echo "$command" | grep -qE 'git[[:space:]]+reset[[:space:]]+--hard'; then
   echo "ブロック: git reset --hard は禁止されています" >&2
   exit 2
 fi
