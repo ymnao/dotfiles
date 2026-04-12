@@ -35,7 +35,7 @@ if printf '%s\n' "$command" | grep -qE "$rm_rf_pattern"; then
 fi
 
 # --- Git 破壊的操作 ---
-if printf '%s\n' "$command" | grep -qE '(^|[;&|[:space:]])git[[:space:]]+push[[:space:]]+(.*[[:space:]])?(--force|--force-with-lease(=[^[:space:]]*)?|-[a-zA-Z]*f[a-zA-Z]*)([[:space:]]|$)'; then
+if printf '%s\n' "$command" | grep -qE '(^|[;&|[:space:]])git[[:space:]]+push[[:space:]]+([^;&|]*[[:space:]])?(--force|--force-with-lease(=[^[:space:]]*)?|-[a-zA-Z]*f[a-zA-Z]*)([[:space:]]|$)'; then
   echo "ブロック: git push --force は禁止されています" >&2
   exit 2
 fi
