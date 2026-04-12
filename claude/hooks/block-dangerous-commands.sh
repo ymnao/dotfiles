@@ -18,9 +18,11 @@ if [[ -z "$command" ]]; then
 fi
 
 # --- 破壊的ファイル操作 ---
-if printf '%s\n' "$command" | grep -qE '\brm\b.*-[a-zA-Z]*r[a-zA-Z]*f|rm\b.*-[a-zA-Z]*f[a-zA-Z]*r'; then
-  # rm -rf のターゲットが危険なパス（/, ~, $HOME, .）かチェック
-  if printf '%s\n' "$command" | grep -qE '\brm\b.*[[:space:]]+(/|~/|\$HOME|\.\./)'; then
+# rm に再帰(-r/-R/--recursive)と強制(-f/--force)の両方が含まれるかチェック（分離指定にも対応）
+if printf '%s\n' "$command" | grep -qE '(^|[;&|[:space:]])rm[[:space:]]+(.*[[:space:]])?(--recursive|-[a-zA-Z]*[rR][a-zA-Z]*)([[:space:]]|$)' \
+  && printf '%s\n' "$command" | grep -qE '(^|[;&|[:space:]])rm[[:space:]]+(.*[[:space:]])?(--force|-[a-zA-Z]*f[a-zA-Z]*)([[:space:]]|$)'; then
+  # rm -rf のターゲットが危険なパス（/, ~, $HOME, .., .）かチェック
+  if printf '%s\n' "$command" | grep -qE '\brm\b.*[[:space:]]+(/|~/|\$HOME|\.\.(/|[[:space:]]|$)|\./?([[:space:]]|$))'; then
     echo "ブロック: rm -rf で危険なパスが指定されています" >&2
     exit 2
   fi
@@ -32,7 +34,7 @@ if printf '%s\n' "$command" | grep -qE 'git[[:space:]]+push[[:space:]]+(.*[[:spa
   exit 2
 fi
 
-if printf '%s\n' "$command" | grep -qE 'git[[:space:]]+reset[[:space:]]+--hard'; then
+if printf '%s\n' "$command" | grep -qE '\bgit\b[[:space:]]+\breset\b[[:space:]]+--hard\b'; then
   echo "ブロック: git reset --hard は禁止されています" >&2
   exit 2
 fi
