@@ -2,11 +2,6 @@
   "permissions": {
     "allow": [
       "mcp__sequential-thinking__sequentialthinking",
-      "Bash(git status:*)",
-      "Bash(git log:*)",
-      "Bash(git diff:*)",
-      "Bash(git branch:*)",
-      "Bash(git show:*)",
       "Bash(gh issue list:*)",
       "Bash(gh issue view:*)",
       "Bash(gh pr list:*)",
@@ -18,8 +13,9 @@
       "Bash(gh run view:*)",
       "Bash(npm run *)",
       "Bash(npm test *)",
+      "Bash(pnpm run *)",
+      "Bash(pnpm test *)",
       "Bash(make *)",
-      "Bash(ls *)",
       "Bash(bash \"$HOME/.claude/skills/issue/scripts/fetch-issue.sh\":*)",
       "Bash(bash \"$HOME/.claude/skills/pr/scripts/gather-branch-info.sh\":*)",
       "Bash(bash \"$HOME/.claude/skills/resolve/scripts/fetch-unresolved-reviews.sh\":*)"
@@ -33,8 +29,47 @@
       "Bash(git push --force *)",
       "Bash(git push -f *)",
       "Bash(git reset --hard *)",
-      "Bash(chmod -R 777 *)"
-    ]
+      "Bash(chmod -R 777 *)",
+      "Bash(gh repo delete:*)",
+      "Bash(gh release delete:*)"
+    ],
+    "defaultMode": "auto"
+  },
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": false,
+    "filesystem": {
+      "allowWrite": [
+        "/tmp"
+      ],
+      "denyRead": [
+        "~/.ssh",
+        "~/.gnupg",
+        "~/.aws",
+        "~/.config/gcloud"
+      ],
+      "denyWrite": [
+        "~/.zshrc",
+        "~/.zshenv",
+        "~/.zprofile",
+        "~/.bashrc"
+      ]
+    },
+    "network": {
+      "allowedDomains": [
+        "registry.npmjs.org",
+        "api.github.com",
+        "github.com",
+        "raw.githubusercontent.com",
+        "codeload.github.com",
+        "objects.githubusercontent.com"
+      ]
+    },
+    "excludedCommands": [
+      "docker *",
+      "gh *"
+    ],
+    "allowUnsandboxedCommands": false
   },
   "hooks": {
     "PreToolUse": [
@@ -71,6 +106,10 @@
       }
     ]
   },
+  "enabledPlugins": {
+    "ruby-lsp@claude-plugins-official": true
+  },
   "alwaysThinkingEnabled": true,
-  "effortLevel": "high"
+  "effortLevel": "high",
+  "skipAutoPermissionPrompt": true
 }
