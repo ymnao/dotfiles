@@ -79,6 +79,10 @@
           {
             "type": "command",
             "command": "bash \"$HOME/.claude/hooks/block-dangerous-commands.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/verify-ci-before-pr.sh\""
           }
         ]
       }
