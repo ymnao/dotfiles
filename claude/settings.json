@@ -15,6 +15,8 @@
       "Bash(npm test *)",
       "Bash(pnpm run *)",
       "Bash(pnpm test *)",
+      "Bash(uv run *)",
+      "Bash(pytest:*)",
       "Bash(make *)",
       "Bash(bash \"$HOME/.claude/skills/issue/scripts/fetch-issue.sh\":*)",
       "Bash(bash \"$HOME/.claude/skills/pr/scripts/gather-branch-info.sh\":*)",
