@@ -40,7 +40,11 @@
     "failIfUnavailable": false,
     "filesystem": {
       "allowWrite": [
-        "/tmp"
+        "/tmp",
+        "~/.cache/uv",
+        "~/.cache/pip",
+        "~/Library/Caches/uv",
+        "~/Library/Caches/pip"
       ],
       "denyRead": [
         "~/.ssh",
@@ -62,7 +66,9 @@
         "github.com",
         "raw.githubusercontent.com",
         "codeload.github.com",
-        "objects.githubusercontent.com"
+        "objects.githubusercontent.com",
+        "pypi.org",
+        "files.pythonhosted.org"
       ]
     },
     "excludedCommands": [
