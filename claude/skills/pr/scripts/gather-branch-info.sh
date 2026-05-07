@@ -21,13 +21,19 @@ if [ -z "$BRANCH_NAME" ]; then
   exit 1
 fi
 
-# Resolve default branch from local symbolic ref (set by `git clone`).
-# If absent, the user can restore it with `git remote set-head origin -a`.
-if ! BASE_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null); then
-  echo "ERROR: refs/remotes/origin/HEAD is not set. Run: git remote set-head origin -a" >&2
+# Resolve default branch.
+# Prefer an explicit override from $1 (the SKILL caller queries `gh repo view`
+# directly, which is authoritative even when origin/HEAD is unset or the main
+# remote is not named "origin"). Fall back to refs/remotes/origin/HEAD which
+# `git clone` writes by default.
+if [ "${1:-}" != "" ]; then
+  BASE_BRANCH="$1"
+elif BASE_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null); then
+  BASE_BRANCH=${BASE_BRANCH#refs/remotes/origin/}
+else
+  echo "ERROR: Cannot determine default branch. Pass it as the first argument or run: git remote set-head origin -a" >&2
   exit 1
 fi
-BASE_BRANCH=${BASE_BRANCH#refs/remotes/origin/}
 
 # Resolve base branch ref (prefer local, fallback to origin/)
 BASE_REF="$BASE_BRANCH"
@@ -46,11 +52,14 @@ if [ "$BRANCH_NAME" = "$BASE_BRANCH" ]; then
   exit 1
 fi
 
-# Commits since base branch (RS=0x1e between commits, US=0x1f between fields)
-COMMITS=$(git log "${BASE_REF}..HEAD" --pretty=format:"%h%x1f%s%x1f%b%x1e" | jq -Rs '
-  split("\u001e") | map(select(length > 0)) |
-  map(split("\u001f") | {hash: .[0], subject: .[1], body: .[2]})
-' 2>/dev/null || echo "[]")
+# Commits since base branch.
+# NUL is the only byte git forbids in commit messages, so it is the only
+# safe inter-commit delimiter — `-z` makes git emit NUL-terminated commits.
+# Pipe to jq via process substitution so the shell does not strip NULs.
+COMMITS=$(jq -Rs '
+  split("\u0000") | map(select(length > 0))
+  | map(split("\n") as $l | {hash: $l[0], subject: $l[1], body: ($l[3:] | join("\n"))})
+' < <(git log "${BASE_REF}..HEAD" -z --format='%h%n%s%n%n%b') 2>/dev/null || echo "[]")
 
 # Diff stat (one --numstat pass for files/insertions/deletions)
 DIFF_STAT=$(git diff "${BASE_REF}...HEAD" --stat 2>/dev/null || echo "")

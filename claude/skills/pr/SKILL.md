@@ -7,7 +7,10 @@ Create a pull request from the current branch based on its commit history and di
 
 ## Steps
 
-1. Run `bash "$HOME/.claude/skills/pr/scripts/gather-branch-info.sh"` to gather local branch info (git/file only — no GitHub API calls)
+1. Resolve the default branch and gather local branch info:
+   - First try `BASE_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')` (authoritative — works when `origin/HEAD` is unset or the main remote isn't `origin`)
+   - If that fails, omit the argument; the script falls back to `refs/remotes/origin/HEAD`
+   - Run `bash "$HOME/.claude/skills/pr/scripts/gather-branch-info.sh" "$BASE_BRANCH"`
 2. Check for an existing OPEN PR for this branch (avoids creating a duplicate):
    - `OWNER=$(gh repo view --json owner --jq '.owner.login')`
    - `gh pr list --head <branch_name> --base <base_branch> --state open --json number,url,headRepositoryOwner --jq "[.[] | select(.headRepositoryOwner.login == \"$OWNER\")]"` — filtering by `headRepositoryOwner` excludes same-named branches from forks
