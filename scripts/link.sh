@@ -2,29 +2,9 @@
 
 set -euo pipefail
 
-# Colors
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-RED='\033[0;31m'
-NC='\033[0m' # No Color
-
-info() {
-    echo -e "${GREEN}[INFO]${NC} $1"
-}
-
-warn() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
-}
-
-skip() {
-    echo -e "${BLUE}[SKIP]${NC} $1"
-}
-
-error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-    exit 1
-}
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source-path=SCRIPTDIR source=lib/log.sh
+source "$SCRIPT_DIR/lib/log.sh"
 
 # Check for Windows
 case "$(uname -s)" in
@@ -37,7 +17,7 @@ For detailed Windows setup instructions, see README.md"
 esac
 
 # Dotfiles directory
-DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DOTFILES_DIR="${SCRIPT_DIR%/*}"
 
 # Ensure ~/.config exists
 mkdir -p "$HOME/.config"
