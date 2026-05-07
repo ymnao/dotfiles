@@ -78,8 +78,11 @@ if git ls-remote --heads origin "$BRANCH_NAME" 2>/dev/null | grep -q "$BRANCH_NA
 fi
 
 # Check for existing PR
-EXISTING_PR=$(gh pr view --json number,url,state 2>/dev/null || echo "null")
-if [ "$EXISTING_PR" = "null" ] || [ -z "$EXISTING_PR" ]; then
+EXISTING_PR=$(gh pr view --json number,url,state 2>/dev/null || true)
+if [ -z "$EXISTING_PR" ]; then
+  EXISTING_PR=$(gh pr list --head "$BRANCH_NAME" --state all --json number,url,state --jq '.[0] // empty' 2>/dev/null || true)
+fi
+if [ -z "$EXISTING_PR" ]; then
   EXISTING_PR="null"
 fi
 

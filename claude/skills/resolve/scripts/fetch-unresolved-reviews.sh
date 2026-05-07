@@ -3,12 +3,22 @@ set -euo pipefail
 
 # Fetch unresolved review threads for the current branch's PR
 
-PR_JSON=$(gh pr view --json number,url 2>/dev/null) || {
+# `gh pr view` reads branch.<name>.remote from .git/config; restrictive sandboxes
+# can prevent git from writing that, so fall back to lookup by branch name.
+PR_NUMBER=""
+if PR_JSON=$(gh pr view --json number 2>/dev/null); then
+  PR_NUMBER=$(echo "$PR_JSON" | jq -r '.number // empty')
+fi
+if [ -z "$PR_NUMBER" ]; then
+  BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)
+  if [ -n "$BRANCH" ] && [ "$BRANCH" != "HEAD" ]; then
+    PR_NUMBER=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)
+  fi
+fi
+if [ -z "$PR_NUMBER" ]; then
   echo "ERROR: No PR found for the current branch" >&2
   exit 1
-}
-
-PR_NUMBER=$(echo "$PR_JSON" | jq -r '.number')
+fi
 REPO_INFO=$(gh repo view --json owner,name)
 OWNER=$(echo "$REPO_INFO" | jq -r '.owner.login')
 REPO=$(echo "$REPO_INFO" | jq -r '.name')
