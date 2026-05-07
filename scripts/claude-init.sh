@@ -7,8 +7,10 @@
 #
 # Auto-detection:
 #   package.json + pnpm-lock.yaml → ts-node
-#   （ts-node テンプレートは pnpm 前提なので、npm/yarn/bun のリポは
-#    検出対象外。--template で明示するか、専用テンプレートの追加待ち）
+#   uv.lock                       → python-uv
+#   pyproject.toml (only)         → python-uv (warning: uv.lock 未検出)
+#   （npm/yarn/bun のリポは検出対象外。--template で明示するか、
+#    専用テンプレートの追加待ち）
 
 set -euo pipefail
 
@@ -44,6 +46,8 @@ $templates_list
 
 Auto-detection rules:
   package.json + pnpm-lock.yaml → ts-node
+  uv.lock                       → python-uv
+  pyproject.toml (only)         → python-uv (warning)
   (npm/yarn/bun リポは現状検出対象外。--template で指定してください)
 EOF
 }
@@ -83,12 +87,27 @@ detect_template() {
         echo "ts-node"
         return
     fi
+    # python-uv: uv.lock があれば確実、無くても pyproject.toml だけで採用 (caller が warn)
+    if [[ -f "$TARGET_DIR/uv.lock" ]]; then
+        echo "python-uv"
+        return
+    fi
+    if [[ -f "$TARGET_DIR/pyproject.toml" ]]; then
+        echo "python-uv"
+        return
+    fi
     echo ""
 }
 
 TEMPLATE="$(detect_template)"
 if [[ -z "$TEMPLATE" ]]; then
     error "Cannot detect project type. Specify with --template <name>. Run with --help to see available templates."
+fi
+
+# python-uv を pyproject.toml のみで採用したケースを警告
+# (Poetry/Hatch/PDM 等の別マネージャの可能性があるため)
+if [[ -z "$TEMPLATE_OVERRIDE" && "$TEMPLATE" == "python-uv" && ! -f "$TARGET_DIR/uv.lock" ]]; then
+    warn "uv.lock not found — assuming python-uv. If this project uses Poetry/Hatch/PDM/etc, override with --template <name>."
 fi
 
 TEMPLATE_DIR="$TEMPLATES_DIR/$TEMPLATE"
