@@ -32,6 +32,12 @@ TARGET_DIR="$PWD"
 TEMPLATE_OVERRIDE=""
 
 usage() {
+    local templates_list="  (no templates found)"
+    if [[ -d "$TEMPLATES_DIR" ]]; then
+        local listing
+        listing=$(ls -1 "$TEMPLATES_DIR" 2>/dev/null | sed 's/^/  - /' || true)
+        [[ -n "$listing" ]] && templates_list="$listing"
+    fi
     cat <<EOF
 Usage: $0 [--dir <path>] [--template <name>]
 
@@ -41,7 +47,7 @@ Options:
   -h, --help         Show this help
 
 Available templates:
-$(ls -1 "$TEMPLATES_DIR" 2>/dev/null | sed 's/^/  - /')
+$templates_list
 
 Auto-detection rules:
   package.json → ts-node
@@ -50,8 +56,12 @@ EOF
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --dir)      TARGET_DIR="$2"; shift 2 ;;
-        --template) TEMPLATE_OVERRIDE="$2"; shift 2 ;;
+        --dir)
+            [[ $# -ge 2 ]] || error "--dir requires a value"
+            TARGET_DIR="$2"; shift 2 ;;
+        --template)
+            [[ $# -ge 2 ]] || error "--template requires a value"
+            TEMPLATE_OVERRIDE="$2"; shift 2 ;;
         -h|--help)  usage; exit 0 ;;
         *)          error "Unknown argument: $1" ;;
     esac
