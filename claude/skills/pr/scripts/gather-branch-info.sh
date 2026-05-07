@@ -78,12 +78,15 @@ if git ls-remote --heads origin "$BRANCH_NAME" 2>/dev/null | grep -q "$BRANCH_NA
 fi
 
 # Check for existing PR
-EXISTING_PR=$(gh pr view --json number,url,state 2>/dev/null || true)
+# Only OPEN PRs should populate existing_pr — SKILL.md uses it as a stop
+# condition, so a stale closed/merged PR on a reused branch name would
+# falsely block new PR creation.
+EXISTING_PR=$(gh pr view --json number,url,state --jq 'select(.state == "OPEN") | {number, url, state}' 2>/dev/null || true)
 if [ -z "$EXISTING_PR" ]; then
   OWNER=$(gh repo view --json owner --jq '.owner.login' 2>/dev/null || true)
   if [ -n "$OWNER" ]; then
-    EXISTING_PR=$(gh pr list --head "$BRANCH_NAME" --base "$BASE_BRANCH" --state all --json number,url,state,headRepositoryOwner \
-      --jq "[.[] | select(.headRepositoryOwner.login == \"$OWNER\")] | (map(select(.state == \"OPEN\"))[0] // .[0]) | if . then {number, url, state} else empty end" 2>/dev/null || true)
+    EXISTING_PR=$(gh pr list --head "$BRANCH_NAME" --base "$BASE_BRANCH" --state open --json number,url,state,headRepositoryOwner \
+      --jq "[.[] | select(.headRepositoryOwner.login == \"$OWNER\") | {number, url, state}][0] // empty" 2>/dev/null || true)
   fi
 fi
 if [ -z "$EXISTING_PR" ]; then
