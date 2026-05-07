@@ -46,22 +46,22 @@ if [ "$BRANCH_NAME" = "$BASE_BRANCH" ]; then
   exit 1
 fi
 
-# Commits since base branch
+# Commits since base branch (RS=0x1e between commits, US=0x1f between fields)
 COMMITS=$(git log "${BASE_REF}..HEAD" --pretty=format:"%h%x1f%s%x1f%b%x1e" | jq -Rs '
-  split("") | map(select(length > 0)) |
-  map(split("") | {hash: .[0], subject: .[1], body: .[2]})
+  split("\u001e") | map(select(length > 0)) |
+  map(split("\u001f") | {hash: .[0], subject: .[1], body: .[2]})
 ' 2>/dev/null || echo "[]")
-COMMIT_COUNT=$(echo "$COMMITS" | jq 'length')
 
-# Diff stat
+# Diff stat (one --numstat pass for files/insertions/deletions)
 DIFF_STAT=$(git diff "${BASE_REF}...HEAD" --stat 2>/dev/null || echo "")
-FILES_CHANGED=$(git diff "${BASE_REF}...HEAD" --numstat 2>/dev/null | wc -l | tr -d ' ')
-INSERTIONS=$(git diff "${BASE_REF}...HEAD" --numstat 2>/dev/null | awk '{s+=$1} END {print s+0}')
-DELETIONS=$(git diff "${BASE_REF}...HEAD" --numstat 2>/dev/null | awk '{s+=$2} END {print s+0}')
+read -r FILES_CHANGED INSERTIONS DELETIONS < <(
+  git diff "${BASE_REF}...HEAD" --numstat 2>/dev/null \
+    | awk '{f++; ins+=$1; del+=$2} END {printf "%d %d %d\n", f+0, ins+0, del+0}'
+)
 
 # Check if remote branch exists
 HAS_REMOTE=false
-if git ls-remote --heads origin "$BRANCH_NAME" 2>/dev/null | grep -q "$BRANCH_NAME"; then
+if [ -n "$(git ls-remote --heads origin "$BRANCH_NAME" 2>/dev/null)" ]; then
   HAS_REMOTE=true
 fi
 
@@ -91,7 +91,6 @@ jq -n \
   --arg branch_name "$BRANCH_NAME" \
   --arg base_branch "$BASE_BRANCH" \
   --argjson commits "$COMMITS" \
-  --argjson commit_count "$COMMIT_COUNT" \
   --arg diff_stat "$DIFF_STAT" \
   --argjson files_changed "$FILES_CHANGED" \
   --argjson insertions "$INSERTIONS" \
@@ -103,7 +102,7 @@ jq -n \
     branch_name: $branch_name,
     base_branch: $base_branch,
     commits: $commits,
-    commit_count: $commit_count,
+    commit_count: ($commits | length),
     diff_stat: $diff_stat,
     files_changed: $files_changed,
     insertions: $insertions,

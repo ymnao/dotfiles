@@ -8,10 +8,11 @@ Create a pull request from the current branch based on its commit history and di
 ## Steps
 
 1. Run `bash "$HOME/.claude/skills/pr/scripts/gather-branch-info.sh"` to gather local branch info (git/file only — no GitHub API calls)
-2. Check for an existing OPEN PR for this branch:
-   - Run `gh pr view --json number,url,state` (uses upstream tracking; fails silently if not configured — that's fine)
-   - If it does not return an OPEN PR, fall back to: `OWNER=$(gh repo view --json owner -q '.owner.login')` then `gh pr list --head <branch_name> --base <base_branch> --state open --json number,url,state,headRepositoryOwner` and pick the entry where `headRepositoryOwner.login == $OWNER` (filters out same-named branches in forks)
-   - If an OPEN PR exists → report its URL and stop
+2. Check for an existing OPEN PR for this branch (avoids creating a duplicate):
+   - `OWNER=$(gh repo view --json owner --jq '.owner.login')`
+   - `gh pr list --head <branch_name> --base <base_branch> --state open --json number,url,headRepositoryOwner --jq "[.[] | select(.headRepositoryOwner.login == \"$OWNER\")]"` — filtering by `headRepositoryOwner` excludes same-named branches from forks
+   - 0 matches → proceed to step 3
+   - ≥1 match → report the PR URL and stop
 3. Pre-check:
    - If `commit_count` is 0 → report no commits from base branch and stop
 4. Analyze commit history and diff stat to generate PR title and body:

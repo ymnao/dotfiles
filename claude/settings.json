@@ -2,6 +2,7 @@
   "permissions": {
     "allow": [
       "mcp__sequential-thinking__sequentialthinking",
+      "Bash(gh api graphql:*)",
       "Bash(gh issue list:*)",
       "Bash(gh issue view:*)",
       "Bash(gh pr list:*)",
@@ -11,7 +12,6 @@
       "Bash(gh repo view:*)",
       "Bash(gh run list:*)",
       "Bash(gh run view:*)",
-      "Bash(gh api graphql:*)",
       "Bash(npm run *)",
       "Bash(npm test *)",
       "Bash(pnpm run *)",

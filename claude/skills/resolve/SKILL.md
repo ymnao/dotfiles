@@ -9,18 +9,19 @@ Fetch unresolved review threads for the current PR and address each one.
 ## Steps
 
 1. Determine the current branch's PR number, owner, and repo (run each as a direct `gh` invocation):
-   - `gh repo view --json owner,name --jq '.owner.login + " " + .name'` → `OWNER REPO`
-   - Try `gh pr view --json number --jq .number 2>/dev/null` (uses upstream tracking). If a number comes back, use it.
-   - Otherwise fall back: `BRANCH=$(git branch --show-current)` then `gh pr list --head "$BRANCH" --state open --json number,baseRefName,headRepositoryOwner` and pick entries where `headRepositoryOwner.login == $OWNER`.
+   - `OWNER=$(gh repo view --json owner --jq '.owner.login')`
+   - `REPO=$(gh repo view --json name --jq '.name')`
+   - Try `PR_NUMBER=$(gh pr view --json number --jq .number 2>/dev/null)` — uses upstream tracking. If a number comes back, use it.
+   - Otherwise fall back: `BRANCH=$(git branch --show-current)` then `gh pr list --head "$BRANCH" --state open --json number,baseRefName,headRepositoryOwner --jq "[.[] | select(.headRepositoryOwner.login == \"$OWNER\")]"`.
      - 0 matches → report "No PR found for the current branch" and stop.
      - >1 matches → list `PR #<n> -> <baseRefName>` for each, ask the user which one, then proceed.
 2. Fetch unresolved review threads in one shell command (gh + jq are direct children — keychain-safe):
-   ```
+   ```bash
    gh api graphql \
      -F query=@"$HOME/.claude/skills/resolve/queries/unresolved-threads.graphql" \
      -f owner="$OWNER" -f repo="$REPO" -F number="$PR_NUMBER" \
-   | jq '{
-       pr_number: '"$PR_NUMBER"',
+   | jq --argjson pr_number "$PR_NUMBER" '{
+       pr_number: $pr_number,
        unresolved_threads: [
          .data.repository.pullRequest.reviewThreads.nodes[]
          | select(.isResolved == false)
