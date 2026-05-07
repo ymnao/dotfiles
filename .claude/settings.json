@@ -41,7 +41,8 @@
     "network": {
       "allowedDomains": [
         "formulae.brew.sh",
-        "ghcr.io"
+        "ghcr.io",
+        "raw.githubusercontent.com"
       ]
     }
   }
