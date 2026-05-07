@@ -17,17 +17,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOTFILES_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 TEMPLATES_DIR="$DOTFILES_DIR/claude/templates"
 
-# --- Colors ---
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-RED='\033[0;31m'
-NC='\033[0m'
-
-info()  { echo -e "${GREEN}[INFO]${NC}  $1"; }
-warn()  { echo -e "${YELLOW}[WARN]${NC}  $1"; }
-skip()  { echo -e "${BLUE}[SKIP]${NC}  $1"; }
-error() { echo -e "${RED}[ERROR]${NC} $1" >&2; exit 1; }
+# shellcheck source-path=SCRIPTDIR source=lib/log.sh
+source "$SCRIPT_DIR/lib/log.sh"
 
 # --- Args ---
 TARGET_DIR="$PWD"
