@@ -39,23 +39,41 @@ if printf '%s\n' "$gh_segment" | grep -qE '([[:space:]]|^)(--draft|-d)([[:space:
   exit 0
 fi
 
-# git repo 外
-git rev-parse --is-inside-work-tree &>/dev/null || exit 0
+# git repo 外（--show-toplevel は git tree 外で非ゼロ終了するので兼用）
+repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 
-# CI workflow が定義されているか
-if ! find .github/workflows -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) 2>/dev/null | grep -q .; then
+# CI workflow が定義されているか（cwd ではなく repo root 基準で見る）
+if ! find "$repo_root/.github/workflows" -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) 2>/dev/null | grep -q .; then
   exit 0
 fi
 
 # remote URL から owner/repo 抽出（gh repo view は sandbox で TLS 死するので使わない）
-# bash =~ は POSIX ERE で non-greedy 不可なので、一旦末尾を整理してから greedy match する
-remote_url=$(git remote get-url origin 2>/dev/null) || exit 0
+# 解決順: @{upstream} の remote → origin → 任意の github.com remote
+# （origin 固定だと upstream のみ・複数 remote のリポで誤って skip するため）
+resolve_github_remote_url() {
+  local url upstream_full upstream_remote r
+  upstream_full=$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null) || true
+  if [[ -n "$upstream_full" ]]; then
+    upstream_remote="${upstream_full%%/*}"
+    url=$(git remote get-url "$upstream_remote" 2>/dev/null) || true
+    [[ "$url" == *github.com* ]] && { echo "$url"; return 0; }
+  fi
+  url=$(git remote get-url origin 2>/dev/null) || true
+  [[ "$url" == *github.com* ]] && { echo "$url"; return 0; }
+  for r in $(git remote 2>/dev/null); do
+    url=$(git remote get-url "$r" 2>/dev/null) || true
+    [[ "$url" == *github.com* ]] && { echo "$url"; return 0; }
+  done
+  return 1
+}
+
+remote_url=$(resolve_github_remote_url) || exit 0
+# bash =~ は POSIX ERE で non-greedy 不可なので、末尾を整理してから greedy match する
 remote_url="${remote_url%/}"
 if [[ "$remote_url" =~ github\.com[:/]([^/]+)/([^/]+)$ ]]; then
   owner="${BASH_REMATCH[1]}"
   repo="${BASH_REMATCH[2]%.git}"
 else
-  # GitHub 以外の remote は対象外
   exit 0
 fi
 
