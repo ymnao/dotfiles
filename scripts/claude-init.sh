@@ -139,10 +139,14 @@ done < <(find "$TEMPLATE_DIR" -type f -print0)
 echo ""
 
 # --- Update .gitignore ---
+# `git check-ignore` だと core.excludesfile / .git/info/exclude も拾うため、
+# 実行者のグローバル ignore で既に無視されているとリポジトリ側 .gitignore に
+# 追記されない。配布対象は repo の .gitignore なので、そのファイルを直接見る。
 GITIGNORE="$TARGET_DIR/.gitignore"
+IGNORE_ENTRY=".claude/settings.local.json"
 if git -C "$TARGET_DIR" rev-parse --is-inside-work-tree &>/dev/null; then
-    if git -C "$TARGET_DIR" check-ignore -q .claude/settings.local.json 2>/dev/null; then
-        skip ".gitignore: .claude/settings.local.json already ignored"
+    if [[ -f "$GITIGNORE" ]] && grep -Fxq "$IGNORE_ENTRY" "$GITIGNORE"; then
+        skip ".gitignore: $IGNORE_ENTRY already present"
     else
         if [[ ! -f "$GITIGNORE" ]]; then
             touch "$GITIGNORE"
@@ -150,9 +154,9 @@ if git -C "$TARGET_DIR" rev-parse --is-inside-work-tree &>/dev/null; then
         {
             echo ""
             echo "# Claude Code"
-            echo ".claude/settings.local.json"
+            echo "$IGNORE_ENTRY"
         } >> "$GITIGNORE"
-        info "Added .claude/settings.local.json to .gitignore"
+        info "Added $IGNORE_ENTRY to .gitignore"
     fi
 else
     warn "Not a git repository — skipping .gitignore update"
