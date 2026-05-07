@@ -7,15 +7,18 @@ Create a pull request from the current branch based on its commit history and di
 
 ## Steps
 
-1. Run `bash "$HOME/.claude/skills/pr/scripts/gather-branch-info.sh"` to gather branch info
-2. Pre-checks:
-   - If `existing_pr` is not null → report the existing PR URL and stop
+1. Run `bash "$HOME/.claude/skills/pr/scripts/gather-branch-info.sh"` to gather local branch info (git/file only — no GitHub API calls)
+2. Check for an existing OPEN PR for this branch:
+   - Run `gh pr view --json number,url,state` (uses upstream tracking; fails silently if not configured — that's fine)
+   - If it does not return an OPEN PR, fall back to: `OWNER=$(gh repo view --json owner -q '.owner.login')` then `gh pr list --head <branch_name> --base <base_branch> --state open --json number,url,state,headRepositoryOwner` and pick the entry where `headRepositoryOwner.login == $OWNER` (filters out same-named branches in forks)
+   - If an OPEN PR exists → report its URL and stop
+3. Pre-check:
    - If `commit_count` is 0 → report no commits from base branch and stop
-3. Analyze commit history and diff stat to generate PR title and body:
+4. Analyze commit history and diff stat to generate PR title and body:
    - **Title**: Under 70 characters, summarizing the changes
    - **Body**: Use the appropriate template (see below)
-4. If `has_remote` is false, run `git push -u origin <branch_name>` to push
-5. Create PR with `gh pr create`:
+5. If `has_remote` is false, run `git push -u origin <branch_name>` to push
+6. Create PR with `gh pr create`:
    - If `linked_issue` exists, include `Closes #<number>` in the body
 
 ## PR template selection
