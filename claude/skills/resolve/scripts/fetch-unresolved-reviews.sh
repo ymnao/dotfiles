@@ -10,8 +10,8 @@ if PR_JSON=$(gh pr view --json number 2>/dev/null); then
   PR_NUMBER=$(echo "$PR_JSON" | jq -r '.number // empty')
 fi
 if [ -z "$PR_NUMBER" ]; then
-  BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)
-  if [ -n "$BRANCH" ] && [ "$BRANCH" != "HEAD" ]; then
+  BRANCH=$(git branch --show-current 2>/dev/null || true)
+  if [ -n "$BRANCH" ]; then
     PR_NUMBER=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)
   fi
 fi
