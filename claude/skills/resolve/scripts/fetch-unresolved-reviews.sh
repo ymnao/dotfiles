@@ -17,8 +17,17 @@ REPO=$(echo "$REPO_INFO" | jq -r '.name')
 if [ -z "$PR_NUMBER" ]; then
   BRANCH=$(git branch --show-current 2>/dev/null || true)
   if [ -n "$BRANCH" ]; then
-    PR_NUMBER=$(gh pr list --head "$BRANCH" --state open --json number,headRepositoryOwner \
-      --jq "[.[] | select(.headRepositoryOwner.login == \"$OWNER\")][0].number // empty" 2>/dev/null || true)
+    PR_CANDIDATES=$(gh pr list --head "$BRANCH" --state open --json number,baseRefName,headRepositoryOwner \
+      --jq "[.[] | select(.headRepositoryOwner.login == \"$OWNER\")]" 2>/dev/null || true)
+    if [ -z "$PR_CANDIDATES" ]; then PR_CANDIDATES="[]"; fi
+    PR_COUNT=$(echo "$PR_CANDIDATES" | jq 'length')
+    if [ "$PR_COUNT" = "1" ]; then
+      PR_NUMBER=$(echo "$PR_CANDIDATES" | jq -r '.[0].number')
+    elif [ "$PR_COUNT" -gt 1 ]; then
+      echo "ERROR: Multiple open PRs found for branch '$BRANCH' (cannot disambiguate without upstream tracking):" >&2
+      echo "$PR_CANDIDATES" | jq -r '.[] | "  PR #\(.number) -> \(.baseRefName)"' >&2
+      exit 1
+    fi
   fi
 fi
 if [ -z "$PR_NUMBER" ]; then

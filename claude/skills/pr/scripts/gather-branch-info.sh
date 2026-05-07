@@ -82,8 +82,8 @@ EXISTING_PR=$(gh pr view --json number,url,state 2>/dev/null || true)
 if [ -z "$EXISTING_PR" ]; then
   OWNER=$(gh repo view --json owner --jq '.owner.login' 2>/dev/null || true)
   if [ -n "$OWNER" ]; then
-    EXISTING_PR=$(gh pr list --head "$BRANCH_NAME" --state all --json number,url,state,headRepositoryOwner \
-      --jq "[.[] | select(.headRepositoryOwner.login == \"$OWNER\") | {number, url, state}][0] // empty" 2>/dev/null || true)
+    EXISTING_PR=$(gh pr list --head "$BRANCH_NAME" --base "$BASE_BRANCH" --state all --json number,url,state,headRepositoryOwner \
+      --jq "[.[] | select(.headRepositoryOwner.login == \"$OWNER\")] | (map(select(.state == \"OPEN\"))[0] // .[0]) | if . then {number, url, state} else empty end" 2>/dev/null || true)
   fi
 fi
 if [ -z "$EXISTING_PR" ]; then
