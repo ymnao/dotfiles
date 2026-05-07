@@ -6,7 +6,9 @@
 #   claude-init.sh [--dir <path>] [--template <name>]
 #
 # Auto-detection:
-#   package.json → ts-node
+#   package.json + pnpm-lock.yaml → ts-node
+#   （ts-node テンプレートは pnpm 前提なので、npm/yarn/bun のリポは
+#    検出対象外。--template で明示するか、専用テンプレートの追加待ち）
 
 set -euo pipefail
 
@@ -50,7 +52,8 @@ Available templates:
 $templates_list
 
 Auto-detection rules:
-  package.json → ts-node
+  package.json + pnpm-lock.yaml → ts-node
+  (npm/yarn/bun リポは現状検出対象外。--template で指定してください)
 EOF
 }
 
@@ -83,7 +86,9 @@ detect_template() {
         echo "$TEMPLATE_OVERRIDE"
         return
     fi
-    if [[ -f "$TARGET_DIR/package.json" ]]; then
+    # ts-node テンプレートは pnpm 専用なので、pnpm-lock.yaml がある場合のみ採用。
+    # 他の package manager (npm/yarn/bun) は誤分類になるため検出しない。
+    if [[ -f "$TARGET_DIR/package.json" && -f "$TARGET_DIR/pnpm-lock.yaml" ]]; then
         echo "ts-node"
         return
     fi

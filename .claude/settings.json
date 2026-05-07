@@ -31,7 +31,11 @@
       "allowWrite": [
         "~/.config",
         "~/.claude",
-        "~/.npmrc"
+        "~/.npmrc",
+        "/opt/homebrew",
+        "/usr/local",
+        "~/Library/Caches/Homebrew",
+        "~/Library/Logs/Homebrew"
       ]
     },
     "network": {

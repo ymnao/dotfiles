@@ -151,11 +151,13 @@ EOF
     exit 2
     ;;
   *)
+    # workflow ファイルは存在するが HEAD に対する check が無いケース。
+    # 例: on: pull_request のみ（PR 作成後にトリガー）、path-filtered で対象外、
+    # 反映待ち。これらは正常状態なので block せず情報出力のみ。
     cat >&2 <<EOF
-[verify-ci-before-pr] HEAD ($head_sha) に紐づく check が見つかりません。
-.github/workflows/ は存在しますが、CI が未トリガー or 反映待ちの可能性。
-数秒待ってから再実行するか、--draft でスキップしてください。
+[verify-ci-before-pr] HEAD ($head_sha) に紐づく check は見つかりませんでした。
+on: pull_request のみ・path フィルタ・反映待ちなどのケースを想定して許可します。
 EOF
-    exit 2
+    exit 0
     ;;
 esac

@@ -67,7 +67,8 @@
     },
     "excludedCommands": [
       "docker *",
-      "gh *"
+      "gh *",
+      "brew *"
     ],
     "allowUnsandboxedCommands": false
   },
