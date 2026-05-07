@@ -103,6 +103,11 @@ if [[ -f "$DOTFILES_DIR/gh/config.yml" ]]; then
     link_file "$DOTFILES_DIR/gh/config.yml" "$HOME/.config/gh/config.yml"
 fi
 
+# Link npm/pnpm configuration
+if [[ -f "$DOTFILES_DIR/npm/npmrc" ]]; then
+    link_file "$DOTFILES_DIR/npm/npmrc" "$HOME/.npmrc"
+fi
+
 # Ensure Claude configuration directory exists if needed
 if [[ -f "$DOTFILES_DIR/agents/AGENTS.md" ]] || [[ -d "$DOTFILES_DIR/claude" ]]; then
     mkdir -p "$HOME/.claude"

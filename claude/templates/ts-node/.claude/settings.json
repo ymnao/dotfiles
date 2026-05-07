@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(pnpm install:*)",
+      "Bash(pnpm exec *)",
+      "Bash(pnpm typecheck:*)",
+      "Bash(pnpm build:*)",
+      "Bash(pnpm lint:*)",
+      "Bash(pnpm format:*)",
+      "Bash(pnpm dev:*)",
+      "Bash(pnpm start:*)",
+      "Bash(npm exec *)",
+      "Bash(tsx *)",
+      "Bash(tsc:*)",
+      "Bash(node *)",
+      "Bash(corepack:*)"
+    ],
+    "ask": [
+      "Bash(pnpm dlx *)",
+      "Bash(npx *)",
+      "Bash(pnpm add *)",
+      "Bash(pnpm remove *)",
+      "Bash(pnpm update *)"
+    ],
+    "deny": [
+      "Bash(npm install -g *)",
+      "Bash(pnpm add -g *)",
+      "Bash(npm publish:*)",
+      "Bash(pnpm publish:*)",
+      "Edit(.env)",
+      "Edit(.env.*)",
+      "Edit(node_modules/**)",
+      "Edit(pnpm-lock.yaml)",
+      "Edit(package-lock.json)",
+      "Edit(yarn.lock)",
+      "Read(.env)",
+      "Read(.env.*)"
+    ]
+  },
+  "sandbox": {
+    "filesystem": {
+      "allowWrite": [
+        "~/Library/pnpm",
+        "~/Library/Caches/pnpm",
+        "~/.npm"
+      ]
+    }
+  }
+}

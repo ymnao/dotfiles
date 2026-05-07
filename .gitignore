@@ -41,7 +41,8 @@ automatic_backups/
 *.swo
 
 # Claude
-.claude/
+.claude/*
+!.claude/settings.json
 
 # GitHub CLI
 gh/hosts.yml

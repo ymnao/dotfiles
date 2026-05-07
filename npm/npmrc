@@ -1,0 +1,13 @@
+# postinstall などライフサイクルスクリプトを無効化（supply chain attack 対策）
+# - npm はデフォルトで実行されるため明示して無効化
+# - pnpm でも保険として明示（バージョン差による挙動の揺れを吸収）
+# プロジェクトで必要な場合は、そのプロジェクトの .npmrc で ignore-scripts=false を指定するか
+# pnpm の場合は package.json の pnpm.onlyBuiltDependencies で許可リストを設定
+ignore-scripts=true
+
+fund=false
+
+# 私有レジストリの認証は環境変数経由で（このファイル自体に書かない）
+# 例:
+# @myorg:registry=https://registry.example.com/
+# //registry.example.com/:_authToken=${NPM_TOKEN_EXAMPLE}
