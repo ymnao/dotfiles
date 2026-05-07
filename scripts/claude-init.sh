@@ -76,37 +76,40 @@ if [[ "$TARGET_DIR" == "$DOTFILES_DIR" ]]; then
 fi
 
 # --- Detect template ---
+# Sets globals: TEMPLATE (template name or "") and TEMPLATE_FUZZY
+# (1 = match was a heuristic guess that warrants a warning).
 detect_template() {
+    TEMPLATE=""
+    TEMPLATE_FUZZY=0
     if [[ -n "$TEMPLATE_OVERRIDE" ]]; then
-        echo "$TEMPLATE_OVERRIDE"
+        TEMPLATE="$TEMPLATE_OVERRIDE"
         return
     fi
     # ts-node テンプレートは pnpm 専用なので、pnpm-lock.yaml がある場合のみ採用。
     # 他の package manager (npm/yarn/bun) は誤分類になるため検出しない。
     if [[ -f "$TARGET_DIR/package.json" && -f "$TARGET_DIR/pnpm-lock.yaml" ]]; then
-        echo "ts-node"
+        TEMPLATE="ts-node"
         return
     fi
-    # python-uv: uv.lock があれば確実、無くても pyproject.toml だけで採用 (caller が warn)
     if [[ -f "$TARGET_DIR/uv.lock" ]]; then
-        echo "python-uv"
+        TEMPLATE="python-uv"
         return
     fi
+    # uv.lock が無くても pyproject.toml だけで python-uv と推定するが、
+    # Poetry/Hatch/PDM の可能性もあるので fuzzy フラグを立てる
     if [[ -f "$TARGET_DIR/pyproject.toml" ]]; then
-        echo "python-uv"
+        TEMPLATE="python-uv"
+        TEMPLATE_FUZZY=1
         return
     fi
-    echo ""
 }
 
-TEMPLATE="$(detect_template)"
+detect_template
 if [[ -z "$TEMPLATE" ]]; then
     error "Cannot detect project type. Specify with --template <name>. Run with --help to see available templates."
 fi
 
-# python-uv を pyproject.toml のみで採用したケースを警告
-# (Poetry/Hatch/PDM 等の別マネージャの可能性があるため)
-if [[ -z "$TEMPLATE_OVERRIDE" && "$TEMPLATE" == "python-uv" && ! -f "$TARGET_DIR/uv.lock" ]]; then
+if (( TEMPLATE_FUZZY )); then
     warn "uv.lock not found — assuming python-uv. If this project uses Poetry/Hatch/PDM/etc, override with --template <name>."
 fi
 
