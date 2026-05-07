@@ -1,10 +1,7 @@
 # shellcheck shell=bash
 #
 # log.sh — Shared color/log helpers for dotfiles scripts.
-#
-# Source-only library (no shebang, no top-level `set`). Callers manage their
-# own shell options. `error` writes to stderr and terminates the caller via
-# `exit 1`.
+# Source-only. `error` writes to stderr and terminates the caller (exit 1).
 #
 # Usage:
 #   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

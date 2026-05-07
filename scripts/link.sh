@@ -17,7 +17,7 @@ For detailed Windows setup instructions, see README.md"
 esac
 
 # Dotfiles directory
-DOTFILES_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+DOTFILES_DIR="${SCRIPT_DIR%/*}"
 
 # Ensure ~/.config exists
 mkdir -p "$HOME/.config"

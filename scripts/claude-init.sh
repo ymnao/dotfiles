@@ -14,7 +14,7 @@ set -euo pipefail
 
 # --- Constants ---
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DOTFILES_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+DOTFILES_DIR="${SCRIPT_DIR%/*}"
 TEMPLATES_DIR="$DOTFILES_DIR/claude/templates"
 
 # shellcheck source-path=SCRIPTDIR source=lib/log.sh
