@@ -6,9 +6,11 @@
 #   claude-init.sh [--dir <path>] [--template <name>]
 #
 # Auto-detection:
-#   package.json + pnpm-lock.yaml → ts-node
-#   （ts-node テンプレートは pnpm 前提なので、npm/yarn/bun のリポは
-#    検出対象外。--template で明示するか、専用テンプレートの追加待ち）
+#   package.json + pnpm-lock.yaml      → ts-node
+#   uv.lock                            → python-uv
+#   pyproject.toml + [tool.uv] section → python-uv
+#   （npm/yarn/bun のリポ、Poetry/Hatch/PDM 等は検出対象外。
+#    --template で明示するか、専用テンプレートの追加待ち）
 
 set -euo pipefail
 
@@ -43,8 +45,10 @@ Available templates:
 $templates_list
 
 Auto-detection rules:
-  package.json + pnpm-lock.yaml → ts-node
-  (npm/yarn/bun リポは現状検出対象外。--template で指定してください)
+  package.json + pnpm-lock.yaml      → ts-node
+  uv.lock                            → python-uv
+  pyproject.toml + [tool.uv] section → python-uv
+  (Poetry/Hatch/PDM, npm/yarn/bun は検出対象外。--template で指定してください)
 EOF
 }
 
@@ -72,21 +76,34 @@ if [[ "$TARGET_DIR" == "$DOTFILES_DIR" ]]; then
 fi
 
 # --- Detect template ---
+# Sets global TEMPLATE to the matched template name, or "" if no match.
+# pyproject.toml だけでは Poetry/Hatch/PDM/setuptools と区別できないため、
+# uv 固有のセクション ([tool.uv], [tool.uv.sources], [tool.uv.workspace] 等)
+# がある場合のみ python-uv と確定する。
 detect_template() {
+    TEMPLATE=""
     if [[ -n "$TEMPLATE_OVERRIDE" ]]; then
-        echo "$TEMPLATE_OVERRIDE"
+        TEMPLATE="$TEMPLATE_OVERRIDE"
         return
     fi
     # ts-node テンプレートは pnpm 専用なので、pnpm-lock.yaml がある場合のみ採用。
     # 他の package manager (npm/yarn/bun) は誤分類になるため検出しない。
     if [[ -f "$TARGET_DIR/package.json" && -f "$TARGET_DIR/pnpm-lock.yaml" ]]; then
-        echo "ts-node"
+        TEMPLATE="ts-node"
         return
     fi
-    echo ""
+    if [[ -f "$TARGET_DIR/uv.lock" ]]; then
+        TEMPLATE="python-uv"
+        return
+    fi
+    if [[ -f "$TARGET_DIR/pyproject.toml" ]] \
+        && grep -qE '^\[tool\.uv[].]' "$TARGET_DIR/pyproject.toml"; then
+        TEMPLATE="python-uv"
+        return
+    fi
 }
 
-TEMPLATE="$(detect_template)"
+detect_template
 if [[ -z "$TEMPLATE" ]]; then
     error "Cannot detect project type. Specify with --template <name>. Run with --help to see available templates."
 fi
@@ -122,10 +139,14 @@ done < <(find "$TEMPLATE_DIR" -type f -print0)
 echo ""
 
 # --- Update .gitignore ---
+# `git check-ignore` だと core.excludesfile / .git/info/exclude も拾うため、
+# 実行者のグローバル ignore で既に無視されているとリポジトリ側 .gitignore に
+# 追記されない。配布対象は repo の .gitignore なので、そのファイルを直接見る。
 GITIGNORE="$TARGET_DIR/.gitignore"
+IGNORE_ENTRY=".claude/settings.local.json"
 if git -C "$TARGET_DIR" rev-parse --is-inside-work-tree &>/dev/null; then
-    if git -C "$TARGET_DIR" check-ignore -q .claude/settings.local.json 2>/dev/null; then
-        skip ".gitignore: .claude/settings.local.json already ignored"
+    if [[ -f "$GITIGNORE" ]] && grep -Fxq "$IGNORE_ENTRY" "$GITIGNORE"; then
+        skip ".gitignore: $IGNORE_ENTRY already present"
     else
         if [[ ! -f "$GITIGNORE" ]]; then
             touch "$GITIGNORE"
@@ -133,9 +154,9 @@ if git -C "$TARGET_DIR" rev-parse --is-inside-work-tree &>/dev/null; then
         {
             echo ""
             echo "# Claude Code"
-            echo ".claude/settings.local.json"
+            echo "$IGNORE_ENTRY"
         } >> "$GITIGNORE"
-        info "Added .claude/settings.local.json to .gitignore"
+        info "Added $IGNORE_ENTRY to .gitignore"
     fi
 else
     warn "Not a git repository — skipping .gitignore update"
