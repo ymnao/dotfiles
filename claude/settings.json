@@ -12,6 +12,8 @@
       "Bash(gh repo view:*)",
       "Bash(gh run list:*)",
       "Bash(gh run view:*)",
+      "Bash(git branch:*)",
+      "Bash(jq:*)",
       "Bash(npm run *)",
       "Bash(npm test *)",
       "Bash(pnpm run *)",
