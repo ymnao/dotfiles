@@ -6,11 +6,11 @@
 #   claude-init.sh [--dir <path>] [--template <name>]
 #
 # Auto-detection:
-#   package.json + pnpm-lock.yaml → ts-node
-#   uv.lock                       → python-uv
-#   pyproject.toml (only)         → python-uv (warning: uv.lock 未検出)
-#   （npm/yarn/bun のリポは検出対象外。--template で明示するか、
-#    専用テンプレートの追加待ち）
+#   package.json + pnpm-lock.yaml      → ts-node
+#   uv.lock                            → python-uv
+#   pyproject.toml + [tool.uv] section → python-uv
+#   （npm/yarn/bun のリポ、Poetry/Hatch/PDM 等は検出対象外。
+#    --template で明示するか、専用テンプレートの追加待ち）
 
 set -euo pipefail
 
@@ -45,10 +45,10 @@ Available templates:
 $templates_list
 
 Auto-detection rules:
-  package.json + pnpm-lock.yaml → ts-node
-  uv.lock                       → python-uv
-  pyproject.toml (only)         → python-uv (warning)
-  (npm/yarn/bun リポは現状検出対象外。--template で指定してください)
+  package.json + pnpm-lock.yaml      → ts-node
+  uv.lock                            → python-uv
+  pyproject.toml + [tool.uv] section → python-uv
+  (Poetry/Hatch/PDM, npm/yarn/bun は検出対象外。--template で指定してください)
 EOF
 }
 
@@ -76,11 +76,12 @@ if [[ "$TARGET_DIR" == "$DOTFILES_DIR" ]]; then
 fi
 
 # --- Detect template ---
-# Sets globals: TEMPLATE (template name or "") and TEMPLATE_FUZZY
-# (1 = match was a heuristic guess that warrants a warning).
+# Sets global TEMPLATE to the matched template name, or "" if no match.
+# pyproject.toml だけでは Poetry/Hatch/PDM/setuptools と区別できないため、
+# uv 固有のセクション ([tool.uv], [tool.uv.sources], [tool.uv.workspace] 等)
+# がある場合のみ python-uv と確定する。
 detect_template() {
     TEMPLATE=""
-    TEMPLATE_FUZZY=0
     if [[ -n "$TEMPLATE_OVERRIDE" ]]; then
         TEMPLATE="$TEMPLATE_OVERRIDE"
         return
@@ -95,11 +96,9 @@ detect_template() {
         TEMPLATE="python-uv"
         return
     fi
-    # uv.lock が無くても pyproject.toml だけで python-uv と推定するが、
-    # Poetry/Hatch/PDM の可能性もあるので fuzzy フラグを立てる
-    if [[ -f "$TARGET_DIR/pyproject.toml" ]]; then
+    if [[ -f "$TARGET_DIR/pyproject.toml" ]] \
+        && grep -qE '^\[tool\.uv[].]' "$TARGET_DIR/pyproject.toml"; then
         TEMPLATE="python-uv"
-        TEMPLATE_FUZZY=1
         return
     fi
 }
@@ -107,10 +106,6 @@ detect_template() {
 detect_template
 if [[ -z "$TEMPLATE" ]]; then
     error "Cannot detect project type. Specify with --template <name>. Run with --help to see available templates."
-fi
-
-if (( TEMPLATE_FUZZY )); then
-    warn "uv.lock not found — assuming python-uv. If this project uses Poetry/Hatch/PDM/etc, override with --template <name>."
 fi
 
 TEMPLATE_DIR="$TEMPLATES_DIR/$TEMPLATE"

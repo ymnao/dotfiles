@@ -9,9 +9,6 @@
       "Bash(uv tree:*)",
       "Bash(uv run *)",
       "Bash(uv pip install:*)",
-      "Bash(pip install:*)",
-      "Bash(pip3 install:*)",
-      "Bash(python -m pip install:*)",
       "Bash(python *)",
       "Bash(python3 *)",
       "Bash(pytest:*)",
@@ -20,12 +17,19 @@
     "ask": [
       "Bash(uvx *)",
       "Bash(uv tool install *)",
-      "Bash(pip install --user *)"
+      "Bash(pip install:*)",
+      "Bash(pip3 install:*)",
+      "Bash(python -m pip install:*)"
     ],
     "deny": [
       "Bash(uv publish:*)",
       "Bash(uv pip install --system *)",
       "Bash(pip install --system *)",
+      "Bash(pip3 install --system *)",
+      "Bash(python -m pip install --system *)",
+      "Bash(pip install --user *)",
+      "Bash(pip3 install --user *)",
+      "Bash(python -m pip install --user *)",
       "Edit(.env)",
       "Edit(.env.*)",
       "Edit(uv.lock)",

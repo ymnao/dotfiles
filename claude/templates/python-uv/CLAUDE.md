@@ -49,8 +49,8 @@
 
 - `.env*` は Read/Edit 拒否（settings.json で設定済み）
 - `uvx` / `uv tool install` は supply chain リスクあり、プロンプト確認
-- `pip install --user` はプロンプト確認（user site-packages を汚染するため）
-- `pip install --system` / `uv pip install --system` は禁止（システム Python を汚染するため）
+- 直接の `pip` / `pip3` / `python -m pip install` はプロンプト確認（uv 運用前提のため、`uv pip install` か `uv add` 経由を推奨）
+- `pip install --user` / `pip install --system` / `uv pip install --system` は禁止（user/system Python を汚染するため）
 - `uv publish` は禁止
 - `.venv/`, `__pycache__/`, `uv.lock` の手動編集は禁止
 
