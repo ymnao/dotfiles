@@ -11,6 +11,7 @@
       "Bash(gh repo view:*)",
       "Bash(gh run list:*)",
       "Bash(gh run view:*)",
+      "Bash(gh api graphql:*)",
       "Bash(npm run *)",
       "Bash(npm test *)",
       "Bash(pnpm run *)",
@@ -18,8 +19,7 @@
       "Bash(uv run *)",
       "Bash(pytest:*)",
       "Bash(make *)",
-      "Bash(bash \"$HOME/.claude/skills/pr/scripts/gather-branch-info.sh\":*)",
-      "Bash(bash \"$HOME/.claude/skills/resolve/scripts/fetch-unresolved-reviews.sh\":*)"
+      "Bash(bash \"$HOME/.claude/skills/pr/scripts/gather-branch-info.sh\":*)"
     ],
     "deny": [
       "Bash(rm -rf *)",
