@@ -6,11 +6,13 @@
 #   claude-init.sh [--dir <path>] [--template <name>]
 #
 # Auto-detection:
-#   package.json + pnpm-lock.yaml      → ts-node
-#   uv.lock                            → python-uv
-#   pyproject.toml + [tool.uv] section → python-uv
-#   （npm/yarn/bun のリポ、Poetry/Hatch/PDM 等は検出対象外。
-#    --template で明示するか、専用テンプレートの追加待ち）
+#   package.json + pnpm-lock.yaml         → pnpm-node
+#   package.json + package-lock.json      → npm-node
+#   package.json + yarn.lock              → yarn-node
+#   package.json + bun.lockb / bun.lock   → bun-node
+#   uv.lock                               → python-uv
+#   pyproject.toml + [tool.uv] section    → python-uv
+#   （Poetry/Hatch/PDM 等は検出対象外。--template で明示するか、専用テンプレートの追加待ち）
 
 set -euo pipefail
 
@@ -45,10 +47,13 @@ Available templates:
 $templates_list
 
 Auto-detection rules:
-  package.json + pnpm-lock.yaml      → ts-node
-  uv.lock                            → python-uv
-  pyproject.toml + [tool.uv] section → python-uv
-  (Poetry/Hatch/PDM, npm/yarn/bun は検出対象外。--template で指定してください)
+  package.json + pnpm-lock.yaml         → pnpm-node
+  package.json + package-lock.json      → npm-node
+  package.json + yarn.lock              → yarn-node
+  package.json + bun.lockb / bun.lock   → bun-node
+  uv.lock                               → python-uv
+  pyproject.toml + [tool.uv] section    → python-uv
+  (Poetry/Hatch/PDM 等は検出対象外。--template で指定してください)
 EOF
 }
 
@@ -86,11 +91,26 @@ detect_template() {
         TEMPLATE="$TEMPLATE_OVERRIDE"
         return
     fi
-    # ts-node テンプレートは pnpm 専用なので、pnpm-lock.yaml がある場合のみ採用。
-    # 他の package manager (npm/yarn/bun) は誤分類になるため検出しない。
-    if [[ -f "$TARGET_DIR/package.json" && -f "$TARGET_DIR/pnpm-lock.yaml" ]]; then
-        TEMPLATE="ts-node"
-        return
+    # Node 系テンプレは package.json + 各 package manager の lockfile で判別する。
+    # 複数の lockfile が同居している場合は pnpm > npm > yarn > bun の順に優先。
+    if [[ -f "$TARGET_DIR/package.json" ]]; then
+        if [[ -f "$TARGET_DIR/pnpm-lock.yaml" ]]; then
+            TEMPLATE="pnpm-node"
+            return
+        fi
+        if [[ -f "$TARGET_DIR/package-lock.json" ]]; then
+            TEMPLATE="npm-node"
+            return
+        fi
+        if [[ -f "$TARGET_DIR/yarn.lock" ]]; then
+            TEMPLATE="yarn-node"
+            return
+        fi
+        # bun.lockb (binary, 旧) と bun.lock (text, Bun 1.2+) の両方をサポート。
+        if [[ -f "$TARGET_DIR/bun.lockb" || -f "$TARGET_DIR/bun.lock" ]]; then
+            TEMPLATE="bun-node"
+            return
+        fi
     fi
     if [[ -f "$TARGET_DIR/uv.lock" ]]; then
         TEMPLATE="python-uv"
