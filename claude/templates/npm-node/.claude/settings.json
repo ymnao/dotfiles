@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(npm ci:*)",
+      "Bash(npm test:*)",
+      "Bash(npm run *)",
+      "Bash(npm exec *)",
+      "Bash(node *)",
+      "Bash(tsx *)",
+      "Bash(tsc:*)"
+    ],
+    "ask": [
+      "Bash(npm install:*)",
+      "Bash(npm uninstall *)",
+      "Bash(npm update *)",
+      "Bash(npm dedupe:*)",
+      "Bash(npx *)"
+    ],
+    "deny": [
+      "Bash(npm install -g *)",
+      "Bash(npm i -g *)",
+      "Bash(npm publish:*)",
+      "Edit(.env)",
+      "Edit(.env.*)",
+      "Edit(node_modules/**)",
+      "Edit(package-lock.json)",
+      "Edit(pnpm-lock.yaml)",
+      "Edit(yarn.lock)",
+      "Read(.env)",
+      "Read(.env.*)"
+    ]
+  },
+  "sandbox": {
+    "filesystem": {
+      "allowWrite": [
+        "~/.npm"
+      ]
+    }
+  }
+}

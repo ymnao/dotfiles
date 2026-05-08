@@ -11,7 +11,8 @@
 
 | 用途 | コマンド |
 |---|---|
-| 依存インストール | `pnpm install --frozen-lockfile` |
+| 依存インストール (CI / 再現性重視) | `pnpm install --frozen-lockfile` |
+| 依存インストール (開発) | `pnpm install` |
 | テスト | `pnpm test` |
 | ビルド | `pnpm build` |
 | 型チェック | `pnpm typecheck` |
