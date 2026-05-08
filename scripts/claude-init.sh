@@ -91,7 +91,6 @@ detect_template() {
         TEMPLATE="$TEMPLATE_OVERRIDE"
         return
     fi
-    # Node 系テンプレは package.json + 各 package manager の lockfile で判別する。
     # 複数の lockfile が同居している場合は pnpm > npm > yarn > bun の順に優先。
     if [[ -f "$TARGET_DIR/package.json" ]]; then
         if [[ -f "$TARGET_DIR/pnpm-lock.yaml" ]]; then
