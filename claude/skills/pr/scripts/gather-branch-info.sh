@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Gather current branch information in JSON format
+# Gather current branch's git/local-file info as JSON.
+# Intentionally avoids `gh`: when this script is invoked via `bash`, any nested
+# `gh` becomes a grandchild of Claude Code's Bash tool and cannot resolve its
+# macOS Keychain auth (token-in-keyring lookup fails). Anything that needs
+# GitHub API data (default branch override, existing-PR check) is handled by
+# the caller (SKILL.md) via direct `gh` invocations.
 
 # Dependency check
-for cmd in gh jq; do
-  if ! command -v "$cmd" &>/dev/null; then
-    echo "ERROR: $cmd is not installed" >&2
-    exit 1
-  fi
-done
+if ! command -v jq &>/dev/null; then
+  echo "ERROR: jq is not installed" >&2
+  exit 1
+fi
 
 # Current branch name (error on detached HEAD)
 BRANCH_NAME=$(git branch --show-current)
@@ -18,28 +21,19 @@ if [ -z "$BRANCH_NAME" ]; then
   exit 1
 fi
 
-# Resolve default branch: GitHub CLI → local symbolic ref → error
-resolve_default_branch() {
-  local branch
-
-  if branch=$(gh repo view --json defaultBranchRef -q '.defaultBranchRef.name' 2>/dev/null) && [ -n "$branch" ]; then
-    echo "$branch"
-    return 0
-  fi
-
-  if branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null); then
-    branch=${branch#refs/remotes/origin/}
-    if [ -n "$branch" ]; then
-      echo "$branch"
-      return 0
-    fi
-  fi
-
-  echo "ERROR: Failed to determine default branch" >&2
+# Resolve default branch.
+# Prefer an explicit override from $1 (the SKILL caller queries `gh repo view`
+# directly, which is authoritative even when origin/HEAD is unset or the main
+# remote is not named "origin"). Fall back to refs/remotes/origin/HEAD which
+# `git clone` writes by default.
+if [ "${1:-}" != "" ]; then
+  BASE_BRANCH="$1"
+elif BASE_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null); then
+  BASE_BRANCH=${BASE_BRANCH#refs/remotes/origin/}
+else
+  echo "ERROR: Cannot determine default branch. Pass it as the first argument or run: git remote set-head origin -a" >&2
   exit 1
-}
-
-BASE_BRANCH=$(resolve_default_branch)
+fi
 
 # Resolve base branch ref (prefer local, fallback to origin/)
 BASE_REF="$BASE_BRANCH"
@@ -58,39 +52,26 @@ if [ "$BRANCH_NAME" = "$BASE_BRANCH" ]; then
   exit 1
 fi
 
-# Commits since base branch
-COMMITS=$(git log "${BASE_REF}..HEAD" --pretty=format:"%h%x1f%s%x1f%b%x1e" | jq -Rs '
-  split("\u001e") | map(select(length > 0)) |
-  map(split("\u001f") | {hash: .[0], subject: .[1], body: .[2]})
-' 2>/dev/null || echo "[]")
-COMMIT_COUNT=$(echo "$COMMITS" | jq 'length')
+# Commits since base branch.
+# NUL is the only byte git forbids in commit messages, so it is the only
+# safe inter-commit delimiter — `-z` makes git emit NUL-terminated commits.
+# Pipe to jq via process substitution so the shell does not strip NULs.
+COMMITS=$(jq -Rs '
+  split("\u0000") | map(select(length > 0))
+  | map(split("\n") as $l | {hash: $l[0], subject: $l[1], body: ($l[3:] | join("\n"))})
+' < <(git log "${BASE_REF}..HEAD" -z --format='%h%n%s%n%n%b') 2>/dev/null || echo "[]")
 
-# Diff stat
+# Diff stat (one --numstat pass for files/insertions/deletions)
 DIFF_STAT=$(git diff "${BASE_REF}...HEAD" --stat 2>/dev/null || echo "")
-FILES_CHANGED=$(git diff "${BASE_REF}...HEAD" --numstat 2>/dev/null | wc -l | tr -d ' ')
-INSERTIONS=$(git diff "${BASE_REF}...HEAD" --numstat 2>/dev/null | awk '{s+=$1} END {print s+0}')
-DELETIONS=$(git diff "${BASE_REF}...HEAD" --numstat 2>/dev/null | awk '{s+=$2} END {print s+0}')
+read -r FILES_CHANGED INSERTIONS DELETIONS < <(
+  git diff "${BASE_REF}...HEAD" --numstat 2>/dev/null \
+    | awk '{f++; ins+=$1; del+=$2} END {printf "%d %d %d\n", f+0, ins+0, del+0}'
+)
 
 # Check if remote branch exists
 HAS_REMOTE=false
-if git ls-remote --heads origin "$BRANCH_NAME" 2>/dev/null | grep -q "$BRANCH_NAME"; then
+if [ -n "$(git ls-remote --heads origin "$BRANCH_NAME" 2>/dev/null)" ]; then
   HAS_REMOTE=true
-fi
-
-# Check for existing PR
-# Only OPEN PRs should populate existing_pr — SKILL.md uses it as a stop
-# condition, so a stale closed/merged PR on a reused branch name would
-# falsely block new PR creation.
-EXISTING_PR=$(gh pr view --json number,url,state --jq 'select(.state == "OPEN") | {number, url, state}' 2>/dev/null || true)
-if [ -z "$EXISTING_PR" ]; then
-  OWNER=$(gh repo view --json owner --jq '.owner.login' 2>/dev/null || true)
-  if [ -n "$OWNER" ]; then
-    EXISTING_PR=$(gh pr list --head "$BRANCH_NAME" --base "$BASE_BRANCH" --state open --json number,url,state,headRepositoryOwner \
-      --jq "[.[] | select(.headRepositoryOwner.login == \"$OWNER\") | {number, url, state}][0] // empty" 2>/dev/null || true)
-  fi
-fi
-if [ -z "$EXISTING_PR" ]; then
-  EXISTING_PR="null"
 fi
 
 # Extract linked issue number from branch name (e.g., feature/add-auth-#42 → 42)
@@ -119,26 +100,23 @@ jq -n \
   --arg branch_name "$BRANCH_NAME" \
   --arg base_branch "$BASE_BRANCH" \
   --argjson commits "$COMMITS" \
-  --argjson commit_count "$COMMIT_COUNT" \
   --arg diff_stat "$DIFF_STAT" \
   --argjson files_changed "$FILES_CHANGED" \
   --argjson insertions "$INSERTIONS" \
   --argjson deletions "$DELETIONS" \
   --argjson has_remote "$HAS_REMOTE" \
-  --argjson existing_pr "$EXISTING_PR" \
   --argjson linked_issue "$LINKED_ISSUE" \
   --arg pr_template "$PR_TEMPLATE" \
   '{
     branch_name: $branch_name,
     base_branch: $base_branch,
     commits: $commits,
-    commit_count: $commit_count,
+    commit_count: ($commits | length),
     diff_stat: $diff_stat,
     files_changed: $files_changed,
     insertions: $insertions,
     deletions: $deletions,
     has_remote: $has_remote,
-    existing_pr: $existing_pr,
     linked_issue: $linked_issue,
     pr_template: (if $pr_template == "" then null else $pr_template end)
   }'

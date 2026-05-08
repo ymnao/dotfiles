@@ -8,14 +8,34 @@ Fetch unresolved review threads for the current PR and address each one.
 
 ## Steps
 
-1. Run `bash "$HOME/.claude/skills/resolve/scripts/fetch-unresolved-reviews.sh"` to get unresolved review threads
-2. If `unresolved_threads` is empty, report that there are no unresolved comments and stop
-3. For each thread:
+1. Determine the current branch's PR number, owner, and repo. Run each `gh` command as a bare invocation and substitute the prior output literally into the next call (no `VAR=$(...)` — the permission allow-list matches by command prefix, which command-substitution wrapping breaks):
+   - Run `gh repo view --json owner --jq '.owner.login'` → `<owner>`
+   - Run `gh repo view --json name --jq '.name'` → `<repo>`
+   - Run `gh pr view --json number --jq .number` (uses upstream tracking; may fail). If a number comes back, use it as `<pr_number>`.
+   - Otherwise fall back: get the branch with `git branch --show-current`, then run `gh pr list --head <branch> --state open --json number,baseRefName,headRepositoryOwner --jq '[.[] | select(.headRepositoryOwner.login == "<owner>")]'` (substituting `<branch>` and `<owner>` literally).
+     - 0 matches → report "No PR found for the current branch" and stop.
+     - >1 matches → list `PR #<n> -> <baseRefName>` for each, ask the user which one, then proceed.
+2. Fetch unresolved review threads in one Bash invocation that begins with `gh api graphql ...` (the leading command must be `gh api graphql` for the allow-list to match — substitute `<owner>`, `<repo>`, `<pr_number>` literally from step 1):
+   ```bash
+   gh api graphql \
+     -F query=@"$HOME/.claude/skills/resolve/queries/unresolved-threads.graphql" \
+     -f owner=<owner> -f repo=<repo> -F number=<pr_number> \
+   | jq --argjson pr_number <pr_number> '{
+       pr_number: $pr_number,
+       unresolved_threads: [
+         .data.repository.pullRequest.reviewThreads.nodes[]
+         | select(.isResolved == false)
+         | { path, line, comments: [.comments.nodes[] | {author: .author.login, body, createdAt}] }
+       ]
+     }'
+   ```
+3. If `unresolved_threads` is empty, report that there are no unresolved comments and stop
+4. For each thread:
    - Read the relevant file and line to understand the current state
    - Evaluate whether the suggestion is valid
    - If valid, fix the code (apply best practices regardless of effort)
    - If unnecessary or inappropriate, prepare a clear reason
-4. If any fixes were made, run all applicable verification steps for the project:
+5. If any fixes were made, run all applicable verification steps for the project:
    - Lint / static analysis
    - Format check
    - Type check
@@ -24,8 +44,8 @@ Fetch unresolved review threads for the current PR and address each one.
    - Integration tests
    - E2E tests
    - Determine available commands from package.json, Makefile, pyproject.toml, Cargo.toml, etc.
-5. Commit and push
-6. Report all results in the format below
+6. Commit and push
+7. Report all results in the format below
 
 ## Report format
 

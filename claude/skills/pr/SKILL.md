@@ -7,15 +7,22 @@ Create a pull request from the current branch based on its commit history and di
 
 ## Steps
 
-1. Run `bash "$HOME/.claude/skills/pr/scripts/gather-branch-info.sh"` to gather branch info
-2. Pre-checks:
-   - If `existing_pr` is not null → report the existing PR URL and stop
+1. Resolve the default branch and gather local branch info. Run each command as a bare invocation (no `VAR=$(...)` wrapping — the permission allow-list matches by command prefix and command-substitution forms break that match):
+   - Run `gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name'` — yields the default branch (e.g. `main`)
+   - If that fails (no GitHub remote), use the empty string; the script falls back to `refs/remotes/origin/HEAD`
+   - Run `bash "$HOME/.claude/skills/pr/scripts/gather-branch-info.sh" <default-branch>` substituting the value literally
+2. Check for an existing OPEN PR for this branch (avoids creating a duplicate). Use bare gh invocations and substitute the prior output literally into the next call:
+   - Run `gh repo view --json owner --jq '.owner.login'` — yields `<owner>`
+   - Run `gh pr list --head <branch_name> --base <base_branch> --state open --json number,url,headRepositoryOwner --jq '[.[] | select(.headRepositoryOwner.login == "<owner>")]'` — `headRepositoryOwner` filtering excludes same-named branches from forks
+   - 0 matches → proceed to step 3
+   - ≥1 match → report the PR URL and stop
+3. Pre-check:
    - If `commit_count` is 0 → report no commits from base branch and stop
-3. Analyze commit history and diff stat to generate PR title and body:
+4. Analyze commit history and diff stat to generate PR title and body:
    - **Title**: Under 70 characters, summarizing the changes
    - **Body**: Use the appropriate template (see below)
-4. If `has_remote` is false, run `git push -u origin <branch_name>` to push
-5. Create PR with `gh pr create`:
+5. If `has_remote` is false, run `git push -u origin <branch_name>` to push
+6. Create PR with `gh pr create`:
    - If `linked_issue` exists, include `Closes #<number>` in the body
 
 ## PR template selection

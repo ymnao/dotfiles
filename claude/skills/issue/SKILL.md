@@ -8,7 +8,7 @@ Fetch the specified issue, create a branch, and propose an implementation plan.
 
 ## Steps
 
-1. Run `bash "$HOME/.claude/skills/issue/scripts/fetch-issue.sh" $ARGUMENTS` to fetch issue info
+1. Run `gh issue view $ARGUMENTS --json number,title,body,labels,state,assignees,url --jq '{number, title, body, state, url, labels: [.labels[].name], assignees: [.assignees[].login]}'` to fetch issue info (the `--jq` projection normalizes `labels` and `assignees` to plain string arrays so the label-based branch-type rules below match by name)
 2. Check issue state:
    - If `CLOSED`, report that the issue is already closed and stop
 3. Check for uncommitted changes:
