@@ -77,7 +77,8 @@
     "excludedCommands": [
       "docker *",
       "gh *",
-      "brew *"
+      "brew *",
+      "pnpm test:e2e *"
     ],
     "allowUnsandboxedCommands": false
   },
