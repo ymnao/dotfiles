@@ -121,8 +121,14 @@ if [[ -d "$DOTFILES_DIR/codex" ]]; then
         link_file "$DOTFILES_DIR/codex/AGENTS.md" "$HOME/.codex/AGENTS.md"
     fi
 
+    # config.toml は symlink ではなくマージ方式
+    # Codex CLI は [projects.*] / [plugins.*] / [hooks.state] 等を ~/.codex/config.toml に
+    # 動的に書き込むため、symlink にすると dotfiles リポジトリが汚染される。
+    # マージスクリプトで base を上書きしつつ Codex 管理セクションを保持する。
     if [[ -f "$DOTFILES_DIR/codex/config.toml" ]]; then
-        link_file "$DOTFILES_DIR/codex/config.toml" "$HOME/.codex/config.toml"
+        bash "$SCRIPT_DIR/codex-merge-config.sh" \
+            "$DOTFILES_DIR/codex/config.toml" \
+            "$HOME/.codex/config.toml"
     fi
 
     if [[ -f "$DOTFILES_DIR/codex/hooks.json" ]]; then

@@ -1,5 +1,12 @@
 # Codex CLI configuration
-# model と [projects] はマシンごとに設定するため含めない
+#
+# このファイルは scripts/codex-merge-config.sh によって ~/.codex/config.toml に
+# ベース設定として書き出される。
+# Codex CLI が動的に書き込む [projects.*] / [plugins.*] / [notice.*] /
+# [tui.*] / [hooks.state] は dest 側で保護されるため、ここには含めない。
+
+model = "gpt-5.5"
+model_reasoning_effort = "medium"
 
 web_search = "live"
 allow_login_shell = false
