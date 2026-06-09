@@ -6,7 +6,9 @@
 
 input=$(cat)
 
-case "$input" in
+# 早期スクリーニングも case-insensitive（macOS APFS 想定で `.Codex` 等も拾う）
+input_lower=$(printf '%s' "$input" | tr '[:upper:]' '[:lower:]')
+case "$input_lower" in
   *rm*|*git*|*codex*|*chmod*|*sudo*) ;;
   *) exit 0 ;;
 esac
@@ -51,7 +53,10 @@ fi
 # 書き込みコマンドの列挙ではすべてのリダイレクト/エイリアスを網羅できないため、
 # コマンド全体に対して相対パスの [.]codex を独立トークンとして検出する。
 # 例: `> .codex/config.toml`, `install -d .codex`, `printf x > .codex/config.toml` 等
-if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]>]|[.]\/)[.]codex([\/[:space:]"`)]|$)'; then
+#
+# macOS APFS は既定で case-insensitive のため、`.Codex` 等の表記でも
+# 同一ファイルにアクセスできる。検出は大文字小文字を無視して行う。
+if printf '%s\n' "$command" | grep -qiE '(^|[;&|({`[:space:]>]|[.]\/)[.]codex([\/[:space:]"`)]|$)'; then
   echo "ブロック: プロジェクト内の .codex/ ディレクトリへの参照は禁止されています（Cymulate notify エスケープ対策）" >&2
   exit 2
 fi
@@ -65,8 +70,17 @@ for token in $normalized_command; do
   token="${token%\'}"
   token="${token#./}"
 
+  # 環境変数表記 `$HOME` は大文字固定（シェル仕様）。先に case-sensitive で許可判定する。
   case "$token" in
-    "~/$protected_name"|"\$HOME/$protected_name"|"\$HOME/$protected_name"/*|/*)
+    "\$HOME/$protected_name"|"\$HOME/$protected_name"/*)
+      continue
+      ;;
+  esac
+
+  # それ以外は case-insensitive 比較（macOS APFS 想定で `.Codex` 等を拾う）
+  token_lower=$(printf '%s' "$token" | tr '[:upper:]' '[:lower:]')
+  case "$token_lower" in
+    "~/$protected_name"|"~/$protected_name"/*|/*)
       continue
       ;;
     "$protected_name"|"$protected_name"/*|*"/$protected_name"|*"/$protected_name"/*)

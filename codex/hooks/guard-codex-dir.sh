@@ -13,7 +13,10 @@
 
 input=$(cat)
 
-case "$input" in
+# macOS APFS は既定で case-insensitive のため、早期スクリーニングも
+# 大文字小文字を無視する（`.Codex/...` 等の表記でも同一ファイル）。
+input_lower=$(printf '%s' "$input" | tr '[:upper:]' '[:lower:]')
+case "$input_lower" in
   *.codex*) ;;
   *) exit 0 ;;
 esac
@@ -22,13 +25,6 @@ if ! command -v jq &>/dev/null; then
   # jq 不在時はフェイルセーフでブロック
   echo "ブロック: jq 未インストールのため .codex/ 保護を確認できません" >&2
   exit 2
-fi
-
-# tool_input 全体を文字列化（オブジェクトは JSON エンコード）
-payload=$(printf '%s\n' "$input" | jq -r '.tool_input | if type == "string" then . else tostring end')
-
-if [[ -z "$payload" ]]; then
-  exit 0
 fi
 
 protected_name="$(printf '\056codex')"
@@ -42,14 +38,19 @@ is_protected_project_path() {
   path="${path%\"}"
   path="${path#./}"
 
-  if [[ "$path" = /* ]]; then
-    case "$path" in
-      "$cwd/$protected_name"|"$cwd/$protected_name"/*|"$cwd"/*"/$protected_name"|"$cwd"/*"/$protected_name"/*)
+  # case-insensitive 比較のため小文字に正規化（macOS APFS 想定）
+  local path_lower cwd_lower
+  path_lower=$(printf '%s' "$path" | tr '[:upper:]' '[:lower:]')
+  cwd_lower=$(printf '%s' "$cwd" | tr '[:upper:]' '[:lower:]')
+
+  if [[ "$path_lower" = /* ]]; then
+    case "$path_lower" in
+      "$cwd_lower/$protected_name"|"$cwd_lower/$protected_name"/*|"$cwd_lower"/*"/$protected_name"|"$cwd_lower"/*"/$protected_name"/*)
         return 0
         ;;
     esac
   else
-    case "$path" in
+    case "$path_lower" in
       "$protected_name"|"$protected_name"/*|*"/$protected_name"|*"/$protected_name"/*)
         return 0
         ;;
@@ -61,13 +62,19 @@ is_protected_project_path() {
 
 protected_paths=$(
   {
-    printf '%s\n' "$payload" \
+    # apply_patch の patch 本文を実改行のまま取り出し、ファイル操作ヘッダーから path を抽出。
+    # tool_input.patch / tool_input.input は実装により名称が揺れるためどちらも対応する。
+    printf '%s\n' "$input" \
+      | jq -r '.tool_input | (.patch? // .input? // empty)' \
       | awk '
-          /^\*\*\* (Add File|Update File|Delete File|Move to): / {
-            sub(/^\*\*\* (Add File|Update File|Delete File|Move to): /, "")
-            print
+          {
+            lower = tolower($0)
+            if (match(lower, /^\*\*\* (add file|update file|delete file|move to): /)) {
+              print substr($0, RLENGTH + 1)
+            }
           }
         '
+    # Edit / Write 等の直接 path フィールドも検査
     printf '%s\n' "$input" \
       | jq -r '
           .tool_input
