@@ -133,8 +133,18 @@ if [[ -d "$DOTFILES_DIR/codex" ]]; then
         link_file "$DOTFILES_DIR/codex/hooks" "$HOME/.codex/hooks"
     fi
 
+    # skills は per-skill 個別 symlink にする（Codex CLI が管理する .system/ と共存させるため）
     if [[ -d "$DOTFILES_DIR/codex/skills" ]]; then
-        link_file "$DOTFILES_DIR/codex/skills" "$HOME/.codex/skills"
+        # 既存の skills ディレクトリ自体が symlink（旧 link.sh の挙動）なら削除して実体ディレクトリに置き換える
+        if [[ -L "$HOME/.codex/skills" ]]; then
+            rm "$HOME/.codex/skills"
+        fi
+        mkdir -p "$HOME/.codex/skills"
+        for skill_path in "$DOTFILES_DIR/codex/skills"/*/; do
+            [[ -d "$skill_path" ]] || continue
+            skill_name=$(basename "$skill_path")
+            link_file "${skill_path%/}" "$HOME/.codex/skills/$skill_name"
+        done
     fi
 fi
 
