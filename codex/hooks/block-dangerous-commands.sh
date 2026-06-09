@@ -66,6 +66,7 @@ protected_name="$(printf '\056codex')"
 # （macOS APFS 想定で `.Codex` 等も拾う）。`$HOME` はシェル展開されない
 # リテラル文字列なので、小文字化された `$home` をパターンに含めて許可判定する。
 command_lower=$(printf '%s' "$command" | tr '[:upper:]' '[:lower:]')
+cwd_lower=$(printf '%s' "$(pwd -P)" | tr '[:upper:]' '[:lower:]')
 normalized_command=$(printf '%s\n' "$command_lower" | tr ';&|(){}<>' '        ')
 for token in $normalized_command; do
   token="${token#\"}"
@@ -75,7 +76,17 @@ for token in $normalized_command; do
   token="${token#./}"
 
   case "$token" in
-    "~/$protected_name"|"~/$protected_name"/*|"\$home/$protected_name"|"\$home/$protected_name"/*|/*)
+    # ホーム配下の絶対表記は許可
+    "~/$protected_name"|"~/$protected_name"/*|"\$home/$protected_name"|"\$home/$protected_name"/*)
+      continue
+      ;;
+    # cwd 配下の絶対パス経由 .codex はブロック（mkdir /abs/cwd/.codex 等の回避を防ぐ）
+    "$cwd_lower/$protected_name"|"$cwd_lower/$protected_name"/*|"$cwd_lower"/*"/$protected_name"|"$cwd_lower"/*"/$protected_name"/*)
+      echo "ブロック: プロジェクト内の .codex/ ディレクトリへの参照は禁止されています（Cymulate notify エスケープ対策）" >&2
+      exit 2
+      ;;
+    # cwd 外の絶対パスは許可
+    /*)
       continue
       ;;
     "$protected_name"|"$protected_name"/*|*"/$protected_name"|*"/$protected_name"/*)
