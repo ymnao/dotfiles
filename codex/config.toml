@@ -1,0 +1,9 @@
+# Codex CLI configuration
+# model と [projects] はマシンごとに設定するため含めない
+
+web_search = "live"
+allow_login_shell = false
+
+[shell_environment_policy]
+inherit = "all"
+include_only = ["PATH", "HOME", "USER", "LANG", "SHELL", "TERM"]

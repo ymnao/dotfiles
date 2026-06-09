@@ -44,6 +44,12 @@ automatic_backups/
 .claude/*
 !.claude/settings.json
 
+# Codex CLI runtime artifacts (生成元: `codex doctor` 等の実行で作成される)
+codex/tmp/
+codex/log/
+codex/sessions/
+codex/history.jsonl
+
 # GitHub CLI
 gh/hosts.yml
 

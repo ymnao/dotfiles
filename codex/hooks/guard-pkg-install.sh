@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+#
+# PreToolUse hook (Codex CLI): パッケージインストールコマンドをブロックする
+#
+# allowlist 方式: 以下のみ許可し、それ以外のパッケージマネージャ呼び出しをブロック
+#   - npm ci（ロックファイルからの復元）
+#   - npm install / npm i（引数なし、ロックファイルからの復元）
+#   - pnpm install（引数なし）
+#   - yarn install（引数なし）
+#
+# exit 0 = 許可, exit 2 = ブロック
+#
+
+input=$(cat)
+
+case "$input" in
+  *npm*|*pnpm*|*yarn*|*pip*|*uv*|*poetry*) ;;
+  *) exit 0 ;;
+esac
+
+if ! command -v jq &>/dev/null; then
+  exit 0
+fi
+
+command=$(printf '%s\n' "$input" | jq -r '.tool_input.command // empty')
+
+if [[ -z "$command" ]]; then
+  exit 0
+fi
+
+# npm ci は常に許可（ロックファイルからの復元）
+if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])npm[[:space:]]+ci([[:space:]]|[;&|)}`]|$)'; then
+  exit 0
+fi
+
+# npm install / npm i が引数なし（末尾またはセパレータ直後）なら許可
+# 引数ありはすべてブロック（--save-dev react のようなフラグ挟みも含む）
+if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])npm[[:space:]]+(install|i)([[:space:]]|[;&|)}`]|$)'; then
+  if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])npm[[:space:]]+(install|i)([[:space:]]*[;&|)}`]|[[:space:]]*$)'; then
+    exit 0
+  fi
+  echo "ブロック: npm install <package> は禁止されています。パッケージの追加はユーザーに依頼してください" >&2
+  exit 2
+fi
+
+# pnpm add は常にブロック、pnpm install は引数なしのみ許可
+if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])pnpm[[:space:]]+add([[:space:]]|[;&|)}`]|$)'; then
+  echo "ブロック: pnpm add は禁止されています。パッケージの追加はユーザーに依頼してください" >&2
+  exit 2
+fi
+if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])pnpm[[:space:]]+install([[:space:]]|[;&|)}`]|$)'; then
+  if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])pnpm[[:space:]]+install([[:space:]]*[;&|)}`]|[[:space:]]*$)'; then
+    exit 0
+  fi
+  echo "ブロック: pnpm install <package> は禁止されています。パッケージの追加はユーザーに依頼してください" >&2
+  exit 2
+fi
+
+# yarn add は常にブロック、yarn install は引数なしのみ許可
+if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])yarn[[:space:]]+add([[:space:]]|[;&|)}`]|$)'; then
+  echo "ブロック: yarn add は禁止されています。パッケージの追加はユーザーに依頼してください" >&2
+  exit 2
+fi
+if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])yarn[[:space:]]+install([[:space:]]|[;&|)}`]|$)'; then
+  if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])yarn[[:space:]]+install([[:space:]]*[;&|)}`]|[[:space:]]*$)'; then
+    exit 0
+  fi
+  echo "ブロック: yarn install <package> は禁止されています。パッケージの追加はユーザーに依頼してください" >&2
+  exit 2
+fi
+
+# pip install は常にブロック（uv pip install も含む）
+if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])(pip|pip3|uv[[:space:]]+pip)[[:space:]]+install([[:space:]]|[;&|)}`]|$)'; then
+  echo "ブロック: pip install は禁止されています。パッケージの追加はユーザーに依頼してください" >&2
+  exit 2
+fi
+
+# uv add は常にブロック
+if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])uv[[:space:]]+add([[:space:]]|[;&|)}`]|$)'; then
+  echo "ブロック: uv add は禁止されています。パッケージの追加はユーザーに依頼してください" >&2
+  exit 2
+fi
+
+# poetry add は常にブロック
+if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])poetry[[:space:]]+add([[:space:]]|[;&|)}`]|$)'; then
+  echo "ブロック: poetry add は禁止されています。パッケージの追加はユーザーに依頼してください" >&2
+  exit 2
+fi
+
+exit 0
