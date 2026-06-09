@@ -12,7 +12,8 @@ case "$input" in
 esac
 
 if ! command -v jq &>/dev/null; then
-  exit 0
+  echo "ブロック: jq 未インストールのためコマンド安全性を確認できません" >&2
+  exit 2
 fi
 
 command=$(printf '%s\n' "$input" | jq -r '.tool_input.command // empty')
@@ -46,14 +47,34 @@ if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])git[[:space:]]+rese
   exit 2
 fi
 
-# --- .codex ディレクトリへの参照を全面ブロック ---
+# --- プロジェクト内 [.]codex ディレクトリへの参照をブロック ---
 # 書き込みコマンドの列挙ではすべてのリダイレクト/エイリアスを網羅できないため、
-# コマンド全体に対して .codex を独立トークンとして検出する。
+# コマンド全体に対して相対パスの [.]codex を独立トークンとして検出する。
 # 例: `> .codex/config.toml`, `install -d .codex`, `printf x > .codex/config.toml` 等
-if printf '%s\n' "$command" | grep -qE '(^|[[:space:]/"`(>]|\\)\.codex([/[:space:]"`)]|\\|$)'; then
+if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]>]|[.]\/)[.]codex([\/[:space:]"`)]|$)'; then
   echo "ブロック: プロジェクト内の .codex/ ディレクトリへの参照は禁止されています（Cymulate notify エスケープ対策）" >&2
   exit 2
 fi
+
+protected_name="$(printf '\056codex')"
+normalized_command=$(printf '%s\n' "$command" | tr ';&|(){}<>' '        ')
+for token in $normalized_command; do
+  token="${token#\"}"
+  token="${token%\"}"
+  token="${token#\'}"
+  token="${token%\'}"
+  token="${token#./}"
+
+  case "$token" in
+    "~/$protected_name"|"\$HOME/$protected_name"|"\$HOME/$protected_name"/*|/*)
+      continue
+      ;;
+    "$protected_name"|"$protected_name"/*|*"/$protected_name"|*"/$protected_name"/*)
+      echo "ブロック: プロジェクト内の .codex/ ディレクトリへの参照は禁止されています（Cymulate notify エスケープ対策）" >&2
+      exit 2
+      ;;
+  esac
+done
 
 # --- chmod 777 ---
 if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])chmod[[:space:]]+(-[a-zA-Z]*[[:space:]]+)*777([[:space:]]|[;&|)}`]|$)'; then

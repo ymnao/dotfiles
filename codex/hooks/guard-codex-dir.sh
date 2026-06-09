@@ -3,9 +3,8 @@
 # PreToolUse hook (Codex CLI): .codex/ ディレクトリへのファイル書き込みをブロックする
 #
 # apply_patch / Edit / Write 等のファイル編集ツールが .codex/ 配下を操作するのを防ぐ。
-# tool_input の構造はツールごとに異なり、apply_patch の patch 本文には
-# `*** Add File: .codex/config.toml` のような行がそのまま含まれるため、
-# 特定フィールドに頼らず tool_input 全体を文字列化して `.codex` への参照を検出する。
+# apply_patch はファイル操作ヘッダー、Edit / Write は path 系フィールドだけを検査する。
+# patch 本文中の説明テキストに .codex が含まれるだけなら許可する。
 #
 # Cymulate notify エスケープ（未修正）対策。
 #
@@ -32,9 +31,63 @@ if [[ -z "$payload" ]]; then
   exit 0
 fi
 
-# .codex を独立トークンとして検出（.codexrc / foo.codex.txt のような false positive は除外）
-if printf '%s\n' "$payload" | grep -qE '(^|[[:space:]/"`(]|\\)\.codex([/[:space:]"`)]|\\|$)'; then
-  echo "ブロック: プロジェクト内の .codex/ ディレクトリへのファイル操作は禁止されています（Cymulate notify エスケープ対策）" >&2
+protected_name="$(printf '\056codex')"
+
+is_protected_project_path() {
+  local path="$1"
+  local cwd
+
+  cwd="$(pwd -P)"
+  path="${path#\"}"
+  path="${path%\"}"
+  path="${path#./}"
+
+  if [[ "$path" = /* ]]; then
+    case "$path" in
+      "$cwd/$protected_name"|"$cwd/$protected_name"/*|"$cwd"/*"/$protected_name"|"$cwd"/*"/$protected_name"/*)
+        return 0
+        ;;
+    esac
+  else
+    case "$path" in
+      "$protected_name"|"$protected_name"/*|*"/$protected_name"|*"/$protected_name"/*)
+        return 0
+        ;;
+    esac
+  fi
+
+  return 1
+}
+
+protected_paths=$(
+  {
+    printf '%s\n' "$payload" \
+      | awk '
+          /^\*\*\* (Add File|Update File|Delete File|Move to): / {
+            sub(/^\*\*\* (Add File|Update File|Delete File|Move to): /, "")
+            print
+          }
+        '
+    printf '%s\n' "$input" \
+      | jq -r '
+          .tool_input
+          | if type == "object" then
+              (.path?, .file_path?, .filename?)
+            else
+              empty
+            end
+          // empty
+        '
+  } | while IFS= read -r path; do
+    [[ -n "$path" ]] || continue
+    if is_protected_project_path "$path"; then
+      printf '%s\n' "$path"
+    fi
+  done
+)
+
+if [[ -n "$protected_paths" ]]; then
+  echo "ブロック: プロジェクト内の Codex 設定ディレクトリへのファイル操作は禁止されています（Cymulate notify エスケープ対策）" >&2
   exit 2
 fi
 
