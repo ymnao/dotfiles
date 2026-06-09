@@ -293,10 +293,21 @@ if (Test-Path $codexSource) {
         New-DirectoryLink -Source $codexHooksSource -Destination $codexHooksDest
     }
 
+    # skills は per-skill 個別 symlink にする（Codex CLI が管理する .system/ と共存させるため）
     $codexSkillsSource = Join-Path $codexSource "skills"
     $codexSkillsDest = Join-Path $codexDir "skills"
     if (Test-Path $codexSkillsSource) {
-        New-DirectoryLink -Source $codexSkillsSource -Destination $codexSkillsDest
+        # 既存の skills ディレクトリ自体が symlink （旧 link.ps1 の挙動）なら通常ディレクトリに戻す
+        if ((Test-Path $codexSkillsDest) -and ((Get-Item $codexSkillsDest -Force).LinkType)) {
+            Remove-Item $codexSkillsDest -Force
+        }
+        if (-not (Test-Path $codexSkillsDest)) {
+            New-Item -ItemType Directory -Path $codexSkillsDest -Force | Out-Null
+        }
+        Get-ChildItem -Path $codexSkillsSource -Directory | ForEach-Object {
+            $skillDest = Join-Path $codexSkillsDest $_.Name
+            New-DirectoryLink -Source $_.FullName -Destination $skillDest
+        }
     }
 }
 
