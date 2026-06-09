@@ -62,7 +62,11 @@ if printf '%s\n' "$command" | grep -qiE '(^|[;&|({`[:space:]>]|[.]\/)[.]codex([\
 fi
 
 protected_name="$(printf '\056codex')"
-normalized_command=$(printf '%s\n' "$command" | tr ';&|(){}<>' '        ')
+# command を 1 度だけ小文字化し、それ以降は全部小文字で比較する
+# （macOS APFS 想定で `.Codex` 等も拾う）。`$HOME` はシェル展開されない
+# リテラル文字列なので、小文字化された `$home` をパターンに含めて許可判定する。
+command_lower=$(printf '%s' "$command" | tr '[:upper:]' '[:lower:]')
+normalized_command=$(printf '%s\n' "$command_lower" | tr ';&|(){}<>' '        ')
 for token in $normalized_command; do
   token="${token#\"}"
   token="${token%\"}"
@@ -70,17 +74,8 @@ for token in $normalized_command; do
   token="${token%\'}"
   token="${token#./}"
 
-  # 環境変数表記 `$HOME` は大文字固定（シェル仕様）。先に case-sensitive で許可判定する。
   case "$token" in
-    "\$HOME/$protected_name"|"\$HOME/$protected_name"/*)
-      continue
-      ;;
-  esac
-
-  # それ以外は case-insensitive 比較（macOS APFS 想定で `.Codex` 等を拾う）
-  token_lower=$(printf '%s' "$token" | tr '[:upper:]' '[:lower:]')
-  case "$token_lower" in
-    "~/$protected_name"|"~/$protected_name"/*|/*)
+    "~/$protected_name"|"~/$protected_name"/*|"\$home/$protected_name"|"\$home/$protected_name"/*|/*)
       continue
       ;;
     "$protected_name"|"$protected_name"/*|*"/$protected_name"|*"/$protected_name"/*)

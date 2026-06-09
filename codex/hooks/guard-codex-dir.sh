@@ -28,20 +28,19 @@ if ! command -v jq &>/dev/null; then
 fi
 
 protected_name="$(printf '\056codex')"
+# cwd 関連の正規化はパス毎ではなく 1 度だけ行う（macOS APFS 想定の case-insensitive 比較）
+cwd="$(pwd -P)"
+cwd_lower=$(printf '%s' "$cwd" | tr '[:upper:]' '[:lower:]')
 
 is_protected_project_path() {
   local path="$1"
-  local cwd
 
-  cwd="$(pwd -P)"
   path="${path#\"}"
   path="${path%\"}"
   path="${path#./}"
 
-  # case-insensitive 比較のため小文字に正規化（macOS APFS 想定）
-  local path_lower cwd_lower
+  local path_lower
   path_lower=$(printf '%s' "$path" | tr '[:upper:]' '[:lower:]')
-  cwd_lower=$(printf '%s' "$cwd" | tr '[:upper:]' '[:lower:]')
 
   if [[ "$path_lower" = /* ]]; then
     case "$path_lower" in

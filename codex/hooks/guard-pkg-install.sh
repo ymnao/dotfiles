@@ -14,7 +14,7 @@
 input=$(cat)
 
 case "$input" in
-  *npm*|*npx*|*pnpm*|*yarn*|*bun*|*bunx*|*pip*|*pipx*|*uv*|*uvx*|*poetry*) ;;
+  *npm*|*npx*|*pnpm*|*yarn*|*bun*|*pip*|*uv*|*poetry*) ;;
   *) exit 0 ;;
 esac
 
