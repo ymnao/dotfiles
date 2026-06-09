@@ -113,4 +113,29 @@ if [[ -d "$DOTFILES_DIR/claude" ]]; then
     fi
 fi
 
+# Codex CLI configuration
+if [[ -d "$DOTFILES_DIR/codex" ]]; then
+    mkdir -p "$HOME/.codex"
+
+    if [[ -f "$DOTFILES_DIR/codex/AGENTS.md" ]]; then
+        link_file "$DOTFILES_DIR/codex/AGENTS.md" "$HOME/.codex/AGENTS.md"
+    fi
+
+    if [[ -f "$DOTFILES_DIR/codex/config.toml" ]]; then
+        link_file "$DOTFILES_DIR/codex/config.toml" "$HOME/.codex/config.toml"
+    fi
+
+    if [[ -f "$DOTFILES_DIR/codex/hooks.json" ]]; then
+        link_file "$DOTFILES_DIR/codex/hooks.json" "$HOME/.codex/hooks.json"
+    fi
+
+    if [[ -d "$DOTFILES_DIR/codex/hooks" ]]; then
+        link_file "$DOTFILES_DIR/codex/hooks" "$HOME/.codex/hooks"
+    fi
+
+    if [[ -d "$DOTFILES_DIR/codex/skills" ]]; then
+        link_file "$DOTFILES_DIR/codex/skills" "$HOME/.codex/skills"
+    fi
+fi
+
 info "All symlinks created successfully!"

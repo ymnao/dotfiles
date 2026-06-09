@@ -1,0 +1,64 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.codex/hooks/block-dangerous-commands.sh\"",
+            "timeout": 10,
+            "statusMessage": "コマンド安全性チェック中..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.codex/hooks/verify-ci-before-pr.sh\"",
+            "timeout": 30,
+            "statusMessage": "CI ステータス確認中..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.codex/hooks/guard-pkg-install.sh\"",
+            "timeout": 10,
+            "statusMessage": "パッケージインストール検証中..."
+          }
+        ]
+      },
+      {
+        "matcher": "^(apply_patch|Edit|Write)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.codex/hooks/guard-codex-dir.sh\"",
+            "timeout": 5,
+            "statusMessage": ".codex/ 保護チェック中..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.codex/hooks/redact-secrets.sh\"",
+            "timeout": 10,
+            "statusMessage": "シークレット検出中..."
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.codex/hooks/notify-stop.sh\""
+          }
+        ]
+      }
+    ]
+  }
+}

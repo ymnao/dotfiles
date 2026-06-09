@@ -260,6 +260,46 @@ if (Test-Path $claudeHooksSource) {
     New-DirectoryLink -Source $claudeHooksSource -Destination $claudeHooksDest
 }
 
+# Codex CLI
+Write-Info "`nLinking Codex CLI configuration..."
+$codexSource = Join-Path $DOTFILES_DIR "codex"
+if (Test-Path $codexSource) {
+    $codexDir = Join-Path $env:USERPROFILE ".codex"
+    if (-not (Test-Path $codexDir)) {
+        New-Item -ItemType Directory -Path $codexDir -Force | Out-Null
+    }
+
+    $codexAgentsSource = Join-Path $codexSource "AGENTS.md"
+    $codexAgentsDest = Join-Path $codexDir "AGENTS.md"
+    if (Test-Path $codexAgentsSource) {
+        New-FileLink -Source $codexAgentsSource -Destination $codexAgentsDest
+    }
+
+    $codexConfigSource = Join-Path $codexSource "config.toml"
+    $codexConfigDest = Join-Path $codexDir "config.toml"
+    if (Test-Path $codexConfigSource) {
+        New-FileLink -Source $codexConfigSource -Destination $codexConfigDest
+    }
+
+    $codexHooksJsonSource = Join-Path $codexSource "hooks.json"
+    $codexHooksJsonDest = Join-Path $codexDir "hooks.json"
+    if (Test-Path $codexHooksJsonSource) {
+        New-FileLink -Source $codexHooksJsonSource -Destination $codexHooksJsonDest
+    }
+
+    $codexHooksSource = Join-Path $codexSource "hooks"
+    $codexHooksDest = Join-Path $codexDir "hooks"
+    if (Test-Path $codexHooksSource) {
+        New-DirectoryLink -Source $codexHooksSource -Destination $codexHooksDest
+    }
+
+    $codexSkillsSource = Join-Path $codexSource "skills"
+    $codexSkillsDest = Join-Path $codexDir "skills"
+    if (Test-Path $codexSkillsSource) {
+        New-DirectoryLink -Source $codexSkillsSource -Destination $codexSkillsDest
+    }
+}
+
 Write-Success "`nSymbolic link creation complete!"
 
 if (-not $useDeveloperMode) {
