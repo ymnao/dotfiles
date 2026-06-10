@@ -35,8 +35,9 @@ gap='([\\"'"'"']|\\\\|\\")*'
 # 動的展開（$ / バックティック）を含む入力は、PM 名を変数・コマンド置換で
 # 分割構築している可能性があるため早期 exit しない。本判定側で展開・
 # マスク後に判定する。誤検知の代償は通常コマンドの本判定走行のみ。
+# python は `python -m pip install` 経由で pip を起動できるためスクリーニング対象。
 if ! printf '%s' "$input" | tr '[:upper:]' '[:lower:]' \
-    | grep -qE "n${gap}p${gap}m|n${gap}p${gap}x|p${gap}n${gap}p${gap}m|y${gap}a${gap}r${gap}n|b${gap}u${gap}n|p${gap}i${gap}p|u${gap}v|p${gap}o${gap}e${gap}t${gap}r${gap}y|c${gap}o${gap}r${gap}e${gap}p${gap}a${gap}c${gap}k|\\\$|\`"; then
+    | grep -qE "n${gap}p${gap}m|n${gap}p${gap}x|p${gap}n${gap}p${gap}m|y${gap}a${gap}r${gap}n|b${gap}u${gap}n|p${gap}i${gap}p|u${gap}v|p${gap}o${gap}e${gap}t${gap}r${gap}y|c${gap}o${gap}r${gap}e${gap}p${gap}a${gap}c${gap}k|p${gap}y${gap}t${gap}h${gap}o${gap}n|\\\$|\`"; then
   exit 0
 fi
 
@@ -228,6 +229,36 @@ while IFS= read -r segment; do
   case "$bin" in
     *__dynbin__*) bin="__dynbin__" ;;
   esac
+
+  # python -m <module> は <module> を pip/pipx として直接起動できる
+  # （python -m pip install X / python -m pipx run X 等）ので、bin が
+  # python|python3|pythonX.Y で -m が現れた場合はモジュール名を内側 PM とみなして
+  # 再解決する。-m venv / -m unittest 等の無害なモジュールは continue で許可。
+  if [[ "$bin" =~ ^python([0-9]+(\.[0-9]+)?)?$ ]]; then
+    pyidx=-1
+    for ((j = 0; j < ${#rest[@]}; j++)); do
+      strip_token "${rest[j]}"
+      if [[ "$STRIPPED" == -m ]]; then
+        pyidx=$j
+        break
+      fi
+    done
+    if [[ $pyidx -ge 0 && $((pyidx + 1)) -lt ${#rest[@]} ]]; then
+      strip_token "${rest[pyidx+1]}"
+      mod="${STRIPPED##*/}"
+      case "$mod" in
+        pip|pip3|pipx)
+          bin="$mod"
+          rest=("${rest[@]:pyidx+2}")
+          ;;
+        *)
+          continue   # -m venv / -m unittest / -m http.server 等は無害として許可
+          ;;
+      esac
+    else
+      continue   # python --version / python script.py 等は対象外
+    fi
+  fi
 
   # corepack は pnpm/yarn 等の PM を起動・取得するラッパー。
   # - corepack use / corepack install / corepack prepare / corepack enable は

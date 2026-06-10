@@ -66,12 +66,19 @@ fi
 # .codex 文字列を含むコマンドは、展開後に .codex 配下を触る可能性があるため
 # 安全側で全面ブロックする。Cymulate notify エスケープは静的解析では追えない
 # 構築（touch $(pwd)/.codex/... 等）でも成立するため。
-# ただし $HOME / ${HOME} / ~ はホーム配下の .codex を指す合法経路（後段の token
-# 走査が許可する）なので、これらだけが残っている場合は誤検知しないよう除外する。
-# 小文字化前提では $HOME も $home に変わるが、ここでは入力が混在のため両方除外。
+# ただし以下は .codex を構築する経路として実害が少ない/合法経路のため除外する:
+#   - $HOME / ${HOME} / ~: ホーム配下の .codex は後段の token 走査が許可する
+#   - $TMPDIR / ${TMPDIR}: /tmp や /var/folders/... を指し、cwd 外のため
+#     .codex 構築されても Cymulate notify エスケープは成立しない
+#   - $XDG_* / ${XDG_*}: 同様に cwd 外の XDG ベースディレクトリ
+# 入力は混在の可能性があるため大小無視（BSD sed の I フラグ）で除外する。
 residual=$(printf '%s' "$command" | sed -E \
   -e 's/\$\{home\}//Ig' \
-  -e 's/\$home([^A-Za-z0-9_]|$)/\1/Ig')
+  -e 's/\$home([^A-Za-z0-9_]|$)/\1/Ig' \
+  -e 's/\$\{tmpdir\}//Ig' \
+  -e 's/\$tmpdir([^A-Za-z0-9_]|$)/\1/Ig' \
+  -e 's/\$\{xdg_[a-z_]+\}//Ig' \
+  -e 's/\$xdg_[a-z_]+([^A-Za-z0-9_]|$)/\1/Ig')
 if printf '%s' "$residual" | grep -qi '\.codex' \
    && printf '%s' "$residual" | grep -qE '\$\(|`|\$[A-Za-z_{]'; then
   echo "ブロック: 動的展開を含む .codex/ 参照は安全側で禁止されています（Cymulate notify エスケープ対策）" >&2
