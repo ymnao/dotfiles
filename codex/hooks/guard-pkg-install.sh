@@ -40,13 +40,15 @@ if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])(npx|npm[[:space:]]
   exit 2
 fi
 
-# npm install / npm i が引数なし（末尾またはセパレータ直後）なら許可
-# 引数ありはすべてブロック（--save-dev react のようなフラグ挟みも含む）
-if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])npm[[:space:]]+(install|i)([[:space:]]|[;&|)}`]|$)'; then
-  if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])npm[[:space:]]+(install|i)([[:space:]]*[;&|)}`]|[[:space:]]*$)'; then
+# npm install とその公式 alias が引数なし（末尾またはセパレータ直後）なら許可
+# （ロックファイルからの復元）。引数ありはすべてブロック（--save-dev react の
+# ようなフラグ挟みも含む）。alias 集合は npm help install / install-test の列挙に従う
+npm_install_aliases='(install|i|add|in|ins|inst|insta|instal|isnt|isnta|isntal|isntall|install-test|it)'
+if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])npm[[:space:]]+'"$npm_install_aliases"'([[:space:]]|[;&|)}`]|$)'; then
+  if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])npm[[:space:]]+'"$npm_install_aliases"'([[:space:]]*[;&|)}`]|[[:space:]]*$)'; then
     exit 0
   fi
-  echo "ブロック: npm install <package> は禁止されています。パッケージの追加はユーザーに依頼してください" >&2
+  echo "ブロック: npm install <package>（alias 含む）は禁止されています。パッケージの追加はユーザーに依頼してください" >&2
   exit 2
 fi
 
@@ -59,16 +61,16 @@ if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])pnpm[[:space:]]+dlx
   echo "ブロック: pnpm dlx は実行時にパッケージを取得するため禁止されています" >&2
   exit 2
 fi
-if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])pnpm[[:space:]]+install([[:space:]]|[;&|)}`]|$)'; then
-  if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])pnpm[[:space:]]+install([[:space:]]*[;&|)}`]|[[:space:]]*$)'; then
+if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])pnpm[[:space:]]+(install|i)([[:space:]]|[;&|)}`]|$)'; then
+  if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])pnpm[[:space:]]+(install|i)([[:space:]]*[;&|)}`]|[[:space:]]*$)'; then
     exit 0
   fi
-  echo "ブロック: pnpm install <package> は禁止されています。パッケージの追加はユーザーに依頼してください" >&2
+  echo "ブロック: pnpm install <package>（alias: i）は禁止されています。パッケージの追加はユーザーに依頼してください" >&2
   exit 2
 fi
 
-# yarn add は常にブロック、yarn install は引数なしのみ許可
-if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])yarn[[:space:]]+add([[:space:]]|[;&|)}`]|$)'; then
+# yarn add は常にブロック（yarn global add 含む）、yarn install は引数なしのみ許可
+if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])yarn[[:space:]]+(global[[:space:]]+)?add([[:space:]]|[;&|)}`]|$)'; then
   echo "ブロック: yarn add は禁止されています。パッケージの追加はユーザーに依頼してください" >&2
   exit 2
 fi
@@ -85,7 +87,8 @@ if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])yarn[[:space:]]+ins
 fi
 
 # bun は lockfile 復元もパッケージ追加も現行 allowlist 外のためブロック
-if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])bun[[:space:]]+(add|install|i)([[:space:]]|[;&|)}`]|$)'; then
+# （a は add の、i は install の公式 alias）
+if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])bun[[:space:]]+(add|a|install|i)([[:space:]]|[;&|)}`]|$)'; then
   echo "ブロック: bun add/install は許可リスト外です。パッケージ操作はユーザーに依頼してください" >&2
   exit 2
 fi
