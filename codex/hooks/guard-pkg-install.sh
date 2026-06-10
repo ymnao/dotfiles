@@ -20,7 +20,11 @@
 
 input=$(cat)
 
-case "$input" in
+# macOS APFS は既定で case-insensitive のため、NPM / NPX / PNPM 等の大文字
+# 表記でもバイナリが解決される。早期スクリーニングも本判定も小文字化して行う
+# （block-dangerous-commands.sh と同じ方針）。
+input_lower=$(printf '%s' "$input" | tr '[:upper:]' '[:lower:]')
+case "$input_lower" in
   *npm*|*npx*|*pnpm*|*yarn*|*bun*|*pip*|*uv*|*poetry*) ;;
   *) exit 0 ;;
 esac
@@ -35,6 +39,11 @@ command=$(printf '%s\n' "$input" | jq -r '.tool_input.command // empty')
 if [[ -z "$command" ]]; then
   exit 0
 fi
+
+# バイナリ名・サブコマンドの大文字表記（NPM INSTALL 等）を取りこぼさないよう
+# 以降の解析はすべて小文字化した command に対して行う。パッケージ名やパスも
+# 小文字化されるが、判定に使うのはバイナリ名とサブコマンド名のみのため無害。
+command=$(printf '%s' "$command" | tr '[:upper:]' '[:lower:]')
 
 block() {
   echo "ブロック: $1" >&2
