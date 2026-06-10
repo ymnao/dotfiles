@@ -89,6 +89,16 @@ if printf '%s' "$residual" | grep -qE '\$\(|`|\$[a-zA-Z_{]' \
   exit 2
 fi
 
+# 動的展開と書き込み系リダイレクト演算子の組み合わせも同様に安全側ブロックする。
+# 例: echo x > .$(echo codex)/config.toml → 実行時に .codex/config.toml へ書き込み。
+# 対象演算子: > / >> / >| / &> / &>> / N> / N>> （N は fd 番号）
+# 入力リダイレクト < / << / <<< と fd コピー >& は対象外（書き込み先がファイルでない）。
+if printf '%s' "$residual" | grep -qE '\$\(|`|\$[a-zA-Z_{]' \
+   && printf '%s' "$residual" | grep -qE '(^|[^&0-9])>[>|]?[^&]|&>>?[^&]|[0-9]+>>?[^&]'; then
+  echo "ブロック: 動的展開を含む書き込み系リダイレクトは安全側で禁止されています（.codex 構築の可能性、Cymulate notify エスケープ対策）" >&2
+  exit 2
+fi
+
 # --- 破壊的ファイル操作 ---
 rm_rf_pattern='(^|[;&|({`[:space:]])rm[[:space:]]+('
 rm_rf_pattern+='([^;&|]*[[:space:]])?-[a-zA-Z]*[rR][a-zA-Z]*f[a-zA-Z]*'
