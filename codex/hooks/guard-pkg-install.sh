@@ -23,14 +23,19 @@
 
 input=$(cat)
 
-# macOS APFS は既定で case-insensitive のため、NPM / NPX / PNPM 等の大文字
-# 表記でもバイナリが解決される。早期スクリーニングも本判定も小文字化して行う
-# （block-dangerous-commands.sh と同じ方針）。
-input_lower=$(printf '%s' "$input" | tr '[:upper:]' '[:lower:]')
-case "$input_lower" in
-  *npm*|*npx*|*pnpm*|*yarn*|*bun*|*pip*|*uv*|*poetry*) ;;
-  *) exit 0 ;;
-esac
+# 早期スクリーニング: PM 名が含まれない入力は即許可。
+# 実シェルではトークン内クォート連結（n""pm）・バックスラッシュエスケープ
+# （n\pm）が除去された後にバイナリが解決されるため、PM 名の文字間に
+# `[\\\\\"']` が挟まる形（np\\m / n""pm 等）も拾う必要がある。JSON エスケープ越し
+# の入力では `\` が `\\` に、`"` が `\"` に符号化されるので、両者を許す
+# ギャップを含めて grep する。スクリーニング目的の粗マッチでよく、本判定は
+# 後段の jq 抽出済み command に対する正規化で精密に行う。
+# macOS APFS は既定で case-insensitive のため大文字バイナリも対象にする。
+gap='([\\"'"'"']|\\\\|\\")*'
+if ! printf '%s' "$input" | tr '[:upper:]' '[:lower:]' \
+    | grep -qE "n${gap}p${gap}m|n${gap}p${gap}x|p${gap}n${gap}p${gap}m|y${gap}a${gap}r${gap}n|b${gap}u${gap}n|p${gap}i${gap}p|u${gap}v|p${gap}o${gap}e${gap}t${gap}r${gap}y"; then
+  exit 0
+fi
 
 if ! command -v jq &>/dev/null; then
   echo "ブロック: jq 未インストールのためパッケージインストールを確認できません" >&2
@@ -43,10 +48,16 @@ if [[ -z "$command" ]]; then
   exit 0
 fi
 
-# バイナリ名・サブコマンドの大文字表記（NPM INSTALL 等）を取りこぼさないよう
-# 以降の解析はすべて小文字化した command に対して行う。パッケージ名やパスも
+# 解析より前にシェル意味論で正規化する（n""pm → npm / n\pm → npm 等の回避を
+# 解消）。シェルの単語分割と同じ順序で:
+#   1. \X → X（バックスラッシュエスケープ解除）
+#   2. ' " を全削除（トークン内クォート連結を解消）
+# その後、バイナリ名・サブコマンドの大文字表記（NPM INSTALL 等）を取りこぼさない
+# よう以降の解析はすべて小文字化した command に対して行う。パッケージ名やパスも
 # 小文字化されるが、判定に使うのはバイナリ名とサブコマンド名のみのため無害。
-command=$(printf '%s' "$command" | tr '[:upper:]' '[:lower:]')
+command=$(printf '%s' "$command" \
+  | sed -E -e 's/\\(.)/\1/g' -e $'s/[\'"]//g' \
+  | tr '[:upper:]' '[:lower:]')
 
 # コマンド置換 `$(...)` / バックティック / 変数展開 `$var` `${var}` は実行時まで
 # 中身が決まらず静的に追えない。プレースホルダ __dynbin__ に置換し、それが
