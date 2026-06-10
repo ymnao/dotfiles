@@ -9,11 +9,11 @@
 #   - pnpm install / pnpm i（同上）
 #   - yarn install（同上）
 #
-# `npm --global install pkg` のようにバイナリとサブコマンドの間にグローバル
-# オプションを挟む回避を防ぐため、コマンド文字列を `;`/`&&`/`|` 等で個々の
-# セグメントに分割し、各セグメントの先頭バイナリと、それ以降のトークンに
-# 「独立トークンとして」含まれる危険サブコマンドを解析する。位置非依存で
-# 検出するためグローバルオプション・env 代入・絶対パス起動を挟んでも貫通しない。
+# 各セグメント（`;`/`&&`/`|` 等で分割）について「実際に実行されるバイナリ」を
+# 解決してから判定する。command/env/nice/timeout 等の透過ラッパーや bash -c の
+# シェルはオプション・値・代入を読み飛ばして内側のバイナリまで辿り、xargs/find
+# のような引数注入ラッパーは PM 名出現時点でブロックする。これによりグローバル
+# オプション・env 代入・絶対パス・大文字表記・ラッパー経由の回避を貫通させない。
 #
 # exit 0 = 許可, exit 2 = ブロック
 #
@@ -104,10 +104,54 @@ pm_should_block() {
 # npm install と公式 alias（npm help install / install-test の列挙に従う）
 npm_restore='install|i|add|in|ins|inst|insta|instal|isnt|isnta|isntal|isntall|install-test|it'
 
-# コマンド実行ラッパー。これらで始まるセグメントは実行対象がラッパーの先に
-# あるため、セグメント内の最初の PM 名トークンを実行対象とみなす
-# （command/builtin は shell builtin、env 等は外部ラッパーとして PM を起動する）。
-launcher='command|builtin|exec|env|nohup|nice|setsid|stdbuf|time|timeout'
+# 透過的な実行ラッパー: 実行対象がラッパーの先にあり、内側のバイナリがそのまま
+# exec される。読み飛ばして「実際に実行されるバイナリ」を解決する。shell の -c も
+# 含む（bash -c "cmd" は -c の次トークン以降が実行対象なので内側まで辿れる）。
+transparent='command|builtin|exec|env|nohup|nice|setsid|stdbuf|time|timeout|bash|sh|zsh|dash|ksh|mksh|ash|fish|csh|tcsh'
+
+# 引数注入ラッパー: 実行対象の引数を stdin/置換で後から与えるため、見かけ上
+# 「引数なし install」でも実際にはパッケージ名が注入され得る。これらの先に PM 名が
+# 現れたら復元例外なしでブロックする（echo x | xargs npm install 等）。
+arginjector='xargs|find|parallel'
+
+# 値（次トークン）を取るラッパーオプション。env -u NAME / nice -n N /
+# timeout -s SIG / exec -a NAME 等。値を実行対象と誤認しないよう読み飛ばす。
+value_opt='-u|-n|-a|-s|-k|-C|--unset|--signal|--kill-after|--chdir|--adjustment'
+
+# グローバル toks / n から、透過ラッパー・オプション・その値・env 代入・裸の数値
+# （timeout の duration 等）を読み飛ばし、実際に実行されるバイナリの basename と
+# 位置を BIN / BIN_IDX に格納する。見つからなければ BIN="" を返す。
+resolve_binary() {
+  BIN=""
+  BIN_IDX=-1
+  local i=0 base expect_value=0
+  while [[ $i -lt $n ]]; do
+    strip_token "${toks[i]}"
+    base="${STRIPPED##*/}"
+
+    if [[ $expect_value -eq 1 ]]; then
+      expect_value=0
+      ((i++)); continue
+    fi
+    case "$base" in
+      [a-z_]*=*) ((i++)); continue ;;   # env 代入 VAR=value
+    esac
+    if [[ "$base" =~ ^($transparent)$ ]]; then
+      ((i++)); continue
+    fi
+    if [[ "$base" == -* ]]; then
+      [[ "$base" =~ ^($value_opt)$ ]] && expect_value=1
+      ((i++)); continue
+    fi
+    if [[ "$base" =~ ^[0-9]+[smhd]?$ ]]; then   # timeout の duration 等
+      ((i++)); continue
+    fi
+    BIN="$base"
+    BIN_IDX=$i
+    return 0
+  done
+  return 1
+}
 
 # コマンドをシェル区切り文字でセグメントに分割（各区切りを改行へ置換）
 segments=$(printf '%s' "$command" | tr ';&|(){}<>`' $'\n\n\n\n\n\n\n\n\n\n')
@@ -117,31 +161,26 @@ while IFS= read -r segment; do
   n=${#toks[@]}
   [[ $n -eq 0 ]] && continue
 
-  strip_token "${toks[0]}"
-  first="${STRIPPED##*/}"   # 絶対パス起動（/usr/local/bin/npm 等）を basename 化
+  resolve_binary
+  bin="$BIN"
+  [[ -z "$bin" ]] && continue
 
-  if [[ "$first" =~ ^($launcher)$ || ( "$first" == [A-Za-z_]* && "$first" == *=* ) ]]; then
-    # ラッパー（command/env/...）や env 代入で始まるセグメントは、実行対象が
-    # 先頭になく、ラッパーのオプション・値・代入を間に挟む。セグメント内の
-    # 最初の PM 名トークンを実行対象とみなすことで、それらを挟んでも貫通させる。
-    idx=-1
-    for ((j = 0; j < n; j++)); do
+  # xargs / find 経由は引数注入で「素の install」も危険なため、PM 名が現れた
+  # 時点でブロックする（復元例外を与えない）。
+  if [[ "$bin" =~ ^($arginjector)$ ]]; then
+    for ((j = BIN_IDX + 1; j < n; j++)); do
       strip_token "${toks[j]}"
       cand="${STRIPPED##*/}"
       case "$cand" in
         npm|npx|pnpm|yarn|bun|bunx|pip|pip3|pipx|uv|uvx|poetry)
-          idx=$j
-          bin="$cand"
-          break
+          block "xargs/find 経由のパッケージマネージャ実行（${cand}）は禁止されています。パッケージ操作はユーザーに依頼してください"
           ;;
       esac
     done
-    [[ $idx -lt 0 ]] && continue
-    rest=("${toks[@]:idx+1}")
-  else
-    bin="$first"
-    rest=("${toks[@]:1}")
+    continue
   fi
+
+  rest=("${toks[@]:BIN_IDX+1}")
 
   case "$bin" in
     npx)
