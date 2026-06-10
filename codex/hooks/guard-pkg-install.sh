@@ -4,9 +4,10 @@
 #
 # allowlist 方式: ロックファイルからの復元のみ許可し、依存の追加・実行時取得を
 # ブロックする。
-#   - npm ci / npm install / npm i（引数なし。npm install の公式 alias 含む）
-#   - pnpm install / pnpm i（引数なし）
-#   - yarn install（引数なし）
+#   - npm ci（ロックファイルからの clean install）
+#   - npm install / npm i（オプション・引数なしの素の形のみ。公式 alias 含む）
+#   - pnpm install / pnpm i（同上）
+#   - yarn install（同上）
 #
 # `npm --global install pkg` のようにバイナリとサブコマンドの間にグローバル
 # オプションを挟む回避を防ぐため、コマンド文字列を `;`/`&&`/`|` 等で個々の
@@ -66,18 +67,14 @@ pm_should_block() {
     fi
   done
 
-  # 復元系サブコマンド（install/i 等）は引数なしのみ許可。
-  # サブコマンド以降に非オプション引数（= 追加するパッケージ名）があればブロック。
-  if [[ "$restore_idx" -ge 0 ]]; then
-    for ((i = restore_idx + 1; i < ${#toks[@]}; i++)); do
-      t="${toks[i]}"
-      t="${t#[\"\']}"
-      t="${t%[\"\']}"
-      case "$t" in
-        -*) ;;
-        *) return 0 ;;
-      esac
-    done
+  # 復元系サブコマンド（install/i 等）は「素の形」のみ許可する。
+  # サブコマンドの前後にトークン（グローバルオプション含む）が 1 つでも残れば
+  # ブロックする。--global / --save-dev / --package-lock-only /
+  # --mode=update-lockfile 等は「ロックファイルからの復元」を超える副作用
+  # （global install・lockfile 書き換え等）を持ち得るため、復元したいときは
+  # `npm install` / `npm ci` のように素の形で実行させる。
+  if [[ "$restore_idx" -ge 0 && ${#toks[@]} -ne 1 ]]; then
+    return 0
   fi
 
   return 1
