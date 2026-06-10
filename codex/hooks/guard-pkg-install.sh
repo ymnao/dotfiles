@@ -33,7 +33,7 @@ input=$(cat)
 # macOS APFS は既定で case-insensitive のため大文字バイナリも対象にする。
 gap='([\\"'"'"']|\\\\|\\")*'
 if ! printf '%s' "$input" | tr '[:upper:]' '[:lower:]' \
-    | grep -qE "n${gap}p${gap}m|n${gap}p${gap}x|p${gap}n${gap}p${gap}m|y${gap}a${gap}r${gap}n|b${gap}u${gap}n|p${gap}i${gap}p|u${gap}v|p${gap}o${gap}e${gap}t${gap}r${gap}y"; then
+    | grep -qE "n${gap}p${gap}m|n${gap}p${gap}x|p${gap}n${gap}p${gap}m|y${gap}a${gap}r${gap}n|b${gap}u${gap}n|p${gap}i${gap}p|u${gap}v|p${gap}o${gap}e${gap}t${gap}r${gap}y|c${gap}o${gap}r${gap}e${gap}p${gap}a${gap}c${gap}k"; then
   exit 0
 fi
 
@@ -194,6 +194,31 @@ while IFS= read -r segment; do
   bin="$BIN"
   [[ -z "$bin" ]] && continue
   rest=("${toks[@]:BIN_IDX+1}")
+
+  # corepack は pnpm/yarn 等の PM を起動・取得するラッパー。
+  # - corepack use / corepack install / corepack prepare / corepack enable は
+  #   PM の取得・有効化を伴うため allowlist 外として無条件ブロック
+  # - corepack pnpm add ... / corepack yarn add ... のような委譲呼び出しは
+  #   ラッパーをスキップして内側の PM を再解決し、通常経路で判定する
+  if [[ "$bin" == corepack ]]; then
+    if [[ ${#rest[@]} -eq 0 ]]; then
+      continue
+    fi
+    strip_token "${rest[0]}"
+    sub="${STRIPPED##*/}"
+    case "$sub" in
+      use|install|prepare|enable|disable)
+        block "corepack ${sub} は PM の取得/有効化を伴うため禁止されています。パッケージ操作はユーザーに依頼してください"
+        ;;
+      npm|npx|pnpm|yarn|bun|bunx|pip|pip3|pipx|uv|uvx|poetry)
+        bin="$sub"
+        rest=("${rest[@]:1}")
+        ;;
+      *)
+        continue   # corepack -v / corepack --version 等は副作用なしで許可
+        ;;
+    esac
+  fi
 
   # コマンド置換/変数展開で組み立てた実行（バイナリが __dynbin__）は中身を静的に
   # 追えないため、パッケージ操作サブコマンドを伴うものを安全側でブロックする。

@@ -6,12 +6,18 @@
 
 input=$(cat)
 
-# 早期スクリーニングも case-insensitive（macOS APFS 想定で `.Codex` 等も拾う）
+# 早期スクリーニング: 危険コマンド名・codex 文字列が含まれない入力は即許可。
+# 実シェルではトークン内のクォート連結（co""dex）・バックスラッシュエスケープ
+# （co\dex）が除去された後に解決されるため、これらが文字間に挟まる形も拾う。
+# JSON エスケープ越し（\\ / \"）も許す。スクリーニング目的の粗判定でよく、
+# 本判定は後段の command 抽出 + 正規化後に精密に行う。
+# 大文字バイナリ（CHMOD / .Codex 等）対応のため事前に小文字化する。
 input_lower=$(printf '%s' "$input" | tr '[:upper:]' '[:lower:]')
-case "$input_lower" in
-  *rm*|*git*|*codex*|*chmod*|*sudo*) ;;
-  *) exit 0 ;;
-esac
+gap='([\\"'"'"']|\\\\|\\")*'
+if ! printf '%s' "$input_lower" \
+    | grep -qE "rm|git|chmod|sudo|c${gap}o${gap}d${gap}e${gap}x"; then
+  exit 0
+fi
 
 if ! command -v jq &>/dev/null; then
   echo "ブロック: jq 未インストールのためコマンド安全性を確認できません" >&2
@@ -22,6 +28,47 @@ command=$(printf '%s\n' "$input" | jq -r '.tool_input.command // empty')
 
 if [[ -z "$command" ]]; then
   exit 0
+fi
+
+# シェル意味論に従ってコマンドを正規化する（.co""dex / .co\dex / $d=.codex; ...
+# のような回避を解消するため、guard-pkg-install.sh と同じ方針）。
+#   1. \X → X（バックスラッシュエスケープ解除）
+#   2. ' " を全削除（トークン内クォート連結を解消）
+# .codex 検出にのみ使う。サブシェルでの正規化結果を $command に上書きする。
+command=$(printf '%s' "$command" | sed -E -e 's/\\(.)/\1/g' -e $'s/[\'"]//g')
+
+# 同セグメント内の単純な変数代入 `var=value` を「次以降の $var / ${var}」に
+# 静的展開する（d=.codex; touch $d/foo → touch .codex/foo）。1 セグメント内の
+# 先頭代入だけを追跡する簡便版（後段の token 走査が判定するため、これだけで
+# `.codex` が見えるようになれば十分）。
+# 実装は sed の繰り返し: 「先頭 var=val + 後続トークン中の $var/${var}」を
+# 反復で書き換える。awk より単純で動作が確実。
+while :; do
+  next=$(printf '%s' "$command" | sed -E '
+    # NAME=VALUE; ... $NAME ... を NAME=VALUE; ... VALUE ... に展開（1 回）
+    s/(^|[;[:space:]]|&&|\|\|)([A-Za-z_][A-Za-z0-9_]*)=([^[:space:];&|]+)([[:space:]][^;&|]*)\$\{\2\}/\1\2=\3\4\3/
+    t end
+    s/(^|[;[:space:]]|&&|\|\|)([A-Za-z_][A-Za-z0-9_]*)=([^[:space:];&|]+)([[:space:]][^;&|]*)\$\2([^A-Za-z0-9_]|$)/\1\2=\3\4\3\5/
+    :end
+  ')
+  [[ "$next" == "$command" ]] && break
+  command="$next"
+done
+
+# 動的展開（コマンド置換・バックティック・未追跡変数）が残っていて、かつ
+# .codex 文字列を含むコマンドは、展開後に .codex 配下を触る可能性があるため
+# 安全側で全面ブロックする。Cymulate notify エスケープは静的解析では追えない
+# 構築（touch $(pwd)/.codex/... 等）でも成立するため。
+# ただし $HOME / ${HOME} / ~ はホーム配下の .codex を指す合法経路（後段の token
+# 走査が許可する）なので、これらだけが残っている場合は誤検知しないよう除外する。
+# 小文字化前提では $HOME も $home に変わるが、ここでは入力が混在のため両方除外。
+residual=$(printf '%s' "$command" | sed -E \
+  -e 's/\$\{home\}//Ig' \
+  -e 's/\$home([^A-Za-z0-9_]|$)/\1/Ig')
+if printf '%s' "$residual" | grep -qi '\.codex' \
+   && printf '%s' "$residual" | grep -qE '\$\(|`|\$[A-Za-z_{]'; then
+  echo "ブロック: 動的展開を含む .codex/ 参照は安全側で禁止されています（Cymulate notify エスケープ対策）" >&2
+  exit 2
 fi
 
 # --- 破壊的ファイル操作 ---
