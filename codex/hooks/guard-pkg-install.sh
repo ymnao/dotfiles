@@ -50,6 +50,18 @@ block() {
   exit 2
 }
 
+# トークン先頭の alias 無効化バックスラッシュと引用符を剥がす（\npm / "npm" → npm）。
+# サブシェル fork を避けるため結果はグローバル変数 STRIPPED に格納する。
+strip_token() {
+  local t="$1"
+  while [[ "$t" == \\* ]]; do
+    t="${t#\\}"
+  done
+  t="${t#[\"\']}"
+  t="${t%[\"\']}"
+  STRIPPED="$t"
+}
+
 # バイナリ以降のトークン列を解析し、ブロックすべきかを返す。
 #   $1: 「常に危険」サブコマンド（独立トークンとして含めばブロック）の ERE
 #   $2: 「引数なしなら許可」サブコマンド（復元用途）の ERE。空なら復元許可なし
@@ -92,28 +104,44 @@ pm_should_block() {
 # npm install と公式 alias（npm help install / install-test の列挙に従う）
 npm_restore='install|i|add|in|ins|inst|insta|instal|isnt|isnta|isntal|isntall|install-test|it'
 
+# コマンド実行ラッパー。これらで始まるセグメントは実行対象がラッパーの先に
+# あるため、セグメント内の最初の PM 名トークンを実行対象とみなす
+# （command/builtin は shell builtin、env 等は外部ラッパーとして PM を起動する）。
+launcher='command|builtin|exec|env|nohup|nice|setsid|stdbuf|time|timeout'
+
 # コマンドをシェル区切り文字でセグメントに分割（各区切りを改行へ置換）
 segments=$(printf '%s' "$command" | tr ';&|(){}<>`' $'\n\n\n\n\n\n\n\n\n\n')
 
 while IFS= read -r segment; do
   read -ra toks <<< "$segment"
-  [[ ${#toks[@]} -eq 0 ]] && continue
+  n=${#toks[@]}
+  [[ $n -eq 0 ]] && continue
 
-  # 先頭の環境変数代入（VAR=value）を読み飛ばしてバイナリを特定
-  idx=0
-  while [[ $idx -lt ${#toks[@]} ]]; do
-    case "${toks[idx]}" in
-      [A-Za-z_]*=*) ((idx++)) ;;
-      *) break ;;
-    esac
-  done
-  [[ $idx -ge ${#toks[@]} ]] && continue
+  strip_token "${toks[0]}"
+  first="${STRIPPED##*/}"   # 絶対パス起動（/usr/local/bin/npm 等）を basename 化
 
-  bin="${toks[idx]}"
-  bin="${bin#[\"\']}"
-  bin="${bin%[\"\']}"
-  bin="${bin##*/}"   # 絶対パス起動（/usr/local/bin/npm 等）を正規化
-  rest=("${toks[@]:idx+1}")
+  if [[ "$first" =~ ^($launcher)$ || ( "$first" == [A-Za-z_]* && "$first" == *=* ) ]]; then
+    # ラッパー（command/env/...）や env 代入で始まるセグメントは、実行対象が
+    # 先頭になく、ラッパーのオプション・値・代入を間に挟む。セグメント内の
+    # 最初の PM 名トークンを実行対象とみなすことで、それらを挟んでも貫通させる。
+    idx=-1
+    for ((j = 0; j < n; j++)); do
+      strip_token "${toks[j]}"
+      cand="${STRIPPED##*/}"
+      case "$cand" in
+        npm|npx|pnpm|yarn|bun|bunx|pip|pip3|pipx|uv|uvx|poetry)
+          idx=$j
+          bin="$cand"
+          break
+          ;;
+      esac
+    done
+    [[ $idx -lt 0 ]] && continue
+    rest=("${toks[@]:idx+1}")
+  else
+    bin="$first"
+    rest=("${toks[@]:1}")
+  fi
 
   case "$bin" in
     npx)
