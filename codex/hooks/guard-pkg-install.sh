@@ -34,13 +34,9 @@ if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])npm[[:space:]]+ci([
   exit 0
 fi
 
-# npx / npm exec は未導入パッケージを実行時取得し得るためブロック
-if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])npx([[:space:]]|[;&|)}`]|$)'; then
-  echo "ブロック: npx は実行時にパッケージを取得し得るため禁止されています" >&2
-  exit 2
-fi
-if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])npm[[:space:]]+(exec|x)([[:space:]]|[;&|)}`]|$)'; then
-  echo "ブロック: npm exec/x は実行時にパッケージを取得し得るため禁止されています" >&2
+# npx / npm exec (alias: x) は未導入パッケージを実行時取得し得るためブロック
+if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])(npx|npm[[:space:]]+(exec|x))([[:space:]]|[;&|)}`]|$)'; then
+  echo "ブロック: npx / npm exec は実行時にパッケージを取得し得るため禁止されています" >&2
   exit 2
 fi
 
