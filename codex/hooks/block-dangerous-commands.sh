@@ -9,13 +9,17 @@ input=$(cat)
 # 早期スクリーニング: 危険コマンド名・codex 文字列が含まれない入力は即許可。
 # 実シェルではトークン内のクォート連結（co""dex）・バックスラッシュエスケープ
 # （co\dex）が除去された後に解決されるため、これらが文字間に挟まる形も拾う。
-# JSON エスケープ越し（\\ / \"）も許す。スクリーニング目的の粗判定でよく、
-# 本判定は後段の command 抽出 + 正規化後に精密に行う。
+# JSON エスケープ越し（\\ / \"）も許す。
+# また a=.co; b=dex; touch $a$b/... のように .codex を変数・コマンド置換で
+# 分割構築するケースは入力中に codex 文字列が現れないため、動的展開
+# （$ / $( / バックティック）を含む入力も本判定に通す（本判定側で展開後に
+# 改めて .codex 検出する）。スクリーニング目的の粗判定でよく、誤検知は後段で
+# .codex が出ない限り素通りする。
 # 大文字バイナリ（CHMOD / .Codex 等）対応のため事前に小文字化する。
 input_lower=$(printf '%s' "$input" | tr '[:upper:]' '[:lower:]')
 gap='([\\"'"'"']|\\\\|\\")*'
 if ! printf '%s' "$input_lower" \
-    | grep -qE "rm|git|chmod|sudo|c${gap}o${gap}d${gap}e${gap}x"; then
+    | grep -qE "rm|git|chmod|sudo|c${gap}o${gap}d${gap}e${gap}x|\\\$|\`"; then
   exit 0
 fi
 
@@ -37,23 +41,26 @@ fi
 # .codex 検出にのみ使う。サブシェルでの正規化結果を $command に上書きする。
 command=$(printf '%s' "$command" | sed -E -e 's/\\(.)/\1/g' -e $'s/[\'"]//g')
 
-# 同セグメント内の単純な変数代入 `var=value` を「次以降の $var / ${var}」に
-# 静的展開する（d=.codex; touch $d/foo → touch .codex/foo）。1 セグメント内の
-# 先頭代入だけを追跡する簡便版（後段の token 走査が判定するため、これだけで
-# `.codex` が見えるようになれば十分）。
-# 実装は sed の繰り返し: 「先頭 var=val + 後続トークン中の $var/${var}」を
-# 反復で書き換える。awk より単純で動作が確実。
-while :; do
-  next=$(printf '%s' "$command" | sed -E '
-    # NAME=VALUE; ... $NAME ... を NAME=VALUE; ... VALUE ... に展開（1 回）
-    s/(^|[;[:space:]]|&&|\|\|)([A-Za-z_][A-Za-z0-9_]*)=([^[:space:];&|]+)([[:space:]][^;&|]*)\$\{\2\}/\1\2=\3\4\3/
-    t end
-    s/(^|[;[:space:]]|&&|\|\|)([A-Za-z_][A-Za-z0-9_]*)=([^[:space:];&|]+)([[:space:]][^;&|]*)\$\2([^A-Za-z0-9_]|$)/\1\2=\3\4\3\5/
-    :end
-  ')
-  [[ "$next" == "$command" ]] && break
-  command="$next"
-done
+# 単純な変数代入 `var=value` を「コマンド中の $var / ${var}」に静的展開する。
+# 例: d=.codex; touch $d/foo → touch .codex/foo、
+# 　　 a=.co; b=dex; touch $a$b/foo → touch .codex/foo（連結も解決される）。
+# 代入を grep で全て抽出し、各々を sed で順に置換する。bash の通常代入と
+# 異なるケース（export FOO=bar / function ローカル等）は対象外。
+assignments=$(printf '%s' "$command" \
+  | grep -oE '(^|[[:space:];&|])[A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*' \
+  | sed -E 's/^[[:space:];&|]+//')
+if [[ -n "$assignments" ]]; then
+  while IFS= read -r asgn; do
+    [[ -z "$asgn" ]] && continue
+    name="${asgn%%=*}"
+    val="${asgn#*=}"
+    esc_name=$(printf '%s' "$name" | sed 's/[][\\.*^$/]/\\&/g')
+    esc_val=$(printf '%s' "$val" | sed 's/[\\&/]/\\&/g')
+    command=$(printf '%s' "$command" | sed -E \
+      -e "s/\\\$\\{${esc_name}\\}/${esc_val}/g" \
+      -e "s/\\\$${esc_name}([^A-Za-z0-9_]|\$)/${esc_val}\\1/g")
+  done <<< "$assignments"
+fi
 
 # 動的展開（コマンド置換・バックティック・未追跡変数）が残っていて、かつ
 # .codex 文字列を含むコマンドは、展開後に .codex 配下を触る可能性があるため
@@ -68,6 +75,17 @@ residual=$(printf '%s' "$command" | sed -E \
 if printf '%s' "$residual" | grep -qi '\.codex' \
    && printf '%s' "$residual" | grep -qE '\$\(|`|\$[A-Za-z_{]'; then
   echo "ブロック: 動的展開を含む .codex/ 参照は安全側で禁止されています（Cymulate notify エスケープ対策）" >&2
+  exit 2
+fi
+
+# 動的展開がファイル書き込み・ディレクトリ操作系コマンドの引数に現れる場合、
+# その中身が `.codex` を構築する可能性があるため安全側でブロックする。
+# 例: touch .$(printf codex)/config.toml → 静的に .codex 検出できないが、
+# 実行時に .codex/config.toml になる。$HOME / ${HOME} / ~ は上で除外済み。
+write_cmds='touch|mkdir|install|cp|mv|dd|tee|ln|printf'
+if printf '%s' "$residual" | grep -qE '\$\(|`|\$[a-zA-Z_{]' \
+   && printf '%s' "$residual" | grep -qiE "(^|[;&|({\`[:space:]])($write_cmds)([[:space:]]|[;&|)}\`]|$)"; then
+  echo "ブロック: 動的展開を含む書き込み系コマンドは安全側で禁止されています（.codex 構築の可能性、Cymulate notify エスケープ対策）" >&2
   exit 2
 fi
 

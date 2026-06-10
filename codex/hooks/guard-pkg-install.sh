@@ -32,8 +32,11 @@ input=$(cat)
 # 後段の jq 抽出済み command に対する正規化で精密に行う。
 # macOS APFS は既定で case-insensitive のため大文字バイナリも対象にする。
 gap='([\\"'"'"']|\\\\|\\")*'
+# 動的展開（$ / バックティック）を含む入力は、PM 名を変数・コマンド置換で
+# 分割構築している可能性があるため早期 exit しない。本判定側で展開・
+# マスク後に判定する。誤検知の代償は通常コマンドの本判定走行のみ。
 if ! printf '%s' "$input" | tr '[:upper:]' '[:lower:]' \
-    | grep -qE "n${gap}p${gap}m|n${gap}p${gap}x|p${gap}n${gap}p${gap}m|y${gap}a${gap}r${gap}n|b${gap}u${gap}n|p${gap}i${gap}p|u${gap}v|p${gap}o${gap}e${gap}t${gap}r${gap}y|c${gap}o${gap}r${gap}e${gap}p${gap}a${gap}c${gap}k"; then
+    | grep -qE "n${gap}p${gap}m|n${gap}p${gap}x|p${gap}n${gap}p${gap}m|y${gap}a${gap}r${gap}n|b${gap}u${gap}n|p${gap}i${gap}p|u${gap}v|p${gap}o${gap}e${gap}t${gap}r${gap}y|c${gap}o${gap}r${gap}e${gap}p${gap}a${gap}c${gap}k|\\\$|\`"; then
   exit 0
 fi
 
@@ -59,16 +62,40 @@ command=$(printf '%s' "$command" \
   | sed -E -e 's/\\(.)/\1/g' -e $'s/[\'"]//g' \
   | tr '[:upper:]' '[:lower:]')
 
+# 単純な変数代入 `var=value` を「コマンド中の $var / ${var}」に静的展開する。
+# 例: a=n; b=pm; $a$b install → npm install、
+# 　　 a=p; b=npm; core${a}ack $b add → corepack npm add。
+# 代入を grep で全て抽出し、各々を sed で順に置換する。bash の通常代入と
+# 異なるケース（export FOO=bar / function ローカル等）は対象外。
+assignments=$(printf '%s' "$command" \
+  | grep -oE '(^|[[:space:];&|])[a-z_][a-z0-9_]*=[^[:space:];&|]*' \
+  | sed -E 's/^[[:space:];&|]+//')
+if [[ -n "$assignments" ]]; then
+  while IFS= read -r asgn; do
+    [[ -z "$asgn" ]] && continue
+    name="${asgn%%=*}"
+    val="${asgn#*=}"
+    esc_name=$(printf '%s' "$name" | sed 's/[][\\.*^$/]/\\&/g')
+    esc_val=$(printf '%s' "$val" | sed 's/[\\&/]/\\&/g')
+    command=$(printf '%s' "$command" | sed -E \
+      -e "s/\\\$\\{${esc_name}\\}/${esc_val}/g" \
+      -e "s/\\\$${esc_name}([^a-z0-9_]|\$)/${esc_val}\\1/g")
+  done <<< "$assignments"
+fi
+
 # コマンド置換 `$(...)` / バックティック / 変数展開 `$var` `${var}` は実行時まで
 # 中身が決まらず静的に追えない。プレースホルダ __dynbin__ に置換し、それが
 # 実行対象（バイナリ位置）に来てパッケージ操作サブコマンドを伴う場合に後段で
 # 安全側ブロックする（$(which npm) install / $npm add 等）。早期スクリーニングは
 # 置換前の生入力に対して行うため、ここでマスクしても PM 名検出には影響しない。
+# 末尾で __dynbin__ の連続（$(printf n)$(printf pm) / $a$b 等）を 1 個に正規化し、
+# 動的に分割構築されたバイナリも __dynbin__ 単体として bin 解析に渡す。
 command=$(printf '%s' "$command" | sed -E \
   -e 's/\$\([^)]*\)/__dynbin__/g' \
   -e 's/`[^`]*`/__dynbin__/g' \
   -e 's/\$\{[a-z_][a-z0-9_]*\}/__dynbin__/g' \
-  -e 's/\$[a-z_][a-z0-9_]*/__dynbin__/g')
+  -e 's/\$[a-z_][a-z0-9_]*/__dynbin__/g' \
+  -e 's/(__dynbin__)+/__dynbin__/g')
 
 block() {
   echo "ブロック: $1" >&2
@@ -194,6 +221,13 @@ while IFS= read -r segment; do
   bin="$BIN"
   [[ -z "$bin" ]] && continue
   rest=("${toks[@]:BIN_IDX+1}")
+
+  # バイナリトークンに __dynbin__ が混じる（例: core${a}ack → core__dynbin__ack /
+  # x$VAR → x__dynbin__）場合は動的構築されたバイナリとして扱う。マスク後の連続
+  # は既に sed で 1 個に正規化済みなので、ここでは「含む」かどうかだけ見る。
+  case "$bin" in
+    *__dynbin__*) bin="__dynbin__" ;;
+  esac
 
   # corepack は pnpm/yarn 等の PM を起動・取得するラッパー。
   # - corepack use / corepack install / corepack prepare / corepack enable は
