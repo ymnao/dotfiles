@@ -10,10 +10,13 @@
 #   - yarn install（同上）
 #
 # 各セグメント（`;`/`&&`/`|` 等で分割）について「実際に実行されるバイナリ」を
-# 解決してから判定する。command/env/nice/timeout 等の透過ラッパーや bash -c の
-# シェルはオプション・値・代入を読み飛ばして内側のバイナリまで辿り、xargs/find
-# のような引数注入ラッパーは PM 名出現時点でブロックする。これによりグローバル
-# オプション・env 代入・絶対パス・大文字表記・ラッパー経由の回避を貫通させない。
+# 解決してから判定する。command/env/nice/timeout 等の透過ラッパーや bash -c /
+# eval はオプション・値・代入を読み飛ばして内側のバイナリまで辿り、xargs/find の
+# ような引数注入ラッパーは PM 名出現時点でブロックする。コマンド置換 `$(...)` や
+# 変数展開 `$var` は静的に追えないため __dynbin__ にマスクし、それが実行対象に
+# 来てパッケージ操作を伴う場合は安全側でブロックする。これによりグローバル
+# オプション・env 代入・絶対パス・大文字表記・ラッパー・動的組み立て経由の
+# 回避を貫通させない。
 #
 # exit 0 = 許可, exit 2 = ブロック
 #
@@ -44,6 +47,17 @@ fi
 # 以降の解析はすべて小文字化した command に対して行う。パッケージ名やパスも
 # 小文字化されるが、判定に使うのはバイナリ名とサブコマンド名のみのため無害。
 command=$(printf '%s' "$command" | tr '[:upper:]' '[:lower:]')
+
+# コマンド置換 `$(...)` / バックティック / 変数展開 `$var` `${var}` は実行時まで
+# 中身が決まらず静的に追えない。プレースホルダ __dynbin__ に置換し、それが
+# 実行対象（バイナリ位置）に来てパッケージ操作サブコマンドを伴う場合に後段で
+# 安全側ブロックする（$(which npm) install / $npm add 等）。早期スクリーニングは
+# 置換前の生入力に対して行うため、ここでマスクしても PM 名検出には影響しない。
+command=$(printf '%s' "$command" | sed -E \
+  -e 's/\$\([^)]*\)/__dynbin__/g' \
+  -e 's/`[^`]*`/__dynbin__/g' \
+  -e 's/\$\{[a-z_][a-z0-9_]*\}/__dynbin__/g' \
+  -e 's/\$[a-z_][a-z0-9_]*/__dynbin__/g')
 
 block() {
   echo "ブロック: $1" >&2
@@ -104,10 +118,14 @@ pm_should_block() {
 # npm install と公式 alias（npm help install / install-test の列挙に従う）
 npm_restore='install|i|add|in|ins|inst|insta|instal|isnt|isnta|isntal|isntall|install-test|it'
 
+# 動的バイナリ（__dynbin__）の直後に現れたらブロックするパッケージ操作サブコマンド。
+# どの PM か特定できないため install 系 alias に各 PM の追加/取得系を足した和集合。
+dyn_danger="${npm_restore}|a|dlx|exec|inject|tool|pip"
+
 # 透過的な実行ラッパー: 実行対象がラッパーの先にあり、内側のバイナリがそのまま
-# exec される。読み飛ばして「実際に実行されるバイナリ」を解決する。shell の -c も
-# 含む（bash -c "cmd" は -c の次トークン以降が実行対象なので内側まで辿れる）。
-transparent='command|builtin|exec|env|nohup|nice|setsid|stdbuf|time|timeout|bash|sh|zsh|dash|ksh|mksh|ash|fish|csh|tcsh'
+# exec される。読み飛ばして「実際に実行されるバイナリ」を解決する。shell の -c や
+# eval も含む（bash -c "cmd" / eval cmd は引数以降が実行対象なので内側まで辿れる）。
+transparent='command|builtin|exec|eval|env|nohup|nice|setsid|stdbuf|time|timeout|bash|sh|zsh|dash|ksh|mksh|ash|fish|csh|tcsh'
 
 # 引数注入ラッパー: 実行対象の引数を stdin/置換で後から与えるため、見かけ上
 # 「引数なし install」でも実際にはパッケージ名が注入され得る。これらの先に PM 名が
@@ -164,6 +182,15 @@ while IFS= read -r segment; do
   resolve_binary
   bin="$BIN"
   [[ -z "$bin" ]] && continue
+  rest=("${toks[@]:BIN_IDX+1}")
+
+  # コマンド置換/変数展開で組み立てた実行（バイナリが __dynbin__）は中身を静的に
+  # 追えないため、パッケージ操作サブコマンドを伴うものを安全側でブロックする。
+  if [[ "$bin" == __dynbin__ ]]; then
+    pm_should_block "$dyn_danger" '' "${rest[@]}" \
+      && block "コマンド置換/変数展開経由のパッケージマネージャ実行は禁止されています。パッケージ操作はユーザーに依頼してください"
+    continue
+  fi
 
   # xargs / find 経由は引数注入で「素の install」も危険なため、PM 名が現れた
   # 時点でブロックする（復元例外を与えない）。
@@ -179,8 +206,6 @@ while IFS= read -r segment; do
     done
     continue
   fi
-
-  rest=("${toks[@]:BIN_IDX+1}")
 
   case "$bin" in
     npx)
