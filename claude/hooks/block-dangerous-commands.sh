@@ -60,6 +60,14 @@ command=$(printf '%s' "$command" | sed -E \
   -e 's/\\(.)/\1/g' \
   -e $'s/[\'"]//g')
 
+# bash の ${IFS} / $IFS は実行時に空白へ展開され word splitting に使われるため、
+# git${IFS}reset${IFS}--hard のように危険コマンドやフラグを区切る回避になる。
+# 正規化フェーズで空白に置換し、後段の正規表現が拾えるようにする。
+# ${IFS:0:1} 等のサブ展開や $IFS（波括弧なし）も同様にスペース化する。
+command=$(printf '%s' "$command" | sed -E \
+  -e 's/\$\{IFS[^}]*\}/ /g' \
+  -e 's/\$IFS([^A-Za-z0-9_]|$)/ \1/g')
+
 # 単純な変数代入 `var=value` を「コマンド中の $var / ${var}」に静的展開する。
 # 例: d=.codex; touch $d/foo → touch .codex/foo、
 # 　　 a=.co; b=dex; touch $a$b/foo → touch .codex/foo（連結も解決される）。
