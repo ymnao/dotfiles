@@ -91,7 +91,9 @@ fi
 # その中身が `.codex` を構築する可能性があるため安全側でブロックする。
 # 例: touch .$(printf codex)/config.toml → 静的に .codex 検出できないが、
 # 実行時に .codex/config.toml になる。$HOME / ${HOME} / ~ は上で除外済み。
-write_cmds='touch|mkdir|install|cp|mv|dd|tee|ln|printf'
+# printf / echo は単体ではファイルへ書けないため対象外（リダイレクト併用は後段の
+# リダイレクト判定が拾う）。動的展開 + printf の日常頻出組を誤ブロックしないため。
+write_cmds='touch|mkdir|install|cp|mv|dd|tee|ln'
 if printf '%s' "$residual" | grep -qE '\$\(|`|\$[a-zA-Z_{]' \
    && printf '%s' "$residual" | grep -qiE "(^|[;&|({\`[:space:]])($write_cmds)([[:space:]]|[;&|)}\`]|$)"; then
   echo "ブロック: 動的展開を含む書き込み系コマンドは安全側で禁止されています（.codex 構築の可能性、Cymulate notify エスケープ対策）" >&2
