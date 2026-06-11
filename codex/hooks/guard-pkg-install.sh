@@ -276,8 +276,8 @@ while IFS= read -r segment; do
     strip_token "${rest[0]}"
     sub="${STRIPPED##*/}"
     case "$sub" in
-      use|install|prepare|enable|disable)
-        block "corepack ${sub} は PM の取得/有効化を伴うため禁止されています。パッケージ操作はユーザーに依頼してください"
+      use|install|prepare|enable|disable|up|pack)
+        block "corepack ${sub} は PM の取得/更新/有効化を伴うため禁止されています。パッケージ操作はユーザーに依頼してください"
         ;;
       npm|npx|pnpm|yarn|bun|bunx|pip|pip3|pipx|uv|uvx|poetry)
         bin="$sub"
