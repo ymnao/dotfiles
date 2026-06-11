@@ -68,6 +68,21 @@ command=$(printf '%s' "$command" | sed -E \
   -e 's/\$\{IFS[^}]*\}/ /g' \
   -e 's/\$IFS([^A-Za-z0-9_]|$)/ \1/g')
 
+# コマンド置換 $(...) / `...` の中身に危険コマンド名（rm / git / sudo / chmod）の
+# トークンが含まれる場合、その置換式全体を該当コマンド名 literal に置き換える
+# （guard-pkg-install.sh と同じ流儀）。例: $(printf git) reset --hard → git reset --hard、
+# `which rm` -rf / → rm -rf /。中身に危険コマンド名を含まない $(...) / `...` は残留し、
+# 後段の動的展開残留判定（.codex 参照 / 書き込み系コマンド / 書き込みリダイレクト）が拾う。
+command=$(printf '%s' "$command" | sed -E \
+  -e 's/\$\([^)]*[^A-Za-z0-9_](rm|git|sudo|chmod)[^A-Za-z0-9_)][^)]*\)/\1/g' \
+  -e 's/\$\([^)]*[^A-Za-z0-9_](rm|git|sudo|chmod)\)/\1/g' \
+  -e 's/\$\((rm|git|sudo|chmod)[^A-Za-z0-9_)][^)]*\)/\1/g' \
+  -e 's/\$\((rm|git|sudo|chmod)\)/\1/g' \
+  -e 's/`[^`]*[^A-Za-z0-9_](rm|git|sudo|chmod)[^A-Za-z0-9_`][^`]*`/\1/g' \
+  -e 's/`[^`]*[^A-Za-z0-9_](rm|git|sudo|chmod)`/\1/g' \
+  -e 's/`(rm|git|sudo|chmod)[^A-Za-z0-9_`][^`]*`/\1/g' \
+  -e 's/`(rm|git|sudo|chmod)`/\1/g')
+
 # 単純な変数代入 `var=value` を「コマンド中の $var / ${var}」に静的展開する。
 # 例: d=.codex; touch $d/foo → touch .codex/foo、
 # 　　 a=.co; b=dex; touch $a$b/foo → touch .codex/foo（連結も解決される）。
