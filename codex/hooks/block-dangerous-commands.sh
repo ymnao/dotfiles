@@ -111,14 +111,15 @@ if printf '%s' "$residual" | grep -qE '\$\(|`|\$[a-zA-Z_{]' \
 fi
 
 # --- 破壊的ファイル操作 ---
+# 大文字・大小混在表記（RM / Git 等、macOS は case-insensitive FS でバイナリ解決される）も検出するため本判定は -i を付ける。
 rm_rf_pattern='(^|[;&|({`[:space:]])rm[[:space:]]+('
 rm_rf_pattern+='([^;&|]*[[:space:]])?-[a-zA-Z]*[rR][a-zA-Z]*f[a-zA-Z]*'
 rm_rf_pattern+='|([^;&|]*[[:space:]])?-[a-zA-Z]*f[a-zA-Z]*[rR][a-zA-Z]*'
 rm_rf_pattern+='|([^;&|]*[[:space:]])?(--recursive|-[a-zA-Z]*[rR][a-zA-Z]*)[^;&|]*(--force|[[:space:]]-[a-zA-Z]*f[a-zA-Z]*)'
 rm_rf_pattern+='|([^;&|]*[[:space:]])?(--force|-[a-zA-Z]*f[a-zA-Z]*)[^;&|]*(--recursive|[[:space:]]-[a-zA-Z]*[rR][a-zA-Z]*)'
 rm_rf_pattern+=')'
-if printf '%s\n' "$command" | grep -qE "$rm_rf_pattern"; then
-  if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])rm[[:space:]].*[[:space:]]+(/|~/|\$HOME|\.\.(/|[[:space:]]|[;&|)}`]|$)|\./?([[:space:]]|[;&|)}`]|$))'; then
+if printf '%s\n' "$command" | grep -qiE "$rm_rf_pattern"; then
+  if printf '%s\n' "$command" | grep -qiE '(^|[;&|({`[:space:]])rm[[:space:]].*[[:space:]]+(/|~/|\$HOME|\.\.(/|[[:space:]]|[;&|)}`]|$)|\./?([[:space:]]|[;&|)}`]|$))'; then
     echo "ブロック: rm -rf で危険なパスが指定されています" >&2
     exit 2
   fi
@@ -127,13 +128,13 @@ fi
 # --- Git 破壊的操作 ---
 # git のグローバルオプション（-C <path> / -c <k>=<v> / --no-pager 等）をサブコマンド前に
 # 挟む回避（git -C . push --force 等）に対応するため、サブコマンド前の option 列を許容する。
-if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])git[[:space:]]+(-[^[:space:];&|]+([[:space:]]+[^-[:space:];&|][^[:space:];&|]*)?[[:space:]]+)*push[[:space:]]+([^;&|]*[[:space:]])?(--force|--force-with-lease(=[^[:space:]]*)?|-[a-zA-Z]*f[a-zA-Z]*)([[:space:]]|[;&|)}`]|$)'; then
+if printf '%s\n' "$command" | grep -qiE '(^|[;&|({`[:space:]])git[[:space:]]+(-[^[:space:];&|]+([[:space:]]+[^-[:space:];&|][^[:space:];&|]*)?[[:space:]]+)*push[[:space:]]+([^;&|]*[[:space:]])?(--force|--force-with-lease(=[^[:space:]]*)?|-[a-zA-Z]*f[a-zA-Z]*)([[:space:]]|[;&|)}`]|$)'; then
   echo "ブロック: git push --force は禁止されています" >&2
   exit 2
 fi
 
 # reset 側も同様にグローバルオプション（-C <path> / -c <k>=<v> / --flag 等）を許容する。
-if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])git[[:space:]]+(-[^[:space:];&|]+([[:space:]]+[^-[:space:];&|][^[:space:];&|]*)?[[:space:]]+)*reset[[:space:]]+--hard([[:space:]]|[;&|)}`]|$)'; then
+if printf '%s\n' "$command" | grep -qiE '(^|[;&|({`[:space:]])git[[:space:]]+(-[^[:space:];&|]+([[:space:]]+[^-[:space:];&|][^[:space:];&|]*)?[[:space:]]+)*reset[[:space:]]+--hard([[:space:]]|[;&|)}`]|$)'; then
   echo "ブロック: git reset --hard は禁止されています" >&2
   exit 2
 fi
@@ -188,13 +189,13 @@ for token in $normalized_command; do
 done
 
 # --- chmod 777 ---
-if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])chmod[[:space:]]+(-[a-zA-Z]*[[:space:]]+)*777([[:space:]]|[;&|)}`]|$)'; then
+if printf '%s\n' "$command" | grep -qiE '(^|[;&|({`[:space:]])chmod[[:space:]]+(-[a-zA-Z]*[[:space:]]+)*777([[:space:]]|[;&|)}`]|$)'; then
   echo "ブロック: chmod 777 は禁止されています" >&2
   exit 2
 fi
 
 # --- sudo ---
-if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])sudo[[:space:]]'; then
+if printf '%s\n' "$command" | grep -qiE '(^|[;&|({`[:space:]])sudo[[:space:]]'; then
   echo "ブロック: sudo は禁止されています" >&2
   exit 2
 fi
