@@ -372,17 +372,18 @@ while IFS= read -r segment; do
       esac
     done
     # PM 文脈の手がかりとなるサブコマンド（init/use/prepare/enable/disable/up/
-    # pack/x/exec）に「非フラグ引数」が続けば、PM 文脈と判定して block する。
-    # 連結構築（$(printf %s n pm) init vite / $(printf %c%c%c 110 112 109)
-    # init vite / $(echo -e \156\160\155) init vite 等）で resolve_cmd_subst が
-    # PM 名を抽出できず __dynbin__ に落ちても、サブコマンド + 引数の形が現れれば
-    # 固定 npm init/corepack use と整合的に block される。
-    # サブコマンド単独や -y のようなフラグのみの形（$(some-tool) init /
-    # $(some-tool) init -y / $(some-tool) up）は素通り＝誤検知回避。
-    # AI エージェントが動的バイナリ + サブコマンド + 引数を書くケースは稀
-    # （普通 some-cli init my-project と直接書く）ため、$(some-tool) init
-    # my-project のような誤検知は許容する。
+    # pack/x/exec）に「PM 名 or パッケージ指定子」が続けば、PM 文脈と判定して
+    # block する。連結構築（$(printf %s n pm) use pnpm@latest /
+    # $(printf %c... 99 111 ...) use pnpm 等）で resolve_cmd_subst が PM 名を
+    # 抽出できず __dynbin__ に落ちても、引数に PM 名や name@version が現れれば
+    # 固定 npm init <pkg> / corepack use <pm> と整合的に block される。
+    # 引数が PM 名でも指定子でもない場合（$(cat /dev/null) init project /
+    # $(some-tool) use config 等）は素通り＝誤検知回避。
+    # 取りこぼし: $(printf ...) init vite のような「動的構築 PM + generic
+    # initializer 名」は素通りする。generic 名（vite/react-app/next-app 等）
+    # は列挙不可能なための実用的妥協。
     pm_subcmds_re='^(init|use|prepare|enable|disable|up|pack|x|exec)$'
+    pm_spec_re='^([@a-z0-9][a-z0-9._/@-]*@[a-z0-9._-]+|@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*)$'
     sub_idx=-1
     for ((j = 0; j < ${#rest[@]}; j++)); do
       strip_token "${rest[j]}"
@@ -395,9 +396,11 @@ while IFS= read -r segment; do
       for ((k = sub_idx + 1; k < ${#rest[@]}; k++)); do
         strip_token "${rest[k]}"
         case "$STRIPPED" in
-          -*) ;;
-          *) block "コマンド置換/変数展開経由の PM 文脈サブコマンド（引数付き）は禁止されています。パッケージ操作はユーザーに依頼してください" ;;
+          -*) continue ;;
         esac
+        if [[ "$STRIPPED" =~ $pm_token_re ]] || [[ "$STRIPPED" =~ $pm_spec_re ]]; then
+          block "コマンド置換/変数展開経由の PM 文脈サブコマンド（PM 名または指定子付き）は禁止されています。パッケージ操作はユーザーに依頼してください"
+        fi
       done
     fi
     continue
