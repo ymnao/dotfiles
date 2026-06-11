@@ -3,7 +3,7 @@
 # PreToolUse hook: `gh pr create` の実行前に HEAD コミットの CI が green か検証する
 #
 # - 対象コミット: git HEAD
-# - bypass: --draft/-d、.github/workflows/ 空、GitHub 以外の remote、ツール不在
+# - bypass: --draft/-d(falsy 値 --draft=false 等は bypass しない)、.github/workflows/ 空、GitHub 以外の remote、ツール不在
 # - 状態判定: GitHub GraphQL の statusCheckRollup.state（legacy status + checks 統合）
 # - exit 0 = 許可, exit 2 = block (stderr 文字列が Claude にフィードバックされる)
 #
@@ -33,15 +33,15 @@ done
 command=$(printf '%s\n' "$input" | jq -r '.tool_input.command // empty')
 [[ -z "$command" ]] && exit 0
 
-# command 位置 (start, または `;`/`&&`/`||`/`|`/`(`/`{`/backtick/space の直後)
+# command 位置 (start, または `;`/`&&`/`||`/`|`/`(`/`{`/backtick/space/`/`(パス区切り)/`\` の直後)
 # にある `gh pr create` のみマッチ。`[^;&|]*` で sub-command 境界を超えない。
 gh_segment=$(printf '%s\n' "$command" \
-  | grep -oE '(^|[;&|({`[:space:]])([A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*[[:space:]]+)*gh[[:space:]]+pr[[:space:]]+create[^;&|]*' \
+  | grep -oE '(^|[;&|({`[:space:]/\])([A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*[[:space:]]+)*gh[[:space:]]+pr[[:space:]]+create[^;&|]*' \
   | head -1 || true)
 [[ -z "$gh_segment" ]] && exit 0
 
-# --draft / -d は WIP 用 bypass
-if printf '%s\n' "$gh_segment" | grep -qE '([[:space:]]|^)(--draft|-d)([[:space:]]|=|$)'; then
+# --draft / -d は WIP 用 bypass (falsy 値 --draft=false 等は bypass しない)
+if printf '%s\n' "$gh_segment" | grep -qE '([[:space:]]|^)(--draft(=([Tt][Rr][Uu][Ee]|[Tt]|1))?|-d)([[:space:]]|$)'; then
   exit 0
 fi
 
