@@ -159,7 +159,11 @@ npm_restore='install|i|add|in|ins|inst|insta|instal|isnt|isnta|isntal|isntall|in
 
 # 動的バイナリ（__dynbin__）の直後に現れたらブロックするパッケージ操作サブコマンド。
 # どの PM か特定できないため install 系 alias に各 PM の追加/取得系を足した和集合。
-dyn_danger="${npm_restore}|a|dlx|exec|inject|tool|pip"
+# 固定バイナリ側の deny 集合（npm/pnpm/yarn/bun create、npm init <initializer>、
+# pipx inject、uv tool 等）と整合させる。run は許可（PM 名不明な状態で
+# `$(which npm) run build` のような正当ケースを止めないため）、ただし uv run
+# --with* は別途 __dynbin__ 分岐内で検出する。
+dyn_danger="${npm_restore}|a|dlx|exec|inject|tool|pip|create|init"
 
 # 透過的な実行ラッパー: 実行対象がラッパーの先にあり、内側のバイナリがそのまま
 # exec される。読み飛ばして「実際に実行されるバイナリ」を解決する。shell の -c や
@@ -290,6 +294,16 @@ while IFS= read -r segment; do
   if [[ "$bin" == __dynbin__ ]]; then
     pm_should_block "$dyn_danger" '' "${rest[@]}" \
       && block "コマンド置換/変数展開経由のパッケージマネージャ実行は禁止されています。パッケージ操作はユーザーに依頼してください"
+    # uv run --with* に相当する実行時取得フラグも検出する。固定バイナリ側の uv
+    # 分岐と同じ判定を __dynbin__ 経由（$(which uv) run --with ... 等）にも適用。
+    for ((j = 0; j < ${#rest[@]}; j++)); do
+      strip_token "${rest[j]}"
+      case "$STRIPPED" in
+        --with|--with=*|--with-editable|--with-editable=*|--with-requirements|--with-requirements=*)
+          block "コマンド置換/変数展開経由の uv run --with* は実行時にパッケージを取得するため禁止されています"
+          ;;
+      esac
+    done
     continue
   fi
 
