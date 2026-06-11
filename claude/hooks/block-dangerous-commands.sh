@@ -147,7 +147,8 @@ if printf '%s\n' "$command" | grep -qiE '(^|[;&|({`[:space:]])git[[:space:]]+(-[
 fi
 
 # reset 側も同様にグローバルオプション（-C <path> / -c <k>=<v> / --flag 等）を許容する。
-if printf '%s\n' "$command" | grep -qiE '(^|[;&|({`[:space:]])git[[:space:]]+(-[^[:space:];&|]+([[:space:]]+[^-[:space:];&|][^[:space:];&|]*)?[[:space:]]+)*reset[[:space:]]+--hard([[:space:]]|[;&|)}`]|$)'; then
+# reset の後にサブコマンドオプション（-q / --quiet 等）を挟む形（git reset -q --hard）にも対応する。
+if printf '%s\n' "$command" | grep -qiE '(^|[;&|({`[:space:]])git[[:space:]]+(-[^[:space:];&|]+([[:space:]]+[^-[:space:];&|][^[:space:];&|]*)?[[:space:]]+)*reset[[:space:]]+([^;&|]*[[:space:]])?--hard([[:space:]]|[;&|)}`]|$)'; then
   echo "ブロック: git reset --hard は禁止されています" >&2
   exit 2
 fi
