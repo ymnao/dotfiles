@@ -3,7 +3,7 @@
 # PreToolUse hook (Codex CLI): `gh pr create` の実行前に HEAD コミットの CI が green か検証する
 #
 # - 対象コミット: git HEAD
-# - bypass: --draft/-d、.github/workflows/ 空、GitHub 以外の remote、ツール不在
+# - bypass: --draft/-d(falsy 値 --draft=false 等は bypass しない)、.github/workflows/ 空、GitHub 以外の remote、ツール不在
 # - 状態判定: GitHub GraphQL の statusCheckRollup.state
 # - exit 0 = 許可, exit 2 = ブロック
 #
@@ -26,11 +26,11 @@ command=$(printf '%s\n' "$input" | jq -r '.tool_input.command // empty')
 [[ -z "$command" ]] && exit 0
 
 gh_segment=$(printf '%s\n' "$command" \
-  | grep -oE '(^|[;&|({`[:space:]])([A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*[[:space:]]+)*gh[[:space:]]+pr[[:space:]]+create[^;&|]*' \
+  | grep -oE '(^|[;&|({`[:space:]/\])([A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*[[:space:]]+)*gh[[:space:]]+pr[[:space:]]+create[^;&|]*' \
   | head -1 || true)
 [[ -z "$gh_segment" ]] && exit 0
 
-if printf '%s\n' "$gh_segment" | grep -qE '([[:space:]]|^)(--draft|-d)([[:space:]]|=|$)'; then
+if printf '%s\n' "$gh_segment" | grep -qE '([[:space:]]|^)(--draft(=([Tt][Rr][Uu][Ee]|[Tt]|1))?|-d)([[:space:]]|$)'; then
   exit 0
 fi
 
