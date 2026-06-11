@@ -73,27 +73,31 @@ command=$(printf '%s' "$command" | sed -E \
 # （guard-pkg-install.sh と同じ流儀）。例: $(printf git) reset --hard → git reset --hard、
 # `which rm` -rf / → rm -rf /。中身に危険コマンド名を含まない $(...) / `...` は残留し、
 # 後段の動的展開残留判定（.codex 参照 / 書き込み系コマンド / 書き込みリダイレクト）が拾う。
+# 中身は case-insensitive 比較（I フラグ）: macOS は case-insensitive FS で大文字
+# バイナリ（$(printf GIT) 等）も解決されるため。\1 には元のテキスト（大文字含む）が
+# 残るが、後段の本判定が -i 付きで捕捉する。
 command=$(printf '%s' "$command" | sed -E \
-  -e 's/\$\([^)]*[^A-Za-z0-9_](rm|git|sudo|chmod)[^A-Za-z0-9_)][^)]*\)/\1/g' \
-  -e 's/\$\([^)]*[^A-Za-z0-9_](rm|git|sudo|chmod)\)/\1/g' \
-  -e 's/\$\((rm|git|sudo|chmod)[^A-Za-z0-9_)][^)]*\)/\1/g' \
-  -e 's/\$\((rm|git|sudo|chmod)\)/\1/g' \
-  -e 's/`[^`]*[^A-Za-z0-9_](rm|git|sudo|chmod)[^A-Za-z0-9_`][^`]*`/\1/g' \
-  -e 's/`[^`]*[^A-Za-z0-9_](rm|git|sudo|chmod)`/\1/g' \
-  -e 's/`(rm|git|sudo|chmod)[^A-Za-z0-9_`][^`]*`/\1/g' \
-  -e 's/`(rm|git|sudo|chmod)`/\1/g')
+  -e 's/\$\([^)]*[^A-Za-z0-9_](rm|git|sudo|chmod)[^A-Za-z0-9_)][^)]*\)/\1/Ig' \
+  -e 's/\$\([^)]*[^A-Za-z0-9_](rm|git|sudo|chmod)\)/\1/Ig' \
+  -e 's/\$\((rm|git|sudo|chmod)[^A-Za-z0-9_)][^)]*\)/\1/Ig' \
+  -e 's/\$\((rm|git|sudo|chmod)\)/\1/Ig' \
+  -e 's/`[^`]*[^A-Za-z0-9_](rm|git|sudo|chmod)[^A-Za-z0-9_`][^`]*`/\1/Ig' \
+  -e 's/`[^`]*[^A-Za-z0-9_](rm|git|sudo|chmod)`/\1/Ig' \
+  -e 's/`(rm|git|sudo|chmod)[^A-Za-z0-9_`][^`]*`/\1/Ig' \
+  -e 's/`(rm|git|sudo|chmod)`/\1/Ig')
 
 # パラメータ展開 ${VAR:-default} / ${VAR-default} / ${VAR:=default} / ${VAR:+alt} 等の
 # 中身に危険コマンド名トークンが含まれる場合、その展開全体を該当コマンド名 literal に
-# 置き換える（コマンド置換と同じ流儀）。例: ${x:-git} reset --hard → git reset --hard、
-# ${UNSET:-rm} -rf / → rm -rf /。x が未設定/null なら bash は default 値を採用するため、
-# 検出側でも default 値の literal を判定経路に流す。中身に危険コマンド名を含まない
-# ${...}（${USER} / ${#PATH} / ${PWD:0:10} 等）は残留し、後段の動的展開残留判定が拾う。
+# 置き換える（コマンド置換と同じ流儀、case-insensitive）。例: ${x:-git} reset --hard
+# → git reset --hard、${UNSET:-rm} -rf / → rm -rf /。x が未設定/null なら bash は
+# default 値を採用するため、検出側でも default 値の literal を判定経路に流す。
+# 中身に危険コマンド名を含まない ${...}（${USER} / ${#PATH} / ${PWD:0:10} 等）は
+# 残留し、後段の動的展開残留判定が拾う。
 command=$(printf '%s' "$command" | sed -E \
-  -e 's/\$\{[^}]*[^A-Za-z0-9_](rm|git|sudo|chmod)[^A-Za-z0-9_}][^}]*\}/\1/g' \
-  -e 's/\$\{[^}]*[^A-Za-z0-9_](rm|git|sudo|chmod)\}/\1/g' \
-  -e 's/\$\{(rm|git|sudo|chmod)[^A-Za-z0-9_}][^}]*\}/\1/g' \
-  -e 's/\$\{(rm|git|sudo|chmod)\}/\1/g')
+  -e 's/\$\{[^}]*[^A-Za-z0-9_](rm|git|sudo|chmod)[^A-Za-z0-9_}][^}]*\}/\1/Ig' \
+  -e 's/\$\{[^}]*[^A-Za-z0-9_](rm|git|sudo|chmod)\}/\1/Ig' \
+  -e 's/\$\{(rm|git|sudo|chmod)[^A-Za-z0-9_}][^}]*\}/\1/Ig' \
+  -e 's/\$\{(rm|git|sudo|chmod)\}/\1/Ig')
 
 # 単純な変数代入 `var=value` を「コマンド中の $var / ${var}」に静的展開する。
 # 例: d=.codex; touch $d/foo → touch .codex/foo、
