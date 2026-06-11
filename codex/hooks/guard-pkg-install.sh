@@ -160,10 +160,10 @@ npm_restore='install|i|add|in|ins|inst|insta|instal|isnt|isnta|isntal|isntall|in
 # 動的バイナリ（__dynbin__）の直後に現れたらブロックするパッケージ操作サブコマンド。
 # どの PM か特定できないため install 系 alias に各 PM の追加/取得系を足した和集合。
 # 固定バイナリ側の deny 集合（npm/pnpm/yarn/bun create、npm init <initializer>、
-# pipx inject、uv tool 等）と整合させる。run は許可（PM 名不明な状態で
-# `$(which npm) run build` のような正当ケースを止めないため）、ただし uv run
-# --with* は別途 __dynbin__ 分岐内で検出する。
-dyn_danger="${npm_restore}|a|dlx|exec|inject|tool|pip|create|init"
+# pipx inject、uv tool、corepack use/prepare/enable/disable/up/pack 等）と整合
+# させる。run は許可（PM 名不明な状態で `$(which npm) run build` のような正当
+# ケースを止めないため）、ただし uv run --with* は別途 __dynbin__ 分岐内で検出する。
+dyn_danger="${npm_restore}|a|dlx|exec|inject|tool|pip|create|init|use|prepare|enable|disable|up|pack"
 
 # 透過的な実行ラッパー: 実行対象がラッパーの先にあり、内側のバイナリがそのまま
 # exec される。読み飛ばして「実際に実行されるバイナリ」を解決する。shell の -c や
