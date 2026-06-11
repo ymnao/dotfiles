@@ -138,7 +138,7 @@ fi
 #
 # macOS APFS は既定で case-insensitive のため、`.Codex` 等の表記でも
 # 同一ファイルにアクセスできる。検出は大文字小文字を無視して行う。
-# Claude Code が .codex/ を生成すると、同居する Codex CLI の起動時にエスケープが成立するため Claude 側でも防ぐ。
+# Codex CLI と同居するプロジェクトでは、Claude が .codex/ を生成すると Codex 起動時のエスケープ経路になりうるため、Bash 経路でも防ぐ（Edit/Write 経路は対象外）。
 if printf '%s\n' "$command" | grep -qiE '(^|[;&|({`[:space:]>]|[.]\/)[.]codex([\/[:space:]"`)]|$)'; then
   echo "ブロック: プロジェクト内の .codex/ ディレクトリへの参照は禁止されています（Cymulate notify エスケープ対策）" >&2
   exit 2
