@@ -372,13 +372,17 @@ while IFS= read -r segment; do
       esac
     done
     # PM 文脈の手がかりとなるサブコマンド（init/use/prepare/enable/disable/up/
-    # pack/x/exec）と「package 指定子」（name@version / @scope/name /
-    # @scope/name@version）の組み合わせを検出する。連結構築（$(printf %s n pm)
-    # init vite@latest 等）で resolve_cmd_subst が PM 名を抽出できず __dynbin__
-    # に落ちても、サブコマンド + 指定子の形が現れれば PM 文脈と判定して block。
-    # サブコマンド単独（$(some-tool) init / up）は指定子なしで素通り＝誤検知回避。
+    # pack/x/exec）に「非フラグ引数」が続けば、PM 文脈と判定して block する。
+    # 連結構築（$(printf %s n pm) init vite / $(printf %c%c%c 110 112 109)
+    # init vite / $(echo -e \156\160\155) init vite 等）で resolve_cmd_subst が
+    # PM 名を抽出できず __dynbin__ に落ちても、サブコマンド + 引数の形が現れれば
+    # 固定 npm init/corepack use と整合的に block される。
+    # サブコマンド単独や -y のようなフラグのみの形（$(some-tool) init /
+    # $(some-tool) init -y / $(some-tool) up）は素通り＝誤検知回避。
+    # AI エージェントが動的バイナリ + サブコマンド + 引数を書くケースは稀
+    # （普通 some-cli init my-project と直接書く）ため、$(some-tool) init
+    # my-project のような誤検知は許容する。
     pm_subcmds_re='^(init|use|prepare|enable|disable|up|pack|x|exec)$'
-    pm_spec_re='^([@a-z][a-z0-9._/@-]*@[a-z0-9._-]+|@[a-z][a-z0-9._-]+/[a-z][a-z0-9._-]*)$'
     sub_idx=-1
     for ((j = 0; j < ${#rest[@]}; j++)); do
       strip_token "${rest[j]}"
@@ -390,9 +394,10 @@ while IFS= read -r segment; do
     if [[ $sub_idx -ge 0 ]]; then
       for ((k = sub_idx + 1; k < ${#rest[@]}; k++)); do
         strip_token "${rest[k]}"
-        if [[ "$STRIPPED" =~ $pm_spec_re ]]; then
-          block "コマンド置換/変数展開経由の PM 文脈サブコマンド（パッケージ指定子付き）は禁止されています。パッケージ操作はユーザーに依頼してください"
-        fi
+        case "$STRIPPED" in
+          -*) ;;
+          *) block "コマンド置換/変数展開経由の PM 文脈サブコマンド（引数付き）は禁止されています。パッケージ操作はユーザーに依頼してください" ;;
+        esac
       done
     fi
     continue
