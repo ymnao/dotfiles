@@ -161,7 +161,16 @@ for token in $normalized_command; do
   token="${token#"$cwd_lower"/}"
 
   case "$token" in
+    # ホーム配下・cwd 外の絶対パスは許可（上で動的展開残留判定の除外と一貫させる）
     "~/$protected_name"|"~/$protected_name"/*|"\$home/$protected_name"|"\$home/$protected_name"/*|/*)
+      continue
+      ;;
+    # $TMPDIR / ${TMPDIR} 配下も cwd 外（/tmp や /var/folders/...）のため許可
+    "\$tmpdir/$protected_name"|"\$tmpdir/$protected_name"/*|"\${tmpdir}/$protected_name"|"\${tmpdir}/$protected_name"/*)
+      continue
+      ;;
+    # $XDG_* / ${XDG_*} 配下も同様に許可
+    \$xdg_*"/$protected_name"|\$xdg_*"/$protected_name"/*|\$\{xdg_*\}"/$protected_name"|\$\{xdg_*\}"/$protected_name"/*)
       continue
       ;;
     "$protected_name"|"$protected_name"/*|*"/$protected_name"|*"/$protected_name"/*)

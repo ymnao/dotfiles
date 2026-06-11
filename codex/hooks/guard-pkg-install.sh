@@ -319,20 +319,34 @@ while IFS= read -r segment; do
       block "uvx は実行時にパッケージを取得するため禁止されています"
       ;;
     npm)
-      pm_should_block 'exec|x' "$npm_restore" "${rest[@]}" \
-        && block "npm install <package> / npm exec 系は禁止されています。パッケージの追加はユーザーに依頼してください"
+      # exec / x / create は initializer や任意パッケージを取得・実行し得るため常に禁止。
+      pm_should_block 'exec|x|create' "$npm_restore" "${rest[@]}" \
+        && block "npm install <package> / npm exec / npm create は禁止されています。パッケージの追加はユーザーに依頼してください"
+      # init は非オプション引数（initializer 名）が来た時のみブロックする。
+      # 対話モード `npm init` / フラグのみの `npm init -y` / `--scope=@me` は許可。
+      init_seen=0
+      for tk in "${rest[@]}"; do
+        strip_token "$tk"
+        if [[ $init_seen -eq 0 && "$STRIPPED" == "init" ]]; then
+          init_seen=1
+          continue
+        fi
+        if [[ $init_seen -eq 1 && "$STRIPPED" != -* ]]; then
+          block "npm init <initializer> は実行時にパッケージを取得するため禁止されています"
+        fi
+      done
       ;;
     pnpm)
-      pm_should_block 'add|dlx' 'install|i' "${rest[@]}" \
-        && block "pnpm add/dlx / pnpm install <package> は禁止されています。パッケージの追加はユーザーに依頼してください"
+      pm_should_block 'add|dlx|create' 'install|i' "${rest[@]}" \
+        && block "pnpm add/dlx/create / pnpm install <package> は禁止されています。パッケージの追加はユーザーに依頼してください"
       ;;
     yarn)
-      pm_should_block 'add|dlx' 'install' "${rest[@]}" \
-        && block "yarn add/dlx / yarn install <package> は禁止されています。パッケージの追加はユーザーに依頼してください"
+      pm_should_block 'add|dlx|create' 'install' "${rest[@]}" \
+        && block "yarn add/dlx/create / yarn install <package> は禁止されています。パッケージの追加はユーザーに依頼してください"
       ;;
     bun)
-      pm_should_block 'add|a|install|i|x' '' "${rest[@]}" \
-        && block "bun add/install/x は許可リスト外です。パッケージ操作はユーザーに依頼してください"
+      pm_should_block 'add|a|install|i|x|create' '' "${rest[@]}" \
+        && block "bun add/install/x/create は許可リスト外です。パッケージ操作はユーザーに依頼してください"
       ;;
     pip|pip3)
       pm_should_block 'install' '' "${rest[@]}" \
@@ -344,9 +358,20 @@ while IFS= read -r segment; do
       ;;
     uv)
       # uv add / uv pip install / uv tool install/run をまとめてブロック
-      # （uv sync・uv lock・uv run 等の復元/実行系は allowlist 外＝許可）
+      # （uv sync・uv lock・uv run スクリプト単体等の復元/実行系は許可）。
       pm_should_block 'add|pip|tool' '' "${rest[@]}" \
         && block "uv add / uv pip / uv tool は禁止されています。パッケージの追加はユーザーに依頼してください"
+      # uv run --with* / uv run --with-editable / uv run --with-requirements は
+      # 実行時にパッケージを取得するため uvx と同じ扱いでブロック。--with は
+      # uv tool run でも有効だが上で tool ごとブロック済み。
+      for ((j = 0; j < ${#rest[@]}; j++)); do
+        strip_token "${rest[j]}"
+        case "$STRIPPED" in
+          --with|--with=*|--with-editable|--with-editable=*|--with-requirements|--with-requirements=*)
+            block "uv run --with* は実行時にパッケージを取得するため禁止されています"
+            ;;
+        esac
+      done
       ;;
     poetry)
       pm_should_block 'add' '' "${rest[@]}" \
