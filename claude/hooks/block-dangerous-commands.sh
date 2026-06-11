@@ -166,6 +166,25 @@ if printf '%s' "$residual" | grep -qE '\$\(|`|\$[a-zA-Z_{]' \
   exit 2
 fi
 
+# 動的展開がコマンドセグメント先頭にあり、後続に危険サブコマンド/オプション/フラグが
+# 現れる場合、危険コマンド名（rm / git / sudo / chmod）の分割生成や隣接連結による
+# 検出回避を安全側でブロックする。
+# 例: $(printf %s g it) reset --hard → 中身トークンが分割で literal 化されないが、
+# セグメント先頭の動的展開 + reset --hard でブロック。同様に ${x:-g}${y:-it} reset --hard、
+# $(printf r; printf m) -rf /、${x:-r}${y:-m} -rf /、$(printf g)$(printf it) reset --hard、
+# ${x:-ch}${y:-mod} 777 file 等を捕捉。
+# セグメント先頭（^ / ; / & / | / ( / { 直後）に絞ることで、引数位置の動的展開（echo $(date)、
+# tar -rvf $(printf x.tar) files、find $(pwd) -name x 等）の誤検知を抑える。
+# 捕捉する危険要素:
+#   - reset --hard（サブオプション挟みも） / push --force / --force-with-lease / -f
+#   - rm の -r/-f 短フラグ群 + 危険パス（/, ~, $HOME, .., ./）
+#   - chmod の 777 数値
+# 検出不能ケース（動的構築 sudo + 任意引数 等）は AGENTS.md にトレードオフとして明記。
+if printf '%s' "$residual" | grep -qiE '(^|[;&|({])[[:space:]]*((\$\([^)]*\)|`[^`]*`|\$\{[^}]*\}|\$[a-zA-Z_][a-zA-Z0-9_]*)+)[^;&|]*[[:space:]]+(reset[[:space:]]+([^;&|]*[[:space:]])?--hard|push[[:space:]]+([^;&|]*[[:space:]])?(--force|--force-with-lease(=[^[:space:]]*)?|-[a-zA-Z]*f[a-zA-Z]*)|-[a-zA-Z]*[rR][a-zA-Z]*f[a-zA-Z]*[[:space:]]+(/|~/?|\$HOME|\.\.|\./?)|-[a-zA-Z]*f[a-zA-Z]*[rR][a-zA-Z]*[[:space:]]+(/|~/?|\$HOME|\.\.|\./?)|(-[a-zA-Z]*[[:space:]]+)*777([[:space:]]|[;&|)}`]|$))'; then
+  echo "ブロック: 動的展開で構築したコマンド + 危険サブコマンド/オプション/フラグの組み合わせは安全側で禁止されています（分割生成・隣接連結による検出回避対策）" >&2
+  exit 2
+fi
+
 # --- 破壊的ファイル操作 ---
 # 大文字・大小混在表記（RM / Git 等、macOS は case-insensitive FS でバイナリ解決される）も検出するため本判定は -i を付ける。
 # 絶対パス起動（/bin/rm / /opt/homebrew/bin/git 等）も検出するため、本判定の先行文字クラスに / を含める
