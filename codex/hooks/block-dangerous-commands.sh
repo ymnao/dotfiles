@@ -83,6 +83,18 @@ command=$(printf '%s' "$command" | sed -E \
   -e 's/`(rm|git|sudo|chmod)[^A-Za-z0-9_`][^`]*`/\1/g' \
   -e 's/`(rm|git|sudo|chmod)`/\1/g')
 
+# パラメータ展開 ${VAR:-default} / ${VAR-default} / ${VAR:=default} / ${VAR:+alt} 等の
+# 中身に危険コマンド名トークンが含まれる場合、その展開全体を該当コマンド名 literal に
+# 置き換える（コマンド置換と同じ流儀）。例: ${x:-git} reset --hard → git reset --hard、
+# ${UNSET:-rm} -rf / → rm -rf /。x が未設定/null なら bash は default 値を採用するため、
+# 検出側でも default 値の literal を判定経路に流す。中身に危険コマンド名を含まない
+# ${...}（${USER} / ${#PATH} / ${PWD:0:10} 等）は残留し、後段の動的展開残留判定が拾う。
+command=$(printf '%s' "$command" | sed -E \
+  -e 's/\$\{[^}]*[^A-Za-z0-9_](rm|git|sudo|chmod)[^A-Za-z0-9_}][^}]*\}/\1/g' \
+  -e 's/\$\{[^}]*[^A-Za-z0-9_](rm|git|sudo|chmod)\}/\1/g' \
+  -e 's/\$\{(rm|git|sudo|chmod)[^A-Za-z0-9_}][^}]*\}/\1/g' \
+  -e 's/\$\{(rm|git|sudo|chmod)\}/\1/g')
+
 # 単純な変数代入 `var=value` を「コマンド中の $var / ${var}」に静的展開する。
 # 例: d=.codex; touch $d/foo → touch .codex/foo、
 # 　　 a=.co; b=dex; touch $a$b/foo → touch .codex/foo（連結も解決される）。
