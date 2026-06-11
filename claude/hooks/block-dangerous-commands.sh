@@ -16,10 +16,12 @@ input=$(cat)
 # 改めて .codex 検出する）。スクリーニング目的の粗判定でよく、誤検知は後段で
 # .codex が出ない限り素通りする。
 # 大文字バイナリ（CHMOD / .Codex 等）対応のため事前に小文字化する。
+# 危険コマンド名（rm / git / chmod / sudo）にも codex 文字列と同じ gap を許容する
+# （クォート分割・バックスラッシュ挿入による回避対策。本判定は正規化後に検出する）。
 input_lower=$(printf '%s' "$input" | tr '[:upper:]' '[:lower:]')
 gap='([\\"'"'"']|\\\\|\\")*'
 if ! printf '%s' "$input_lower" \
-    | grep -qE "rm|git|chmod|sudo|c${gap}o${gap}d${gap}e${gap}x|\\\$|\`"; then
+    | grep -qE "r${gap}m|g${gap}i${gap}t|c${gap}h${gap}m${gap}o${gap}d|s${gap}u${gap}d${gap}o|c${gap}o${gap}d${gap}e${gap}x|\\\$|\`"; then
   exit 0
 fi
 
