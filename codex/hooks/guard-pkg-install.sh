@@ -84,11 +84,22 @@ if [[ -n "$assignments" ]]; then
   done <<< "$assignments"
 fi
 
-# コマンド置換 `$(...)` / バックティック / 変数展開 `$var` `${var}` は実行時まで
-# 中身が決まらず静的に追えない。プレースホルダ __dynbin__ に置換し、それが
+# `$(which X)` / `$(command -v X)` / `$(type -p X)` / バックティック版は
+# X のフルパス取得イディオムなので、X に literal 展開してから __dynbin__ マスクへ。
+# これにより $(which corepack) pnpm install のような動的経由でも、続く X が PM 名
+# なら固定バイナリ分岐に合流して整合的に判定される（$(which X) X 名が PM でなければ
+# 後段の bin 解析でも素通り）。
+command=$(printf '%s' "$command" | sed -E \
+  -e 's/\$\([[:space:]]*which[[:space:]]+([a-z][a-z0-9._-]*)[[:space:]]*\)/\1/g' \
+  -e 's/\$\([[:space:]]*command[[:space:]]+-v[[:space:]]+([a-z][a-z0-9._-]*)[[:space:]]*\)/\1/g' \
+  -e 's/\$\([[:space:]]*type[[:space:]]+-p[[:space:]]+([a-z][a-z0-9._-]*)[[:space:]]*\)/\1/g' \
+  -e 's/`[[:space:]]*which[[:space:]]+([a-z][a-z0-9._-]*)[[:space:]]*`/\1/g' \
+  -e 's/`[[:space:]]*command[[:space:]]+-v[[:space:]]+([a-z][a-z0-9._-]*)[[:space:]]*`/\1/g')
+
+# 残ったコマンド置換 `$(...)` / バックティック / 変数展開 `$var` `${var}` は実行時
+# まで中身が決まらず静的に追えない。プレースホルダ __dynbin__ に置換し、それが
 # 実行対象（バイナリ位置）に来てパッケージ操作サブコマンドを伴う場合に後段で
-# 安全側ブロックする（$(which npm) install / $npm add 等）。早期スクリーニングは
-# 置換前の生入力に対して行うため、ここでマスクしても PM 名検出には影響しない。
+# 安全側ブロックする（$npm add / $(printf n)$(printf pm) install 等）。
 # 末尾で __dynbin__ の連続（$(printf n)$(printf pm) / $a$b 等）を 1 個に正規化し、
 # 動的に分割構築されたバイナリも __dynbin__ 単体として bin 解析に渡す。
 command=$(printf '%s' "$command" | sed -E \
@@ -159,11 +170,12 @@ npm_restore='install|i|add|in|ins|inst|insta|instal|isnt|isnta|isntal|isntall|in
 
 # 動的バイナリ（__dynbin__）の直後に現れたらブロックするパッケージ操作サブコマンド。
 # どの PM か特定できないため install 系 alias に各 PM の追加/取得系を足した和集合。
-# 固定バイナリ側の deny 集合（npm/pnpm/yarn/bun create、npm init <initializer>、
-# pipx inject、uv tool、corepack use/prepare/enable/disable/up/pack 等）と整合
-# させる。run は許可（PM 名不明な状態で `$(which npm) run build` のような正当
-# ケースを止めないため）、ただし uv run --with* は別途 __dynbin__ 分岐内で検出する。
-dyn_danger="${npm_restore}|a|dlx|exec|inject|tool|pip|create|init|use|prepare|enable|disable|up|pack"
+# PM 特化の語のみを含める。use/prepare/enable/disable/up/pack のような汎用語
+# （docker compose up / make prepare 等で使われる）は除外し、代わりに
+# $(which X) / `which X` / $(command -v X) を X に literal 展開する正規化で
+# 動的 corepack 経路を固定バイナリ分岐に合流させる。run は許可（$(which npm)
+# run build のような正当ケースを止めないため）、uv run --with* は別途検出。
+dyn_danger="${npm_restore}|a|dlx|exec|inject|tool|pip|create|uvx|bunx"
 
 # 透過的な実行ラッパー: 実行対象がラッパーの先にあり、内側のバイナリがそのまま
 # exec される。読み飛ばして「実際に実行されるバイナリ」を解決する。shell の -c や
