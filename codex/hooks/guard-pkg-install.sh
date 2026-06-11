@@ -84,17 +84,23 @@ if [[ -n "$assignments" ]]; then
   done <<< "$assignments"
 fi
 
-# `$(which X)` / `$(command -v X)` / `$(type -p X)` / バックティック版は
-# X のフルパス取得イディオムなので、X に literal 展開してから __dynbin__ マスクへ。
-# これにより $(which corepack) pnpm install のような動的経由でも、続く X が PM 名
-# なら固定バイナリ分岐に合流して整合的に判定される（$(which X) X 名が PM でなければ
-# 後段の bin 解析でも素通り）。
+# 既知の literal 構築イディオムを X に展開してから __dynbin__ マスクへ。
+# これにより $(which corepack) pnpm install / $(printf npm) init vite@latest /
+# $(echo corepack) use のような動的構築でも、続く X が PM 名なら固定バイナリ
+# 分岐に合流して整合的に判定される（X が PM 名でなければ後段の bin 解析でも
+# 素通り）。引用符は前段の正規化で既に剥がされているため printf 'X' / "X" も
+# printf X として一律マッチする。
 command=$(printf '%s' "$command" | sed -E \
   -e 's/\$\([[:space:]]*which[[:space:]]+([a-z][a-z0-9._-]*)[[:space:]]*\)/\1/g' \
   -e 's/\$\([[:space:]]*command[[:space:]]+-v[[:space:]]+([a-z][a-z0-9._-]*)[[:space:]]*\)/\1/g' \
   -e 's/\$\([[:space:]]*type[[:space:]]+-p[[:space:]]+([a-z][a-z0-9._-]*)[[:space:]]*\)/\1/g' \
+  -e 's/\$\([[:space:]]*printf[[:space:]]+([a-z][a-z0-9._-]*)[[:space:]]*\)/\1/g' \
+  -e 's/\$\([[:space:]]*echo[[:space:]]+([a-z][a-z0-9._-]*)[[:space:]]*\)/\1/g' \
   -e 's/`[[:space:]]*which[[:space:]]+([a-z][a-z0-9._-]*)[[:space:]]*`/\1/g' \
-  -e 's/`[[:space:]]*command[[:space:]]+-v[[:space:]]+([a-z][a-z0-9._-]*)[[:space:]]*`/\1/g')
+  -e 's/`[[:space:]]*command[[:space:]]+-v[[:space:]]+([a-z][a-z0-9._-]*)[[:space:]]*`/\1/g' \
+  -e 's/`[[:space:]]*type[[:space:]]+-p[[:space:]]+([a-z][a-z0-9._-]*)[[:space:]]*`/\1/g' \
+  -e 's/`[[:space:]]*printf[[:space:]]+([a-z][a-z0-9._-]*)[[:space:]]*`/\1/g' \
+  -e 's/`[[:space:]]*echo[[:space:]]+([a-z][a-z0-9._-]*)[[:space:]]*`/\1/g')
 
 # 残ったコマンド置換 `$(...)` / バックティック / 変数展開 `$var` `${var}` は実行時
 # まで中身が決まらず静的に追えない。プレースホルダ __dynbin__ に置換し、それが
