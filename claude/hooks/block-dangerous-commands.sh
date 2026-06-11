@@ -123,12 +123,15 @@ if printf '%s\n' "$command" | grep -qE "$rm_rf_pattern"; then
 fi
 
 # --- Git 破壊的操作 ---
-if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])git[[:space:]]+push[[:space:]]+([^;&|]*[[:space:]])?(--force|--force-with-lease(=[^[:space:]]*)?|-[a-zA-Z]*f[a-zA-Z]*)([[:space:]]|[;&|)}`]|$)'; then
+# git のグローバルオプション（-C <path> / -c <k>=<v> / --no-pager 等）をサブコマンド前に
+# 挟む回避（git -C . push --force 等）に対応するため、サブコマンド前の option 列を許容する。
+if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])git[[:space:]]+(-[^[:space:];&|]+([[:space:]]+[^-[:space:];&|][^[:space:];&|]*)?[[:space:]]+)*push[[:space:]]+([^;&|]*[[:space:]])?(--force|--force-with-lease(=[^[:space:]]*)?|-[a-zA-Z]*f[a-zA-Z]*)([[:space:]]|[;&|)}`]|$)'; then
   echo "ブロック: git push --force は禁止されています" >&2
   exit 2
 fi
 
-if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])git[[:space:]]+reset[[:space:]]+--hard([[:space:]]|[;&|)}`]|$)'; then
+# reset 側も同様にグローバルオプション（-C <path> / -c <k>=<v> / --flag 等）を許容する。
+if printf '%s\n' "$command" | grep -qE '(^|[;&|({`[:space:]])git[[:space:]]+(-[^[:space:];&|]+([[:space:]]+[^-[:space:];&|][^[:space:];&|]*)?[[:space:]]+)*reset[[:space:]]+--hard([[:space:]]|[;&|)}`]|$)'; then
   echo "ブロック: git reset --hard は禁止されています" >&2
   exit 2
 fi
