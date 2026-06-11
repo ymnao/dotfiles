@@ -28,13 +28,10 @@ patterns=(
   'AKIA[0-9A-Z]{16}'
   # 機密環境変数への値付き代入（NAME=value / NAME: value / "NAME": "value"）
   # 名前の言及だけではブロックしない（README / CI 設定の読み取りを妨げないため）
+  # 小文字 aws_secret_access_key は ~/.aws/credentials の INI 記法用
   "(AWS_SECRET_ACCESS_KEY|aws_secret_access_key|ANTHROPIC_API_KEY|OPENAI_API_KEY)['\"]?[[:space:]]*[=:][[:space:]]*['\"]?[A-Za-z0-9/+_-]{16,}"
-  # GitHub
-  'ghp_[a-zA-Z0-9]{36}'
-  'gho_[a-zA-Z0-9]{36}'
-  'ghs_[a-zA-Z0-9]{36}'
-  'ghr_[a-zA-Z0-9]{36}'
-  'ghu_[a-zA-Z0-9]{36}'
+  # GitHub (ghp=PAT / gho=OAuth / ghu=user-to-server / ghs=server-to-server / ghr=refresh)
+  'gh[opsru]_[a-zA-Z0-9]{36}'
   'github_pat_[a-zA-Z0-9_]{22,}'
   # Slack (bot / user / app-config / session / app-level / refresh)
   'xox[bpas]-[0-9]'
