@@ -101,19 +101,42 @@ fi
 # 無限ループ防止: 置換しても何も変わらなくなったら break。
 pm_token_re='^(npm|npx|pnpm|yarn|bun|bunx|pip|pip3|pipx|uv|uvx|poetry|corepack|python|python3|python[0-9.]+)$'
 
+# コマンド置換 1 つの中身を解析して bin replacement 文字列を返す（標準出力）。
+# 中身の各 token が PM 名と一致すれば即その PM 名を、また printf の引数列
+# （%* / -* を除外）を連結した文字列が PM 名と一致すればその PM 名を返す。
+# どちらも該当しなければ __dynbin__ を返す。
+resolve_cmd_subst() {
+  local inner="$1"
+  local first_pm="" concat=""
+  local is_printf=0
+  set -- $inner
+  if [[ "${1:-}" == "printf" ]]; then
+    is_printf=1
+    shift
+  fi
+  for tok in "$@"; do
+    case "$tok" in
+      -*|--*) continue ;;
+      %*) continue ;;          # printf format spec (%s / %s\n / %-10s 等)
+    esac
+    if [[ -z "$first_pm" && "$tok" =~ $pm_token_re ]]; then
+      first_pm="$tok"
+    fi
+    [[ $is_printf -eq 1 ]] && concat+="$tok"
+  done
+  if [[ -n "$first_pm" ]]; then
+    printf '%s' "$first_pm"
+  elif [[ -n "$concat" && "$concat" =~ $pm_token_re ]]; then
+    printf '%s' "$concat"
+  else
+    printf '%s' "__dynbin__"
+  fi
+}
+
 while [[ "$command" =~ \$\(([^()]*)\) ]]; do
   full="${BASH_REMATCH[0]}"
   inner="${BASH_REMATCH[1]}"
-  replacement="__dynbin__"   # PM 名 token が見つからなければ動的バイナリ扱い
-  for tok in $inner; do
-    case "$tok" in
-      -*|--*) continue ;;          # オプションフラグはスキップ
-    esac
-    if [[ "$tok" =~ $pm_token_re ]]; then
-      replacement="$tok"
-      break
-    fi
-  done
+  replacement=$(resolve_cmd_subst "$inner")
   prefix="${command%%"$full"*}"
   suffix="${command#*"$full"}"
   command="${prefix}${replacement}${suffix}"
@@ -122,16 +145,7 @@ done
 while [[ "$command" =~ \`([^\`]*)\` ]]; do
   full="${BASH_REMATCH[0]}"
   inner="${BASH_REMATCH[1]}"
-  replacement="__dynbin__"
-  for tok in $inner; do
-    case "$tok" in
-      -*|--*) continue ;;
-    esac
-    if [[ "$tok" =~ $pm_token_re ]]; then
-      replacement="$tok"
-      break
-    fi
-  done
+  replacement=$(resolve_cmd_subst "$inner")
   prefix="${command%%"$full"*}"
   suffix="${command#*"$full"}"
   command="${prefix}${replacement}${suffix}"
@@ -357,6 +371,30 @@ while IFS= read -r segment; do
           ;;
       esac
     done
+    # PM 文脈の手がかりとなるサブコマンド（init/use/prepare/enable/disable/up/
+    # pack/x/exec）と「package 指定子」（name@version / @scope/name /
+    # @scope/name@version）の組み合わせを検出する。連結構築（$(printf %s n pm)
+    # init vite@latest 等）で resolve_cmd_subst が PM 名を抽出できず __dynbin__
+    # に落ちても、サブコマンド + 指定子の形が現れれば PM 文脈と判定して block。
+    # サブコマンド単独（$(some-tool) init / up）は指定子なしで素通り＝誤検知回避。
+    pm_subcmds_re='^(init|use|prepare|enable|disable|up|pack|x|exec)$'
+    pm_spec_re='^([@a-z][a-z0-9._/@-]*@[a-z0-9._-]+|@[a-z][a-z0-9._-]+/[a-z][a-z0-9._-]*)$'
+    sub_idx=-1
+    for ((j = 0; j < ${#rest[@]}; j++)); do
+      strip_token "${rest[j]}"
+      if [[ "$STRIPPED" =~ $pm_subcmds_re ]]; then
+        sub_idx=$j
+        break
+      fi
+    done
+    if [[ $sub_idx -ge 0 ]]; then
+      for ((k = sub_idx + 1; k < ${#rest[@]}; k++)); do
+        strip_token "${rest[k]}"
+        if [[ "$STRIPPED" =~ $pm_spec_re ]]; then
+          block "コマンド置換/変数展開経由の PM 文脈サブコマンド（パッケージ指定子付き）は禁止されています。パッケージ操作はユーザーに依頼してください"
+        fi
+      done
+    fi
     continue
   fi
 
