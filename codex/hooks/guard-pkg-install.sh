@@ -84,23 +84,58 @@ if [[ -n "$assignments" ]]; then
   done <<< "$assignments"
 fi
 
-# 既知の literal 構築イディオムを X に展開してから __dynbin__ マスクへ。
-# これにより $(which corepack) pnpm install / $(printf npm) init vite@latest /
-# $(echo corepack) use のような動的構築でも、続く X が PM 名なら固定バイナリ
-# 分岐に合流して整合的に判定される（X が PM 名でなければ後段の bin 解析でも
-# 素通り）。引用符は前段の正規化で既に剥がされているため printf 'X' / "X" も
-# printf X として一律マッチする。
-command=$(printf '%s' "$command" | sed -E \
-  -e 's/\$\([[:space:]]*which[[:space:]]+([a-z][a-z0-9._-]*)[[:space:]]*\)/\1/g' \
-  -e 's/\$\([[:space:]]*command[[:space:]]+-v[[:space:]]+([a-z][a-z0-9._-]*)[[:space:]]*\)/\1/g' \
-  -e 's/\$\([[:space:]]*type[[:space:]]+-p[[:space:]]+([a-z][a-z0-9._-]*)[[:space:]]*\)/\1/g' \
-  -e 's/\$\([[:space:]]*printf[[:space:]]+([a-z][a-z0-9._-]*)[[:space:]]*\)/\1/g' \
-  -e 's/\$\([[:space:]]*echo[[:space:]]+([a-z][a-z0-9._-]*)[[:space:]]*\)/\1/g' \
-  -e 's/`[[:space:]]*which[[:space:]]+([a-z][a-z0-9._-]*)[[:space:]]*`/\1/g' \
-  -e 's/`[[:space:]]*command[[:space:]]+-v[[:space:]]+([a-z][a-z0-9._-]*)[[:space:]]*`/\1/g' \
-  -e 's/`[[:space:]]*type[[:space:]]+-p[[:space:]]+([a-z][a-z0-9._-]*)[[:space:]]*`/\1/g' \
-  -e 's/`[[:space:]]*printf[[:space:]]+([a-z][a-z0-9._-]*)[[:space:]]*`/\1/g' \
-  -e 's/`[[:space:]]*echo[[:space:]]+([a-z][a-z0-9._-]*)[[:space:]]*`/\1/g')
+# コマンド置換 `$(...)` / バックティックの中身を一般的に解析し、PM 名 token を
+# 含むものはその PM 名に展開してから __dynbin__ マスクへ。これにより
+# which/command -v/type -p/printf/echo 等の具体的なイディオムに依存せず、
+# 「$(...) が PM 名を出力する形であれば固定バイナリ分岐に合流」できる。
+#   $(which corepack)       → corepack
+#   $(printf npm)           → npm
+#   $(printf %s npm)        → npm（中身の "%s" は token として PM 名と一致せず）
+#   $(echo -n corepack)     → corepack
+#   $(command -v -- npm)    → npm
+#   $(type -p -- corepack)  → corepack
+#   $(cat /dev/null)        → __dynbin__（PM 名 token なし）
+#   $(echo docker)          → docker（PM 名でないため後段の bin 解析で素通り）
+#
+# 反復で最内側 $(...) から処理しネスト ($(echo $(printf npm))) にも対応する。
+# 無限ループ防止: 置換しても何も変わらなくなったら break。
+pm_token_re='^(npm|npx|pnpm|yarn|bun|bunx|pip|pip3|pipx|uv|uvx|poetry|corepack|python|python3|python[0-9.]+)$'
+
+while [[ "$command" =~ \$\(([^()]*)\) ]]; do
+  full="${BASH_REMATCH[0]}"
+  inner="${BASH_REMATCH[1]}"
+  replacement="__dynbin__"   # PM 名 token が見つからなければ動的バイナリ扱い
+  for tok in $inner; do
+    case "$tok" in
+      -*|--*) continue ;;          # オプションフラグはスキップ
+    esac
+    if [[ "$tok" =~ $pm_token_re ]]; then
+      replacement="$tok"
+      break
+    fi
+  done
+  prefix="${command%%"$full"*}"
+  suffix="${command#*"$full"}"
+  command="${prefix}${replacement}${suffix}"
+done
+
+while [[ "$command" =~ \`([^\`]*)\` ]]; do
+  full="${BASH_REMATCH[0]}"
+  inner="${BASH_REMATCH[1]}"
+  replacement="__dynbin__"
+  for tok in $inner; do
+    case "$tok" in
+      -*|--*) continue ;;
+    esac
+    if [[ "$tok" =~ $pm_token_re ]]; then
+      replacement="$tok"
+      break
+    fi
+  done
+  prefix="${command%%"$full"*}"
+  suffix="${command#*"$full"}"
+  command="${prefix}${replacement}${suffix}"
+done
 
 # 残ったコマンド置換 `$(...)` / バックティック / 変数展開 `$var` `${var}` は実行時
 # まで中身が決まらず静的に追えない。プレースホルダ __dynbin__ に置換し、それが
