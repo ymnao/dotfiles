@@ -166,22 +166,22 @@ if printf '%s' "$residual" | grep -qE '\$\(|`|\$[a-zA-Z_{]' \
   exit 2
 fi
 
-# 動的展開がコマンドセグメント先頭にあり、後続に危険サブコマンド/オプション/フラグが
-# 現れる場合、危険コマンド名（rm / git / sudo / chmod）の分割生成や隣接連結による
-# 検出回避を安全側でブロックする。
-# 例: $(printf %s g it) reset --hard → 中身トークンが分割で literal 化されないが、
-# セグメント先頭の動的展開 + reset --hard でブロック。同様に ${x:-g}${y:-it} reset --hard、
-# $(printf r; printf m) -rf /、${x:-r}${y:-m} -rf /、$(printf g)$(printf it) reset --hard、
-# ${x:-ch}${y:-mod} 777 file 等を捕捉。
-# セグメント先頭（^ / ; / & / | / ( / { 直後）に絞ることで、引数位置の動的展開（echo $(date)、
-# tar -rvf $(printf x.tar) files、find $(pwd) -name x 等）の誤検知を抑える。
-# 捕捉する危険要素:
-#   - reset --hard（サブオプション挟みも） / push --force / --force-with-lease / -f
-#   - rm の -r/-f 短フラグ群 + 危険パス（/, ~, $HOME, .., ./）
-#   - chmod の 777 数値
-# 検出不能ケース（動的構築 sudo + 任意引数 等）は AGENTS.md にトレードオフとして明記。
-if printf '%s' "$residual" | grep -qiE '(^|[;&|({])[[:space:]]*((\$\([^)]*\)|`[^`]*`|\$\{[^}]*\}|\$[a-zA-Z_][a-zA-Z0-9_]*)+)[^;&|]*[[:space:]]+(reset[[:space:]]+([^;&|]*[[:space:]])?--hard|push[[:space:]]+([^;&|]*[[:space:]])?(--force|--force-with-lease(=[^[:space:]]*)?|-[a-zA-Z]*f[a-zA-Z]*)|-[a-zA-Z]*[rR][a-zA-Z]*f[a-zA-Z]*[[:space:]]+(/|~/?|\$HOME|\.\.|\./?)|-[a-zA-Z]*f[a-zA-Z]*[rR][a-zA-Z]*[[:space:]]+(/|~/?|\$HOME|\.\.|\./?)|(-[a-zA-Z]*[[:space:]]+)*777([[:space:]]|[;&|)}`]|$))'; then
-  echo "ブロック: 動的展開で構築したコマンド + 危険サブコマンド/オプション/フラグの組み合わせは安全側で禁止されています（分割生成・隣接連結による検出回避対策）" >&2
+# コマンド名トークン（セグメント先頭から最初の空白までのトークン）に動的展開
+# （$(...) / `...` / ${...} / $VAR）が含まれる場合、危険コマンド名（rm / git /
+# sudo / chmod 他）の動的構築による検出回避を完全に塞ぐため、後続を問わず安全側で
+# ブロックする。具体的に防ぐ攻撃:
+#   - 分割生成: $(printf %s g it) reset --hard、$(printf g; printf it) reset --hard
+#   - 隣接連結: ${x:-g}${y:-it} reset --hard、$(printf g)$(printf it) reset --hard
+#   - 先頭リテラル+動的展開連結: g$(printf it) reset --hard、su$(printf do) whoami
+#   - 任意引数の動的構築 sudo: ${x:-su}${y:-do} whoami（後続が任意のため reset/--force 等を要求しない）
+#   - long option 形 rm: $(printf %s r m) --recursive --force / 等（後続のフラグ列も問わない）
+# 引数位置の動的展開（echo $(date)、ls $(pwd)/subdir、wc -l ${LOGFILE:-default.log} 等）は
+# コマンド名トークンが静的なので対象外で誤検知を抑える。
+# AI エージェントは動的構築コマンド名を書かず、静的リテラルで書くこと（AGENTS.md 参照）。
+# $(brew --prefix)/bin/cmd や ${PYTHON:-python3} script.py 等の動的パス起動は副作用として
+# ブロックされるが、静的パス（/opt/homebrew/bin/cmd や python3）で代替可能。
+if printf '%s' "$residual" | grep -qE '(^|[;&|({])[[:space:]]*([^[:space:];&|()`{}<>$]|\$\([^)]*\)|`[^`]*`|\$\{[^}]*\}|\$[a-zA-Z_][a-zA-Z0-9_]*)*(\$\([^)]*\)|`[^`]*`|\$\{[^}]*\}|\$[a-zA-Z_][a-zA-Z0-9_]*)([^[:space:];&|()`{}<>$]|\$\([^)]*\)|`[^`]*`|\$\{[^}]*\}|\$[a-zA-Z_][a-zA-Z0-9_]*)*([[:space:]]|[;&|)}`]|$)'; then
+  echo "ブロック: コマンド名トークンに動的展開を含むコマンドは安全側で禁止されています（危険コマンド名の動的構築対策）。コマンド名は静的リテラルで書いてください。" >&2
   exit 2
 fi
 
