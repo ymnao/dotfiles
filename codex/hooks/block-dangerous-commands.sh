@@ -48,17 +48,23 @@ fi
 # シェル意味論に従ってコマンドを正規化する（.co""dex / .co\dex / $d=.codex; ...
 # のような回避を解消するため、guard-pkg-install.sh と同じ方針）。
 #   1. \X → X（バックスラッシュエスケープ解除）
-#   2. ' " を全削除（トークン内クォート連結を解消）
+#   2. シングルクォート '...' の中身を空白に置換（bash の semantic に従い shell 展開
+#      対象外として扱う。文字列リテラルの内容は printf / echo の引数として実行されない）
+#   3. ダブルクォート " を全削除（ダブルクォート内は $ が展開されるため中身保持）
 # ANSI-C クォート $'...'（エスケープなし）と locale 翻訳クォート $"..."（中身は実行時に
 # 通常の二重引用符相当のトークン）もクォート除去して中身を連結する。$"..." 内の \ は
 # 通常の二重引用符と同じ限定的なエスケープ規則で、$'\056' のような実行時デコードを起こさない
 # ため安全側ブロックは不要。エスケープ内包の $'...' は上で安全側ブロック済み。
+# シングルクォート除外により、printf %s '$(git reset --hard)' や echo ${msg:?sudo required}
+# のような quote 内の擬似コマンド/エラーメッセージの誤検知を防ぐ（後段の nested 抽出が
+# シェル展開対象のみを判定経路に流すようになる）。
 # .codex 検出にのみ使う。サブシェルでの正規化結果を $command に上書きする。
 command=$(printf '%s' "$command" | sed -E \
   -e "s/\\\$'([^']*)'/\1/g" \
   -e "s/\\\$\"([^\"]*)\"/\1/g" \
   -e 's/\\(.)/\1/g' \
-  -e $'s/[\'"]//g')
+  -e "s/'[^']*'/ /g" \
+  -e 's/"//g')
 
 # bash の ${IFS} / $IFS は実行時に空白へ展開され word splitting に使われるため、
 # git${IFS}reset${IFS}--hard のように危険コマンドやフラグを区切る回避になる。
@@ -69,19 +75,27 @@ command=$(printf '%s' "$command" | sed -E \
   -e 's/\$IFS([^A-Za-z0-9_]|$)/ \1/g')
 
 # コマンド置換 $(...) / `...` の中身は実行時にシェルが実行する。パラメータ展開
-# ${VAR:-default} / ${VAR-default} / ${VAR:=default} / ${VAR:+alt} / ${VAR:?msg} の
-# default/alternative 値も変数未設定/null 時に word splitting 後に実行されうる。
+# ${VAR:-default} / ${VAR-default} / ${VAR:=default} / ${VAR:+alt} の default/alt 値も
+# 変数未設定/null 時に word splitting 後に実行されうる。
 # これらの「内側コマンド」を外側に "; 中身" として追加した view を構築し、後段の
 # 本判定（rm_rf_pattern / git reset --hard / git push --force / chmod 777 / sudo）が
 # 中身の危険コマンドを直接検出できるようにする。
 # これにより echo $(git reset --hard)、: $(rm -rf /)、${x:-rm -rf /}、${x:-git reset --hard}
 # のような「中身に引数まで含む危険コマンド」の検出回避を塞ぐ。
+#
+# quote/context 考慮:
+#   - シングルクォート '...' 内は bash がシェル展開しない（文字列リテラル）。
+#     前段の正規化で '...' を空白に置換済みのため、ここでの抽出時には除外される。
+#     printf %s '$(git reset --hard)' のような無害な文字列出力の誤検知を防ぐ。
+#   - ${VAR:?msg} のエラーメッセージは bash が word splitting せず stderr 出力のみで
+#     実行しないため operator パターンから :? / ? を除外する。
+#     echo ${msg:?sudo required} のようなドキュメント文字列の誤検知を防ぐ。
 # 後段の literal 化（次の正規化フェーズ）が外側の $(...) / ${...} 自体を残す/置換する
 # が、ここで追加した "; 中身" は別経路で本判定に流れるため独立に評価される。
 nested=$(
   printf '%s' "$command" | grep -oE '\$\([^)]*\)' | sed -E -e 's/^\$\(//' -e 's/\)$//'
   printf '%s' "$command" | grep -oE '`[^`]*`' | sed -E -e 's/^`//' -e 's/`$//'
-  printf '%s' "$command" | grep -oE '\$\{[^}]*[:?]?[-+=?][^}]*\}' | sed -E -e 's/^\$\{[^:?=+-]*([:?]?[-+=?])//' -e 's/\}$//'
+  printf '%s' "$command" | grep -oE '\$\{[^}]*[:]?[-+=][^}]*\}' | sed -E -e 's/^\$\{[^:=+-]*([:]?[-+=])//' -e 's/\}$//'
 )
 if [[ -n "$nested" ]]; then
   command="$command; $(printf '%s' "$nested" | tr '\n' ';')"
@@ -205,6 +219,18 @@ fi
 # ブロックされるが、静的パス（/opt/homebrew/bin/cmd や python3）で代替可能。
 if printf '%s' "$residual" | grep -qE '(^|[;&|({])([[:space:]]*[A-Za-z_][A-Za-z0-9_]*=([^[:space:];&|]|\$\([^)]*\)|`[^`]*`|\$\{[^}]*\}|\$[a-zA-Z_][a-zA-Z0-9_]*)*[[:space:]]+)*[[:space:]]*([^[:space:];&|()`{}<>$=]|\$\([^)]*\)|`[^`]*`|\$\{[^}]*\}|\$[a-zA-Z_][a-zA-Z0-9_]*)*(\$\([^)]*\)|`[^`]*`|\$\{[^}]*\}|\$[a-zA-Z_][a-zA-Z0-9_]*)([^[:space:];&|()`{}<>$=]|\$\([^)]*\)|`[^`]*`|\$\{[^}]*\}|\$[a-zA-Z_][a-zA-Z0-9_]*)*([[:space:]]|[;&|)}`]|$)'; then
   echo "ブロック: コマンド名トークンに動的展開を含むコマンドは安全側で禁止されています（危険コマンド名の動的構築対策）。コマンド名は静的リテラルで書いてください。" >&2
+  exit 2
+fi
+
+# eval / sh -c / bash -c / zsh -c / dash -c は引数を別のシェル文として再実行するため、
+# 引数に動的展開を含む場合は危険コマンド名構築の経路となる（eval g$(printf it) reset
+# --hard、bash -c "$(printf g)$(printf it) reset --hard" 等）。トップレベルの「コマンド名
+# トークン動的展開」判定はこれらの **引数** の中の動的展開を見ないため、別経路として
+# 安全側で全面ブロックする。
+# eval / *sh -c の素のリテラル使用（eval ls -la、bash -c "echo hello"）や、引数が
+# literal 化済みの場合（bash -c sudo whoami 等）は通過する。
+if printf '%s' "$residual" | grep -qiE '(^|[;&|({][[:space:]]*)(eval|(ba|z|da)?sh[[:space:]]+(-[a-z]*c[a-z]*|--command))[[:space:]]+[^;&|]*(\$\(|`|\$[a-zA-Z_{])'; then
+  echo "ブロック: eval / *sh -c の引数に動的展開を含むコマンドは安全側で禁止されています（危険コマンド名構築対策）。引数を静的リテラルで書いてください。" >&2
   exit 2
 fi
 
