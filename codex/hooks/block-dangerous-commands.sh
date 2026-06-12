@@ -68,6 +68,25 @@ command=$(printf '%s' "$command" | sed -E \
   -e 's/\$\{IFS[^}]*\}/ /g' \
   -e 's/\$IFS([^A-Za-z0-9_]|$)/ \1/g')
 
+# コマンド置換 $(...) / `...` の中身は実行時にシェルが実行する。パラメータ展開
+# ${VAR:-default} / ${VAR-default} / ${VAR:=default} / ${VAR:+alt} / ${VAR:?msg} の
+# default/alternative 値も変数未設定/null 時に word splitting 後に実行されうる。
+# これらの「内側コマンド」を外側に "; 中身" として追加した view を構築し、後段の
+# 本判定（rm_rf_pattern / git reset --hard / git push --force / chmod 777 / sudo）が
+# 中身の危険コマンドを直接検出できるようにする。
+# これにより echo $(git reset --hard)、: $(rm -rf /)、${x:-rm -rf /}、${x:-git reset --hard}
+# のような「中身に引数まで含む危険コマンド」の検出回避を塞ぐ。
+# 後段の literal 化（次の正規化フェーズ）が外側の $(...) / ${...} 自体を残す/置換する
+# が、ここで追加した "; 中身" は別経路で本判定に流れるため独立に評価される。
+nested=$(
+  printf '%s' "$command" | grep -oE '\$\([^)]*\)' | sed -E -e 's/^\$\(//' -e 's/\)$//'
+  printf '%s' "$command" | grep -oE '`[^`]*`' | sed -E -e 's/^`//' -e 's/`$//'
+  printf '%s' "$command" | grep -oE '\$\{[^}]*[:?]?[-+=?][^}]*\}' | sed -E -e 's/^\$\{[^:?=+-]*([:?]?[-+=?])//' -e 's/\}$//'
+)
+if [[ -n "$nested" ]]; then
+  command="$command; $(printf '%s' "$nested" | tr '\n' ';')"
+fi
+
 # コマンド置換 $(...) / `...` の中身に危険コマンド名（rm / git / sudo / chmod）の
 # トークンが含まれる場合、その置換式全体を該当コマンド名 literal に置き換える
 # （guard-pkg-install.sh と同じ流儀）。例: $(printf git) reset --hard → git reset --hard、
