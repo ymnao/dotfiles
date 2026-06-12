@@ -77,31 +77,69 @@ command=$(printf '%s' "$command" | sed -E \
   -e 's/\$\{IFS[^}]*\}/ /g' \
   -e 's/\$IFS([^A-Za-z0-9_]|$)/ \1/g')
 
-# コマンド置換 $(...) / `...` の中身は実行時にシェルが実行する。パラメータ展開
-# ${VAR:-default} / ${VAR-default} / ${VAR:=default} / ${VAR:+alt} の default/alt 値も
-# 変数未設定/null 時に word splitting 後に実行されうる。
-# これらの「内側コマンド」を外側に "; 中身" として追加した view を構築し、後段の
-# 本判定（rm_rf_pattern / git reset --hard / git push --force / chmod 777 / sudo）が
-# 中身の危険コマンドを直接検出できるようにする。
-# これにより echo $(git reset --hard)、: $(rm -rf /)、${x:-rm -rf /}、${x:-git reset --hard}
-# のような「中身に引数まで含む危険コマンド」の検出回避を塞ぐ。
+# コマンド置換 $(...) / `...` の中身は位置に関係なくシェルが実行する（コマンド名
+# 位置でも引数位置でも、$(...) は常に評価される）。これを外側に "; 中身" として
+# 追加した view を構築し、後段の本判定が中身の危険コマンドを直接検出できるように
+# する。echo $(git reset --hard) や : $(rm -rf /) のような「引数位置の動的実行」を捕捉。
 #
-# quote/context 考慮:
-#   - シングルクォート '...' 内は bash がシェル展開しない（文字列リテラル）。
-#     前段の正規化で '...' を空白に置換済みのため、ここでの抽出時には除外される。
-#     printf %s '$(git reset --hard)' のような無害な文字列出力の誤検知を防ぐ。
-#   - ${VAR:?msg} のエラーメッセージは bash が word splitting せず stderr 出力のみで
-#     実行しないため operator パターンから :? / ? を除外する。
-#     echo ${msg:?sudo required} のようなドキュメント文字列の誤検知を防ぐ。
-# 後段の literal 化（次の正規化フェーズ）が外側の $(...) / ${...} 自体を残す/置換する
-# が、ここで追加した "; 中身" は別経路で本判定に流れるため独立に評価される。
+# パラメータ展開 ${VAR:-default} は default 値が引数位置では word splitting されて
+# 引数として渡されるだけで実行されない（echo ${msg:-sudo required} の sudo は echo
+# の引数で sudo 実行ではない）。コマンド名位置に置かれた場合のみ実行されるが、
+# その場合は別経路の「コマンド名トークン動的展開」判定が ${cmd:-git reset --hard}
+# や ${x:-rm -rf /} を捕捉するため、ここで外側展開する必要はない（引数位置の
+# 誤検知を生むため）。
+#
+# シングルクォート '...' 内は前段の正規化で空白化済み（中身に $ / ` を含む場合）か、
+# quote 除去済み（含まない場合）のため、ここでの抽出時には quote semantic が
+# 正しく反映されている。printf %s '$(git reset --hard)' のような無害な文字列出力は
+# 既に空白化されており抽出されない。
 nested=$(
   printf '%s' "$command" | grep -oE '\$\([^)]*\)' | sed -E -e 's/^\$\(//' -e 's/\)$//'
   printf '%s' "$command" | grep -oE '`[^`]*`' | sed -E -e 's/^`//' -e 's/`$//'
-  printf '%s' "$command" | grep -oE '\$\{[^}]*[:]?[-+=][^}]*\}' | sed -E -e 's/^\$\{[^:=+-]*([:]?[-+=])//' -e 's/\}$//'
 )
 if [[ -n "$nested" ]]; then
   command="$command; $(printf '%s' "$nested" | tr '\n' ';')"
+fi
+
+# コマンド名トークン（セグメント先頭の代入語群 NAME=value をスキップした後の、
+# 最初の空白までのトークン）に動的展開（$(...) / `...` / ${...} / $VAR）が含まれる
+# 場合、危険コマンド名（rm / git / sudo / chmod 他）の動的構築による検出回避を
+# 完全に塞ぐため、後続を問わず安全側でブロックする。具体的に防ぐ攻撃:
+#   - 分割生成: $(printf %s g it) reset --hard、$(printf g; printf it) reset --hard
+#   - 隣接連結: ${x:-g}${y:-it} reset --hard、$(printf g)$(printf it) reset --hard
+#   - 先頭リテラル+動的展開連結: g$(printf it) reset --hard、su$(printf do) whoami
+#   - 任意引数の動的構築 sudo: ${x:-su}${y:-do} whoami（後続が任意のため reset/--force 等を要求しない）
+#   - long option 形 rm: $(printf %s r m) --recursive --force / 等（後続のフラグ列も問わない）
+#   - default 値に引数まで含む形: ${cmd:-git reset --hard} / ${x:-rm -rf /}
+# 代入語スキップ: FOO=$(pwd) env / PY=${PYTHON:-python3} script.py / A=1 B=2 cmd の
+# ような環境変数代入が先頭にある形では、代入語をスキップしてから最初の非代入語を
+# コマンド名として評価する。代入語の value 部に動的展開を持つ場合（FOO=$(rm -rf /)）は、
+# 外側展開フェーズが内側コマンドを別経路で本判定に流す。
+# 引数位置の動的展開（echo $(date)、ls $(pwd)/subdir、wc -l ${LOGFILE:-default.log} 等）は
+# コマンド名トークンが静的なので対象外で誤検知を抑える。
+# 注: この判定は literal 化フェーズの前に動かす必要がある。literal 化は ${x:-git reset --hard}
+# のような形を「git」literal に潰してしまい引数 reset --hard を失わせるが、この判定は
+# 展開全体を 1 つの動的構築トークンとして検出する。
+# AI エージェントは動的構築コマンド名を書かず、静的リテラルで書くこと（AGENTS.md 参照）。
+# $(brew --prefix)/bin/cmd や ${PYTHON:-python3} script.py 等の動的パス起動は副作用として
+# ブロックされるが、静的パス（/opt/homebrew/bin/cmd や python3）で代替可能。
+if printf '%s' "$command" | grep -qE '(^|[;&|({])([[:space:]]*[A-Za-z_][A-Za-z0-9_]*=([^[:space:];&|]|\$\([^)]*\)|`[^`]*`|\$\{[^}]*\}|\$[a-zA-Z_][a-zA-Z0-9_]*)*[[:space:]]+)*[[:space:]]*([^[:space:];&|()`{}<>$=]|\$\([^)]*\)|`[^`]*`|\$\{[^}]*\}|\$[a-zA-Z_][a-zA-Z0-9_]*)*(\$\([^)]*\)|`[^`]*`|\$\{[^}]*\}|\$[a-zA-Z_][a-zA-Z0-9_]*)([^[:space:];&|()`{}<>$=]|\$\([^)]*\)|`[^`]*`|\$\{[^}]*\}|\$[a-zA-Z_][a-zA-Z0-9_]*)*([[:space:]]|[;&|)}`]|$)'; then
+  echo "ブロック: コマンド名トークンに動的展開を含むコマンドは安全側で禁止されています（危険コマンド名の動的構築対策）。コマンド名は静的リテラルで書いてください。" >&2
+  exit 2
+fi
+
+# eval / sh -c / bash -c / zsh -c / dash -c は引数を別のシェル文として再実行するため、
+# 引数に動的展開を含む場合は危険コマンド名構築の経路となる（eval g$(printf it) reset
+# --hard、bash -c "$(printf g)$(printf it) reset --hard" 等）。トップレベルの「コマンド名
+# トークン動的展開」判定はこれらの引数の中の動的展開を見ないため、別経路として
+# 安全側で全面ブロックする。
+# eval / *sh -c の素のリテラル使用（eval ls -la、bash -c "echo hello"）や、引数が
+# literal 化済みの場合（bash -c sudo whoami 等）は通過する。
+# この判定も literal 化フェーズの前に動かす必要がある（literal 化で eval の引数中の
+# 動的展開が潰されるため）。
+if printf '%s' "$command" | grep -qiE '(^|[;&|({][[:space:]]*)(eval|(ba|z|da)?sh[[:space:]]+(-[a-z]*c[a-z]*|--command))[[:space:]]+[^;&|]*(\$\(|`|\$[a-zA-Z_{])'; then
+  echo "ブロック: eval / *sh -c の引数に動的展開を含むコマンドは安全側で禁止されています（危険コマンド名構築対策）。引数を静的リテラルで書いてください。" >&2
+  exit 2
 fi
 
 # コマンド置換 $(...) / `...` の中身に危険コマンド名（rm / git / sudo / chmod）の
@@ -199,41 +237,6 @@ fi
 if printf '%s' "$residual" | grep -qE '\$\(|`|\$[a-zA-Z_{]' \
    && printf '%s' "$residual" | grep -qE '(^|[^&0-9])>[>|]?[^&]|&>>?[^&]|[0-9]+>>?[^&]'; then
   echo "ブロック: 動的展開を含む書き込み系リダイレクトは安全側で禁止されています（.codex 構築の可能性、Cymulate notify エスケープ対策）" >&2
-  exit 2
-fi
-
-# コマンド名トークン（セグメント先頭の代入語群 NAME=value をスキップした後の、
-# 最初の空白までのトークン）に動的展開（$(...) / `...` / ${...} / $VAR）が含まれる
-# 場合、危険コマンド名（rm / git / sudo / chmod 他）の動的構築による検出回避を
-# 完全に塞ぐため、後続を問わず安全側でブロックする。具体的に防ぐ攻撃:
-#   - 分割生成: $(printf %s g it) reset --hard、$(printf g; printf it) reset --hard
-#   - 隣接連結: ${x:-g}${y:-it} reset --hard、$(printf g)$(printf it) reset --hard
-#   - 先頭リテラル+動的展開連結: g$(printf it) reset --hard、su$(printf do) whoami
-#   - 任意引数の動的構築 sudo: ${x:-su}${y:-do} whoami（後続が任意のため reset/--force 等を要求しない）
-#   - long option 形 rm: $(printf %s r m) --recursive --force / 等（後続のフラグ列も問わない）
-# 代入語スキップ: FOO=$(pwd) env / PY=${PYTHON:-python3} script.py / A=1 B=2 cmd の
-# ような環境変数代入が先頭にある形では、代入語をスキップしてから最初の非代入語を
-# コマンド名として評価する。代入語の value 部に動的展開を持つ場合（FOO=$(rm -rf /)）は、
-# 外側展開フェーズが内側コマンドを別経路で本判定に流す。
-# 引数位置の動的展開（echo $(date)、ls $(pwd)/subdir、wc -l ${LOGFILE:-default.log} 等）は
-# コマンド名トークンが静的なので対象外で誤検知を抑える。
-# AI エージェントは動的構築コマンド名を書かず、静的リテラルで書くこと（AGENTS.md 参照）。
-# $(brew --prefix)/bin/cmd や ${PYTHON:-python3} script.py 等の動的パス起動は副作用として
-# ブロックされるが、静的パス（/opt/homebrew/bin/cmd や python3）で代替可能。
-if printf '%s' "$residual" | grep -qE '(^|[;&|({])([[:space:]]*[A-Za-z_][A-Za-z0-9_]*=([^[:space:];&|]|\$\([^)]*\)|`[^`]*`|\$\{[^}]*\}|\$[a-zA-Z_][a-zA-Z0-9_]*)*[[:space:]]+)*[[:space:]]*([^[:space:];&|()`{}<>$=]|\$\([^)]*\)|`[^`]*`|\$\{[^}]*\}|\$[a-zA-Z_][a-zA-Z0-9_]*)*(\$\([^)]*\)|`[^`]*`|\$\{[^}]*\}|\$[a-zA-Z_][a-zA-Z0-9_]*)([^[:space:];&|()`{}<>$=]|\$\([^)]*\)|`[^`]*`|\$\{[^}]*\}|\$[a-zA-Z_][a-zA-Z0-9_]*)*([[:space:]]|[;&|)}`]|$)'; then
-  echo "ブロック: コマンド名トークンに動的展開を含むコマンドは安全側で禁止されています（危険コマンド名の動的構築対策）。コマンド名は静的リテラルで書いてください。" >&2
-  exit 2
-fi
-
-# eval / sh -c / bash -c / zsh -c / dash -c は引数を別のシェル文として再実行するため、
-# 引数に動的展開を含む場合は危険コマンド名構築の経路となる（eval g$(printf it) reset
-# --hard、bash -c "$(printf g)$(printf it) reset --hard" 等）。トップレベルの「コマンド名
-# トークン動的展開」判定はこれらの **引数** の中の動的展開を見ないため、別経路として
-# 安全側で全面ブロックする。
-# eval / *sh -c の素のリテラル使用（eval ls -la、bash -c "echo hello"）や、引数が
-# literal 化済みの場合（bash -c sudo whoami 等）は通過する。
-if printf '%s' "$residual" | grep -qiE '(^|[;&|({][[:space:]]*)(eval|(ba|z|da)?sh[[:space:]]+(-[a-z]*c[a-z]*|--command))[[:space:]]+[^;&|]*(\$\(|`|\$[a-zA-Z_{])'; then
-  echo "ブロック: eval / *sh -c の引数に動的展開を含むコマンドは安全側で禁止されています（危険コマンド名構築対策）。引数を静的リテラルで書いてください。" >&2
   exit 2
 fi
 
