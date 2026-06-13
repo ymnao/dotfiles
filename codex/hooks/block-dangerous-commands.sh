@@ -47,24 +47,31 @@ fi
 
 # シェル意味論に従ってコマンドを正規化する（.co""dex / .co\dex / $d=.codex; ...
 # のような回避を解消するため、guard-pkg-install.sh と同じ方針）。
-#   1. \X → X（バックスラッシュエスケープ解除）
-#   2. シングルクォート '...' の処理:
-#      - 中身に $ または ` を含む場合: 動的展開リテラル（bash は展開しない）として
-#        空白に置換し、後段の判定経路に流さない。
-#        例: printf %s '$(git reset --hard)' → printf %s   （無害な文字列出力）
-#      - 含まない場合: quote のみ削除して中身を保持（bash の quote removal を再現）。
-#        例: 'git' reset --hard → git reset --hard、rm -rf '/' → rm -rf /、
-#            touch '.codex/config.toml' → touch .codex/config.toml
-#   3. ダブルクォート " を全削除（ダブルクォート内は $ が展開されるため中身保持）
+# 段階1: ANSI-C $'...' / locale $"..." quote 除去、\X → X
+#   この時点の view（command_pre_sq）を保存し、eval / *sh -c 判定に使う。
+#   理由: bash -c '$(...)' のように eval / *sh -c の引数では、シングルクォート内の
+#   $() も再パース時に展開されて実行される。シングルクォート除去前の view で判定する
+#   ことで、これらを動的展開として検出できる。
+command=$(printf '%s' "$command" | sed -E \
+  -e "s/\\\$'([^']*)'/\1/g" \
+  -e "s/\\\$\"([^\"]*)\"/\1/g" \
+  -e 's/\\(.)/\1/g')
+command_pre_sq=$command
+
+# 段階2: シングルクォート '...' の処理（通常コマンド用、bash の quote removal を再現）:
+#   - 中身に $ または ` を含む場合: 動的展開リテラル（bash は展開しない）として
+#     空白に置換し、後段の判定経路に流さない。
+#     例: printf %s '$(git reset --hard)' → printf %s   （無害な文字列出力）
+#   - 含まない場合: quote のみ削除して中身を保持。
+#     例: 'git' reset --hard → git reset --hard、rm -rf '/' → rm -rf /、
+#         touch '.codex/config.toml' → touch .codex/config.toml
+# 段階3: ダブルクォート " を全削除（ダブルクォート内は $ が展開されるため中身保持）
 # ANSI-C クォート $'...'（エスケープなし）と locale 翻訳クォート $"..."（中身は実行時に
 # 通常の二重引用符相当のトークン）もクォート除去して中身を連結する。$"..." 内の \ は
 # 通常の二重引用符と同じ限定的なエスケープ規則で、$'\056' のような実行時デコードを起こさない
 # ため安全側ブロックは不要。エスケープ内包の $'...' は上で安全側ブロック済み。
 # .codex 検出にのみ使う。サブシェルでの正規化結果を $command に上書きする。
 command=$(printf '%s' "$command" | sed -E \
-  -e "s/\\\$'([^']*)'/\1/g" \
-  -e "s/\\\$\"([^\"]*)\"/\1/g" \
-  -e 's/\\(.)/\1/g' \
   -e "s/'[^']*[\$\`][^']*'/ /g" \
   -e "s/'([^']*)'/\1/g" \
   -e 's/"//g')
@@ -144,7 +151,7 @@ fi
 # literal 化済みの場合（bash -c sudo whoami 等）は通過する。
 # この判定は literal 化フェーズの前に動かす必要がある（literal 化で eval の引数中の
 # 動的展開が潰されるため）。
-if printf '%s' "$command" | grep -qiE '(^|[^A-Za-z0-9_])(eval|([a-zA-Z]*sh|nu)[[:space:]]+(-[a-z]*c[a-z]*|--command))[[:space:]]+[^;&|]*(\$\(|`|\$[a-zA-Z_{])'; then
+if printf '%s' "$command_pre_sq" | grep -qiE '(^|[^A-Za-z0-9_])(eval|([a-zA-Z]*sh|nu)[[:space:]]+(-[a-z]*c[a-z]*|--command))[[:space:]]+[^;&|]*(\$\(|`|\$[a-zA-Z_{])'; then
   echo "ブロック: eval / *sh -c の引数に動的展開を含むコマンドは安全側で禁止されています（危険コマンド名構築対策）。引数を静的リテラルで書いてください。" >&2
   exit 2
 fi
