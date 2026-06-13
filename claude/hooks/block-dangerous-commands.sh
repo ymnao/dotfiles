@@ -157,24 +157,28 @@ if printf '%s' "$command_pre_sq" | grep -qiE '(^|[^A-Za-z0-9_])(eval|([a-zA-Z]*s
 fi
 
 # *sh への here-string (<<<) / process substitution (<(...)) / pipe 経由のコード渡し、
-# source / . によるコード読み込みも再パース経路となる。これらに動的展開残留が組み合わさる
-# 場合は内側で危険コマンドが構築されうるため安全側で全面ブロックする。
-# 例:
-#   - bash <<< "$(printf g)$(printf it) reset --hard"   (here-string)
-#   - bash <<< '$(...)'                                  (here-string + シングルクォート)
-#   - printf %s '$(...)' | bash                          (pipe to *sh)
-#   - source <(printf %s '$(...)')                       (source + process subst)
-#   - . <(printf %s '$(...)')                            (. + process subst)
-#   - bash <(printf %s '$(...)')                         (*sh + process subst)
-# 動的展開なしの素のリテラル使用（bash <<< 'echo hello'、source ~/.bashrc 等）は通過。
-# 過検知のトレードオフ: curl URL | bash 等は動的展開がないため通過する（実害ありの
-# パターンだが静的に追えない経路。AGENTS.md で別途警告）。
+# source / . によるコード読み込みも再パース経路となる。これらの「再パース対象」自身に
+# 動的展開残留が含まれる場合のみ安全側でブロックする。コマンド全体に動的展開があっても
+# 再パース対象に含まれない場合（別セグメントの $(date) 等）は誤検知しない。
+# 各経路と判定対象範囲:
+#   (1) *sh ... (<<<|<\() X : here-string / process subst の X が判定対象
+#   (2) X | *sh             : pipe の左側 X が判定対象（同セグメント内）
+#   (3) source/. <\( X \)   : process subst の中身 X が判定対象
+# 例 (block):
+#   - bash <<< "$(printf g)$(printf it) reset --hard"   ← (1) <<< 直後に動的展開
+#   - printf %s '$(...)' | bash                          ← (2) パイプ左側に動的展開
+#   - source <(printf %s '$(...)')                       ← (3) <(...) 内に動的展開
+# 例 (allow):
+#   - bash <<< 'echo hello'; echo $(date)                ← セグメント外の動的展開は無関係
+#   - bash <(printf %s 'echo hello'); echo $(date)
+#   - bash <<< 'echo hello' / source ~/.bashrc          ← 再パース対象に動的展開なし
 # *sh の後ろに -s / --noprofile 等のオプションフラグや input redirection (<) が挟まる
 # 形にも対応する: bash -s <<<、bash --noprofile <<<、bash < <(...)、bash -s < <(...) 等。
 # ([[:space:]]+(-[^[:space:]]+|<))* で「空白+オプション or 空白+<」を 0 回以上許容。
-if printf '%s' "$command_pre_sq" | grep -qiE '(^|[^A-Za-z0-9_])([a-zA-Z]*sh|nu)([[:space:]]+(-[^[:space:]]+|<))*[[:space:]]*(<<<|<\()|\|[[:space:]]*([^|;&[:space:]]*/)?([a-zA-Z]*sh|nu)([[:space:]]|$|[;&|])|(^|[^A-Za-z0-9_])(source|\.)[[:space:]]+<\(' \
-   && printf '%s' "$command_pre_sq" | grep -qE '\$\(|`|\$[a-zA-Z_{]'; then
-  echo "ブロック: シェル再パース経路（here-string / pipe / process substitution / source）に動的展開を含むコマンドは安全側で禁止されています（危険コマンド名構築対策）。再パース対象は静的リテラルで書いてください。" >&2
+# 過検知のトレードオフ: curl URL | bash 等は動的展開がないため通過する（実害ありの
+# パターンだが静的に追えない経路。AGENTS.md で別途警告）。
+if printf '%s' "$command_pre_sq" | grep -qiE '(^|[^A-Za-z0-9_])([a-zA-Z]*sh|nu)([[:space:]]+(-[^[:space:]]+|<))*[[:space:]]*(<<<|<\()[^;&|]*(\$\(|`|\$[a-zA-Z_{])|(^|[;&|])[^|;&]*(\$\(|`|\$[a-zA-Z_{])[^|;&]*\|[[:space:]]*([^|;&[:space:]]*/)?([a-zA-Z]*sh|nu)([[:space:]]|$|[;&|])|(^|[^A-Za-z0-9_])(source|\.)[[:space:]]+<\([^)]*(\$\(|`|\$[a-zA-Z_{])'; then
+  echo "ブロック: シェル再パース経路（here-string / pipe / process substitution / source）の対象に動的展開を含むコマンドは安全側で禁止されています（危険コマンド名構築対策）。再パース対象は静的リテラルで書いてください。" >&2
   exit 2
 fi
 
