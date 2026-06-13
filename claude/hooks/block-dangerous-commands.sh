@@ -56,6 +56,15 @@ command=$(printf '%s' "$command" | sed -E \
   -e "s/\\\$'([^']*)'/\1/g" \
   -e "s/\\\$\"([^\"]*)\"/\1/g" \
   -e 's/\\(.)/\1/g')
+
+# 段階1.5: bash の ${IFS} / $IFS は実行時に空白へ展開され word splitting に使われるため、
+# git${IFS}reset${IFS}--hard / bash${IFS}-c のように区切り回避として使える。
+# command_pre_sq 保存前に空白置換することで、eval / *sh -c 判定と再パース判定にも反映される。
+# ${IFS:0:1} 等のサブ展開や $IFS（波括弧なし）も同様にスペース化する。
+command=$(printf '%s' "$command" | sed -E \
+  -e 's/\$\{IFS[^}]*\}/ /g' \
+  -e 's/\$IFS([^A-Za-z0-9_]|$)/ \1/g')
+
 command_pre_sq=$command
 
 # 段階2: シングルクォート '...' の処理（通常コマンド用、bash の quote removal を再現）:
@@ -75,14 +84,6 @@ command=$(printf '%s' "$command" | sed -E \
   -e "s/'[^']*[\$\`][^']*'/ /g" \
   -e "s/'([^']*)'/\1/g" \
   -e 's/"//g')
-
-# bash の ${IFS} / $IFS は実行時に空白へ展開され word splitting に使われるため、
-# git${IFS}reset${IFS}--hard のように危険コマンドやフラグを区切る回避になる。
-# 正規化フェーズで空白に置換し、後段の正規表現が拾えるようにする。
-# ${IFS:0:1} 等のサブ展開や $IFS（波括弧なし）も同様にスペース化する。
-command=$(printf '%s' "$command" | sed -E \
-  -e 's/\$\{IFS[^}]*\}/ /g' \
-  -e 's/\$IFS([^A-Za-z0-9_]|$)/ \1/g')
 
 # コマンド置換 $(...) / `...` の中身は位置に関係なくシェルが実行する（コマンド名
 # 位置でも引数位置でも、$(...) は常に評価される）。これを外側に "; 中身" として
