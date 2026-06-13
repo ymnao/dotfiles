@@ -169,7 +169,10 @@ fi
 # 動的展開なしの素のリテラル使用（bash <<< 'echo hello'、source ~/.bashrc 等）は通過。
 # 過検知のトレードオフ: curl URL | bash 等は動的展開がないため通過する（実害ありの
 # パターンだが静的に追えない経路。AGENTS.md で別途警告）。
-if printf '%s' "$command_pre_sq" | grep -qiE '(^|[^A-Za-z0-9_])([a-zA-Z]*sh|nu)[[:space:]]*(<<<|<\()|\|[[:space:]]*([^|;&[:space:]]*/)?([a-zA-Z]*sh|nu)([[:space:]]|$|[;&|])|(^|[^A-Za-z0-9_])(source|\.)[[:space:]]+<\(' \
+# *sh の後ろに -s / --noprofile 等のオプションフラグや input redirection (<) が挟まる
+# 形にも対応する: bash -s <<<、bash --noprofile <<<、bash < <(...)、bash -s < <(...) 等。
+# ([[:space:]]+(-[^[:space:]]+|<))* で「空白+オプション or 空白+<」を 0 回以上許容。
+if printf '%s' "$command_pre_sq" | grep -qiE '(^|[^A-Za-z0-9_])([a-zA-Z]*sh|nu)([[:space:]]+(-[^[:space:]]+|<))*[[:space:]]*(<<<|<\()|\|[[:space:]]*([^|;&[:space:]]*/)?([a-zA-Z]*sh|nu)([[:space:]]|$|[;&|])|(^|[^A-Za-z0-9_])(source|\.)[[:space:]]+<\(' \
    && printf '%s' "$command_pre_sq" | grep -qE '\$\(|`|\$[a-zA-Z_{]'; then
   echo "ブロック: シェル再パース経路（here-string / pipe / process substitution / source）に動的展開を含むコマンドは安全側で禁止されています（危険コマンド名構築対策）。再パース対象は静的リテラルで書いてください。" >&2
   exit 2
