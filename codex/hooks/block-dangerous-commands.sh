@@ -169,8 +169,23 @@ fi
 # literal 化済みの場合（bash -c sudo whoami 等）は通過する。
 # この判定は literal 化フェーズの前に動かす必要がある（literal 化で eval の引数中の
 # 動的展開が潰されるため）。
-if printf '%s' "$command_pre_sq" | grep -qiE '(^|[/[:space:];&|({])(eval|([a-zA-Z]*sh|nu)([[:space:]]+([-+][oO][[:space:]]+[^-+<[:space:];&|][^[:space:];&|]*|(--rcfile|--init-file)[[:space:]]+[^[:space:]]+|--[a-zA-Z][a-zA-Z-]*|[-+][^-[:space:]][^[:space:]]*|<))*[[:space:]]+(-[a-z]*c[a-z]*|--command))[[:space:]]+[^;&|]*(\$\(|`|\$[a-zA-Z_{])'; then
+# 判定A: シングルクォート除去後の command を入力にし、ダブルクォート内動的展開や
+# 引数位置の動的展開を捕捉する。bash -c "$(date)" / bash -c $(date) / bash -c $VAR 等。
+# 注意: シングルクォート内動的展開（bash -c '$(date)'）は段階2 の sq semantic 処理で
+# `$` 含むシングルクォートが空白置換されているため判定A では捕捉できない。判定B でカバー。
+if printf '%s' "$command" | grep -qiE '(^|[/[:space:];&|({])(eval|([a-zA-Z]*sh|nu)([[:space:]]+([-+][oO][[:space:]]+[^-+<[:space:];&|][^[:space:];&|]*|(--rcfile|--init-file)[[:space:]]+[^[:space:]]+|--[a-zA-Z][a-zA-Z-]*|[-+][^-[:space:]][^[:space:]]*|<))*[[:space:]]+(-[a-z]*c[a-z]*|--command))[[:space:]]+[^;&|]*(\$\(|`|\$[a-zA-Z_{])'; then
   echo "ブロック: eval / *sh -c の引数に動的展開を含むコマンドは安全側で禁止されています（危険コマンド名構築対策）。引数を静的リテラルで書いてください。" >&2
+  exit 2
+fi
+
+# 判定B: シングルクォート除去前の command_pre_sq を入力にし、トップレベルの *sh -c の
+# 直後がシングルクォートで囲まれていて、その中に動的展開が含まれる形だけを捕捉する。
+# bash -c '$(date)' / bash -c '${x:-rm -rf /}' / eval 'g$(printf it) reset --hard' 等。
+# -c の直後にシングルクォート ' を必須にすることで、echo 'foo bash -c $(date)' のような
+# echo の引数内に bash -c が文字列として現れるケース（シングルクォート内 literal）の
+# 誤検知を防ぐ（echo の引数のシングルクォートは bash -c の直後ではない）。
+if printf '%s' "$command_pre_sq" | grep -qiE "(^|[/[:space:];&|({])(eval|([a-zA-Z]*sh|nu)([[:space:]]+([-+][oO][[:space:]]+[^-+<[:space:];&|][^[:space:];&|]*|(--rcfile|--init-file)[[:space:]]+[^[:space:]]+|--[a-zA-Z][a-zA-Z-]*|[-+][^-[:space:]][^[:space:]]*|<))*[[:space:]]+(-[a-z]*c[a-z]*|--command))[[:space:]]+'[^']*(\\\$\\(|\`|\\\$[a-zA-Z_{])"; then
+  echo "ブロック: eval / *sh -c の引数（シングルクォート内）に動的展開を含むコマンドは安全側で禁止されています（危険コマンド名構築対策）。引数を静的リテラルで書いてください。" >&2
   exit 2
 fi
 
