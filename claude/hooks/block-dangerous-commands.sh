@@ -173,7 +173,13 @@ fi
 # 引数位置の動的展開を捕捉する。bash -c "$(date)" / bash -c $(date) / bash -c $VAR 等。
 # 注意: シングルクォート内動的展開（bash -c '$(date)'）は段階2 の sq semantic 処理で
 # `$` 含むシングルクォートが空白置換されているため判定A では捕捉できない。判定B でカバー。
-if printf '%s' "$command" | grep -qiE '(^|[/[:space:];&|({])(eval|([a-zA-Z]*sh|nu)([[:space:]]+([-+][oO][[:space:]]+[^-+<[:space:];&|][^[:space:];&|]*|(--rcfile|--init-file)[[:space:]]+[^[:space:]]+|--[a-zA-Z][a-zA-Z-]*|[-+][^-[:space:]][^[:space:]]*|<))*[[:space:]]+(-[a-z]*c[a-z]*|--command))[[:space:]]+[^;&|]*(\$\(|`|\$[a-zA-Z_{])'; then
+#
+# トップレベル判定の前置: セグメント先頭から「代入語 NAME=val」「透過ラッパー env/command/
+# nice/exec/nohup/setsid/stdbuf/timeout/ionice/chrt + そのオプション」「絶対パス」を順次
+# 消費した位置に *sh / eval が来る形のみマッチ。これにより echo "foo bash -c $(date)"
+# のような echo の引数内 bash -c 文字列（ダブルクォート除去後の literal）は echo が
+# shell 名でないため通過する。
+if printf '%s' "$command" | grep -qiE '(^|[;&|({])[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*[[:space:]]+)*((env|command|nice|exec|nohup|setsid|stdbuf|timeout|ionice|chrt)([[:space:]]+[-+][^[:space:]]+)*[[:space:]]+)*([^[:space:];&|]*/)?(eval|([a-zA-Z]*sh|nu)([[:space:]]+([-+][oO][[:space:]]+[^-+<[:space:];&|][^[:space:];&|]*|(--rcfile|--init-file)[[:space:]]+[^[:space:]]+|--[a-zA-Z][a-zA-Z-]*|[-+][^-[:space:]][^[:space:]]*|<))*[[:space:]]+(-[a-z]*c[a-z]*|--command))[[:space:]]+[^;&|]*(\$\(|`|\$[a-zA-Z_{])'; then
   echo "ブロック: eval / *sh -c の引数に動的展開を含むコマンドは安全側で禁止されています（危険コマンド名構築対策）。引数を静的リテラルで書いてください。" >&2
   exit 2
 fi
@@ -184,7 +190,8 @@ fi
 # -c の直後にシングルクォート ' を必須にすることで、echo 'foo bash -c $(date)' のような
 # echo の引数内に bash -c が文字列として現れるケース（シングルクォート内 literal）の
 # 誤検知を防ぐ（echo の引数のシングルクォートは bash -c の直後ではない）。
-if printf '%s' "$command_pre_sq" | grep -qiE "(^|[/[:space:];&|({])(eval|([a-zA-Z]*sh|nu)([[:space:]]+([-+][oO][[:space:]]+[^-+<[:space:];&|][^[:space:];&|]*|(--rcfile|--init-file)[[:space:]]+[^[:space:]]+|--[a-zA-Z][a-zA-Z-]*|[-+][^-[:space:]][^[:space:]]*|<))*[[:space:]]+(-[a-z]*c[a-z]*|--command))[[:space:]]+'[^']*(\\\$\\(|\`|\\\$[a-zA-Z_{])"; then
+# トップレベル判定の前置は判定A と同じ（代入語 / ラッパー / 絶対パスを消費後に shell 名）。
+if printf '%s' "$command_pre_sq" | grep -qiE "(^|[;&|({])[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*[[:space:]]+)*((env|command|nice|exec|nohup|setsid|stdbuf|timeout|ionice|chrt)([[:space:]]+[-+][^[:space:]]+)*[[:space:]]+)*([^[:space:];&|]*/)?(eval|([a-zA-Z]*sh|nu)([[:space:]]+([-+][oO][[:space:]]+[^-+<[:space:];&|][^[:space:];&|]*|(--rcfile|--init-file)[[:space:]]+[^[:space:]]+|--[a-zA-Z][a-zA-Z-]*|[-+][^-[:space:]][^[:space:]]*|<))*[[:space:]]+(-[a-z]*c[a-z]*|--command))[[:space:]]+'[^']*(\\\$\\(|\`|\\\$[a-zA-Z_{])"; then
   echo "ブロック: eval / *sh -c の引数（シングルクォート内）に動的展開を含むコマンドは安全側で禁止されています（危険コマンド名構築対策）。引数を静的リテラルで書いてください。" >&2
   exit 2
 fi
@@ -212,7 +219,7 @@ fi
 # 許容トークンは -c 判定と同じ（値を取るフラグ + 値 → 値なしフラグ → < の順）。
 # 過検知のトレードオフ: curl URL | bash 等は動的展開がないため通過する（実害ありの
 # パターンだが静的に追えない経路。AGENTS.md で別途警告）。
-if printf '%s' "$command_pre_sq" | grep -qiE '(^|[/[:space:];&|({])([a-zA-Z]*sh|nu)([[:space:]]+([-+][oO][[:space:]]+[^-+<[:space:];&|][^[:space:];&|]*|(--rcfile|--init-file)[[:space:]]+[^[:space:]]+|--[a-zA-Z][a-zA-Z-]*|[-+][^-[:space:]][^[:space:]]*|<))*[[:space:]]*(<<<|<\()[^;&|]*(\$\(|`|\$[a-zA-Z_{])|(^|[;&|])[^|;&]*(\$\(|`|\$[a-zA-Z_{])[^|;&]*\|[[:space:]]*([^|;&[:space:]]*/)?([a-zA-Z]*sh|nu)([[:space:]]|$|[;&|])|(^|[/[:space:];&|({])(source|\.)[[:space:]]+<\([^)]*(\$\(|`|\$[a-zA-Z_{])'; then
+if printf '%s' "$command_pre_sq" | grep -qiE '(^|[;&|({])[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*[[:space:]]+)*((env|command|nice|exec|nohup|setsid|stdbuf|timeout|ionice|chrt)([[:space:]]+[-+][^[:space:]]+)*[[:space:]]+)*([^[:space:];&|]*/)?([a-zA-Z]*sh|nu)([[:space:]]+([-+][oO][[:space:]]+[^-+<[:space:];&|][^[:space:];&|]*|(--rcfile|--init-file)[[:space:]]+[^[:space:]]+|--[a-zA-Z][a-zA-Z-]*|[-+][^-[:space:]][^[:space:]]*|<))*[[:space:]]*(<<<|<\()[^;&|]*(\$\(|`|\$[a-zA-Z_{])|(^|[;&|])[^|;&]*(\$\(|`|\$[a-zA-Z_{])[^|;&]*\|[[:space:]]*([^|;&[:space:]]*/)?([a-zA-Z]*sh|nu)([[:space:]]|$|[;&|])|(^|[;&|({])[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*[[:space:]]+)*((env|command|nice|exec|nohup|setsid|stdbuf|timeout|ionice|chrt)([[:space:]]+[-+][^[:space:]]+)*[[:space:]]+)*([^[:space:];&|]*/)?(source|\.)[[:space:]]+<\([^)]*(\$\(|`|\$[a-zA-Z_{])'; then
   echo "ブロック: シェル再パース経路（here-string / pipe / process substitution / source）の対象に動的展開を含むコマンドは安全側で禁止されています（危険コマンド名構築対策）。再パース対象は静的リテラルで書いてください。" >&2
   exit 2
 fi
