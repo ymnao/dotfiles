@@ -145,17 +145,20 @@ fi
 #   - 環境変数代入: FOO=1 bash -c "..."、A=1 B=2 bash -c "..."
 #   - 透過ラッパー: env bash -c "..."、env -i sh -c "..."、command bash -c "..."、
 #     nice eval ...
-# shell 名と -c の間にオプションフラグが挟まる形にも対応する:
-#   - bash --noprofile -c "..."、bash -l -c "..."、bash --norc -c "..."
-#   - zsh -i -c "..."、bash --posix -c "..."、sh -i -c "..."
-# ([[:space:]]+(-[^[:space:]]+|<))* で「空白+オプション or 空白+<」を 0 回以上許容。
+# shell 名と -c の間にオプションフラグや値トークンが挟まる形にも対応する:
+#   - 値を取らないフラグ: bash --noprofile -c "..."、bash -l -c "..."、sh -i -c "..."
+#   - +/- フラグ + 値: bash -o posix -c "..."、bash -O extglob -c "..."、
+#                     bash +O extglob -c "..."、bash --rcfile X -c "..."
+#   - 複合: bash -o posix --norc -c "..."、bash -o posix -l -c "..."
+# 許容トークン: [-+][^[:space:]]+ (フラグ) / < (input redirect) /
+#               [^-+<[:space:];&|][^[:space:];&|]* (フラグの値トークン)
 # shell 名は [a-zA-Z]*sh|nu の正規表現で bash/zsh/dash/sh/fish/tcsh/ksh/mksh/ash/yash/
 # posh/nushell 等を網羅する（* で 0 文字以上にして sh 単独もマッチさせる）。
 # eval / *sh -c の素のリテラル使用（eval ls -la、bash -c "echo hello"）や、引数が
 # literal 化済みの場合（bash -c sudo whoami 等）は通過する。
 # この判定は literal 化フェーズの前に動かす必要がある（literal 化で eval の引数中の
 # 動的展開が潰されるため）。
-if printf '%s' "$command_pre_sq" | grep -qiE '(^|[^A-Za-z0-9_])(eval|([a-zA-Z]*sh|nu)([[:space:]]+(-[^[:space:]]+|<))*[[:space:]]+(-[a-z]*c[a-z]*|--command))[[:space:]]+[^;&|]*(\$\(|`|\$[a-zA-Z_{])'; then
+if printf '%s' "$command_pre_sq" | grep -qiE '(^|[^A-Za-z0-9_])(eval|([a-zA-Z]*sh|nu)([[:space:]]+([-+][^[:space:]]+|<|[^-+<[:space:];&|][^[:space:];&|]*))*[[:space:]]+(-[a-z]*c[a-z]*|--command))[[:space:]]+[^;&|]*(\$\(|`|\$[a-zA-Z_{])'; then
   echo "ブロック: eval / *sh -c の引数に動的展開を含むコマンドは安全側で禁止されています（危険コマンド名構築対策）。引数を静的リテラルで書いてください。" >&2
   exit 2
 fi
