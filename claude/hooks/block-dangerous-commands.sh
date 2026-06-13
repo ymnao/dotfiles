@@ -147,18 +147,26 @@ fi
 #     nice eval ...
 # shell 名と -c の間にオプションフラグや値トークンが挟まる形にも対応する:
 #   - 値を取らないフラグ: bash --noprofile -c "..."、bash -l -c "..."、sh -i -c "..."
-#   - +/- フラグ + 値: bash -o posix -c "..."、bash -O extglob -c "..."、
-#                     bash +O extglob -c "..."、bash --rcfile X -c "..."
+#   - 値を取るフラグ + 値: bash -o posix -c "..."、bash -O extglob -c "..."、
+#                         bash +O extglob -c "..."、bash --rcfile X -c "..."、
+#                         bash --init-file X -c "..."
 #   - 複合: bash -o posix --norc -c "..."、bash -o posix -l -c "..."
-# 許容トークン: [-+][^[:space:]]+ (フラグ) / < (input redirect) /
-#               [^-+<[:space:];&|][^[:space:];&|]* (フラグの値トークン)
+# 許容トークン（順序が重要、値を取るフラグ + 値 → 値なしフラグ → < の順）:
+#   - [-+][oO][[:space:]]+VALUE : -o/-O/+o/+O フラグ + 値
+#   - (--rcfile|--init-file)[[:space:]]+VALUE : 値を取る長フラグ + 値
+#   - [-+][^[:space:]]+ : 値を取らないフラグ（-i / -l / --noprofile 等）
+#   - < : input redirection
+# 任意の非フラグトークン（script.sh 等）はループのどの選択肢にもマッチしないため
+# ループが停止する。これにより bash script.sh -c '...' のようなスクリプト実行形は
+# script.sh が間に入ってループが止まり、続く -c がマッチ不能となり通過する
+# （bash の本来の semantic: -c はその後 script 引数になる）。
 # shell 名は [a-zA-Z]*sh|nu の正規表現で bash/zsh/dash/sh/fish/tcsh/ksh/mksh/ash/yash/
 # posh/nushell 等を網羅する（* で 0 文字以上にして sh 単独もマッチさせる）。
 # eval / *sh -c の素のリテラル使用（eval ls -la、bash -c "echo hello"）や、引数が
 # literal 化済みの場合（bash -c sudo whoami 等）は通過する。
 # この判定は literal 化フェーズの前に動かす必要がある（literal 化で eval の引数中の
 # 動的展開が潰されるため）。
-if printf '%s' "$command_pre_sq" | grep -qiE '(^|[^A-Za-z0-9_])(eval|([a-zA-Z]*sh|nu)([[:space:]]+([-+][^[:space:]]+|<|[^-+<[:space:];&|][^[:space:];&|]*))*[[:space:]]+(-[a-z]*c[a-z]*|--command))[[:space:]]+[^;&|]*(\$\(|`|\$[a-zA-Z_{])'; then
+if printf '%s' "$command_pre_sq" | grep -qiE '(^|[/[:space:];&|({])(eval|([a-zA-Z]*sh|nu)([[:space:]]+([-+][oO][[:space:]]+[^-+<[:space:];&|][^[:space:];&|]*|(--rcfile|--init-file)[[:space:]]+[^[:space:]]+|[-+][^[:space:]]+|<))*[[:space:]]+(-[a-z]*c[a-z]*|--command))[[:space:]]+[^;&|]*(\$\(|`|\$[a-zA-Z_{])'; then
   echo "ブロック: eval / *sh -c の引数に動的展開を含むコマンドは安全側で禁止されています（危険コマンド名構築対策）。引数を静的リテラルで書いてください。" >&2
   exit 2
 fi
@@ -179,12 +187,14 @@ fi
 #   - bash <<< 'echo hello'; echo $(date)                ← セグメント外の動的展開は無関係
 #   - bash <(printf %s 'echo hello'); echo $(date)
 #   - bash <<< 'echo hello' / source ~/.bashrc          ← 再パース対象に動的展開なし
-# *sh の後ろに -s / --noprofile 等のオプションフラグや input redirection (<) が挟まる
-# 形にも対応する: bash -s <<<、bash --noprofile <<<、bash < <(...)、bash -s < <(...) 等。
-# ([[:space:]]+(-[^[:space:]]+|<))* で「空白+オプション or 空白+<」を 0 回以上許容。
+# *sh の後ろにオプションフラグ・値・input redirection (<) が挟まる形にも対応する:
+#   - bash -s <<<、bash --noprofile <<<、bash < <(...)、bash -s < <(...)
+#   - bash -o posix <<<、bash -O extglob <<<、bash +O extglob <<<
+#   - bash --rcfile X <<<、bash -o posix < <(...)
+# 許容トークンは -c 判定と同じ（値を取るフラグ + 値 → 値なしフラグ → < の順）。
 # 過検知のトレードオフ: curl URL | bash 等は動的展開がないため通過する（実害ありの
 # パターンだが静的に追えない経路。AGENTS.md で別途警告）。
-if printf '%s' "$command_pre_sq" | grep -qiE '(^|[^A-Za-z0-9_])([a-zA-Z]*sh|nu)([[:space:]]+(-[^[:space:]]+|<))*[[:space:]]*(<<<|<\()[^;&|]*(\$\(|`|\$[a-zA-Z_{])|(^|[;&|])[^|;&]*(\$\(|`|\$[a-zA-Z_{])[^|;&]*\|[[:space:]]*([^|;&[:space:]]*/)?([a-zA-Z]*sh|nu)([[:space:]]|$|[;&|])|(^|[^A-Za-z0-9_])(source|\.)[[:space:]]+<\([^)]*(\$\(|`|\$[a-zA-Z_{])'; then
+if printf '%s' "$command_pre_sq" | grep -qiE '(^|[/[:space:];&|({])([a-zA-Z]*sh|nu)([[:space:]]+([-+][oO][[:space:]]+[^-+<[:space:];&|][^[:space:];&|]*|(--rcfile|--init-file)[[:space:]]+[^[:space:]]+|[-+][^[:space:]]+|<))*[[:space:]]*(<<<|<\()[^;&|]*(\$\(|`|\$[a-zA-Z_{])|(^|[;&|])[^|;&]*(\$\(|`|\$[a-zA-Z_{])[^|;&]*\|[[:space:]]*([^|;&[:space:]]*/)?([a-zA-Z]*sh|nu)([[:space:]]|$|[;&|])|(^|[/[:space:];&|({])(source|\.)[[:space:]]+<\([^)]*(\$\(|`|\$[a-zA-Z_{])'; then
   echo "ブロック: シェル再パース経路（here-string / pipe / process substitution / source）の対象に動的展開を含むコマンドは安全側で禁止されています（危険コマンド名構築対策）。再パース対象は静的リテラルで書いてください。" >&2
   exit 2
 fi
