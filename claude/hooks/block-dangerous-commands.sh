@@ -47,21 +47,18 @@ fi
 
 # シェル意味論に従ってコマンドを正規化する（.co""dex / .co\dex / $d=.codex; ...
 # のような回避を解消するため、guard-pkg-install.sh と同じ方針）。
-# 段階1: ANSI-C $'...' / locale $"..." quote 除去、\X → X
-#   この時点の view（command_pre_sq）を保存し、eval / *sh -c 判定に使う。
-#   理由: bash -c '$(...)' のように eval / *sh -c の引数では、シングルクォート内の
-#   $() も再パース時に展開されて実行される。シングルクォート除去前の view で判定する
-#   ことで、これらを動的展開として検出できる。
+# 段階1: 1 つの sed -E で以下をまとめて処理する:
+#   - ANSI-C $'...' / locale $"..." quote 除去
+#   - \X → X（バックスラッシュエスケープ解除）
+#   - ${IFS} / $IFS の空白化（bash${IFS}-c のような区切り回避対策。
+#     ${IFS:0:1} 等のサブ展開や波括弧なし $IFS も含む）
+# この時点の view を command_pre_sq として保存し、eval / *sh -c 判定と再パース判定で
+# 使う（シングルクォート除去前の view が必要なため。bash -c '$(...)' のように
+# eval / *sh -c の引数では、シングルクォート内の $() も再パース時に展開されて実行される）。
 command=$(printf '%s' "$command" | sed -E \
   -e "s/\\\$'([^']*)'/\1/g" \
   -e "s/\\\$\"([^\"]*)\"/\1/g" \
-  -e 's/\\(.)/\1/g')
-
-# 段階1.5: bash の ${IFS} / $IFS は実行時に空白へ展開され word splitting に使われるため、
-# git${IFS}reset${IFS}--hard / bash${IFS}-c のように区切り回避として使える。
-# command_pre_sq 保存前に空白置換することで、eval / *sh -c 判定と再パース判定にも反映される。
-# ${IFS:0:1} 等のサブ展開や $IFS（波括弧なし）も同様にスペース化する。
-command=$(printf '%s' "$command" | sed -E \
+  -e 's/\\(.)/\1/g' \
   -e 's/\$\{IFS[^}]*\}/ /g' \
   -e 's/\$IFS([^A-Za-z0-9_]|$)/ \1/g')
 
@@ -293,8 +290,15 @@ residual=$(printf '%s' "$command" | sed -E \
   -e 's/\$tmpdir([^A-Za-z0-9_]|$)/\1/Ig' \
   -e 's/\$\{xdg_[a-z_]+\}//Ig' \
   -e 's/\$xdg_[a-z_]+([^A-Za-z0-9_]|$)/\1/Ig')
-if printf '%s' "$residual" | grep -qi '\.codex' \
-   && printf '%s' "$residual" | grep -qE '\$\(|`|\$[A-Za-z_{]'; then
+# 動的展開残留（$(...)、`...`、$VAR、${VAR}）が $residual に存在するかを 1 度だけ評価し、
+# 以降の 3 つの判定（.codex / 書き込み系コマンド / 書き込みリダイレクト）で再利用する。
+# 過去は各 if で同じ grep を独立に走らせていたが、2 プロセス起動分の冗長性を削減。
+has_dynamic=0
+if printf '%s' "$residual" | grep -qE '\$\(|`|\$[a-zA-Z_{]'; then
+  has_dynamic=1
+fi
+
+if [[ "$has_dynamic" = 1 ]] && printf '%s' "$residual" | grep -qi '\.codex'; then
   echo "ブロック: 動的展開を含む .codex/ 参照は安全側で禁止されています（Cymulate notify エスケープ対策）" >&2
   exit 2
 fi
@@ -306,8 +310,7 @@ fi
 # printf / echo は単体ではファイルへ書けないため対象外（リダイレクト併用は後段の
 # リダイレクト判定が拾う）。動的展開 + printf の日常頻出組を誤ブロックしないため。
 write_cmds='touch|mkdir|install|cp|mv|dd|tee|ln'
-if printf '%s' "$residual" | grep -qE '\$\(|`|\$[a-zA-Z_{]' \
-   && printf '%s' "$residual" | grep -qiE "(^|[;&|({\`[:space:]])($write_cmds)([[:space:]]|[;&|)}\`]|$)"; then
+if [[ "$has_dynamic" = 1 ]] && printf '%s' "$residual" | grep -qiE "(^|[;&|({\`[:space:]])($write_cmds)([[:space:]]|[;&|)}\`]|$)"; then
   echo "ブロック: 動的展開を含む書き込み系コマンドは安全側で禁止されています（.codex 構築の可能性、Cymulate notify エスケープ対策）" >&2
   exit 2
 fi
@@ -316,8 +319,7 @@ fi
 # 例: echo x > .$(echo codex)/config.toml → 実行時に .codex/config.toml へ書き込み。
 # 対象演算子: > / >> / >| / &> / &>> / N> / N>> （N は fd 番号）
 # 入力リダイレクト < / << / <<< と fd コピー >& は対象外（書き込み先がファイルでない）。
-if printf '%s' "$residual" | grep -qE '\$\(|`|\$[a-zA-Z_{]' \
-   && printf '%s' "$residual" | grep -qE '(^|[^&0-9])>[>|]?[^&]|&>>?[^&]|[0-9]+>>?[^&]'; then
+if [[ "$has_dynamic" = 1 ]] && printf '%s' "$residual" | grep -qE '(^|[^&0-9])>[>|]?[^&]|&>>?[^&]|[0-9]+>>?[^&]'; then
   echo "ブロック: 動的展開を含む書き込み系リダイレクトは安全側で禁止されています（.codex 構築の可能性、Cymulate notify エスケープ対策）" >&2
   exit 2
 fi
@@ -361,7 +363,7 @@ fi
 #
 # macOS APFS は既定で case-insensitive のため、`.Codex` 等の表記でも
 # 同一ファイルにアクセスできる。検出は大文字小文字を無視して行う。
-# Codex CLI と同居するプロジェクトでは、Claude が .codex/ を生成すると Codex 起動時のエスケープ経路になりうるため、Bash 経路でも防ぐ（Edit/Write 経路は対象外）。
+# Codex CLI と同居するプロジェクトでは、AI が .codex/ を生成すると Codex 起動時のエスケープ経路になりうるため、Bash 経路でも防ぐ（Edit/Write 経路は対象外）。
 if printf '%s\n' "$command" | grep -qiE '(^|[;&|({`[:space:]>]|[.]\/)[.]codex([\/[:space:]"`)]|$)'; then
   echo "ブロック: プロジェクト内の .codex/ ディレクトリへの参照は禁止されています（Cymulate notify エスケープ対策）" >&2
   exit 2
