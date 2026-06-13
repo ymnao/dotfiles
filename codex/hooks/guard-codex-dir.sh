@@ -42,7 +42,11 @@ is_protected_project_path() {
   local path_lower
   path_lower=$(printf '%s' "$path" | tr '[:upper:]' '[:lower:]')
 
+  # 絶対パスは . と .. を解決して正規化する。
+  # 正規化しないと /Users/.../$(basename cwd)/../$(basename cwd)/.codex のような
+  # .. を含む形が cwd_lower の prefix 比較で素通りする。
   if [[ "$path_lower" = /* ]]; then
+    path_lower=$(printf '%s' "$path_lower" | sed -E -e 's#/\./#/#g' -e ':a' -e 's#/[^/]+/\.\.(/|$)#/#g' -e 'ta' -e 's#//+#/#g')
     case "$path_lower" in
       "$cwd_lower/$protected_name"|"$cwd_lower/$protected_name"/*|"$cwd_lower"/*"/$protected_name"|"$cwd_lower"/*"/$protected_name"/*)
         return 0
