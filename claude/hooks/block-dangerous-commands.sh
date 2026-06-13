@@ -156,6 +156,25 @@ if printf '%s' "$command_pre_sq" | grep -qiE '(^|[^A-Za-z0-9_])(eval|([a-zA-Z]*s
   exit 2
 fi
 
+# *sh への here-string (<<<) / process substitution (<(...)) / pipe 経由のコード渡し、
+# source / . によるコード読み込みも再パース経路となる。これらに動的展開残留が組み合わさる
+# 場合は内側で危険コマンドが構築されうるため安全側で全面ブロックする。
+# 例:
+#   - bash <<< "$(printf g)$(printf it) reset --hard"   (here-string)
+#   - bash <<< '$(...)'                                  (here-string + シングルクォート)
+#   - printf %s '$(...)' | bash                          (pipe to *sh)
+#   - source <(printf %s '$(...)')                       (source + process subst)
+#   - . <(printf %s '$(...)')                            (. + process subst)
+#   - bash <(printf %s '$(...)')                         (*sh + process subst)
+# 動的展開なしの素のリテラル使用（bash <<< 'echo hello'、source ~/.bashrc 等）は通過。
+# 過検知のトレードオフ: curl URL | bash 等は動的展開がないため通過する（実害ありの
+# パターンだが静的に追えない経路。AGENTS.md で別途警告）。
+if printf '%s' "$command_pre_sq" | grep -qiE '(^|[^A-Za-z0-9_])([a-zA-Z]*sh|nu)[[:space:]]*(<<<|<\()|\|[[:space:]]*([^|;&[:space:]]*/)?([a-zA-Z]*sh|nu)([[:space:]]|$|[;&|])|(^|[^A-Za-z0-9_])(source|\.)[[:space:]]+<\(' \
+   && printf '%s' "$command_pre_sq" | grep -qE '\$\(|`|\$[a-zA-Z_{]'; then
+  echo "ブロック: シェル再パース経路（here-string / pipe / process substitution / source）に動的展開を含むコマンドは安全側で禁止されています（危険コマンド名構築対策）。再パース対象は静的リテラルで書いてください。" >&2
+  exit 2
+fi
+
 # コマンド置換 $(...) / `...` の中身に危険コマンド名（rm / git / sudo / chmod）の
 # トークンが含まれる場合、その置換式全体を該当コマンド名 literal に置き換える
 # （guard-pkg-install.sh と同じ流儀）。例: $(printf git) reset --hard → git reset --hard、
