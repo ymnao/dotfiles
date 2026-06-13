@@ -344,7 +344,7 @@ fi
 # --- Git 破壊的操作 ---
 # git のグローバルオプション（-C <path> / -c <k>=<v> / --no-pager 等）をサブコマンド前に
 # 挟む回避（git -C . push --force 等）に対応するため、サブコマンド前の option 列を許容する。
-if printf '%s\n' "$command" | grep -qiE '(^|[;&|({`[:space:]/\])git[[:space:]]+(-[^[:space:];&|]+([[:space:]]+[^-[:space:];&|][^[:space:];&|]*)?[[:space:]]+)*push[[:space:]]+([^;&|]*[[:space:]])?(--force|--force-with-lease(=[^[:space:]]*)?|-[a-zA-Z]*f[a-zA-Z]*|\+[^[:space:];&|]+)([[:space:]]|[;&|)}`]|$)'; then
+if printf '%s\n' "$command" | grep -qiE '(^|[;&|({`[:space:]/\])git[[:space:]]+(-[^[:space:];&|]+([[:space:]]+[^-[:space:];&|][^[:space:];&|]*)?[[:space:]]+)*push[[:space:]]+([^;&|]*[[:space:]])?(--force|--force-with-lease(=[^[:space:]]*)?|--mirror|-[a-zA-Z]*f[a-zA-Z]*|\+[^[:space:];&|]+)([[:space:]]|[;&|)}`]|$)'; then
   echo "ブロック: git push --force は禁止されています" >&2
   exit 2
 fi
@@ -384,9 +384,29 @@ for token in $normalized_command; do
   # 絶対パスは . と .. を解決して正規化してから cwd 配下判定する。
   # 正規化しないと /Users/.../$(basename cwd)/../$(basename cwd)/.codex のような
   # .. を含む形が cwd_lower の prefix 比較に一致せず素通りする。
+  # さらに codex 関連の絶対パスは symlink を realpath 相当で解決する。
+  # cd $dir && pwd -P で path 中の symlink を解決する。存在しない部分（書き込み対象の
+  # .codex/config.toml 等）は親方向に遡って存在するディレクトリで cd し、suffix を結合。
   case "$token" in
     /*)
       token=$(printf '%s' "$token" | sed -E -e 's#/\./#/#g' -e ':a' -e 's#/[^/]+/\.\.(/|$)#/#g' -e 'ta' -e 's#//+#/#g')
+      case "$token" in
+        *[Cc][Oo][Dd][Ee][Xx]*)
+          _try_dir=$token
+          _rest=
+          while [[ -n "$_try_dir" && "$_try_dir" != "/" && ! -d "$_try_dir" ]]; do
+            _rest="/${_try_dir##*/}${_rest}"
+            _try_dir=${_try_dir%/*}
+            [[ -z "$_try_dir" ]] && _try_dir=/
+          done
+          if [[ -d "$_try_dir" ]]; then
+            _resolved=$(cd "$_try_dir" 2>/dev/null && pwd -P)
+            if [[ -n "$_resolved" ]]; then
+              token=$(printf '%s' "${_resolved}${_rest}" | tr '[:upper:]' '[:lower:]')
+            fi
+          fi
+          ;;
+      esac
       ;;
   esac
   # cwd 配下の絶対パスは相対化してから判定する（mkdir /abs/cwd/.codex 等の回避を防ぐ）。
