@@ -42,7 +42,32 @@ is_protected_project_path() {
   local path_lower
   path_lower=$(printf '%s' "$path" | tr '[:upper:]' '[:lower:]')
 
+  # 絶対パスは . と .. を解決して正規化する。
+  # 正規化しないと /Users/.../$(basename cwd)/../$(basename cwd)/.codex のような
+  # .. を含む形が cwd_lower の prefix 比較で素通りする。
+  # さらに codex 関連の絶対パスは symlink を realpath 相当で解決する。
+  # cd $dir && pwd -P で path 中の symlink を解決する。存在しない部分は親方向に遡って
+  # 存在するディレクトリで cd し、suffix を結合。
   if [[ "$path_lower" = /* ]]; then
+    path_lower=$(printf '%s' "$path_lower" | sed -E -e 's#/\./#/#g' -e ':a' -e 's#/[^/]+/\.\.(/|$)#/#g' -e 'ta' -e 's#//+#/#g')
+    case "$path_lower" in
+      *[Cc][Oo][Dd][Ee][Xx]*)
+        local _try_dir _rest _resolved
+        _try_dir=$path_lower
+        _rest=
+        while [[ -n "$_try_dir" && "$_try_dir" != "/" && ! -d "$_try_dir" ]]; do
+          _rest="/${_try_dir##*/}${_rest}"
+          _try_dir=${_try_dir%/*}
+          [[ -z "$_try_dir" ]] && _try_dir=/
+        done
+        if [[ -d "$_try_dir" ]]; then
+          _resolved=$(cd "$_try_dir" 2>/dev/null && pwd -P)
+          if [[ -n "$_resolved" ]]; then
+            path_lower=$(printf '%s' "${_resolved}${_rest}" | tr '[:upper:]' '[:lower:]')
+          fi
+        fi
+        ;;
+    esac
     case "$path_lower" in
       "$cwd_lower/$protected_name"|"$cwd_lower/$protected_name"/*|"$cwd_lower"/*"/$protected_name"|"$cwd_lower"/*"/$protected_name"/*)
         return 0
