@@ -64,6 +64,16 @@ command=$(printf '%s' "$command" | sed -E \
 
 command_pre_sq=$command
 
+# tilde-prefix 判定用の view: 中身に ~ を含まないシングル/ダブルクォートだけ除去する。
+# 中身に ~ を含むクオート（"~" / '~nakiym' / "~/foo" 等）はそのまま残し、tilde 判定の
+# 前置 [[:space:]]+ の直後がクオート文字となって自然に除外されるようにする。
+# これにより 'rm' -rf ~ のようなコマンド名分割クオートでも tilde 判定が外れない
+# （rm_rf_pattern はクオート除去後の $command で rm と認識するため、tilde 側でも
+# rm をトークンとして認識できる必要がある）。
+command_for_tilde=$(printf '%s' "$command_pre_sq" | sed -E \
+  -e "s/'([^~']*)'/\1/g" \
+  -e 's/"([^~"]*)"/\1/g')
+
 # 段階2: シングルクォート '...' の処理（通常コマンド用、bash の quote removal を再現）:
 #   - 中身に $ または ` を含む場合: 動的展開リテラル（bash は展開しない）として
 #     空白に置換し、後段の判定経路に流さない。
@@ -336,12 +346,14 @@ rm_rf_pattern+='|([^;&|]*[[:space:]])?(--force|-[a-zA-Z]*f[a-zA-Z]*)[^;&|]*(--re
 rm_rf_pattern+=')'
 if printf '%s\n' "$command" | grep -qiE "$rm_rf_pattern"; then
   # tilde-prefix（~ / ~+ / ~- / ~user / ~user/path）はクオート内では bash/zsh で
-  # 展開されずリテラル名扱いになる。クオート除去前の view (command_pre_sq) で
-  # 判定し、"~" や '~nakiym' のような形は前置 [[:space:]]+ の直後がクオート文字に
-  # なるため自然に除外する（過ブロック回避）。/ / $HOME / .. / ./ の既存分岐は
-  # クオート除去後の view で従来どおり判定する。
+  # 展開されずリテラル名扱いになる。中身に ~ を含まないクオートだけ除去した
+  # command_for_tilde で判定し、"~" や '~nakiym' のような形は前置 [[:space:]]+
+  # の直後がクオート文字となって自然に除外する（過ブロック回避）。同時に
+  # 'rm' -rf ~ のようなコマンド名分割クオートでも、rm 周りのクオートが除去
+  # されるため tilde 判定が外れない。/ / $HOME / .. / ./ の既存分岐はクオート
+  # 除去後の view で従来どおり判定する。
   if printf '%s\n' "$command" | grep -qiE '(^|[;&|({`[:space:]/\])rm[[:space:]].*[[:space:]]+(/|\$HOME|\.\.(/|[[:space:]]|[;&|)}`]|$)|\./?([[:space:]]|[;&|)}`]|$))' \
-     || printf '%s\n' "$command_pre_sq" | grep -qiE '(^|[;&|({`[:space:]/\])rm[[:space:]].*[[:space:]]+~[^/[:space:];&|)}`]*([/[:space:];&|)}`]|$)'; then
+     || printf '%s\n' "$command_for_tilde" | grep -qiE '(^|[;&|({`[:space:]/\])rm[[:space:]].*[[:space:]]+~[^/[:space:];&|)}`]*([/[:space:];&|)}`]|$)'; then
     echo "ブロック: rm -rf で危険なパスが指定されています" >&2
     exit 2
   fi
