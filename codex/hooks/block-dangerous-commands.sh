@@ -64,15 +64,21 @@ command=$(printf '%s' "$command" | sed -E \
 
 command_pre_sq=$command
 
-# tilde-prefix 判定用の view: 中身に ~ を含まないシングル/ダブルクォートだけ除去する。
-# 中身に ~ を含むクオート（"~" / '~nakiym' / "~/foo" 等）はそのまま残し、tilde 判定の
-# 前置 [[:space:]]+ の直後がクオート文字となって自然に除外されるようにする。
-# これにより 'rm' -rf ~ のようなコマンド名分割クオートでも tilde 判定が外れない
-# （rm_rf_pattern はクオート除去後の $command で rm と認識するため、tilde 側でも
-# rm をトークンとして認識できる必要がある）。
+# tilde-prefix 判定用の view を作る。クオート除去の方針はシングルとダブルで非対称:
+#   - シングルクォート '...': 中身に ~ がなければクオート除去（'rm' -rf ~ のような
+#     コマンド名分割クオートを解消するため）。中身に ~ があればクオート保持し、
+#     tilde 判定の前置 [[:space:]]+ の直後がクオート文字となって自然に除外させる。
+#     '~' / '~nakiym' / '~/foo' のような明示的リテラル指定はこの経路で許可される。
+#   - ダブルクォート "...": 一律削除する。ダブルクォート内 ~ は bash 仕様ではリテラル
+#     扱いだが、変数展開を経由した形（q=~; rm -rf "$q" など）でホーム展開済みの値が
+#     入ると tilde 判定が外せない。"~" リテラル削除は意図したい場合でも、"" を外して
+#     '~' にする回避策があるため、過ブロックは許容してダブルクォート保護はしない。
+#   これにより 'rm' -rf ~ のようなコマンド名分割クオートでも tilde 判定が外れない
+#   （rm_rf_pattern はクオート除去後の $command で rm と認識するため、tilde 側でも
+#   rm をトークンとして認識できる必要がある）。
 command_for_tilde=$(printf '%s' "$command_pre_sq" | sed -E \
   -e "s/'([^~']*)'/\1/g" \
-  -e 's/"([^~"]*)"/\1/g')
+  -e 's/"//g')
 
 # 段階2: シングルクォート '...' の処理（通常コマンド用、bash の quote removal を再現）:
 #   - 中身に $ または ` を含む場合: 動的展開リテラル（bash は展開しない）として
@@ -267,10 +273,20 @@ command=$(printf '%s' "$command" | sed -E \
 # 　　 a=.co; b=dex; touch $a$b/foo → touch .codex/foo（連結も解決される）。
 # 代入を grep で全て抽出し、各々を sed で順に置換する。bash の通常代入と
 # 異なるケース（export FOO=bar / function ローカル等）は対象外。
-assignments=$(printf '%s' "$command" \
-  | grep -oE '(^|[[:space:];&|])[A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*' \
-  | sed -E 's/^[[:space:];&|]+//')
-if [[ -n "$assignments" ]]; then
+# 代入連鎖（p=~; q=$p; rm -rf $q のような多段参照）を解決するため、収束するまで
+# 反復する。1 パスだと val が最初の抽出時点の $p のまま保存され、$q 置換で
+# 展開済み値に解決されない。最大 8 回で打ち切る（実用上の代入連鎖の深さに十分
+# 余裕、無限ループ防止）。
+_iter=0
+while [[ $_iter -lt 8 ]]; do
+  _prev=$command
+  _iter=$((_iter + 1))
+  assignments=$(printf '%s' "$command" \
+    | grep -oE '(^|[[:space:];&|])[A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*' \
+    | sed -E 's/^[[:space:];&|]+//')
+  if [[ -z "$assignments" ]]; then
+    break
+  fi
   while IFS= read -r asgn; do
     [[ -z "$asgn" ]] && continue
     name="${asgn%%=*}"
@@ -281,18 +297,26 @@ if [[ -n "$assignments" ]]; then
       -e "s/\\\$\\{${esc_name}\\}/${esc_val}/g" \
       -e "s/\\\$${esc_name}([^A-Za-z0-9_]|\$)/${esc_val}\\1/g")
   done <<< "$assignments"
-fi
+  [[ "$command" = "$_prev" ]] && break
+done
 
-# tilde 判定 view にも同じ単純代入展開を適用する。command_for_tilde はクオート
-# 保持されているため、未引用 p=~ は val=~ として、引用付き p='~' は val='~' と
-# して抽出され、$p 置換後の view 上でそれぞれ「裸 ~」「クオート付き '~'」になる。
-# 結果として tilde 判定の前置 [[:space:]]+ により後者は除外され、未引用代入のみ
-# ブロックされる。command 側の assignments とは別に抽出する必要がある（前者は
-# クオート除去済みなので未引用/引用付きを区別できないため）。
-assignments_for_tilde=$(printf '%s' "$command_for_tilde" \
-  | grep -oE '(^|[[:space:];&|])[A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*' \
-  | sed -E 's/^[[:space:];&|]+//')
-if [[ -n "$assignments_for_tilde" ]]; then
+# tilde 判定 view にも同じ単純代入展開を適用する。command_for_tilde はシングル
+# クォート内の ~ だけリテラル保持しており、未引用 p=~ は val=~ として、引用付き
+# p='~' は val='~' として抽出され、$p 置換後の view 上でそれぞれ「裸 ~」「クオート
+# 付き '~'」になる。結果として tilde 判定の前置 [[:space:]]+ により後者は除外され、
+# 未引用代入のみブロックされる。command 側の assignments とは別に抽出する必要が
+# ある（前者はクオート除去済みなので未引用/引用付きを区別できないため）。
+# こちらも代入連鎖を反復で解決する。
+_iter=0
+while [[ $_iter -lt 8 ]]; do
+  _prev=$command_for_tilde
+  _iter=$((_iter + 1))
+  assignments_for_tilde=$(printf '%s' "$command_for_tilde" \
+    | grep -oE '(^|[[:space:];&|])[A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*' \
+    | sed -E 's/^[[:space:];&|]+//')
+  if [[ -z "$assignments_for_tilde" ]]; then
+    break
+  fi
   while IFS= read -r asgn; do
     [[ -z "$asgn" ]] && continue
     name="${asgn%%=*}"
@@ -303,7 +327,8 @@ if [[ -n "$assignments_for_tilde" ]]; then
       -e "s/\\\$\\{${esc_name}\\}/${esc_val}/g" \
       -e "s/\\\$${esc_name}([^A-Za-z0-9_]|\$)/${esc_val}\\1/g")
   done <<< "$assignments_for_tilde"
-fi
+  [[ "$command_for_tilde" = "$_prev" ]] && break
+done
 
 # 動的展開（コマンド置換・バックティック・未追跡変数）が残っていて、かつ
 # .codex 文字列を含むコマンドは、展開後に .codex 配下を触る可能性があるため
