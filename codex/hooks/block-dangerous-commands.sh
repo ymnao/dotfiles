@@ -357,23 +357,28 @@ if printf '%s\n' "$command" | grep -qiE "$rm_rf_pattern"; then
   # tilde 判定用 view を遅延生成する。rm を含むコマンドのみ生成コストを払い、
   # git/sudo/chmod など rm 以外のコマンドに対する sed 起動を削減する。view の
   # クオート除去方針はシングル/ダブルで非対称:
-  #   - シングルクォート '...': 中身に ~ がなければ除去（'rm' -rf ~ のような
-  #     コマンド名分割クオートを解消）。中身に ~ があれば保持し、tilde 判定の
-  #     前置 [[:space:]]+ の直後がクオート文字となって自然に除外させる。
+  #   - シングルクォート '...': 中身に ~ も $ も含まなければ除去（'rm' -rf ~
+  #     のようなコマンド名分割クオートを解消）。中身に ~ があれば保持して
+  #     tilde 判定の前置 [[:space:]]+ で除外、中身に $ があれば保持して後段の
+  #     代入展開（'$p' → '~'）後に同じく前置クオート文字で除外する。$ 保護を
+  #     しないと p=~; rm -rf '$p' のような literal $p が rm -rf ~ 相当に
+  #     見えて過ブロックする。
   #   - ダブルクォート "...": 一律削除。"~" / "$q"（変数展開経由）が静的に
   #     区別できないため過ブロックは許容（'~' で書く回避策あり）。
-  # 続いて、ホーム値を返すコマンド置換 $(echo ~) / `printf ~` も ~ に潰す
-  # （代入経由 p=$(echo ~); rm -rf $p でホーム破壊が起きるため）。echo/printf
-  # 限定なのは $(rm -rf ~) のような「中身に危険コマンドを含む置換」を潰すと
-  # 中身の rm を tilde 判定で見られなくなるため。
+  # 続いて、ホーム値を返すコマンド置換 $(echo ~) / $(printf %s ~) / `printf ~`
+  # 等も ~ に潰す（代入経由 p=$(printf %s ~); rm -rf $p でホーム破壊が起きる
+  # ため）。echo/printf 限定なのは $(rm -rf ~) のような「中身に危険コマンドを
+  # 含む置換」を潰すと中身の rm を tilde 判定で見られなくなるため。printf は
+  # フォーマット引数（%s, "%s\n", -- 等）を挟んで ~ が後置される形が普通な
+  # ので、中身は (echo|printf) 直後の任意トークン列 + ~ + 任意末尾を許容する。
   # 既知制限: 段階4 nested / 段階8 csub literal 化は command_for_tilde に未反映
   # （$(printf %s rm) -rf ~ のような動的構築 rm + 静的 tilde 組み合わせは検出
   # 外れ）。再パース経路 + 静的リテラルと併せて issue #56 で対応予定。
   command_for_tilde=$(printf '%s' "$command_pre_sq" | sed -E \
-    -e "s/'([^~']*)'/\1/g" \
+    -e "s/'([^~'\$]*)'/\1/g" \
     -e 's/"//g' \
-    -e 's/\$\((echo|printf)[[:space:]]+~[^)]*\)/~/g' \
-    -e 's/`(echo|printf)[[:space:]]+~[^`]*`/~/g')
+    -e 's/\$\((echo|printf)[[:space:]]+[^)~]*~[^)]*\)/~/g' \
+    -e 's/`(echo|printf)[[:space:]]+[^`~]*~[^`]*`/~/g')
   expand_assignments command_for_tilde
 
   # tilde-prefix（~ / ~+ / ~- / ~user / ~user/path）は command_for_tilde で
