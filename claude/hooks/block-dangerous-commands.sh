@@ -335,7 +335,13 @@ rm_rf_pattern+='|([^;&|]*[[:space:]])?(--recursive|-[a-zA-Z]*[rR][a-zA-Z]*)[^;&|
 rm_rf_pattern+='|([^;&|]*[[:space:]])?(--force|-[a-zA-Z]*f[a-zA-Z]*)[^;&|]*(--recursive|[[:space:]]-[a-zA-Z]*[rR][a-zA-Z]*)'
 rm_rf_pattern+=')'
 if printf '%s\n' "$command" | grep -qiE "$rm_rf_pattern"; then
-  if printf '%s\n' "$command" | grep -qiE '(^|[;&|({`[:space:]/\])rm[[:space:]].*[[:space:]]+(/|~[^/[:space:];&|)}`]*([/[:space:];&|)}`]|$)|\$HOME|\.\.(/|[[:space:]]|[;&|)}`]|$)|\./?([[:space:]]|[;&|)}`]|$))'; then
+  # tilde-prefix（~ / ~+ / ~- / ~user / ~user/path）はクオート内では bash/zsh で
+  # 展開されずリテラル名扱いになる。クオート除去前の view (command_pre_sq) で
+  # 判定し、"~" や '~nakiym' のような形は前置 [[:space:]]+ の直後がクオート文字に
+  # なるため自然に除外する（過ブロック回避）。/ / $HOME / .. / ./ の既存分岐は
+  # クオート除去後の view で従来どおり判定する。
+  if printf '%s\n' "$command" | grep -qiE '(^|[;&|({`[:space:]/\])rm[[:space:]].*[[:space:]]+(/|\$HOME|\.\.(/|[[:space:]]|[;&|)}`]|$)|\./?([[:space:]]|[;&|)}`]|$))' \
+     || printf '%s\n' "$command_pre_sq" | grep -qiE '(^|[;&|({`[:space:]/\])rm[[:space:]].*[[:space:]]+~[^/[:space:];&|)}`]*([/[:space:];&|)}`]|$)'; then
     echo "ブロック: rm -rf で危険なパスが指定されています" >&2
     exit 2
   fi
