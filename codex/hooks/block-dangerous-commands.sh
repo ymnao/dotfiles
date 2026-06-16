@@ -36,6 +36,38 @@ if [[ -z "$command" ]]; then
   exit 0
 fi
 
+# 単純代入 var=value を「コマンド中の $var / ${var}」へ静的展開する。引数で渡した
+# 変数名の現在値を読み、展開済み値を同じ変数に書き戻す（bash 3.2: ${!1} の indirect
+# expand + printf -v で nameref を代用）。代入連鎖（p=~; q=$p; rm -rf $q のような
+# 多段参照）を解決するため収束まで最大 8 回反復する。1 パスだと val が最初の抽出
+# 時点の $p のまま保存され $q 置換で展開済み値に解決されないため反復が必須。
+# command 側と command_for_tilde 側で同じロジックを使うため関数化している（後者は
+# シングルクォート内 ~ をリテラル保持する事情で別途抽出が必要 → 代入展開以外の
+# 部分は本関数では扱わず、呼び出し前に view を作っておく）。
+expand_assignments() {
+  local _var=$1 _prev _iter=0 _cur=${!1} assignments asgn name val esc_name esc_val
+  while [[ $_iter -lt 8 ]]; do
+    _prev=$_cur
+    _iter=$((_iter + 1))
+    assignments=$(printf '%s' "$_cur" \
+      | grep -oE '(^|[[:space:];&|])[A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*' \
+      | sed -E 's/^[[:space:];&|]+//')
+    [[ -z "$assignments" ]] && break
+    while IFS= read -r asgn; do
+      [[ -z "$asgn" ]] && continue
+      name="${asgn%%=*}"
+      val="${asgn#*=}"
+      esc_name=$(printf '%s' "$name" | sed 's/[][\\.*^$/]/\\&/g')
+      esc_val=$(printf '%s' "$val" | sed 's/[\\&/]/\\&/g')
+      _cur=$(printf '%s' "$_cur" | sed -E \
+        -e "s/\\\$\\{${esc_name}\\}/${esc_val}/g" \
+        -e "s/\\\$${esc_name}([^A-Za-z0-9_]|\$)/${esc_val}\\1/g")
+    done <<< "$assignments"
+    [[ "$_cur" = "$_prev" ]] && break
+  done
+  printf -v "$_var" '%s' "$_cur"
+}
+
 # ANSI-C クォート $'...' は実行時にエスケープシーケンスをデコードする（例: $'\056'→.、
 # $'\x2e'→.）。8進・16進・制御文字を静的に追うのは非現実的なため、エスケープ（\）を
 # 内包する $'...' は安全側で全面ブロックする。エスケープを含まない $'...' は後段の
@@ -63,34 +95,6 @@ command=$(printf '%s' "$command" | sed -E \
   -e 's/\$IFS([^A-Za-z0-9_]|$)/ \1/g')
 
 command_pre_sq=$command
-
-# tilde-prefix 判定用の view を作る。クオート除去の方針はシングルとダブルで非対称:
-#   - シングルクォート '...': 中身に ~ がなければクオート除去（'rm' -rf ~ のような
-#     コマンド名分割クオートを解消するため）。中身に ~ があればクオート保持し、
-#     tilde 判定の前置 [[:space:]]+ の直後がクオート文字となって自然に除外させる。
-#     '~' / '~nakiym' / '~/foo' のような明示的リテラル指定はこの経路で許可される。
-#   - ダブルクォート "...": 一律削除する。ダブルクォート内 ~ は bash 仕様ではリテラル
-#     扱いだが、変数展開を経由した形（q=~; rm -rf "$q" など）でホーム展開済みの値が
-#     入ると tilde 判定が外せない。"~" リテラル削除は意図したい場合でも、"" を外して
-#     '~' にする回避策があるため、過ブロックは許容してダブルクォート保護はしない。
-#   これにより 'rm' -rf ~ のようなコマンド名分割クオートでも tilde 判定が外れない
-#   （rm_rf_pattern はクオート除去後の $command で rm と認識するため、tilde 側でも
-#   rm をトークンとして認識できる必要がある）。
-command_for_tilde=$(printf '%s' "$command_pre_sq" | sed -E \
-  -e "s/'([^~']*)'/\1/g" \
-  -e 's/"//g')
-
-# ホーム値を動的に取得するコマンド置換パターン $(echo ~) / `printf ~` 等は、
-# 実シェルでは tilde 展開後の絶対パスを出力する。代入経由 p=$(echo ~); rm -rf $p
-# でホームディレクトリが破壊されるため、これらの置換式全体を ~ リテラルに潰す。
-# echo / printf に限定するのは、$(rm -rf ~) のような「中身に危険コマンドを含む
-# 置換」を潰すと中身 rm 自体を tilde 判定で見られなくなるため。$(echo ~) のように
-# 出力が = ホームパスとなる代表ケースだけ取り扱う。攻撃の幅としては $(cat ...) /
-# `whoami` 連結等が残るが、それらは AI の自然な書き方ではないため別経路の対応で
-# 補う（再パース経路と合わせて別 issue）。
-command_for_tilde=$(printf '%s' "$command_for_tilde" | sed -E \
-  -e 's/\$\((echo|printf)[[:space:]]+~[^)]*\)/~/g' \
-  -e 's/`(echo|printf)[[:space:]]+~[^`]*`/~/g')
 
 # 段階2: シングルクォート '...' の処理（通常コマンド用、bash の quote removal を再現）:
 #   - 中身に $ または ` を含む場合: 動的展開リテラル（bash は展開しない）として
@@ -283,64 +287,10 @@ command=$(printf '%s' "$command" | sed -E \
 # 単純な変数代入 `var=value` を「コマンド中の $var / ${var}」に静的展開する。
 # 例: d=.codex; touch $d/foo → touch .codex/foo、
 # 　　 a=.co; b=dex; touch $a$b/foo → touch .codex/foo（連結も解決される）。
-# 代入を grep で全て抽出し、各々を sed で順に置換する。bash の通常代入と
-# 異なるケース（export FOO=bar / function ローカル等）は対象外。
-# 代入連鎖（p=~; q=$p; rm -rf $q のような多段参照）を解決するため、収束するまで
-# 反復する。1 パスだと val が最初の抽出時点の $p のまま保存され、$q 置換で
-# 展開済み値に解決されない。最大 8 回で打ち切る（実用上の代入連鎖の深さに十分
-# 余裕、無限ループ防止）。
-_iter=0
-while [[ $_iter -lt 8 ]]; do
-  _prev=$command
-  _iter=$((_iter + 1))
-  assignments=$(printf '%s' "$command" \
-    | grep -oE '(^|[[:space:];&|])[A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*' \
-    | sed -E 's/^[[:space:];&|]+//')
-  if [[ -z "$assignments" ]]; then
-    break
-  fi
-  while IFS= read -r asgn; do
-    [[ -z "$asgn" ]] && continue
-    name="${asgn%%=*}"
-    val="${asgn#*=}"
-    esc_name=$(printf '%s' "$name" | sed 's/[][\\.*^$/]/\\&/g')
-    esc_val=$(printf '%s' "$val" | sed 's/[\\&/]/\\&/g')
-    command=$(printf '%s' "$command" | sed -E \
-      -e "s/\\\$\\{${esc_name}\\}/${esc_val}/g" \
-      -e "s/\\\$${esc_name}([^A-Za-z0-9_]|\$)/${esc_val}\\1/g")
-  done <<< "$assignments"
-  [[ "$command" = "$_prev" ]] && break
-done
-
-# tilde 判定 view にも同じ単純代入展開を適用する。command_for_tilde はシングル
-# クォート内の ~ だけリテラル保持しており、未引用 p=~ は val=~ として、引用付き
-# p='~' は val='~' として抽出され、$p 置換後の view 上でそれぞれ「裸 ~」「クオート
-# 付き '~'」になる。結果として tilde 判定の前置 [[:space:]]+ により後者は除外され、
-# 未引用代入のみブロックされる。command 側の assignments とは別に抽出する必要が
-# ある（前者はクオート除去済みなので未引用/引用付きを区別できないため）。
-# こちらも代入連鎖を反復で解決する。
-_iter=0
-while [[ $_iter -lt 8 ]]; do
-  _prev=$command_for_tilde
-  _iter=$((_iter + 1))
-  assignments_for_tilde=$(printf '%s' "$command_for_tilde" \
-    | grep -oE '(^|[[:space:];&|])[A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*' \
-    | sed -E 's/^[[:space:];&|]+//')
-  if [[ -z "$assignments_for_tilde" ]]; then
-    break
-  fi
-  while IFS= read -r asgn; do
-    [[ -z "$asgn" ]] && continue
-    name="${asgn%%=*}"
-    val="${asgn#*=}"
-    esc_name=$(printf '%s' "$name" | sed 's/[][\\.*^$/]/\\&/g')
-    esc_val=$(printf '%s' "$val" | sed 's/[\\&/]/\\&/g')
-    command_for_tilde=$(printf '%s' "$command_for_tilde" | sed -E \
-      -e "s/\\\$\\{${esc_name}\\}/${esc_val}/g" \
-      -e "s/\\\$${esc_name}([^A-Za-z0-9_]|\$)/${esc_val}\\1/g")
-  done <<< "$assignments_for_tilde"
-  [[ "$command_for_tilde" = "$_prev" ]] && break
-done
+# 代入連鎖（p=~; q=$p; ...）も expand_assignments の収束反復で解決される。
+# bash の通常代入と異なるケース（export FOO=bar / function ローカル等）は対象外。
+# command_for_tilde 側の代入展開は tilde 判定の遅延生成と一緒に段階11 で行う。
+expand_assignments command
 
 # 動的展開（コマンド置換・バックティック・未追跡変数）が残っていて、かつ
 # .codex 文字列を含むコマンドは、展開後に .codex 配下を触る可能性があるため
@@ -404,13 +354,32 @@ rm_rf_pattern+='|([^;&|]*[[:space:]])?(--recursive|-[a-zA-Z]*[rR][a-zA-Z]*)[^;&|
 rm_rf_pattern+='|([^;&|]*[[:space:]])?(--force|-[a-zA-Z]*f[a-zA-Z]*)[^;&|]*(--recursive|[[:space:]]-[a-zA-Z]*[rR][a-zA-Z]*)'
 rm_rf_pattern+=')'
 if printf '%s\n' "$command" | grep -qiE "$rm_rf_pattern"; then
-  # tilde-prefix（~ / ~+ / ~- / ~user / ~user/path）はクオート内では bash/zsh で
-  # 展開されずリテラル名扱いになる。中身に ~ を含まないクオートだけ除去した
-  # command_for_tilde で判定し、"~" や '~nakiym' のような形は前置 [[:space:]]+
-  # の直後がクオート文字となって自然に除外する（過ブロック回避）。同時に
-  # 'rm' -rf ~ のようなコマンド名分割クオートでも、rm 周りのクオートが除去
-  # されるため tilde 判定が外れない。/ / $HOME / .. / ./ の既存分岐はクオート
-  # 除去後の view で従来どおり判定する。
+  # tilde 判定用 view を遅延生成する。rm を含むコマンドのみ生成コストを払い、
+  # git/sudo/chmod など rm 以外のコマンドに対する sed 起動を削減する。view の
+  # クオート除去方針はシングル/ダブルで非対称:
+  #   - シングルクォート '...': 中身に ~ がなければ除去（'rm' -rf ~ のような
+  #     コマンド名分割クオートを解消）。中身に ~ があれば保持し、tilde 判定の
+  #     前置 [[:space:]]+ の直後がクオート文字となって自然に除外させる。
+  #   - ダブルクォート "...": 一律削除。"~" / "$q"（変数展開経由）が静的に
+  #     区別できないため過ブロックは許容（'~' で書く回避策あり）。
+  # 続いて、ホーム値を返すコマンド置換 $(echo ~) / `printf ~` も ~ に潰す
+  # （代入経由 p=$(echo ~); rm -rf $p でホーム破壊が起きるため）。echo/printf
+  # 限定なのは $(rm -rf ~) のような「中身に危険コマンドを含む置換」を潰すと
+  # 中身の rm を tilde 判定で見られなくなるため。
+  # 既知制限: 段階4 nested / 段階8 csub literal 化は command_for_tilde に未反映
+  # （$(printf %s rm) -rf ~ のような動的構築 rm + 静的 tilde 組み合わせは検出
+  # 外れ）。再パース経路 + 静的リテラルと併せて issue #56 で対応予定。
+  command_for_tilde=$(printf '%s' "$command_pre_sq" | sed -E \
+    -e "s/'([^~']*)'/\1/g" \
+    -e 's/"//g' \
+    -e 's/\$\((echo|printf)[[:space:]]+~[^)]*\)/~/g' \
+    -e 's/`(echo|printf)[[:space:]]+~[^`]*`/~/g')
+  expand_assignments command_for_tilde
+
+  # tilde-prefix（~ / ~+ / ~- / ~user / ~user/path）は command_for_tilde で
+  # 判定し、シングルクォート tilde リテラルや 'rm' 等の分割クオートを正しく
+  # 扱う。/ / $HOME / .. / ./ の既存分岐はクオート除去後の view（$command）で
+  # 従来どおり判定する。|| 短絡で第二 grep は第一が未マッチ時のみ走る。
   if printf '%s\n' "$command" | grep -qiE '(^|[;&|({`[:space:]/\])rm[[:space:]].*[[:space:]]+(/|\$HOME|\.\.(/|[[:space:]]|[;&|)}`]|$)|\./?([[:space:]]|[;&|)}`]|$))' \
      || printf '%s\n' "$command_for_tilde" | grep -qiE '(^|[;&|({`[:space:]/\])rm[[:space:]].*[[:space:]]+~[^/[:space:];&|)}`]*([/[:space:];&|)}`]|$)'; then
     echo "ブロック: rm -rf で危険なパスが指定されています" >&2
