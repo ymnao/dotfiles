@@ -371,14 +371,21 @@ if printf '%s\n' "$command" | grep -qiE "$rm_rf_pattern"; then
   # 含む置換」を潰すと中身の rm を tilde 判定で見られなくなるため。printf は
   # フォーマット引数（%s, "%s\n", -- 等）を挟んで ~ が後置される形が普通な
   # ので、中身は (echo|printf) 直後の任意トークン列 + ~ + 任意末尾を許容する。
+  # 引用付き ~（'$(printf %s '"'"'~'"'"')' のような中身 quoted ~）は shell
+  # 仕様では tilde 展開されずリテラル名扱いになる。csub 潰しの前にシングル
+  # クォート内 ~ を sentinel (1 バイト 0x01) に隔離し、csub 潰し後に元に戻す
+  # ことで、引用付き ~ を保護する（潰しの対象は引用なし裸 ~ に限定される）。
   # 既知制限: 段階4 nested / 段階8 csub literal 化は command_for_tilde に未反映
   # （$(printf %s rm) -rf ~ のような動的構築 rm + 静的 tilde 組み合わせは検出
   # 外れ）。再パース経路 + 静的リテラルと併せて issue #56 で対応予定。
+  _sentinel=$'\x01'
   command_for_tilde=$(printf '%s' "$command_pre_sq" | sed -E \
-    -e "s/'([^~'\$]*)'/\1/g" \
+    -e "s/'([^']*)~([^']*)'/'\\1${_sentinel}\\2'/g" \
+    -e "s/'([^~'\$${_sentinel}]*)'/\\1/g" \
     -e 's/"//g' \
     -e 's/\$\((echo|printf)[[:space:]]+[^)~]*~[^)]*\)/~/g' \
-    -e 's/`(echo|printf)[[:space:]]+[^`~]*~[^`]*`/~/g')
+    -e 's/`(echo|printf)[[:space:]]+[^`~]*~[^`]*`/~/g' \
+    -e "s/${_sentinel}/~/g")
   expand_assignments command_for_tilde
 
   # tilde-prefix（~ / ~+ / ~- / ~user / ~user/path）は command_for_tilde で
