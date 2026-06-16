@@ -283,6 +283,28 @@ if [[ -n "$assignments" ]]; then
   done <<< "$assignments"
 fi
 
+# tilde 判定 view にも同じ単純代入展開を適用する。command_for_tilde はクオート
+# 保持されているため、未引用 p=~ は val=~ として、引用付き p='~' は val='~' と
+# して抽出され、$p 置換後の view 上でそれぞれ「裸 ~」「クオート付き '~'」になる。
+# 結果として tilde 判定の前置 [[:space:]]+ により後者は除外され、未引用代入のみ
+# ブロックされる。command 側の assignments とは別に抽出する必要がある（前者は
+# クオート除去済みなので未引用/引用付きを区別できないため）。
+assignments_for_tilde=$(printf '%s' "$command_for_tilde" \
+  | grep -oE '(^|[[:space:];&|])[A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*' \
+  | sed -E 's/^[[:space:];&|]+//')
+if [[ -n "$assignments_for_tilde" ]]; then
+  while IFS= read -r asgn; do
+    [[ -z "$asgn" ]] && continue
+    name="${asgn%%=*}"
+    val="${asgn#*=}"
+    esc_name=$(printf '%s' "$name" | sed 's/[][\\.*^$/]/\\&/g')
+    esc_val=$(printf '%s' "$val" | sed 's/[\\&/]/\\&/g')
+    command_for_tilde=$(printf '%s' "$command_for_tilde" | sed -E \
+      -e "s/\\\$\\{${esc_name}\\}/${esc_val}/g" \
+      -e "s/\\\$${esc_name}([^A-Za-z0-9_]|\$)/${esc_val}\\1/g")
+  done <<< "$assignments_for_tilde"
+fi
+
 # 動的展開（コマンド置換・バックティック・未追跡変数）が残っていて、かつ
 # .codex 文字列を含むコマンドは、展開後に .codex 配下を触る可能性があるため
 # 安全側で全面ブロックする。Cymulate notify エスケープは静的解析では追えない
