@@ -368,23 +368,34 @@ if printf '%s\n' "$command" | grep -qiE "$rm_rf_pattern"; then
   # 続いて、ホーム値を返すコマンド置換 $(echo ~) / $(printf %s ~) / `printf ~`
   # 等も ~ に潰す（代入経由 p=$(printf %s ~); rm -rf $p でホーム破壊が起きる
   # ため）。echo/printf 限定なのは $(rm -rf ~) のような「中身に危険コマンドを
-  # 含む置換」を潰すと中身の rm を tilde 判定で見られなくなるため。printf は
-  # フォーマット引数（%s, "%s\n", -- 等）を挟んで ~ が後置される形が普通な
-  # ので、中身は (echo|printf) 直後の任意トークン列 + ~ + 任意末尾を許容する。
+  # 含む置換」を潰すと中身の rm を tilde 判定で見られなくなるため。
+  # 「裸 ~」の判定は ~ の直前が空白（コマンド名直後 or 中身末尾の空白）であること
+  # を要件にする。これで printf %s foo~ や printf %s /tmp/~ のように ~ が word
+  # 中間にある（bash でも tilde 展開されない）ケースを誤検出しない。printf は
+  # フォーマット引数（%s, "%s\n", -- 等）を挟んで ~ が後置される形が普通なので、
+  # 任意中身 + 空白 + ~ + 任意末尾 を許容する。
   # 引用付き ~（'$(printf %s '"'"'~'"'"')' のような中身 quoted ~）は shell
   # 仕様では tilde 展開されずリテラル名扱いになる。csub 潰しの前にシングル
   # クォート内 ~ を sentinel (1 バイト 0x01) に隔離し、csub 潰し後に元に戻す
   # ことで、引用付き ~ を保護する（潰しの対象は引用なし裸 ~ に限定される）。
+  # sed の g フラグは非重複マッチを順次置換するだけで '~~' のような複数 ~ を
+  # 含むクオートでは 1 回の sed では 1 個しか sentinel 化できないため、シェルの
+  # for ループで収束まで反復する（最大 8 回、無限ループ防止）。
   # 既知制限: 段階4 nested / 段階8 csub literal 化は command_for_tilde に未反映
   # （$(printf %s rm) -rf ~ のような動的構築 rm + 静的 tilde 組み合わせは検出
   # 外れ）。再パース経路 + 静的リテラルと併せて issue #56 で対応予定。
   _sentinel=$'\x01'
-  command_for_tilde=$(printf '%s' "$command_pre_sq" | sed -E \
-    -e "s/'([^']*)~([^']*)'/'\\1${_sentinel}\\2'/g" \
+  _view=$command_pre_sq
+  for _i in 1 2 3 4 5 6 7 8; do
+    _new=$(printf '%s' "$_view" | sed -E "s/'([^']*)~([^']*)'/'\\1${_sentinel}\\2'/g")
+    [[ "$_new" = "$_view" ]] && break
+    _view=$_new
+  done
+  command_for_tilde=$(printf '%s' "$_view" | sed -E \
     -e "s/'([^~'\$${_sentinel}]*)'/\\1/g" \
     -e 's/"//g' \
-    -e 's/\$\((echo|printf)[[:space:]]+[^)~]*~[^)]*\)/~/g' \
-    -e 's/`(echo|printf)[[:space:]]+[^`~]*~[^`]*`/~/g' \
+    -e "s/\\\$\\((echo|printf)[[:space:]]+([^)]*[[:space:]])?~[^)]*\\)/~/g" \
+    -e "s/\`(echo|printf)[[:space:]]+([^\`]*[[:space:]])?~[^\`]*\`/~/g" \
     -e "s/${_sentinel}/~/g")
   expand_assignments command_for_tilde
 
