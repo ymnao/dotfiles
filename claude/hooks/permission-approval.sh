@@ -40,7 +40,7 @@ curl -fsSL \
   -H "Title: Claude Code [$project]" \
   -H "Priority: high" \
   -H "Tags: bell,computer" \
-  -d "$message" \
+  --data-raw "$message" \
   "$NTFY_SERVER/$NTFY_TOPIC" >/dev/null 2>&1 &
 
 exit 0
