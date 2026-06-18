@@ -32,6 +32,9 @@ random_suffix=$(head -c 24 /dev/urandom | base64 | tr -d '+/=' | tr 'A-Z' 'a-z' 
 random_topic="claude-${random_suffix}"
 
 mkdir -p "$(dirname "$TOPIC_FILE")"
+# umask で作成時点から 0600 にする。通常の umask 0022 では書き込み前に短時間
+# 0644 で晒される窓ができるため、chmod 600 では不十分。chmod は明示として併用。
+umask 077
 printf '%s\n' "$random_topic" > "$TOPIC_FILE"
 chmod 600 "$TOPIC_FILE"
 
