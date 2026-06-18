@@ -55,8 +55,11 @@ brew "macism"
 # ========================================
 # Remote Access (Phase 0)
 # ========================================
-brew "tailscale"
+# Tailscale は macOS 公式推奨の GUI 版 (cask) を使う。CLI 版 (brew "tailscale") は
+# tailscaled デーモンを別途起動する必要があり、新規環境でつまづきやすいため避ける。
+cask "tailscale-app"
 brew "mosh"
+brew "tmux"
 brew "ntfy"
 
 # ========================================
