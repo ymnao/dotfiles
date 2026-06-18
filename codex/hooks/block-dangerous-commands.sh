@@ -484,7 +484,7 @@ for token in $normalized_command; do
 
   case "$token" in
     # ホーム配下・cwd 外の絶対パスは許可（上で動的展開残留判定の除外と一貫させる）
-    "~/$protected_name"|"~/$protected_name"/*|"\$home/$protected_name"|"\$home/$protected_name"/*|/*)
+    "[~]/$protected_name"|"[~]/$protected_name"/*|"\$home/$protected_name"|"\$home/$protected_name"/*|/*)
       continue
       ;;
     # $TMPDIR / ${TMPDIR} 配下も cwd 外（/tmp や /var/folders/...）のため許可

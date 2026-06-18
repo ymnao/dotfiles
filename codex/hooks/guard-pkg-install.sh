@@ -116,7 +116,7 @@ resolve_cmd_subst() {
   fi
   for tok in "$@"; do
     case "$tok" in
-      -*|--*) continue ;;
+      -*) continue ;;
       %*) continue ;;          # printf format spec (%s / %s\n / %-10s 等)
     esac
     if [[ -z "$first_pm" && "$tok" =~ $pm_token_re ]]; then

@@ -56,7 +56,7 @@ bash "$DOTFILES_DIR/scripts/link.sh"
 # Local Git config
 mkdir -p "$HOME/.config/git"
 if [[ ! -f "$HOME/.config/git/config.local" ]]; then
-    warn "~/.config/git/config.local not found"
+    warn "$HOME/.config/git/config.local not found"
     info "Creating from template..."
     cp "$DOTFILES_DIR/git/config.local.template" "$HOME/.config/git/config.local"
     warn "Please edit ~/.config/git/config.local with your personal information"
