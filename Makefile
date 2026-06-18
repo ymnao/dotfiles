@@ -1,4 +1,4 @@
-.PHONY: help install link update clean brewfile
+.PHONY: help install link update clean brewfile lint test
 
 # Default target
 .DEFAULT_GOAL := help
@@ -25,3 +25,22 @@ clean: ## Remove broken symlinks
 brewfile: ## Update Brewfile with currently installed packages
 	@brew bundle dump --force --file=Brewfile
 	@echo "Brewfile updated"
+
+lint: ## Run secretlint to detect leaked secrets
+	@command -v secretlint >/dev/null || { \
+	    echo "secretlint not installed."; \
+	    echo "Install: npm i -g @secretlint/secretlint @secretlint/secretlint-rule-preset-recommend"; \
+	    exit 1; \
+	}
+	@secretlint --secretlintignore .gitignore "**/*"
+
+test: ## Verify shell scripts (shellcheck) and JSON files (jq)
+	@command -v shellcheck >/dev/null || { echo "shellcheck not installed. Run: brew install shellcheck"; exit 1; }
+	@command -v jq >/dev/null || { echo "jq not installed. Run: brew install jq"; exit 1; }
+	@echo "==> shellcheck (warning level and above)"
+	@git ls-files '*.sh' | xargs shellcheck -S warning
+	@echo "==> JSON validation"
+	@git ls-files '*.json' | while read -r f; do \
+	    jq empty "$$f" >/dev/null || { echo "FAIL: $$f"; exit 1; }; \
+	done
+	@echo "OK: all checks passed"
