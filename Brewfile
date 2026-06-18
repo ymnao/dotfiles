@@ -53,6 +53,13 @@ brew "nkf"
 brew "macism"
 
 # ========================================
+# Remote Access (Phase 0)
+# ========================================
+brew "tailscale"
+brew "mosh"
+brew "ntfy"
+
+# ========================================
 # Dependencies (auto-installed by other packages)
 # ========================================
 brew "openssl@3"
