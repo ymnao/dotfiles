@@ -93,3 +93,7 @@ result
 devenv.lock
 .mypy_cache/
 .luarc.json
+
+# Node tooling (secretlint 用、devDependencies のみ。lock ファイルはコミットする)
+node_modules/
+.pnpm-store/

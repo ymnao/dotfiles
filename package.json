@@ -1,0 +1,13 @@
+{
+  "name": "dotfiles",
+  "private": true,
+  "description": "Dev tooling for the dotfiles repo (secretlint, etc.)",
+  "scripts": {
+    "lint": "secretlint --secretlintignore .gitignore \"**/*\""
+  },
+  "devDependencies": {
+    "@secretlint/secretlint-rule-preset-recommend": "^9.0.0",
+    "secretlint": "^9.0.0"
+  },
+  "packageManager": "pnpm@11.7.0"
+}
