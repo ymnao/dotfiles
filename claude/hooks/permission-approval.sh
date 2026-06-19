@@ -9,7 +9,8 @@
 # - Claude Code が承認要求や注意喚起を Notification として発火したとき、
 #   `~/.claude/.ntfy-topic` に保存されたランダム topic 宛に通知を投げる。
 # - topic ファイルが存在しなければ silent exit (= setup-ntfy-topic.sh 未実行)。
-# - curl はバックグラウンド化し、Notification 応答時間を最小化する。
+# - 起動側 (settings.json) で "async": true を指定し、Claude Code の hook
+#   機構が背景実行を管理する (本スクリプト側で & を付けない)。
 #
 # セットアップ:
 #   bash $DOTFILES/scripts/setup-ntfy-topic.sh
@@ -34,13 +35,13 @@ else
   message="Claude Code から通知"
 fi
 
-# Phase 0 はパブリック ntfy.sh を経由するため、第三者サーバーへ流す情報は
-# 最小限にする。
+# Phase 0 はパブリック ntfy.sh を経由するため、サーバ側に残る情報は最小化する。
 #   - Title からプロジェクト名を外す (現在地が機密リポでも漏れない)。
-#   - Cache: no で 12 時間のサーバキャッシュを無効化。
-#   - Firebase: no で FCM (Google サーバ) への転送も無効化。
-# トレードオフ: 端末再接続時に取りこぼす可能性あり。Phase 1 でセルフホストか
-# 認証付き topic へ移行する。
+#   - Cache: no で 12 時間のサーバキャッシュを無効化 (取りこぼしリスクと
+#     トレードオフ)。
+# FCM/APNs 経由 (= ntfy のデフォルトの Firebase header) は端末への通知配送に
+# 必須のため有効のまま (Firebase: no を付けると Android/iOS で実質受信不能)。
+# Phase 1 でセルフホストか認証付き topic に移行して FCM 依存を解く予定。
 curl -fsSL \
   --connect-timeout 3 \
   --max-time 8 \
@@ -48,7 +49,6 @@ curl -fsSL \
   -H "Priority: high" \
   -H "Tags: bell,computer" \
   -H "Cache: no" \
-  -H "Firebase: no" \
   --data-raw "$message" \
   "$NTFY_SERVER/$NTFY_TOPIC" >/dev/null 2>&1
 
