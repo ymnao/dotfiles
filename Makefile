@@ -28,7 +28,7 @@ brewfile: ## Update Brewfile with currently installed packages
 
 lint: ## Run secretlint to detect leaked secrets
 	@command -v pnpm >/dev/null || { echo "pnpm not installed. Run: brew install pnpm"; exit 1; }
-	@[ -d node_modules ] || { echo "==> Installing dev deps via pnpm..."; pnpm install --frozen-lockfile; }
+	@[ -d node_modules ] || { echo "==> Installing dev deps via pnpm..."; pnpm install; }
 	@pnpm exec secretlint --secretlintignore .gitignore "**/*"
 
 test: ## Verify shell scripts (shellcheck) and JSON files (jq)

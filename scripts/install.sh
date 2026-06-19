@@ -56,7 +56,7 @@ bash "$DOTFILES_DIR/scripts/link.sh"
 # Node tooling (secretlint 等)
 if [[ -f "$DOTFILES_DIR/package.json" ]] && command -v pnpm &>/dev/null; then
     info "Installing Node dev deps via pnpm..."
-    (cd "$DOTFILES_DIR" && pnpm install --frozen-lockfile)
+    (cd "$DOTFILES_DIR" && pnpm install)
 fi
 
 # Local Git config
