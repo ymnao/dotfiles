@@ -113,7 +113,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$HOME/.claude/hooks/permission-approval.sh\""
+            "command": "bash \"$HOME/.claude/hooks/permission-approval.sh\"",
+            "async": true,
+            "timeout": 10
           }
         ]
       }

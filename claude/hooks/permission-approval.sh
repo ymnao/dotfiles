@@ -37,10 +37,12 @@ fi
 project=$(basename "${PWD:-/}")
 
 curl -fsSL \
+  --connect-timeout 3 \
+  --max-time 8 \
   -H "Title: Claude Code [$project]" \
   -H "Priority: high" \
   -H "Tags: bell,computer" \
   --data-raw "$message" \
-  "$NTFY_SERVER/$NTFY_TOPIC" >/dev/null 2>&1 &
+  "$NTFY_SERVER/$NTFY_TOPIC" >/dev/null 2>&1
 
 exit 0
