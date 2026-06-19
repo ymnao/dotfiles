@@ -34,14 +34,21 @@ else
   message="Claude Code から通知"
 fi
 
-project=$(basename "${PWD:-/}")
-
+# Phase 0 はパブリック ntfy.sh を経由するため、第三者サーバーへ流す情報は
+# 最小限にする。
+#   - Title からプロジェクト名を外す (現在地が機密リポでも漏れない)。
+#   - Cache: no で 12 時間のサーバキャッシュを無効化。
+#   - Firebase: no で FCM (Google サーバ) への転送も無効化。
+# トレードオフ: 端末再接続時に取りこぼす可能性あり。Phase 1 でセルフホストか
+# 認証付き topic へ移行する。
 curl -fsSL \
   --connect-timeout 3 \
   --max-time 8 \
-  -H "Title: Claude Code [$project]" \
+  -H "Title: Claude Code" \
   -H "Priority: high" \
   -H "Tags: bell,computer" \
+  -H "Cache: no" \
+  -H "Firebase: no" \
   --data-raw "$message" \
   "$NTFY_SERVER/$NTFY_TOPIC" >/dev/null 2>&1
 
