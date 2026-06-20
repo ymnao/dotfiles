@@ -17,12 +17,18 @@
 
 set -uo pipefail
 
-TOPIC_FILE="$HOME/.claude/.ntfy-topic"
-[[ -f "$TOPIC_FILE" ]] || exit 0
+# 設定ファイル形式 (setup-ntfy-topic.sh が生成):
+#   server=<https://ntfy.sh or self-host>
+#   topic=<random topic>
+# シェル source ではなく grep/cut で読むことで、設定ファイル経由の任意コード
+# 実行を防ぐ。
+CONFIG_FILE="$HOME/.claude/.ntfy-config"
+[[ -f "$CONFIG_FILE" ]] || exit 0
 
-NTFY_TOPIC=$(head -n 1 "$TOPIC_FILE" | tr -d '[:space:]')
+NTFY_TOPIC=$(grep -E '^topic=' "$CONFIG_FILE" | head -n 1 | cut -d= -f2-)
+NTFY_SERVER=$(grep -E '^server=' "$CONFIG_FILE" | head -n 1 | cut -d= -f2-)
 [[ -n "$NTFY_TOPIC" ]] || exit 0
-
+# server 未保存時 (旧形式の救済) はパブリック ntfy.sh にフォールバック。
 NTFY_SERVER="${NTFY_SERVER:-https://ntfy.sh}"
 
 input=$(cat)
