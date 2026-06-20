@@ -35,20 +35,21 @@ else
   message="Claude Code から通知"
 fi
 
-# Phase 0 はパブリック ntfy.sh を経由するため、サーバ側に残る情報は最小化する。
-#   - Title からプロジェクト名を外す (現在地が機密リポでも漏れない)。
-#   - Cache: no で 12 時間のサーバキャッシュを無効化 (取りこぼしリスクと
-#     トレードオフ)。
-# FCM/APNs 経由 (= ntfy のデフォルトの Firebase header) は端末への通知配送に
-# 必須のため有効のまま (Firebase: no を付けると Android/iOS で実質受信不能)。
-# Phase 1 でセルフホストか認証付き topic に移行して FCM 依存を解く予定。
+# Phase 0 はパブリック ntfy.sh を経由するが、承認待ち通知の信頼性を優先する:
+#   - Title はプロジェクト名なしの固定文言にして機密情報の流出を最小化。
+#   - サーバキャッシュ (12h) は有効のまま。F-Droid 版 ntfy アプリのように
+#     FCM を使わないクライアントや、Android のプロセス停止・回線断からの
+#     再接続時にも、承認待ち通知を取りこぼさないため。
+#   - FCM/APNs 経由 (Firebase header デフォルト) も有効。Firebase: no を
+#     付けると Android/iOS で実質受信不能になるため使わない。
+# Phase 1 でセルフホストか認証付き topic に移行して FCM 依存とサーバ残留の
+# 両方を解消する予定。
 curl -fsSL \
   --connect-timeout 3 \
   --max-time 8 \
   -H "Title: Claude Code" \
   -H "Priority: high" \
   -H "Tags: bell,computer" \
-  -H "Cache: no" \
   --data-raw "$message" \
   "$NTFY_SERVER/$NTFY_TOPIC" >/dev/null 2>&1
 
