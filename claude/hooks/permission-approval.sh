@@ -34,12 +34,13 @@ if [[ -f "$CONFIG_FILE" ]]; then
   # 通知を送らない (カスタムサーバ利用者の通知を公開 ntfy.sh へ誤送信しない)。
   [[ -n "$NTFY_TOPIC" && -n "$NTFY_SERVER" ]] || exit 0
 elif [[ -f "$LEGACY_TOPIC_FILE" ]]; then
-  # 旧形式の救済: 当時はパブリック ntfy.sh 固定の前提だったので、暗黙の
-  # デフォルトをそのまま使う。setup-ntfy-topic.sh を再実行して .ntfy-config
-  # 形式に移行することを推奨。
-  NTFY_TOPIC=$(head -n 1 "$LEGACY_TOPIC_FILE" | tr -d '[:space:]')
-  [[ -n "$NTFY_TOPIC" ]] || exit 0
-  NTFY_SERVER="https://ntfy.sh"
+  # 旧形式 (topic 1 行のみ) は送信先サーバを保存しないため fail-closed。
+  # 旧 setup は NTFY_SERVER 環境変数でカスタムサーバを許可していたが、hook
+  # 起動時の環境にその値が継承されている保証がなく、無条件で https://ntfy.sh
+  # にフォールバックするとカスタムサーバ運用者の通知を公開サービスへ誤送信
+  # することになる。ユーザーは setup-ntfy-topic.sh を再実行して新形式に
+  # 移行する必要がある。
+  exit 0
 else
   exit 0
 fi
