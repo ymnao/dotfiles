@@ -25,8 +25,11 @@ NTFY_SERVER="${NTFY_SERVER:-https://ntfy.sh}"
 NTFY_SERVER="${NTFY_SERVER%/}"
 
 if [[ -f "$CONFIG_FILE" ]]; then
-  existing_topic=$(grep -E '^topic=' "$CONFIG_FILE" | head -n 1 | cut -d= -f2-)
-  existing_server=$(grep -E '^server=' "$CONFIG_FILE" | head -n 1 | cut -d= -f2-)
+  # set -euo pipefail 下で grep が空マッチすると pipeline exit 1 でスクリプトが
+  # 落ちる。手で .ntfy-config を編集して片方のキーだけ消えた状態でも上書き
+  # 確認まで進めるように、欠損を許容する。
+  existing_topic=$(grep -E '^topic=' "$CONFIG_FILE" | head -n 1 | cut -d= -f2-) || true
+  existing_server=$(grep -E '^server=' "$CONFIG_FILE" | head -n 1 | cut -d= -f2-) || true
   printf '既存設定を検出: %s\n' "$CONFIG_FILE"
   printf '  server: %s\n' "${existing_server:-(未保存、ntfy.sh)}"
   printf '  topic:  %s\n' "$existing_topic"
