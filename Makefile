@@ -1,4 +1,4 @@
-.PHONY: help install link update clean brewfile
+.PHONY: help install link update clean brewfile lint test
 
 # Default target
 .DEFAULT_GOAL := help
@@ -25,3 +25,25 @@ clean: ## Remove broken symlinks
 brewfile: ## Update Brewfile with currently installed packages
 	@brew bundle dump --force --file=Brewfile
 	@echo "Brewfile updated"
+
+lint: ## Run secretlint to detect leaked secrets
+	@command -v pnpm >/dev/null || { echo "pnpm not installed. Run: brew install pnpm"; exit 1; }
+	@# 毎回 pnpm install を実行する。node_modules の存在判定だけで省略すると、
+	@# 旧 version の secretlint が node_modules に残っている環境で lockfile
+	@# 更新が反映されない。lockfile 一致時はほぼ no-op で軽量。
+	@pnpm install
+	@# 追跡ファイルのみ走査する。未追跡のローカル秘密 (.env, secrets/,
+	@# .claude/settings.local.json 等) を「コミット前チェック」の対象外に
+	@# する。git add -f で誤って追跡された場合は走査対象に戻る。
+	@git ls-files -z | xargs -0 pnpm exec secretlint --
+
+test: ## Verify shell scripts (shellcheck) and JSON files (jq)
+	@command -v shellcheck >/dev/null || { echo "shellcheck not installed. Run: brew install shellcheck"; exit 1; }
+	@command -v jq >/dev/null || { echo "jq not installed. Run: brew install jq"; exit 1; }
+	@echo "==> shellcheck (warning level and above)"
+	@git ls-files '*.sh' | xargs shellcheck -S warning
+	@echo "==> JSON validation"
+	@git ls-files '*.json' | while read -r f; do \
+	    jq empty "$$f" >/dev/null || { echo "FAIL: $$f"; exit 1; }; \
+	done
+	@echo "OK: all checks passed"

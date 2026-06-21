@@ -53,10 +53,24 @@ fi
 info "Creating symlinks..."
 bash "$DOTFILES_DIR/scripts/link.sh"
 
+# Node tooling (secretlint 等)
+if [[ -f "$DOTFILES_DIR/package.json" ]] && command -v pnpm &>/dev/null; then
+    # secretlint 13 系は Node 22+ を要求するため、pnpm 実行前に明示確認する。
+    if ! command -v node &>/dev/null; then
+        error "Node が見つかりません。brew install node を先に実行してください。"
+    fi
+    node_major=$(node --version | sed -E 's/^v([0-9]+)\..*/\1/')
+    if [[ -z "$node_major" || "$node_major" -lt 22 ]]; then
+        error "Node 22 以上が必要です (現在: $(node --version))"
+    fi
+    info "Installing Node dev deps via pnpm..."
+    (cd "$DOTFILES_DIR" && pnpm install)
+fi
+
 # Local Git config
 mkdir -p "$HOME/.config/git"
 if [[ ! -f "$HOME/.config/git/config.local" ]]; then
-    warn "~/.config/git/config.local not found"
+    warn "$HOME/.config/git/config.local not found"
     info "Creating from template..."
     cp "$DOTFILES_DIR/git/config.local.template" "$HOME/.config/git/config.local"
     warn "Please edit ~/.config/git/config.local with your personal information"

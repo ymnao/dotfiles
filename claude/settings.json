@@ -107,6 +107,17 @@
             "command": "afplay /System/Library/Sounds/Funk.aiff"
           }
         ]
+      },
+      {
+        "matcher": "permission_prompt",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/permission-approval.sh\"",
+            "async": true,
+            "timeout": 10
+          }
+        ]
       }
     ],
     "Stop": [
@@ -126,5 +137,6 @@
   },
   "alwaysThinkingEnabled": true,
   "effortLevel": "high",
-  "skipAutoPermissionPrompt": true
+  "skipAutoPermissionPrompt": true,
+  "skipWorkflowUsageWarning": true
 }

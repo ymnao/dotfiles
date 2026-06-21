@@ -21,6 +21,9 @@ brew "golangci-lint"
 brew "pyenv"
 brew "uv"
 brew "nodebrew"
+# nodebrew は version 切替ツール。常用 Node 本体は brew "node" で導入する
+# (secretlint 13 や devDependencies が Node 22+ を要求するため)。
+brew "node"
 brew "pnpm"
 brew "rbenv"
 brew "ruby-build"
@@ -51,6 +54,16 @@ brew "nkf"
 # Input Method
 # ========================================
 brew "macism"
+
+# ========================================
+# Remote Access (Phase 0)
+# ========================================
+# Tailscale は macOS 公式推奨の GUI 版 (cask) を使う。CLI 版 (brew "tailscale") は
+# tailscaled デーモンを別途起動する必要があり、新規環境でつまづきやすいため避ける。
+cask "tailscale-app"
+brew "mosh"
+brew "tmux"
+brew "ntfy"
 
 # ========================================
 # Dependencies (auto-installed by other packages)
