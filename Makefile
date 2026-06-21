@@ -28,7 +28,10 @@ brewfile: ## Update Brewfile with currently installed packages
 
 lint: ## Run secretlint to detect leaked secrets
 	@command -v pnpm >/dev/null || { echo "pnpm not installed. Run: brew install pnpm"; exit 1; }
-	@[ -d node_modules ] || { echo "==> Installing dev deps via pnpm..."; pnpm install; }
+	@# 毎回 pnpm install を実行する。node_modules の存在判定だけで省略すると、
+	@# 旧 version の secretlint が node_modules に残っている環境で lockfile
+	@# 更新が反映されない。lockfile 一致時はほぼ no-op で軽量。
+	@pnpm install
 	@# 追跡ファイルのみ走査する。未追跡のローカル秘密 (.env, secrets/,
 	@# .claude/settings.local.json 等) を「コミット前チェック」の対象外に
 	@# する。git add -f で誤って追跡された場合は走査対象に戻る。
