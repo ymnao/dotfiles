@@ -42,6 +42,13 @@ if [[ "$OS_TYPE" == "macos" ]]; then
         info "Homebrew already installed"
     fi
 
+    # Homebrew 6 系は HOMEBREW_REQUIRE_TAP_TRUST 下で外部 tap を default で拒否する。
+    # Brewfile で参照する非公式 tap は brew bundle 前に明示的に trust する必要が
+    # ある (= dotfiles リポを信頼している前提で trust を宣言する)。
+    # 既に trust 済みでも `brew trust` は no-op で安全に再実行できる。
+    info "Trusting external taps used in Brewfile..."
+    brew trust --tap laishulu/homebrew >/dev/null 2>&1 || true
+
     # Install packages from Brewfile
     if [[ -f "$DOTFILES_DIR/Brewfile" ]]; then
         info "Installing packages from Brewfile..."
