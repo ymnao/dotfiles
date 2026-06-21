@@ -3,7 +3,7 @@
   "private": true,
   "description": "Dev tooling for the dotfiles repo (secretlint, etc.)",
   "scripts": {
-    "lint": "secretlint \"**/*\""
+    "lint": "git ls-files -z | xargs -0 secretlint --"
   },
   "devDependencies": {
     "@secretlint/secretlint-rule-preset-recommend": "^13.0.0",
