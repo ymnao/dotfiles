@@ -21,6 +21,9 @@ brew "golangci-lint"
 brew "pyenv"
 brew "uv"
 brew "nodebrew"
+# nodebrew は version 切替ツール。常用 Node 本体は brew "node" で導入する
+# (secretlint 13 や devDependencies が Node 22+ を要求するため)。
+brew "node"
 brew "pnpm"
 brew "rbenv"
 brew "ruby-build"

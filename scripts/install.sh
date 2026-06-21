@@ -55,6 +55,14 @@ bash "$DOTFILES_DIR/scripts/link.sh"
 
 # Node tooling (secretlint 等)
 if [[ -f "$DOTFILES_DIR/package.json" ]] && command -v pnpm &>/dev/null; then
+    # secretlint 13 系は Node 22+ を要求するため、pnpm 実行前に明示確認する。
+    if ! command -v node &>/dev/null; then
+        error "Node が見つかりません。brew install node を先に実行してください。"
+    fi
+    node_major=$(node --version | sed -E 's/^v([0-9]+)\..*/\1/')
+    if [[ -z "$node_major" || "$node_major" -lt 22 ]]; then
+        error "Node 22 以上が必要です (現在: $(node --version))"
+    fi
     info "Installing Node dev deps via pnpm..."
     (cd "$DOTFILES_DIR" && pnpm install)
 fi
