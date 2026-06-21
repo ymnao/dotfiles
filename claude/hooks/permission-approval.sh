@@ -23,13 +23,26 @@ set -uo pipefail
 # シェル source ではなく grep/cut で読むことで、設定ファイル経由の任意コード
 # 実行を防ぐ。
 CONFIG_FILE="$HOME/.claude/.ntfy-config"
-[[ -f "$CONFIG_FILE" ]] || exit 0
+# 旧形式 (topic 1 行だけのファイル)。新形式に移行する前のユーザーを黙って
+# 切らないため救済する。
+LEGACY_TOPIC_FILE="$HOME/.claude/.ntfy-topic"
 
-NTFY_TOPIC=$(grep -E '^topic=' "$CONFIG_FILE" | head -n 1 | cut -d= -f2-)
-NTFY_SERVER=$(grep -E '^server=' "$CONFIG_FILE" | head -n 1 | cut -d= -f2-)
-[[ -n "$NTFY_TOPIC" ]] || exit 0
-# server 未保存時 (旧形式の救済) はパブリック ntfy.sh にフォールバック。
-NTFY_SERVER="${NTFY_SERVER:-https://ntfy.sh}"
+if [[ -f "$CONFIG_FILE" ]]; then
+  NTFY_TOPIC=$(grep -E '^topic=' "$CONFIG_FILE" | head -n 1 | cut -d= -f2-)
+  NTFY_SERVER=$(grep -E '^server=' "$CONFIG_FILE" | head -n 1 | cut -d= -f2-)
+  # fail-closed: 設定破損・手動編集で server/topic のどちらかが欠ければ
+  # 通知を送らない (カスタムサーバ利用者の通知を公開 ntfy.sh へ誤送信しない)。
+  [[ -n "$NTFY_TOPIC" && -n "$NTFY_SERVER" ]] || exit 0
+elif [[ -f "$LEGACY_TOPIC_FILE" ]]; then
+  # 旧形式の救済: 当時はパブリック ntfy.sh 固定の前提だったので、暗黙の
+  # デフォルトをそのまま使う。setup-ntfy-topic.sh を再実行して .ntfy-config
+  # 形式に移行することを推奨。
+  NTFY_TOPIC=$(head -n 1 "$LEGACY_TOPIC_FILE" | tr -d '[:space:]')
+  [[ -n "$NTFY_TOPIC" ]] || exit 0
+  NTFY_SERVER="https://ntfy.sh"
+else
+  exit 0
+fi
 
 input=$(cat)
 
