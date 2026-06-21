@@ -54,9 +54,11 @@ brew "nkf"
 # Input Method
 # ========================================
 # macism は brew/core になく laishulu/homebrew tap から配信されている。
-# tap 宣言なしだと brew bundle が formula 解決に失敗して中断する。
+# Homebrew 6 の HOMEBREW_REQUIRE_TAP_TRUST 下でも brew bundle install が
+# 単独で通るよう trusted: true を付与する (tap 全体ではなく formula 単位で
+# 信頼)。これにより install.sh 側で brew trust を別途叩く必要がなくなる。
 tap "laishulu/homebrew"
-brew "macism"
+brew "laishulu/homebrew/macism", trusted: true
 
 # ========================================
 # Remote Access (Phase 0)
