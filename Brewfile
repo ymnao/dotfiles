@@ -53,10 +53,8 @@ brew "nkf"
 # ========================================
 # Input Method
 # ========================================
-# macism は brew/core になく、メンテナの公式 tap (laishulu/homebrew) から
-# 配信されている。tap 宣言なしで `brew "macism"` だけだと brew bundle が
-# formula 解決に失敗し、Brewfile の以降のエントリも fetch されなくなるため、
-# 必ず tap を先に宣言する。
+# macism は brew/core になく laishulu/homebrew tap から配信されている。
+# tap 宣言なしだと brew bundle が formula 解決に失敗して中断する。
 tap "laishulu/homebrew"
 brew "macism"
 
