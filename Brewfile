@@ -10,6 +10,7 @@ brew "fish"
 brew "ripgrep"
 brew "fd"
 brew "tree"
+brew "tmux"  # ローカル terminal multiplexer (リモート用ではない)
 # brew "p7zip"  # Excluded due to known archive extraction vulnerabilities
                 # Use macOS built-in compression or The Unarchiver instead
 
@@ -59,16 +60,6 @@ brew "nkf"
 # 信頼)。これにより install.sh 側で brew trust を別途叩く必要がなくなる。
 tap "laishulu/homebrew"
 brew "laishulu/homebrew/macism", trusted: true
-
-# ========================================
-# Remote Access (Phase 0)
-# ========================================
-# Tailscale は macOS 公式推奨の GUI 版 (cask) を使う。CLI 版 (brew "tailscale") は
-# tailscaled デーモンを別途起動する必要があり、新規環境でつまづきやすいため避ける。
-cask "tailscale-app"
-brew "mosh"
-brew "tmux"
-brew "ntfy"
 
 # ========================================
 # Dependencies (auto-installed by other packages)
