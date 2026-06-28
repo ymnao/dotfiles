@@ -3,6 +3,7 @@
 # ========================================
 brew "git"
 brew "git-delta"
+brew "git-filter-repo"
 brew "gh"
 brew "lazygit"
 brew "neovim"
@@ -34,10 +35,25 @@ brew "openjdk@11"
 brew "openjdk@17"
 
 # ========================================
+# Code Quality & Linters
+# ========================================
+brew "shellcheck"
+brew "actionlint"
+
+# ========================================
 # AWS Development
 # ========================================
 brew "aws-sam-cli"
 brew "awscli"
+
+# ========================================
+# Database & Backend
+# ========================================
+# supabase は公式 tap (supabase/homebrew-tap) から配信されている。
+# macism と同じく Homebrew 6 の HOMEBREW_REQUIRE_TAP_TRUST 下でも
+# brew bundle install が単独で通るよう trusted: true を付与する。
+tap "supabase/tap"
+brew "supabase/tap/supabase", trusted: true
 
 # ========================================
 # React Native / Mobile Development
@@ -50,6 +66,11 @@ brew "watchman"
 brew "ffmpeg"
 brew "imagemagick"
 brew "nkf"
+
+# ========================================
+# Security
+# ========================================
+brew "gnupg"
 
 # ========================================
 # Input Method
@@ -74,13 +95,17 @@ brew "pkgconf"
 # ========================================
 cask "alfred"
 cask "wezterm"
+cask "warp"
 cask "google-chrome"
 cask "visual-studio-code"
+cask "cursor"
 cask "slack"
 cask "zoom"
 cask "postman"
+cask "claude"
 cask "claude-code"
 cask "codex"
+cask "codex-app"
 cask "lm-studio"
 
 # ========================================
