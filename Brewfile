@@ -10,7 +10,7 @@ brew "fish"
 brew "ripgrep"
 brew "fd"
 brew "tree"
-brew "tmux"
+brew "tmux"  # ローカル terminal multiplexer (リモート用ではない)
 # brew "p7zip"  # Excluded due to known archive extraction vulnerabilities
                 # Use macOS built-in compression or The Unarchiver instead
 
