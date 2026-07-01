@@ -9,8 +9,9 @@ Use the `codex` CLI (independent LLM family) for a second-opinion review of the 
 
 Before running:
 
-1. `command -v codex` must succeed. If not, report "codex not installed" and stop.
-2. `git rev-list --count main..HEAD` must be > 0. If 0, report "no commits beyond main to review" and stop. (Uncommitted-only diffs are out of scope; commit first.)
+1. The caller's current working directory must be inside the git worktree you want reviewed — the script does not `cd`, and all git operations (the pre-flight guards and codex's own `git diff` inside `codex exec -`) run against `$(pwd)`. This skill is not dotfiles-specific; it reviews whichever repo you're in.
+2. `command -v codex` must succeed. If not, report "codex not installed" and stop.
+3. `git rev-list --count main..HEAD` must be > 0. If 0, report "no commits beyond main to review" and stop. (Uncommitted-only diffs are out of scope; commit first.)
 
 ## Perspectives
 

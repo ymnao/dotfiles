@@ -50,24 +50,29 @@ if [ ! -f "$PROMPT_FILE" ]; then
   exit 1
 fi
 
+CWD="$(pwd -P)"
+
 # Verify the caller's cwd is a git worktree before running any `git` command
 # — otherwise the errors below would be misleading ("branch main not found"
-# when the real issue is "not in a git repo at all").
-if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  echo "ERROR: not inside a git work tree (cwd: $(pwd -P))" >&2
+# when the real issue is "not in a git repo at all"). Check the output rather
+# than the exit code: `git rev-parse --is-inside-work-tree` prints `false`
+# with exit 0 when cwd is inside a `.git/` internals directory, so a plain
+# `if ! git rev-parse ...` guard would incorrectly let those cases through.
+if [ "$(git rev-parse --is-inside-work-tree 2>/dev/null)" != "true" ]; then
+  echo "ERROR: not inside a git work tree (cwd: $CWD)" >&2
   exit 1
 fi
 
 BASE_BRANCH="main"
 if ! git rev-parse --verify "$BASE_BRANCH" >/dev/null 2>&1; then
-  echo "ERROR: base branch '$BASE_BRANCH' not found in current repo (cwd: $(pwd -P))" >&2
+  echo "ERROR: base branch '$BASE_BRANCH' not found in current repo (cwd: $CWD)" >&2
   exit 1
 fi
 
 # Fail fast if the branch has no commits beyond main (matches SKILL.md
 # pre-condition; saves an API call on empty diffs).
 if [ "$(git rev-list --count "$BASE_BRANCH..HEAD")" -eq 0 ]; then
-  echo "ERROR: no commits beyond $BASE_BRANCH on the current branch (cwd: $(pwd -P))" >&2
+  echo "ERROR: no commits beyond $BASE_BRANCH on the current branch (cwd: $CWD)" >&2
   exit 1
 fi
 
