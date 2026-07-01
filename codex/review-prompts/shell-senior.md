@@ -20,7 +20,7 @@ You are a senior bash / POSIX shell engineer reviewing a diff. Focus only on she
 
 - If you find **no** shell concerns, output exactly one line and nothing else:
   ```
-  OK: no shell concerns
+  OK: no shell-senior concerns
   ```
 - Otherwise output a bulleted list, one finding per line, format:
   ```

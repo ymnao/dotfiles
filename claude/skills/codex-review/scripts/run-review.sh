@@ -58,9 +58,11 @@ if [ "$(git rev-list --count "$BASE_BRANCH..HEAD")" -eq 0 ]; then
   exit 1
 fi
 
-PROMPT_BODY=$(cat "$PROMPT_FILE")
-
-exec codex review \
-  --base "$BASE_BRANCH" \
-  --title "codex-review/$PERSPECTIVE" \
-  "$PROMPT_BODY"
+# codex review subcommand rejects --base + PROMPT in 0.142.3 (verified:
+# `error: the argument '--base <BRANCH>' cannot be used with '[PROMPT]'`).
+# Use codex exec instead and let the codex agent fetch the diff via its own
+# shell tool. Base branch is referenced in the prompt body.
+{
+  cat "$PROMPT_FILE"
+  printf '\n\n## Target\n\nReview the diff from `git diff %s...HEAD` of the current repository. Do NOT modify any files. Output only the verdict line and findings per the Output contract above.\n' "$BASE_BRANCH"
+} | exec codex exec -

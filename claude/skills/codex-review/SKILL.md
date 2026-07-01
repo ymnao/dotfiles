@@ -26,9 +26,9 @@ Default: run all 3 perspectives in the order above. If the user named one (`/cod
 
 For each perspective `<P>`:
 
-1. Run `bash "$HOME/.claude/skills/codex-review/scripts/run-review.sh" <P>`. This invokes `codex review --base main` with the perspective prompt and streams codex's verdict to stdout.
+1. Run `bash "$HOME/.claude/skills/codex-review/scripts/run-review.sh" <P>`. This pipes the perspective prompt (with a "review `git diff main...HEAD`" directive appended) into `codex exec -` and streams codex's verdict to stdout.
 2. Read the output:
-   - **Verdict line** is `OK: no <category> concerns` (single line, no other findings) → perspective passed, move to the next perspective.
+   - **Verdict line** is `OK: no <perspective> concerns` (single line, no other findings; e.g. `OK: no shell-senior concerns`) → perspective passed, move to the next perspective.
    - Otherwise → codex listed findings. For each:
      - Genuine issue → apply the fix in the working tree (no commit yet — `/pr` or a manual commit comes later).
      - False positive → record your reasoning; do not fix.
@@ -55,6 +55,6 @@ If any perspective is `UNRESOLVED`, list the remaining findings for the user to 
 ## Notes
 
 - **Do not commit** fixes from this skill. Leave them in the working tree so the user can review and `/pr` separately.
-- **Cost**: `codex review` invokes the OpenAI API (gpt-5.5 per `~/.codex/config.toml`). 3 perspectives × up to 3 iterations = up to 9 API calls. Confirm with the user before running on large diffs.
+- **Cost**: `codex exec` invokes the OpenAI API (gpt-5.5 per `~/.codex/config.toml`). 3 perspectives × up to 3 iterations = up to 9 API calls. Confirm with the user before running on large diffs.
 - **Output contract**: each prompt instructs codex to terminate with a single `OK: ...` line on pass, or a bulleted findings list on fail. Use those as the loop signal. If codex deviates (e.g. mixes prose), make a best-effort read — treat "OK"-leaning text with no enumerated issues as PASS.
 - The script and prompts live in `claude/skills/codex-review/` and `codex/review-prompts/` respectively. To tweak a perspective, edit the corresponding `.md` under `codex/review-prompts/`.
