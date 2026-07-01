@@ -5,8 +5,13 @@ set -euo pipefail
 # Usage: run-review.sh <perspective>
 #   perspective: shell-senior | security | qa-fixture
 #
-# Output: codex review's stdout (free-form text). The caller (SKILL.md) reads
+# Output: codex exec's stdout (free-form text). The caller (SKILL.md) reads
 # the verdict line to decide pass/fail and the next iteration.
+#
+# The review target is whatever git worktree the CALLER is in. This script
+# deliberately does NOT `cd` — DOTFILES_ROOT is used only to locate the
+# perspective prompt file, not to redirect git operations. All git commands
+# below (and codex's own `git diff` inside `codex exec -`) run against $(pwd).
 #
 # Notes
 # - Invoked via $HOME/.claude/skills/codex-review/scripts/run-review.sh, which is
@@ -45,16 +50,24 @@ if [ ! -f "$PROMPT_FILE" ]; then
   exit 1
 fi
 
+# Verify the caller's cwd is a git worktree before running any `git` command
+# — otherwise the errors below would be misleading ("branch main not found"
+# when the real issue is "not in a git repo at all").
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo "ERROR: not inside a git work tree (cwd: $(pwd -P))" >&2
+  exit 1
+fi
+
 BASE_BRANCH="main"
 if ! git rev-parse --verify "$BASE_BRANCH" >/dev/null 2>&1; then
-  echo "ERROR: base branch '$BASE_BRANCH' not found in repo" >&2
+  echo "ERROR: base branch '$BASE_BRANCH' not found in current repo (cwd: $(pwd -P))" >&2
   exit 1
 fi
 
 # Fail fast if the branch has no commits beyond main (matches SKILL.md
 # pre-condition; saves an API call on empty diffs).
 if [ "$(git rev-list --count "$BASE_BRANCH..HEAD")" -eq 0 ]; then
-  echo "ERROR: no commits beyond $BASE_BRANCH on the current branch" >&2
+  echo "ERROR: no commits beyond $BASE_BRANCH on the current branch (cwd: $(pwd -P))" >&2
   exit 1
 fi
 
