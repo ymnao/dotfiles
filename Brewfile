@@ -49,9 +49,8 @@ brew "awscli"
 # ========================================
 # Database & Backend
 # ========================================
-# supabase は公式 tap (supabase/homebrew-tap) から配信されている。
-# macism と同じく Homebrew 6 の HOMEBREW_REQUIRE_TAP_TRUST 下でも
-# brew bundle install が単独で通るよう trusted: true を付与する。
+# supabase は公式 tap から配信。macism と同様、trusted: true で
+# HOMEBREW_REQUIRE_TAP_TRUST 下でも bundle install が通るようにする。
 tap "supabase/tap"
 brew "supabase/tap/supabase", trusted: true
 
