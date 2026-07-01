@@ -9,7 +9,7 @@ Use the `codex` CLI (independent LLM family) for a second-opinion review of the 
 
 Before running:
 
-1. The caller's current working directory must be inside the git worktree you want reviewed — the script does not `cd`, and all git operations (the pre-flight guards and codex's own `git diff` inside `codex exec -`) run against `$(pwd)`. This skill is not dotfiles-specific; it reviews whichever repo you're in.
+1. The caller's current working directory must be inside the git worktree you want reviewed. (See Notes: "Review target = caller's cwd" for the mechanism.)
 2. `command -v codex` must succeed. If not, report "codex not installed" and stop.
 3. `git rev-list --count main..HEAD` must be > 0. If 0, report "no commits beyond main to review" and stop. (Uncommitted-only diffs are out of scope; commit first.)
 
@@ -55,6 +55,7 @@ If any perspective is `UNRESOLVED`, list the remaining findings for the user to 
 
 ## Notes
 
+- **Review target = caller's cwd**: The script does not `cd`. All git operations (the pre-flight guards and codex's own `git diff` inside `codex exec -`) run against `$(pwd)`. This skill is not dotfiles-specific; it reviews whichever repo you're in.
 - **Do not commit** fixes from this skill. Leave them in the working tree so the user can review and `/pr` separately.
 - **Cost**: `codex exec` invokes the OpenAI API (gpt-5.5 per `~/.codex/config.toml`). 3 perspectives × up to 3 iterations = up to 9 API calls. Confirm with the user before running on large diffs.
 - **Output contract**: each prompt instructs codex to terminate with a single `OK: ...` line on pass, or a bulleted findings list on fail. Use those as the loop signal. If codex deviates (e.g. mixes prose), make a best-effort read — treat "OK"-leaning text with no enumerated issues as PASS.
