@@ -1,7 +1,6 @@
 {
   "permissions": {
     "allow": [
-      "mcp__sequential-thinking__sequentialthinking",
       "Bash(gh api graphql:*)",
       "Bash(gh issue list:*)",
       "Bash(gh issue view:*)",
