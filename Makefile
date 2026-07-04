@@ -1,4 +1,4 @@
-.PHONY: help install link update clean brewfile lint test
+.PHONY: help install link update clean brewfile lint test test-hooks
 
 # Default target
 .DEFAULT_GOAL := help
@@ -53,4 +53,8 @@ test: ## Verify shell scripts (shellcheck) and JSON files (jq)
 	@git ls-files '*.json' | while read -r f; do \
 	    jq empty "$$f" >/dev/null || { echo "FAIL: $$f"; exit 1; }; \
 	done
+	@bash tests/run-hook-tests.sh
 	@echo "OK: all checks passed"
+
+test-hooks: ## Run hook regression tests
+	@bash tests/run-hook-tests.sh
