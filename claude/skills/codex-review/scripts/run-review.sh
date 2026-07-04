@@ -128,7 +128,13 @@ trap cleanup EXIT
   cat "$PROMPT_FILE"
   printf '\n\n## Target\n\nReview the diff below (produced by "git diff %s...HEAD" in %s). Do NOT modify any files. Output only the fenced JSON block per the Output contract above.\n\n```diff\n%s\n```\n' \
     "$BASE_BRANCH" "$CWD" "$DIFF_CONTENT"
-} | codex exec - > "$RAW_OUT"
+# --sandbox read-only を明示。config.toml のデフォルト (workspace-write 等)
+# に依存すると、レビュー中に codex が working tree を書き換える構成になる
+# 環境が生まれうる。プロンプトの「Do NOT modify」は副次的な多層防御で、
+# 主防御はここで CLI に強制する。不明フラグなら codex が非ゼロ exit し
+# パーサが exit 1 (setup error) として顕在化するので、サイレントに権限が
+# 緩むパスはない。
+} | codex exec --sandbox read-only - > "$RAW_OUT"
 
 rc=0
 bash "$PARSER" < "$RAW_OUT" || rc=$?
