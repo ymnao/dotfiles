@@ -1,0 +1,96 @@
+# block-dangerous-commands.sh 回帰コーパス
+# expect は 2026-07-03 時点の実機挙動 (現状固定が目的。仕様変更は PR6)
+# --- rm 系 (block) ---
+{"name":"rm-rf-root","expect":"block","command":"rm -rf /","reason":"基本形"}
+{"name":"rm-rf-tilde","expect":"block","command":"rm -rf ~","reason":"ホーム破壊"}
+{"name":"rm-rf-home-var","expect":"block","command":"rm -rf $HOME","reason":"$HOME 破壊"}
+{"name":"rm-rf-parent","expect":"block","command":"rm -rf ..","reason":"親ディレクトリ"}
+{"name":"rm-rf-dot-slash","expect":"block","command":"rm -rf ./","reason":"cwd 破壊"}
+{"name":"rm-rf-dot","expect":"block","command":"rm -rf .","reason":"cwd 破壊 (ドット単体)"}
+{"name":"rm-r-f-separate","expect":"block","command":"rm -r -f /","reason":"フラグ分離形"}
+{"name":"rm-long-flags","expect":"block","command":"rm --recursive --force /","reason":"long option 形"}
+{"name":"rm-flags-reversed","expect":"block","command":"rm -f -R /","reason":"f→R 順"}
+{"name":"rm-quoted-name","expect":"block","command":"'rm' -rf ~","reason":"コマンド名クォート分割"}
+{"name":"rm-backslash","expect":"block","command":"r\\m -rf /","reason":"バックスラッシュ挿入"}
+{"name":"rm-dquote-split","expect":"block","command":"\"r\"\"m\" -rf /","reason":"ダブルクォート分割"}
+{"name":"rm-uppercase","expect":"block","command":"RM -rf /","reason":"大文字 (APFS case-insensitive)"}
+{"name":"rm-abs-path","expect":"block","command":"/bin/rm -rf /","reason":"絶対パス起動"}
+{"name":"rm-var-assign","expect":"block","command":"a=rm; $a -rf /","reason":"変数代入経由"}
+{"name":"rm-var-chain-tilde","expect":"block","command":"p=~; q=$p; rm -rf $q","reason":"代入連鎖でホーム"}
+{"name":"ansic-escape-rm","expect":"block","command":"$'\\x72\\x6d' -rf /","reason":"ANSI-C エスケープは全面ブロック"}
+# --- コマンド名の動的構築 (block) ---
+{"name":"git-dynamic-printf","expect":"block","command":"$(printf git) reset --hard","reason":"コマンド名の動的構築"}
+{"name":"git-param-default","expect":"block","command":"${x:-git} reset --hard","reason":"パラメータ展開 default"}
+{"name":"sudo-split-dynamic","expect":"block","command":"su$(printf do) whoami","reason":"リテラル+動的連結"}
+{"name":"git-concat-dynamic","expect":"block","command":"g$(printf it) push --force","reason":"先頭リテラル+動的"}
+{"name":"eval-dynamic","expect":"block","command":"eval g$(printf it) reset --hard","reason":"eval 引数の動的展開"}
+{"name":"bash-c-dynamic","expect":"block","command":"bash -c \"$(printf git) reset --hard\"","reason":"sh -c 引数の動的展開"}
+{"name":"bash-c-sq-dynamic","expect":"block","command":"bash -c '$(date)'","reason":"sh -c シングルクォート内動的 (判定B)"}
+{"name":"pipe-to-bash-dynamic","expect":"block","command":"printf %s \"$(printf git) reset --hard\" | bash","reason":"pipe 再パース経路"}
+{"name":"herestring-dynamic","expect":"block","command":"bash <<< \"$(printf git) reset --hard\"","reason":"here-string 再パース経路"}
+{"name":"source-procsub-dynamic","expect":"block","command":"source <(printf %s '$(rm -rf /)')","reason":"source 再パース経路"}
+{"name":"ifs-git-push","expect":"block","command":"git${IFS}push${IFS}--force","reason":"IFS 区切り回避"}
+# --- git 破壊系 (block) ---
+{"name":"git-push-force","expect":"block","command":"git push --force","reason":"基本形"}
+{"name":"git-push-f","expect":"block","command":"git push -f","reason":"短縮形"}
+{"name":"git-push-fwl","expect":"block","command":"git push --force-with-lease","reason":"lease 形も禁止"}
+{"name":"git-push-refspec-plus","expect":"block","command":"git push origin +main","reason":"+refspec 形"}
+{"name":"git-push-mirror","expect":"block","command":"git push --mirror","reason":"mirror"}
+{"name":"git-c-opt-push-force","expect":"block","command":"git -C . push --force","reason":"グローバルオプション挟み"}
+{"name":"git-reset-hard","expect":"block","command":"git reset --hard","reason":"基本形"}
+{"name":"git-reset-q-hard","expect":"block","command":"git reset -q --hard","reason":"サブコマンドオプション挟み"}
+{"name":"git-reset-hard-ref","expect":"block","command":"git reset --hard HEAD~1","reason":"ref 付き"}
+# --- chmod / sudo (block) ---
+{"name":"chmod-777","expect":"block","command":"chmod 777 file","reason":"基本形"}
+{"name":"chmod-R-777","expect":"block","command":"chmod -R 777 /","reason":"再帰形"}
+{"name":"sudo-ls","expect":"block","command":"sudo ls","reason":"基本形"}
+{"name":"sudo-upper","expect":"block","command":"SUDO whoami","reason":"大文字"}
+# --- .codex 保護 (block) ---
+{"name":"codex-touch","expect":"block","command":"touch .codex/x","reason":"生成の基本形"}
+{"name":"codex-mkdir-case","expect":"block","command":"mkdir .Codex","reason":"大文字小文字回避"}
+{"name":"codex-redirect","expect":"block","command":"echo x > .codex/config.toml","reason":"リダイレクト書き込み"}
+{"name":"codex-install","expect":"block","command":"install -d ./.codex","reason":"install 経由"}
+{"name":"codex-sq","expect":"block","command":"touch '.codex/config.toml'","reason":"クォート除去後に検出"}
+{"name":"codex-dynamic-pwd","expect":"block","command":"touch $(pwd)/.codex/x","reason":"動的展開+.codex"}
+{"name":"codex-split-dynamic","expect":"block","command":"touch .$(printf codex)/x","reason":"動的展開+書き込み系"}
+# --- 動的展開+書き込み (block) ---
+{"name":"dynamic-write-mkdir","expect":"block","command":"mkdir $(echo dir)","reason":"動的+書き込み系コマンド"}
+{"name":"dynamic-write-redirect","expect":"block","command":"echo x > $(echo out).txt","reason":"動的+書き込みリダイレクト"}
+# --- allow: 日常コマンド ---
+{"name":"ls-la","expect":"allow","command":"ls -la","reason":"無害"}
+{"name":"grep-src","expect":"allow","command":"grep -rn foo src/","reason":"無害"}
+{"name":"npm-run-build","expect":"allow","command":"npm run build","reason":"無害"}
+{"name":"make-test","expect":"allow","command":"make test","reason":"無害"}
+{"name":"sed-print","expect":"allow","command":"sed -n 1,10p file.txt","reason":"無害"}
+{"name":"runner-self","expect":"allow","command":"bash tests/run-hook-tests.sh","reason":"ランナー自身が誤検知されない"}
+# --- allow: 引数位置の動的展開 ---
+{"name":"echo-date","expect":"allow","command":"echo $(date)","reason":"引数位置の動的展開は許可"}
+{"name":"ls-pwd-sub","expect":"allow","command":"ls $(pwd)/subdir","reason":"引数位置"}
+{"name":"wc-param-default","expect":"allow","command":"wc -l ${LOGFILE:-default.log}","reason":"引数位置のパラメータ展開"}
+# --- allow: クォートで無害化 ---
+{"name":"printf-sq-danger","expect":"allow","command":"printf %s '$(git reset --hard)'","reason":"シングルクォート内は展開されない"}
+{"name":"echo-sq-rm","expect":"block","command":"echo 'rm -rf /'","reason":"現状挙動 (実測): $ を含まない sq はクォート除去で中身が残り rm -rf / として検出される。過剰だが安全側"}
+{"name":"rm-rf-quoted-tilde","expect":"allow","command":"rm -rf '~'","reason":"クォート済み ~ はリテラル名"}
+# --- allow: 非該当の類似コマンド ---
+{"name":"git-push-plain","expect":"allow","command":"git push","reason":"通常 push"}
+{"name":"git-push-origin","expect":"allow","command":"git push origin main","reason":"通常 push"}
+{"name":"git-reset-soft","expect":"allow","command":"git reset --soft HEAD~1","reason":"soft は許可"}
+{"name":"git-commit","expect":"allow","command":"git commit -m \"feat: x\"","reason":"通常コミット"}
+{"name":"git-commit-amend","expect":"allow","command":"git commit --amend","reason":"hook 対象外 (AGENTS.md ルールのみ)"}
+{"name":"git-rebase-local","expect":"allow","command":"git rebase -i HEAD~2","reason":"hook 対象外 (AGENTS.md ルールのみ)"}
+{"name":"rm-single-file","expect":"allow","command":"rm file.txt","reason":"-rf なし"}
+{"name":"rm-f-single","expect":"allow","command":"rm -f single.txt","reason":"-r なし"}
+{"name":"chmod-755","expect":"allow","command":"chmod 755 x","reason":"777 以外"}
+# --- allow: bash のスクリプト実行形 ---
+{"name":"eval-static","expect":"allow","command":"eval ls -la","reason":"静的リテラルの eval"}
+{"name":"bash-c-static","expect":"allow","command":"bash -c \"echo hello\"","reason":"静的リテラルの -c"}
+{"name":"bash-script-c","expect":"allow","command":"bash script.sh -c 'x'","reason":"-c は script の引数"}
+{"name":"bash-dashdash-c","expect":"allow","command":"bash -- -c 'echo hi'","reason":"-- 以降は script 引数"}
+# --- .codex: 許可されるべき経路 ---
+{"name":"home-codex-ls","expect":"allow","command":"ls $HOME/.codex/","reason":"ホーム配下は許可"}
+{"name":"tmpdir-codex-cat","expect":"allow","command":"cat $TMPDIR/.codex/log","reason":"TMPDIR 配下は許可"}
+{"name":"tilde-codex-cat","expect":"block","command":"cat ~/.codex/config.toml","reason":"KNOWN-BUG: ~ 許可分岐が quoted [~] で死んでいる。PR6 で allow に反転予定"}
+{"name":"abs-outside-codex","expect":"allow","command":"ls /opt/codex-tools/bin","reason":"cwd 外・ドットなし codex 文字列"}
+{"name":"repo-codex-dir-read","expect":"allow","command":"grep -i mcp codex/config.toml","reason":"ドットなし codex/ ディレクトリの読み取り"}
+# --- 現状挙動の記録 (過剰側・安全側に倒れているもの) ---
+{"name":"echo-chmod-string","expect":"block","command":"echo chmod 777 x","reason":"現状挙動: 引数位置の文字列も検出 (過剰だが安全側。変更予定なし)"}

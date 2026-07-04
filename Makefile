@@ -1,4 +1,4 @@
-.PHONY: help install link update clean brewfile lint test
+.PHONY: help install link update clean brewfile lint test test-hooks
 
 # Default target
 .DEFAULT_GOAL := help
@@ -44,7 +44,7 @@ lint: ## Run secretlint to detect leaked secrets
 	@# する。git add -f で誤って追跡された場合は走査対象に戻る。
 	@git ls-files -z | xargs -0 pnpm exec secretlint --
 
-test: ## Verify shell scripts (shellcheck) and JSON files (jq)
+test: ## Verify shell scripts (shellcheck), JSON files (jq), and hooks
 	@command -v shellcheck >/dev/null || { echo "shellcheck not installed. Run: brew install shellcheck"; exit 1; }
 	@command -v jq >/dev/null || { echo "jq not installed. Run: brew install jq"; exit 1; }
 	@echo "==> shellcheck (warning level and above)"
@@ -53,4 +53,8 @@ test: ## Verify shell scripts (shellcheck) and JSON files (jq)
 	@git ls-files '*.json' | while read -r f; do \
 	    jq empty "$$f" >/dev/null || { echo "FAIL: $$f"; exit 1; }; \
 	done
+	@bash tests/run-hook-tests.sh
 	@echo "OK: all checks passed"
+
+test-hooks: ## Run hook regression tests
+	@bash tests/run-hook-tests.sh

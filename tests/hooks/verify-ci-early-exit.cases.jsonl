@@ -1,0 +1,11 @@
+# verify-ci-before-pr.sh の早期 exit 経路のみテストする。
+# ネットワーク (gh / GitHub API) に到達する経路はテスト対象外。
+# 一時ディレクトリ (git リポ外) で実行される前提。
+{"name":"git-status","expect":"allow","command":"git status","reason":"gh pr create を含まない → 即許可"}
+{"name":"ls","expect":"allow","command":"ls -la","reason":"同上"}
+{"name":"gh-pr-list","expect":"allow","command":"gh pr list","reason":"create でない"}
+{"name":"gh-pr-view","expect":"allow","command":"gh pr view 12","reason":"create でない"}
+{"name":"echo-gh-pr-create","expect":"allow","command":"echo \"gh pr create\"","reason":"コマンド位置でない gh pr create"}
+{"name":"gh-pr-create-draft","expect":"allow","command":"gh pr create --draft --title t --body b","reason":"draft は WIP bypass"}
+{"name":"gh-pr-create-d","expect":"allow","command":"gh pr create -d --title t","reason":"-d bypass"}
+{"name":"gh-pr-create-nongit","expect":"allow","command":"gh pr create --title t --body b","reason":"現状挙動 (実測): git リポ外では repo 解決に失敗し fail-open で許可。CI ゲートは実リポ内でのみ機能する"}
