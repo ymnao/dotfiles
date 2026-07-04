@@ -23,7 +23,12 @@ set -euo pipefail
 # hook 単体に対してテストする (例: symlink 切り替え前の agents/hooks/ の検証用)。
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-REPO_ROOT="$(cd "$SCRIPT_DIR" && git rev-parse --show-toplevel)"
+# REPO_ROOT は claude/codex 両系統モードでのみ必要。HOOK_DIR モードが
+# git 不在・リポジトリ外でも動くよう、git 依存はこの分岐に閉じ込める。
+REPO_ROOT=""
+if [ -z "${HOOK_DIR:-}" ]; then
+  REPO_ROOT="$(cd "$SCRIPT_DIR" && git rev-parse --show-toplevel)"
+fi
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "ERROR: jq is required" >&2
