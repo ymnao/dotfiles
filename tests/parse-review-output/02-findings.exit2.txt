@@ -1,0 +1,10 @@
+```json
+{
+  "perspective": "security",
+  "verdict": "findings",
+  "findings": [
+    {"severity": "HIGH", "confidence": 90, "file": "scripts/foo.sh", "line": 42, "issue": "unquoted variable in eval", "fix": "quote the variable"},
+    {"severity": "LOW", "confidence": 40, "file": "scripts/bar.sh", "line": 7, "issue": "missing umask", "fix": "set umask 077"}
+  ]
+}
+```

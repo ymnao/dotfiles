@@ -1,0 +1,11 @@
+First, here is an example of what NOT to output:
+
+```json
+{"this": "is not the real answer"}
+```
+
+And here is my actual verdict:
+
+```json
+{"perspective": "security", "verdict": "pass", "findings": []}
+```

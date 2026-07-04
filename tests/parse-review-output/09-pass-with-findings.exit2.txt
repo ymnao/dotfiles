@@ -1,0 +1,3 @@
+```json
+{"perspective": "security", "verdict": "pass", "findings": [{"severity": "HIGH", "confidence": 95, "file": "x.sh", "line": 1, "issue": "contradictory output", "fix": "n/a"}]}
+```

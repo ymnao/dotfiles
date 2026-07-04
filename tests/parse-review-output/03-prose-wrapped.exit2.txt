@@ -1,0 +1,7 @@
+I reviewed the diff carefully. Here is my assessment:
+
+```json
+{"perspective": "shell-senior", "verdict": "findings", "findings": [{"severity": "MEDIUM", "confidence": 70, "file": "a.sh", "line": 3, "issue": "word splitting", "fix": "add quotes"}]}
+```
+
+Let me know if you need more detail.
