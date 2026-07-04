@@ -22,7 +22,14 @@ clean: ## Remove broken symlinks
 	@find ~ -maxdepth 1 -type l ! -exec test -e {} \; -delete
 	@find ~/.config -maxdepth 1 -type l ! -exec test -e {} \; -delete 2>/dev/null || true
 
-brewfile: ## Update Brewfile with currently installed packages
+brewfile: ## Regenerate Brewfile from installed packages (destructive; requires FORCE=1)
+	@# brew bundle dump --force は Brewfile のセクション・コメント・trusted:
+	@# オプションを全て破壊する。Brewfile は手動編集が正 (CLAUDE.md 参照)。
+	@if [ "$(FORCE)" != "1" ]; then \
+	    echo "ERROR: make brewfile destroys Brewfile sections/comments/trusted: options."; \
+	    echo "Brewfile is maintained by hand (see CLAUDE.md). To run anyway: make brewfile FORCE=1"; \
+	    exit 1; \
+	fi
 	@brew bundle dump --force --file=Brewfile
 	@echo "Brewfile updated"
 

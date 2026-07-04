@@ -104,7 +104,6 @@ make help       # ヘルプ表示
 make install    # フルインストール
 make link       # シンボリックリンク作成
 make update     # Homebrewパッケージ更新
-make brewfile   # Brewfile更新
 ```
 
 ## ⚠️ セキュリティ注意事項

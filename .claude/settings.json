@@ -6,7 +6,6 @@
       "Bash(make install:*)",
       "Bash(make link:*)",
       "Bash(make update:*)",
-      "Bash(make brewfile:*)",
       "Bash(make clean:*)",
       "Bash(bash scripts/install.sh:*)",
       "Bash(bash scripts/link.sh:*)",

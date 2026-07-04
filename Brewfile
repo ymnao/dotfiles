@@ -105,7 +105,6 @@ cask "claude"
 cask "claude-code"
 cask "codex"
 cask "codex-app"
-cask "lm-studio"
 
 # ========================================
 # Fonts

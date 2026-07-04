@@ -8,7 +8,7 @@
 - **ファイル**: `../Brewfile`
 - **インストール**: `scripts/install.sh` が自動処理
 - **手動インストール**: `brew bundle --file=Brewfile`
-- **更新**: `brew bundle dump --force --file=Brewfile`
+- **更新**: Brewfile を手動で編集する（`brew bundle dump --force` はセクション・コメント・`trusted:` オプションを破壊するため使わない）
 
 ### Windows: Winget + Scoop（併用）
 
