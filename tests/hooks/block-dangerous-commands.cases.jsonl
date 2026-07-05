@@ -1,5 +1,6 @@
-# block-dangerous-commands.sh 回帰コーパス
-# expect は 2026-07-03 時点の実機挙動 (現状固定が目的。仕様変更は PR6)
+# block-dangerous-commands.sh 回帰コーパス — PR6 完了時点の期待値
+# PR6 実装後、tests/hooks/block-dangerous-commands.cases.jsonl をこの内容で置き換える。
+# PR2 版との差分: tilde-codex-cat が allow に反転 (バグ修正) + .codex 読み取り緩和ケースを追加
 # --- rm 系 (block) ---
 {"name":"rm-rf-root","expect":"block","command":"rm -rf /","reason":"基本形"}
 {"name":"rm-rf-tilde","expect":"block","command":"rm -rf ~","reason":"ホーム破壊"}
@@ -89,8 +90,22 @@
 # --- .codex: 許可されるべき経路 ---
 {"name":"home-codex-ls","expect":"allow","command":"ls $HOME/.codex/","reason":"ホーム配下は許可"}
 {"name":"tmpdir-codex-cat","expect":"allow","command":"cat $TMPDIR/.codex/log","reason":"TMPDIR 配下は許可"}
-{"name":"tilde-codex-cat","expect":"block","command":"cat ~/.codex/config.toml","reason":"KNOWN-BUG: ~ 許可分岐が quoted [~] で死んでいる。PR6 で allow に反転予定"}
+{"name":"tilde-codex-cat","expect":"allow","command":"cat ~/.codex/config.toml","reason":"PR6 バグ修正: ~ 許可分岐のクォート修正でホーム配下が許可される"}
 {"name":"abs-outside-codex","expect":"allow","command":"ls /opt/codex-tools/bin","reason":"cwd 外・ドットなし codex 文字列"}
 {"name":"repo-codex-dir-read","expect":"allow","command":"grep -i mcp codex/config.toml","reason":"ドットなし codex/ ディレクトリの読み取り"}
 # --- 現状挙動の記録 (過剰側・安全側に倒れているもの) ---
 {"name":"echo-chmod-string","expect":"block","command":"echo chmod 777 x","reason":"現状挙動: 引数位置の文字列も検出 (過剰だが安全側。変更予定なし)"}
+# --- PR6: .codex 読み取り専用アクセスの緩和 (allow) ---
+{"name":"codex-grep-read","expect":"allow","command":"grep -n foo .codex/config.toml","reason":"読み取り専用コマンドは許可"}
+{"name":"codex-cat-read","expect":"allow","command":"cat ./.codex/log","reason":"読み取り専用コマンドは許可"}
+{"name":"codex-ls-read","expect":"allow","command":"ls .codex/","reason":"読み取り専用コマンドは許可"}
+{"name":"codex-diff-read","expect":"allow","command":"diff .codex/a .codex/b","reason":"読み取り専用コマンドは許可"}
+{"name":"codex-wc-read","expect":"allow","command":"wc -l .codex/config.toml","reason":"読み取り専用コマンドは許可"}
+{"name":"codex-grep-pipe-read","expect":"allow","command":"cat .codex/config.toml | grep model","reason":"読み取り専用同士のパイプは許可"}
+# --- PR6: 緩和後もブロックされ続けるべきもの (block) ---
+{"name":"codex-touch-still","expect":"block","command":"touch .codex/y","reason":"生成・改変は引き続きブロック"}
+{"name":"codex-read-redirect","expect":"block","command":"grep foo .codex/y > out.txt","reason":"書き込みリダイレクト付きは不許可"}
+{"name":"codex-sed-inplace","expect":"block","command":"sed -i '' s/a/b/ .codex/x","reason":"sed は -i で書き込めるため allowlist 外"}
+{"name":"codex-find-delete","expect":"block","command":"find .codex -delete","reason":"find は -delete/-exec を持つため allowlist 外"}
+{"name":"codex-wrapper-read","expect":"block","command":"env grep foo .codex/y","reason":"ラッパー越しは追跡せず安全側で不許可"}
+{"name":"codex-dynamic-read","expect":"block","command":"grep $(pwd) .codex/y","reason":"動的展開があるものは不許可"}
