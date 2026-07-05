@@ -31,7 +31,7 @@ Run `bash "$HOME/.claude/skills/codex-review/scripts/run-review.sh" <P>` and bra
 
 - `0` (pass) → record perspective as PASS. Go to the next perspective.
 - `2` (findings) → stdout is validated JSON. Parse `findings` and go to step 2.
-- `1` (setup/parse error) → report the stderr message, record perspective as ERROR, and continue with the next perspective. If 2 consecutive perspectives end in exit 1 (ERROR only — SKIP/PASS/findings do not count), stop the whole skill and report to the user.
+- `1` (setup/parse error) → report the stderr message, record perspective as ERROR, and continue with the next perspective. If 2 consecutive perspectives end in exit 1, stop the whole skill and report to the user.
 - `3` (sandbox skip) → record perspective as SKIPPED and continue with the next perspective. If ALL perspectives end in SKIP, stop and point to "Running under a shell sandbox" in Notes for unblock steps.
 
 ### 2. Verify (do this for EVERY finding BEFORE applying any fix)

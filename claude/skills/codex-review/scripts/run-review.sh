@@ -144,7 +144,6 @@ if ! {
   printf '\n\n## Target\n\nReview the diff below (produced by "git diff %s...HEAD" in %s). Do NOT modify any files. Output only the fenced JSON block per the Output contract above.\n\n```diff\n%s\n```\n' \
     "$BASE_BRANCH" "$CWD" "$DIFF_CONTENT"
 } | codex exec --sandbox read-only - > "$RAW_OUT" 2> "$RAW_ERR"; then
-  # SKIP でも ERROR でも同じ stderr が診断情報として要るので先に一度だけ吐く。
   cat "$RAW_ERR" >&2
   # Sandbox skip 判定: Claude Code の Bash sandbox 等、外側シェルが
   # $HOME/.codex/ 配下の SQLite 系ファイル (state_5.sqlite / goals_1.sqlite /
