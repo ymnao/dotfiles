@@ -23,13 +23,27 @@ for f in "$SCRIPT_DIR"/*.exit[012].txt; do
   want=${base##*.exit}
   want=${want%.txt}
   got=0
-  bash "$PARSER" < "$f" >/dev/null 2>&1 || got=$?
-  if [ "$got" = "$want" ]; then
-    pass=$((pass + 1))
-  else
-    echo "FAIL $base: expected=$want got=$got"
+  out=$(bash "$PARSER" < "$f" 2>/dev/null) || got=$?
+  if [ "$got" != "$want" ]; then
+    echo "FAIL $base: expected exit=$want got=$got"
     fail=$((fail + 1))
+    continue
   fi
+  # exit 0 / 2 のとき stdout が envelope (perspective / verdict / findings) を
+  # 持つ JSON であることも回帰検証する。schema 強化で必須キー追加時や、
+  # 出力パスの意図しない変更を早期に検出するため。
+  if [ "$got" = "0" ] || [ "$got" = "2" ]; then
+    if ! printf '%s' "$out" | jq -e '
+      (.perspective | type) == "string"
+      and (.verdict == "pass" or .verdict == "findings")
+      and ((.findings | type) == "array")
+    ' >/dev/null 2>&1; then
+      echo "FAIL $base: stdout is not a valid review envelope"
+      fail=$((fail + 1))
+      continue
+    fi
+  fi
+  pass=$((pass + 1))
 done
 
 echo "parser tests: $pass passed, $fail failed"

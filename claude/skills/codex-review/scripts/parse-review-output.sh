@@ -29,14 +29,19 @@ if [ -z "$json" ]; then
 fi
 
 if ! validated=$(printf '%s' "$json" | jq -ce '
-  if (.verdict == "pass" or .verdict == "findings")
+  if ((.perspective | type) == "string")
+     and (.verdict == "pass" or .verdict == "findings")
      and ((.findings | type) == "array")
      and ([ .findings[]
             | select(
                 ((.severity == "HIGH" or .severity == "MEDIUM" or .severity == "LOW") | not)
                 or ((.confidence | type) != "number")
+                or (.confidence < 0 or .confidence > 100)
                 or ((.file | type) != "string")
+                or ((.line | type) != "number")
+                or (.line < 0)
                 or ((.issue | type) != "string")
+                or ((.fix | type) != "string")
               )
           ] | length == 0)
   then .
@@ -52,10 +57,12 @@ if ! validated=$(printf '%s' "$json" | jq -ce '
   exit 1
 fi
 
-printf '%s\n' "$validated"
-
-# verdict=pass でも findings が残っていれば安全側で findings 扱い
+# verdict=pass で findings 非空は矛盾出力。exit code だけでなく JSON の
+# verdict も "findings" に正規化してから出力する。exit code を見ない下流が
+# あっても JSON 単独で契約を判定できる。
 if printf '%s' "$validated" | jq -e '.verdict == "pass" and (.findings | length) == 0' >/dev/null; then
+  printf '%s\n' "$validated"
   exit 0
 fi
+printf '%s' "$validated" | jq -c '.verdict = "findings"'
 exit 2

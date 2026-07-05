@@ -23,7 +23,7 @@
 ```bash
 gh repo create <your-account>/skill-eval-sandbox --private --clone
 cd skill-eval-sandbox
-bash <dotfiles>/claude/skills/pr/evals/seed-sandbox.sh
+bash <dotfiles>/claude/skills/codex-review/evals/seed-sandbox.sh
 ```
 
 seed-sandbox.sh は初期コミット・ラベル・eval 用 issue を作成する(冪等)。
