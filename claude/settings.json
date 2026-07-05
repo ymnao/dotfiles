@@ -20,7 +20,8 @@
       "Bash(uv run *)",
       "Bash(pytest:*)",
       "Bash(make *)",
-      "Bash(bash \"$HOME/.claude/skills/pr/scripts/gather-branch-info.sh\":*)"
+      "Bash(bash \"$HOME/.claude/skills/pr/scripts/gather-branch-info.sh\":*)",
+      "Bash(bash \"$HOME/.claude/skills/pr/scripts/classify-risk.sh\":*)"
     ],
     "deny": [
       "Bash(rm -rf *)",
