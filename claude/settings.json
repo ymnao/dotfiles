@@ -93,6 +93,10 @@
           },
           {
             "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/guard-pkg-install.sh\""
+          },
+          {
+            "type": "command",
             "command": "bash \"$HOME/.claude/hooks/verify-ci-before-pr.sh\""
           }
         ]
