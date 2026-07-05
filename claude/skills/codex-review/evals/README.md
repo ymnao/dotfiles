@@ -36,3 +36,5 @@ eval が作成した PR / ブランチは各 eval の Cleanup 手順で削除す
 - 02 の仕込み diff は `fixtures/vuln.patch` を使う。トークン文字列は明白な
   ダミー(`dummy-eval-fixture-not-real`)で、secretlint に実シークレットと
   誤検知されないことを確認済みの文字列にしてある
+- 04 は PATH 上の偽 `codex` 実行ファイルで sandbox 制約 (exit 3 SKIP) を
+  再現するので、03 と同様に実 codex CLI の有無に依存せず実行できる
