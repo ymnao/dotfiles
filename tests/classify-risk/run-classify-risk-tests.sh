@@ -31,7 +31,7 @@ fail=0
 
 # scenario <name> <expected-tier> — stdin に「作るファイル相対パス<TAB>内容」を行区切りで受ける
 scenario() {
-  local name="$1" want="$2" line path content got tier
+  local name="$1" want="$2" path content got tier
   git checkout -q main
   git checkout -qb "case-$name"
   while IFS=$(printf '\t') read -r path content; do
