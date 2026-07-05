@@ -161,7 +161,9 @@ if ! {
   # 更新する。broader な `Operation not permitted` 一致にすると通常パース
   # エラーとの誤検出リスクが上がるため、あえて precise マッチのまま残す。
   if grep -qF 'failed to initialize in-process app-server client' "$RAW_ERR"; then
-    skip "codex-review $PERSPECTIVE: sandbox blocks codex in-process app-server client init"
+    # stdout は「検証済み JSON のみ」の契約なので、SKIP ログも stderr に流す
+    # (log.sh の skip() 自体は claude-init.sh の対話ログ用に stdout のまま)
+    skip "codex-review $PERSPECTIVE: sandbox blocks codex in-process app-server client init" >&2
     exit 3
   fi
   error "codex exec failed (see stderr above)"
