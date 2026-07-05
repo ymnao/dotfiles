@@ -1,0 +1,4 @@
+# block-dangerous-commands.sh の case "~/$protected_name" は tilde 展開を
+# 意図せず、リテラル一致させる設計 (旧 "[~]" バグの修正)。SC2088 を除外する。
+# この設定は agents/hooks/ 配下のみに適用され、editor/CI/直 shellcheck も継承する。
+disable=SC2088

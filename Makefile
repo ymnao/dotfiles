@@ -49,10 +49,8 @@ test: ## Verify shell scripts (shellcheck), JSON files (jq), and hooks
 	@command -v jq >/dev/null || { echo "jq not installed. Run: brew install jq"; exit 1; }
 	@echo "==> shellcheck (warning level and above)"
 	@# symlink 除外: claude/hooks と codex/hooks は agents/hooks への symlink なので実体だけ検査する。
-	@# SC2088 除外は agents/hooks/ 配下だけ (block-dangerous-commands.sh の意図的リテラル tilde 対応)。
-	@non_hook=$$(git ls-files '*.sh' | while read -r f; do [ -L "$$f" ] || printf '%s\n' "$$f"; done | grep -v '^agents/hooks/' || true); \
-	    [ -n "$$non_hook" ] && echo "$$non_hook" | xargs shellcheck -S warning
-	@git ls-files 'agents/hooks/*.sh' | xargs shellcheck -S warning -e SC2088
+	@# SC2088 の局所無効化は agents/hooks/.shellcheckrc に委譲 (editor/CI 直 shellcheck も継承)。
+	@git ls-files '*.sh' | while read -r f; do [ -L "$$f" ] || printf '%s\n' "$$f"; done | xargs shellcheck -S warning
 	@echo "==> JSON validation"
 	@git ls-files '*.json' | while read -r f; do \
 	    jq empty "$$f" >/dev/null || { echo "FAIL: $$f"; exit 1; }; \
