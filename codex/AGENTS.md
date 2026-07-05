@@ -1,4 +1,4 @@
-# AI Agent Guidelines
+# AI Agent Guidelines (Codex CLI)
 
 ## 言語
 
@@ -23,7 +23,7 @@
 
 ## Git 禁止事項
 
-以下は hook でもブロックされる。ブロックされたら回避せず、新しいコミットの追加で対応する。
+以下のうち force push と reset --hard は hook でもブロックされる。ブロックされたら回避せず、新しいコミットの追加で対応する。
 
 - `git push --force` / `--force-with-lease`(ユーザーの明示的な許可なく実行しない)
 - push 済みコミットへの `git commit --amend`
