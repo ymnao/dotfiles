@@ -13,7 +13,9 @@ set -euo pipefail
 #
 # Output: validated review JSON on stdout (single line, schema-checked by
 # parse-review-output.sh).
-# Exit codes: 0 = verdict pass / 2 = findings / 1 = setup or parse error.
+# Exit codes: 0 = verdict pass / 2 = findings / 1 = setup or parse error /
+#             3 = sandbox skip (codex CLI cannot initialize in the caller's
+#                 shell sandbox; treated as SKIP, not ERROR, by SKILL.md).
 #
 # The review target is the caller's cwd (or CODEX_REVIEW_REPO if set). This
 # script does not `cd` unless CODEX_REVIEW_REPO is set. DOTFILES_ROOT is used
@@ -119,9 +121,10 @@ DIFF_CONTENT="$(git diff "$BASE_BRANCH...HEAD")"
 #
 # codex の生出力は一時ファイルに保存し、parse-review-output.sh で
 # JSON 抽出+schema 検証してから返す。exit code はパーサのものを継承する
-# (0 = pass / 2 = findings / 1 = parse error)。
+# (0 = pass / 2 = findings / 1 = parse error / 3 = sandbox skip)。
 RAW_OUT="$(mktemp "${TMPDIR:-/tmp}/codex-review.XXXXXX")"
-cleanup() { [ -n "${RAW_OUT:-}" ] && rm -f "$RAW_OUT"; }
+RAW_ERR="$(mktemp "${TMPDIR:-/tmp}/codex-review.err.XXXXXX")"
+cleanup() { rm -f "$RAW_OUT" "$RAW_ERR"; }
 trap cleanup EXIT
 
 # --sandbox read-only を明示。config.toml のデフォルト (workspace-write 等)
@@ -131,13 +134,36 @@ trap cleanup EXIT
 #
 # `if !` で包む理由: 素の pipeline のままだと `set -euo pipefail` により
 # codex の非ゼロ終了 (不明フラグ / 認証エラー等) が即座に script を kill し、
-# 下の parser 実行と exit code 正規化 (0/1/2) に到達しない。契約を壊さない
+# 下の parser 実行と exit code 正規化 (0/1/2/3) に到達しない。契約を壊さない
 # ため必須。
+#
+# stderr は $RAW_ERR に振り分ける。sandbox で initialize 失敗した場合の
+# シグネチャ検出 (下の Sandbox skip 判定) と、通常失敗時の診断表示の両方で使う。
 if ! {
   cat "$PROMPT_FILE"
   printf '\n\n## Target\n\nReview the diff below (produced by "git diff %s...HEAD" in %s). Do NOT modify any files. Output only the fenced JSON block per the Output contract above.\n\n```diff\n%s\n```\n' \
     "$BASE_BRANCH" "$CWD" "$DIFF_CONTENT"
-} | codex exec --sandbox read-only - > "$RAW_OUT"; then
+} | codex exec --sandbox read-only - > "$RAW_OUT" 2> "$RAW_ERR"; then
+  # SKIP でも ERROR でも同じ stderr が診断情報として要るので先に一度だけ吐く。
+  cat "$RAW_ERR" >&2
+  # Sandbox skip 判定: Claude Code の Bash sandbox 等、外側シェルが
+  # $HOME/.codex/ 配下の SQLite 系ファイル (state_5.sqlite / goals_1.sqlite /
+  # memories_1.sqlite) の書き込みを allow していない環境では codex CLI の
+  # in-process app-server client が state DB を open できず、以下の固定
+  # シグネチャで exit する:
+  #   Error: failed to initialize in-process app-server client: ...
+  # この失敗は「review 対象コードの問題」ではなく「実行環境の制約」なので、
+  # 通常のパースエラー (exit 1) と区別して exit 3 (SKIP) を返す。呼び側
+  # (SKILL.md Step 1) はこれを ERROR ではなく明示的な SKIP として扱い、
+  # 「2 連続 ERROR で全体停止」の閾値にはカウントしない。
+  # NOTE: 検出シグネチャは codex 0.142.5 系準拠。codex 側のエラープロース
+  # 変更で silent degradation する可能性がある — その場合はこの grep 文字列を
+  # 更新する。broader な `Operation not permitted` 一致にすると通常パース
+  # エラーとの誤検出リスクが上がるため、あえて precise マッチのまま残す。
+  if grep -qF 'failed to initialize in-process app-server client' "$RAW_ERR"; then
+    skip "codex-review $PERSPECTIVE: sandbox blocks codex in-process app-server client init"
+    exit 3
+  fi
   error "codex exec failed (see stderr above)"
 fi
 
