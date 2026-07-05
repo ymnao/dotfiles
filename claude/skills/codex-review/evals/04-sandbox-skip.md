@@ -6,15 +6,11 @@
 
 ```bash
 mkdir -p "$TMPDIR/mock-bin"
-```
-
-`$TMPDIR/mock-bin/codex` を以下の内容で作成し実行権限を付与:
-```bash
+cat > "$TMPDIR/mock-bin/codex" <<'EOF'
 #!/usr/bin/env bash
 echo "Error: failed to initialize in-process app-server client: Operation not permitted (os error 1)" >&2
 exit 1
-```
-```bash
+EOF
 chmod +x "$TMPDIR/mock-bin/codex"
 ```
 
@@ -41,8 +37,4 @@ skill 全体を通した確認は任意: 同じ PATH 前置きが効いた shell
       または settings.json の permissions/network allowlist 拡張) を案内する
 
 ## Cleanup
-```bash
-rm -f "$TMPDIR/mock-bin/codex"
-rmdir "$TMPDIR/mock-bin"
-```
-省略して `$TMPDIR` 配下に放置しても、次回セットアップで上書きされるため実害はない。
+`rm -rf "$TMPDIR/mock-bin"` (省略可 — 次回 Setup で上書き)。
