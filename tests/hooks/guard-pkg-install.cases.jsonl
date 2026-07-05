@@ -1,4 +1,30 @@
-# guard-pkg-install.sh 回帰コーパス (2026-07-03 時点は codex 側のみ実体。PR6 で共通昇格)
+# guard-pkg-install.sh 回帰コーパス — PR6 完了時点の期待値
+# PR6 実装後、tests/hooks/guard-pkg-install.cases.jsonl をこの内容で置き換える。
+# PR2 版との差分: cargo / go / gem / bundle の拡張ケースを追加
+# --- PR6: cargo / go / gem / bundle (block) ---
+{"name":"cargo-add","expect":"block","command":"cargo add serde","reason":"依存追加"}
+{"name":"cargo-install","expect":"block","command":"cargo install ripgrep","reason":"バイナリ取得"}
+{"name":"go-get","expect":"block","command":"go get github.com/x/y","reason":"依存追加 (go.mod 書き換え)"}
+{"name":"go-install","expect":"block","command":"go install github.com/x/y@latest","reason":"バイナリ取得"}
+{"name":"go-mod-tidy","expect":"block","command":"go mod tidy","reason":"依存追加を伴い得る"}
+{"name":"gem-install","expect":"block","command":"gem install rails","reason":"依存追加"}
+{"name":"bundle-add","expect":"block","command":"bundle add rspec","reason":"依存追加"}
+{"name":"xargs-cargo","expect":"block","command":"echo ripgrep | xargs cargo install","reason":"引数注入ラッパー経由"}
+# --- PR6: cargo / go / gem / bundle (allow) ---
+{"name":"cargo-build","expect":"allow","command":"cargo build --release","reason":"ビルドは許可"}
+{"name":"cargo-test","expect":"allow","command":"cargo test","reason":"テストは許可"}
+{"name":"cargo-clippy","expect":"allow","command":"cargo clippy -- -D warnings","reason":"lint は許可"}
+{"name":"cargo-fetch","expect":"allow","command":"cargo fetch","reason":"ロックファイルからの取得は許可"}
+{"name":"go-build","expect":"allow","command":"go build ./...","reason":"ビルドは許可"}
+{"name":"go-test","expect":"allow","command":"go test ./...","reason":"テストは許可"}
+{"name":"go-run","expect":"allow","command":"go run main.go","reason":"実行は許可"}
+{"name":"go-mod-download","expect":"allow","command":"go mod download","reason":"ロックファイル復元は許可"}
+{"name":"go-mod-verify","expect":"allow","command":"go mod verify","reason":"検証は許可"}
+{"name":"gem-list","expect":"allow","command":"gem list","reason":"参照のみ"}
+{"name":"bundle-install","expect":"allow","command":"bundle install","reason":"ロックファイル復元は許可"}
+{"name":"bundle-exec","expect":"allow","command":"bundle exec rspec","reason":"実行は許可"}
+{"name":"echo-go-install","expect":"allow","command":"echo go install x","reason":"echo の引数 (実行されない)"}
+{"name":"golang-filename","expect":"allow","command":"cat golang-notes.md","reason":"go の後に英数字が続く語は早期スクリーニングで除外"}
 # --- block: 依存追加・実行時取得 ---
 {"name":"npm-install-pkg","expect":"block","command":"npm install lodash","reason":"依存追加"}
 {"name":"npm-i-dev","expect":"block","command":"npm i -D typescript","reason":"依存追加 (alias+flag)"}
