@@ -1,0 +1,1 @@
+{"perspective": "qa-fixture", "verdict": "pass", "findings": []}

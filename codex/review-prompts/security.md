@@ -19,16 +19,33 @@ You are a security-focused reviewer scanning a diff for credential leaks, inject
 
 ## Output contract
 
-- If you find **no** security concerns, output exactly one line and nothing else:
-  ```
-  OK: no security concerns
-  ```
-- Otherwise output a bulleted list, one finding per line, format:
-  ```
-  - <HIGH|MEDIUM|LOW> <path>:<line>: <issue> — <suggested fix>
-  ```
-  Severity rubric:
-  - **HIGH**: exploitable with low effort and high impact (secret leak, RCE).
-  - **MEDIUM**: requires specific conditions but real (permission gap, weak validation).
-  - **LOW**: defense-in-depth, theoretical, or limited blast radius.
-  Then a one-line summary `<N> findings (<H> HIGH, <M> MEDIUM, <L> LOW)`. No prose preamble.
+Output ONLY a fenced JSON code block (```json ... ```) with this exact schema, and nothing else — no prose before or after:
+
+```json
+{"perspective": "security", "verdict": "pass", "findings": []}
+```
+
+or, when you find issues:
+
+```json
+{
+  "perspective": "security",
+  "verdict": "findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "confidence": 85,
+      "file": "scripts/foo.sh",
+      "line": 42,
+      "issue": "<one-sentence description>",
+      "fix": "<one-sentence suggested fix>"
+    }
+  ]
+}
+```
+
+Rules:
+- Report EVERY issue you find. Do NOT filter by importance or confidence — filtering happens downstream.
+- `severity`: HIGH = exploitable with low effort and high impact (secret leak, RCE). MEDIUM = requires specific conditions but real (permission gap, weak validation). LOW = defense-in-depth, theoretical, or limited blast radius.
+- `confidence`: integer 0-100, your certainty that this is a real issue in THIS diff (not a generic best practice).
+- `line` refers to the NEW file version in the diff. Use 0 for file-level findings.

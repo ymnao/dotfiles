@@ -1,0 +1,12 @@
+diff --git a/scripts/deploy.sh b/scripts/deploy.sh
+new file mode 100644
+--- /dev/null
++++ b/scripts/deploy.sh
+@@ -0,0 +1,9 @@
++#!/usr/bin/env bash
++# eval fixture: intentionally flawed script for codex-review eval 02
++API_TOKEN="dummy-eval-fixture-not-real"
++TARGET=$1
++echo Deploying $TARGET
++curl -H "Authorization: Bearer $API_TOKEN" https://example.com/deploy?t=$TARGET
++eval "echo done: $TARGET"

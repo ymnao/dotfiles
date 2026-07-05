@@ -54,6 +54,7 @@ test: ## Verify shell scripts (shellcheck), JSON files (jq), and hooks
 	    jq empty "$$f" >/dev/null || { echo "FAIL: $$f"; exit 1; }; \
 	done
 	@bash tests/run-hook-tests.sh
+	@bash tests/parse-review-output/run-parser-tests.sh
 	@echo "OK: all checks passed"
 
 test-hooks: ## Run hook regression tests

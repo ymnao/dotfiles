@@ -11,8 +11,9 @@ set -euo pipefail
 #   CODEX_REVIEW_REPO  cd into this directory before running git ops. Without
 #                      it, the caller's cwd is the review target.
 #
-# Output: codex exec's stdout (free-form text). The caller (SKILL.md) reads
-# the verdict line to decide pass/fail and the next iteration.
+# Output: validated review JSON on stdout (single line, schema-checked by
+# parse-review-output.sh).
+# Exit codes: 0 = verdict pass / 2 = findings / 1 = setup or parse error.
 #
 # The review target is the caller's cwd (or CODEX_REVIEW_REPO if set). This
 # script does not `cd` unless CODEX_REVIEW_REPO is set. DOTFILES_ROOT is used
@@ -53,6 +54,11 @@ fi
 PROMPT_FILE="$DOTFILES_ROOT/codex/review-prompts/$PERSPECTIVE.md"
 if [ ! -f "$PROMPT_FILE" ]; then
   error "prompt file not found: $PROMPT_FILE"
+fi
+
+PARSER="$SCRIPT_DIR/parse-review-output.sh"
+if [ ! -f "$PARSER" ]; then
+  error "parser not found: $PARSER"
 fi
 
 # Switch to CODEX_REVIEW_REPO if set — this is the escape hatch when the
@@ -110,8 +116,31 @@ DIFF_CONTENT="$(git diff "$BASE_BRANCH...HEAD")"
 # Use codex exec instead with the diff embedded. Command names in the prompt
 # body are wrapped in double quotes rather than backticks to avoid any risk
 # of shell command-substitution interpretation on codex's side.
-{
+#
+# codex の生出力は一時ファイルに保存し、parse-review-output.sh で
+# JSON 抽出+schema 検証してから返す。exit code はパーサのものを継承する
+# (0 = pass / 2 = findings / 1 = parse error)。
+RAW_OUT="$(mktemp "${TMPDIR:-/tmp}/codex-review.XXXXXX")"
+cleanup() { [ -n "${RAW_OUT:-}" ] && rm -f "$RAW_OUT"; }
+trap cleanup EXIT
+
+# --sandbox read-only を明示。config.toml のデフォルト (workspace-write 等)
+# に依存すると、レビュー中に codex が working tree を書き換える構成になる
+# 環境が生まれうる。プロンプトの「Do NOT modify」は副次的な多層防御で、
+# 主防御はここで CLI に強制する。
+#
+# `if !` で包む理由: 素の pipeline のままだと `set -euo pipefail` により
+# codex の非ゼロ終了 (不明フラグ / 認証エラー等) が即座に script を kill し、
+# 下の parser 実行と exit code 正規化 (0/1/2) に到達しない。契約を壊さない
+# ため必須。
+if ! {
   cat "$PROMPT_FILE"
-  printf '\n\n## Target\n\nReview the diff below (produced by "git diff %s...HEAD" in %s). Do NOT modify any files. Output only the verdict line and findings per the Output contract above.\n\n```diff\n%s\n```\n' \
+  printf '\n\n## Target\n\nReview the diff below (produced by "git diff %s...HEAD" in %s). Do NOT modify any files. Output only the fenced JSON block per the Output contract above.\n\n```diff\n%s\n```\n' \
     "$BASE_BRANCH" "$CWD" "$DIFF_CONTENT"
-} | codex exec -
+} | codex exec --sandbox read-only - > "$RAW_OUT"; then
+  error "codex exec failed (see stderr above)"
+fi
+
+rc=0
+bash "$PARSER" < "$RAW_OUT" || rc=$?
+exit "$rc"
