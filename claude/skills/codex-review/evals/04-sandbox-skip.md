@@ -5,20 +5,20 @@
 `failed to initialize in-process app-server client` を再現する。
 
 ```bash
-mkdir -p "$TMPDIR/mock-bin"
-cat > "$TMPDIR/mock-bin/codex" <<'EOF'
+mkdir -p "${TMPDIR:-/tmp}/mock-bin"
+cat > "${TMPDIR:-/tmp}/mock-bin/codex" <<'EOF'
 #!/usr/bin/env bash
 echo "Error: failed to initialize in-process app-server client: Operation not permitted (os error 1)" >&2
 exit 1
 EOF
-chmod +x "$TMPDIR/mock-bin/codex"
+chmod +x "${TMPDIR:-/tmp}/mock-bin/codex"
 ```
 
 ## Prompt
 レビュー対象リポジトリ (コミット済み差分のあるブランチ) の直下で、
 03 と同じ前置き代入形式で PATH を渡して単体実行する:
 ```bash
-PATH="$TMPDIR/mock-bin:/usr/bin:/bin" bash "$HOME/.claude/skills/codex-review/scripts/run-review.sh" shell-senior
+PATH="${TMPDIR:-/tmp}/mock-bin:/usr/bin:/bin" bash "$HOME/.claude/skills/codex-review/scripts/run-review.sh" shell-senior
 ```
 skill 全体を通した確認は任意: 同じ PATH 前置きが効いた shell で
 `/codex-review を実行して` (3 観点とも偽 codex を踏む)。
@@ -37,4 +37,4 @@ skill 全体を通した確認は任意: 同じ PATH 前置きが効いた shell
       または settings.json の permissions/network allowlist 拡張) を案内する
 
 ## Cleanup
-`rm -rf "$TMPDIR/mock-bin"` (省略可 — 次回 Setup で上書き)。
+`rm -rf "${TMPDIR:-/tmp}/mock-bin"` (省略可 — 次回 Setup で上書き)。
