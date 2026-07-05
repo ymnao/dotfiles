@@ -1,36 +1,40 @@
 ---
 name: pr
-description: Create a pull request from the current branch
+description: Create a pull request from the current branch, with risk-tiered review and a verification-evidence section
 ---
 
-Create a pull request from the current branch based on its commit history and diff.
+Create a pull request from the current branch based on its commit history and diff. Before creating the PR, classify the diff's risk tier and run the review depth that tier requires. The PR body must include a verification-evidence section.
 
 ## Steps
 
+Run each `gh` command as a bare invocation and substitute prior output literally into the next call (no `VAR=$(...)` wrapping — the permission allow-list matches by command prefix and command-substitution forms break that match).
+
 1. Resolve the default branch and gather local branch info:
-   - Run `gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name'` to get the default branch (e.g. `main`)
+   - Run `gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name'` — yields the default branch (e.g. `main`)
    - If that fails (no GitHub remote), use the empty string; the script falls back to `refs/remotes/origin/HEAD`
    - Run `bash "$HOME/.codex/skills/pr/scripts/gather-branch-info.sh" <default-branch>` substituting the value literally
 2. Check for an existing OPEN PR for this branch (avoids creating a duplicate):
-   - Run `gh repo view --json owner --jq '.owner.login'` to get `<owner>`
+   - Run `gh repo view --json owner --jq '.owner.login'` — yields `<owner>`
    - Run `gh pr list --head <branch_name> --base <base_branch> --state open --json number,url,headRepositoryOwner --jq '[.[] | select(.headRepositoryOwner.login == "<owner>")]'`
-   - 0 matches → proceed to step 3
-   - ≥1 match → report the PR URL and stop
-3. Pre-check:
-   - If `commit_count` is 0 → report no commits from base branch and stop
-4. Analyze commit history and diff stat to generate PR title and body:
-   - **Title**: Under 70 characters, summarizing the changes
-   - **Body**: Use the appropriate template (see below)
-5. If `has_remote` is false, run `git push -u origin <branch_name>` to push
-6. Create PR with `gh pr create`:
-   - If `linked_issue` exists, include `Closes #<number>` in the body
+   - 0 matches → proceed / ≥1 match → report the PR URL and stop
+3. Pre-check: if `commit_count` is 0 → report no commits from base branch and stop
+4. Classify risk and run tier-appropriate review (do NOT skip this step):
+   - Run `bash "$HOME/.codex/skills/pr/scripts/classify-risk.sh" <base_branch>` — yields `{"tier": ..., "reasons": [...]}`
+   - **low**: if the project defines lint / typecheck commands, run them and fix failures. No review needed.
+   - **medium**: run the codex-review `security` perspective (follow the codex-review skill's detect→verify→apply steps for that one perspective). Also run the project's test suite if one exists.
+   - **high**: run all 3 codex-review perspectives AND the project's test suite. Then do the explain-the-diff walkthrough (step 5).
+   - If codex is not installed: record "codex-review skipped (codex not installed)" in the evidence section and continue. Do not silently skip.
+   - If review leaves UNRESOLVED findings: do not abort — record them in the evidence section and create the PR as **draft**.
+5. Explain-the-diff walkthrough (tier=high only):
+   - Split the diff into meaningful units. For each unit present: what changed / why / what could break.
+   - Wait for the user's confirmation before `gh pr create`. If running non-interactively, output the walkthrough and create the PR as **draft**.
+6. Generate PR title and body:
+   - **Title**: under 70 characters, summarizing the changes
+   - **Body**: use the repo's PR template if `pr_template` is not null, otherwise the default template below. ALWAYS append the evidence section (below) at the end of the body.
+7. If `has_remote` is false, run `git push -u origin <branch_name>`
+8. Create the PR with `gh pr create` (add `--draft` when step 4/5 decided draft). If `linked_issue` exists, include `Closes #<number>` in the body.
 
-## PR template selection
-
-- If `pr_template` is not null → use it as the PR body template, filling in sections based on commit history and diff
-- If `pr_template` is null → use the default template below
-
-### Default template (fallback)
+## Default template (fallback)
 
 ```
 ## Summary
@@ -42,6 +46,32 @@ Create a pull request from the current branch based on its commit history and di
 Closes #<issue number> (only if applicable)
 ```
 
+## Evidence section (append to EVERY PR body)
+
+```
+<details>
+<summary>検証エビデンス</summary>
+
+## リスク分類
+tier: <tier> — <reasons を列挙>
+
+## 実行した検証
+| 種別 | コマンド | 結果 |
+|---|---|---|
+| テスト | `<実行したコマンド>` | <PASS/FAIL と件数> |
+| Lint | `<実行したコマンド>` | <結果> |
+| レビュー | codex-review <観点> | <PASS / N findings (M fixed, K report-only)> |
+
+## レビュー指摘と対応
+<codex-review の Report format 表を転記。レビュー未実施なら「tier=low のため未実施」>
+
+</details>
+```
+
+Evidence rules (strict):
+- Write ONLY results of commands actually executed in this session. Before writing each row, check it against the actual tool output. If a verification was not run, write "未実施" — never leave it blank or omit the row.
+- Transcribe outputs as summaries (counts, last lines), not full logs.
+
 ## Report format
 
 Created PR: <PR URL>
@@ -51,3 +81,5 @@ Created PR: <PR URL>
 | Branch | `<branch_name>` → `<base_branch>` |
 | Commits | <commit_count> |
 | Changed files | <files_changed> files (+<insertions> -<deletions>) |
+| Risk tier | <tier> |
+| Review | <PASS / findings summary / skipped reason> |
