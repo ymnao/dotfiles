@@ -2,10 +2,9 @@
 set -euo pipefail
 
 # agents/AGENTS.md と codex/AGENTS.md は、共通部分を手動コピーで同期する運用
-# になっている (Codex CLI 向けにセキュリティ規約セクションを追加した派生
-# ファイルが codex/AGENTS.md)。手動コピーは drift (ズレ) が機械的に検出され
-# ないと気づかれずに放置されるため、PR #69 の /simplify altitude 指摘を受けて
-# このチェックを追加した。
+# になっている (agents/AGENTS.md が正、codex/AGENTS.md はそこにセキュリティ
+# 規約セクションを追加した派生ファイル)。手動コピーは drift (ズレ) が機械的に
+# 検出されないと気づかれずに放置されるため、このチェックを追加した。
 #
 # 検証する不変条件:
 #   1. タイトル (1 行目) は意図的に異なる:
@@ -67,10 +66,10 @@ if ! grep -qxF "$SECURITY_MARKER" "$CODEX_MD"; then
 fi
 
 # --- 3. 共通部分の抽出 ---
-# 両抽出とも、末尾の空行 (連続する空行含む) を正規化してから比較する。
-# codex 側はセクション区切りの空行がマーカー直前に入るため、正規化しないと
-# 内容が同一でも drift 扱いになってしまう。
-# ($(...) コマンド置換が末尾の改行をすべて取り除く性質を利用して正規化する)
+# 末尾の空行 (連続する空行含む) の扱いを両側で揃えないと、内容が同一でも
+# drift 扱いになる (codex 側はセクション区切りの空行がマーカー直前に入るため)。
+# ↓ $(...) コマンド置換が末尾の改行をすべて除去し、その後の printf が改行を
+# 1 個だけ付け直すことで、両抽出とも「末尾改行 1 個」に正規化される。
 
 # agents 側: 2 行目〜ファイル末尾
 agents_common="$(tail -n +2 "$AGENTS_MD")"
@@ -87,7 +86,7 @@ printf '%s\n' "$codex_common" > "$WORKDIR/codex_common.txt"
 if ! diff -u "$WORKDIR/agents_common.txt" "$WORKDIR/codex_common.txt"; then
   echo "" >&2
   echo "FAIL: agents/AGENTS.md と codex/AGENTS.md の共通部分に drift があります" >&2
-  echo "  手動コピー同期の対象なので、両方が一致するよう手で修正してください" >&2
+  echo "  agents/AGENTS.md が正、codex/AGENTS.md はその派生。両側を一致させてください" >&2
   exit 1
 fi
 
