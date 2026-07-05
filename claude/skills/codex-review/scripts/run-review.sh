@@ -127,12 +127,12 @@ trap cleanup EXIT
 # --sandbox read-only を明示。config.toml のデフォルト (workspace-write 等)
 # に依存すると、レビュー中に codex が working tree を書き換える構成になる
 # 環境が生まれうる。プロンプトの「Do NOT modify」は副次的な多層防御で、
-# 主防御はここで CLI に強制する。不明フラグや認証エラーで codex が非ゼロ
-# 終了した場合は下の if で捕捉し、exit 1 (setup error) に正規化する。
+# 主防御はここで CLI に強制する。
 #
 # `if !` で包む理由: 素の pipeline のままだと `set -euo pipefail` により
-# codex の非ゼロ終了が即座に script を kill し、下の parser 実行と
-# exit code 正規化 (0/1/2) に到達しない。契約を壊さないため必須。
+# codex の非ゼロ終了 (不明フラグ / 認証エラー等) が即座に script を kill し、
+# 下の parser 実行と exit code 正規化 (0/1/2) に到達しない。契約を壊さない
+# ため必須。
 if ! {
   cat "$PROMPT_FILE"
   printf '\n\n## Target\n\nReview the diff below (produced by "git diff %s...HEAD" in %s). Do NOT modify any files. Output only the fenced JSON block per the Output contract above.\n\n```diff\n%s\n```\n' \
