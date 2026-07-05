@@ -10,7 +10,7 @@ set -euo pipefail
 # 検証する不変条件:
 #   1. タイトル (1 行目) は意図的に異なる:
 #      agents 側 "# AI Agent Guidelines" / codex 側は "(Codex CLI)" 付き。
-#      taitle drift・suffix 消失の regression を防ぐため exact match で assert する。
+#      title drift・suffix 消失の regression を防ぐため exact match で assert する。
 #   2. 共通部分の同一性: agents 側の 2 行目〜末尾と、codex 側の 2 行目〜
 #      「## セキュリティ規約」直前が同一であること。
 #   3. codex 側に「## セキュリティ規約」の見出しが存在すること
@@ -61,37 +61,36 @@ if [ "$codex_title" != "# AI Agent Guidelines (Codex CLI)" ]; then
 fi
 
 # --- 2. codex 側に構造前提のマーカー行が存在するか ---
-if ! grep -qF "$SECURITY_MARKER" "$CODEX_MD"; then
+if ! grep -qxF "$SECURITY_MARKER" "$CODEX_MD"; then
   echo "ERROR: codex AGENTS.md に '$SECURITY_MARKER' 行が見つかりません (構造前提エラー)" >&2
   exit 1
 fi
 
 # --- 3. 共通部分の抽出 ---
-# agents 側: 2 行目〜ファイル末尾
-tail -n +2 "$AGENTS_MD" > "$WORKDIR/agents_common.txt"
-
-# codex 側: 2 行目〜「## セキュリティ規約」行の直前まで
-awk -v marker="$SECURITY_MARKER" '
-  $0 == marker { exit }
-  NR >= 2 { print }
-' "$CODEX_MD" > "$WORKDIR/codex_common.txt"
-
 # 両抽出とも、末尾の空行 (連続する空行含む) を正規化してから比較する。
 # codex 側はセクション区切りの空行がマーカー直前に入るため、正規化しないと
 # 内容が同一でも drift 扱いになってしまう。
-# ($(...) コマンド置換は末尾の改行をすべて取り除く性質を利用して正規化する)
-agents_common="$(cat "$WORKDIR/agents_common.txt")"
-codex_common="$(cat "$WORKDIR/codex_common.txt")"
-printf '%s\n' "$agents_common" > "$WORKDIR/agents_common.normalized.txt"
-printf '%s\n' "$codex_common" > "$WORKDIR/codex_common.normalized.txt"
+# ($(...) コマンド置換が末尾の改行をすべて取り除く性質を利用して正規化する)
 
-if ! diff -u "$WORKDIR/agents_common.normalized.txt" "$WORKDIR/codex_common.normalized.txt"; then
+# agents 側: 2 行目〜ファイル末尾
+agents_common="$(tail -n +2 "$AGENTS_MD")"
+
+# codex 側: 2 行目〜「## セキュリティ規約」行の直前まで
+codex_common="$(awk -v marker="$SECURITY_MARKER" '
+  $0 == marker { exit }
+  NR >= 2 { print }
+' "$CODEX_MD")"
+
+printf '%s\n' "$agents_common" > "$WORKDIR/agents_common.txt"
+printf '%s\n' "$codex_common" > "$WORKDIR/codex_common.txt"
+
+if ! diff -u "$WORKDIR/agents_common.txt" "$WORKDIR/codex_common.txt"; then
   echo "" >&2
   echo "FAIL: agents/AGENTS.md と codex/AGENTS.md の共通部分に drift があります" >&2
   echo "  手動コピー同期の対象なので、両方が一致するよう手で修正してください" >&2
   exit 1
 fi
 
-common_lines="$(wc -l < "$WORKDIR/agents_common.normalized.txt" | tr -d ' ')"
+common_lines="$(wc -l < "$WORKDIR/agents_common.txt" | tr -d ' ')"
 echo "agents-md sync: OK (common part $common_lines lines identical)"
 exit 0
