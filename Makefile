@@ -56,6 +56,7 @@ test: ## Verify shell scripts (shellcheck), JSON files (jq), and hooks
 	@bash tests/run-hook-tests.sh
 	@bash tests/parse-review-output/run-parser-tests.sh
 	@bash tests/classify-risk/run-classify-risk-tests.sh
+	@bash tests/agents-md-sync/run-agents-md-sync-check.sh
 	@echo "OK: all checks passed"
 
 test-hooks: ## Run hook regression tests
