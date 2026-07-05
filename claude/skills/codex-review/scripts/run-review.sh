@@ -170,10 +170,12 @@ fi
 
 rc=0
 bash "$PARSER" < "$RAW_OUT" || rc=$?
-# parser 失敗時 (codex は exit 0 だが stdout が malformed JSON / 空) は codex 側の
-# stderr に degraded 理由 (rate limit fallback 等) が入る場合があるため dump する。
-# codex 失敗パス (line 147) の cat と対称。
-if [ "$rc" -ne 0 ]; then
+# parser 失敗時 (rc=1: codex は exit 0 だが stdout が malformed JSON / 空) は
+# codex 側の stderr に degraded 理由 (rate limit fallback 等) が入る場合が
+# あるため dump する。codex 失敗パス (line 147) の cat と対称。
+# rc=2 (findings ありの success) では codex stderr の progress ノイズを
+# 呼び側に流さないよう対象を rc=1 に限定する。
+if [ "$rc" -eq 1 ]; then
   cat "$RAW_ERR" >&2
 fi
 exit "$rc"
