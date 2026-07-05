@@ -31,9 +31,9 @@ Fetch the specified issue, create a branch, and propose an implementation plan.
    - Review directory layout
    - Understand existing code patterns and architecture
 10. Propose an implementation plan based on the issue:
-   - Files to change
-   - Implementation steps
-   - Considerations and caveats
+    - Files to change
+    - Implementation steps
+    - Considerations and caveats
 
 ## Report format
 
