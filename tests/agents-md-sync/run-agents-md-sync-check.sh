@@ -2,9 +2,9 @@
 set -euo pipefail
 
 # agents/AGENTS.md と codex/AGENTS.md は、共通部分を手動コピーで同期する運用
-# になっている (agents/AGENTS.md が正、codex/AGENTS.md はそこにセキュリティ
-# 規約セクションを追加した派生ファイル)。手動コピーは drift (ズレ) が機械的に
-# 検出されないと気づかれずに放置されるため、このチェックを追加した。
+# になっている (codex/AGENTS.md 側は共通部分にセキュリティ規約セクションを
+# 追加している)。手動コピーは drift (ズレ) が機械的に検出されないと気づかれず
+# に放置されるため、このチェックを追加した。両ファイルは同時編集する。
 #
 # 検証する不変条件:
 #   1. タイトル (1 行目) は意図的に異なる:
@@ -59,8 +59,13 @@ if [ "$codex_title" != "# AI Agent Guidelines (Codex CLI)" ]; then
   exit 1
 fi
 
+# .editorconfig で md ファイルの trailing whitespace 除去を無効化しているため、
+# マーカー行の比較は行末空白を無視する形で行う (無視しないと trailing space が
+# 混入した瞬間に「マーカー不在」の誤誘導的エラーになる)。この方針は step 2 の
+# 存在確認と step 3 の awk 抽出の両方で揃える。
+
 # --- 2. codex 側に構造前提のマーカー行が存在するか ---
-if ! grep -qxF "$SECURITY_MARKER" "$CODEX_MD"; then
+if ! grep -qE "^${SECURITY_MARKER}[[:space:]]*$" "$CODEX_MD"; then
   echo "ERROR: codex AGENTS.md に '$SECURITY_MARKER' 行が見つかりません (構造前提エラー)" >&2
   exit 1
 fi
@@ -75,8 +80,10 @@ fi
 agents_common="$(tail -n +2 "$AGENTS_MD")"
 
 # codex 側: 2 行目〜「## セキュリティ規約」行の直前まで
+# ($0 から行末空白を除いた形と marker を比較。step 2 と同じ寛容さで揃える)
 codex_common="$(awk -v marker="$SECURITY_MARKER" '
-  $0 == marker { exit }
+  { line = $0; sub(/[ \t]+$/, "", line) }
+  line == marker { exit }
   NR >= 2 { print }
 ' "$CODEX_MD")"
 
@@ -86,7 +93,7 @@ printf '%s\n' "$codex_common" > "$WORKDIR/codex_common.txt"
 if ! diff -u "$WORKDIR/agents_common.txt" "$WORKDIR/codex_common.txt"; then
   echo "" >&2
   echo "FAIL: agents/AGENTS.md と codex/AGENTS.md の共通部分に drift があります" >&2
-  echo "  agents/AGENTS.md が正、codex/AGENTS.md はその派生。両側を一致させてください" >&2
+  echo "  両ファイルを同時に編集する運用です。共通部分が一致するよう手で修正してください" >&2
   exit 1
 fi
 
