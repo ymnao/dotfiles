@@ -1,14 +1,14 @@
 ---
 name: issue
 description: Create a branch from a GitHub issue and propose an implementation plan
-args: <issue number>
 ---
 
 Fetch the specified issue, create a branch, and propose an implementation plan.
 
 ## Steps
 
-1. Run `gh issue view $ARGUMENTS --json number,title,body,labels,state,assignees,url --jq '{number, title, body, state, url, labels: [.labels[].name], assignees: [.assignees[].login]}'` to fetch issue info (the `--jq` projection normalizes `labels` and `assignees` to plain string arrays so the label-based branch-type rules below match by name)
+1. Run `gh issue view <issue-number> --json number,title,body,labels,state,assignees,url --jq '{number, title, body, state, url, labels: [.labels[].name], assignees: [.assignees[].login]}'` to fetch issue info, substituting `<issue-number>` with the number the user specified — as the skill argument or in the conversation (the `--jq` projection normalizes `labels` and `assignees` to plain string arrays so the label-based branch-type rules below match by name)
+    - If no issue number was provided, ask the user for it and stop
 2. Check issue state:
     - If `CLOSED`, report that the issue is already closed and stop
 3. Check for uncommitted changes:
