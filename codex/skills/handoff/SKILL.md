@@ -3,7 +3,7 @@ name: handoff
 description: セッション終了前に進捗を HANDOFF.md に書き出し、次のセッションへ引き継ぐ
 ---
 
-現在のセッションの作業内容を HANDOFF.md に記録し、次のセッションで引き継げるようにする。
+現在のセッションの作業内容を HANDOFF.md に記録し、次のセッションで `/clear` 後に引き継げるようにする。
 
 ## Steps
 
