@@ -48,11 +48,11 @@ test: ## Verify shell scripts (shellcheck), JSON files (jq), and hooks
 	@command -v shellcheck >/dev/null || { echo "shellcheck not installed. Run: brew install shellcheck"; exit 1; }
 	@command -v jq >/dev/null || { echo "jq not installed. Run: brew install jq"; exit 1; }
 	@echo "==> shellcheck (warning level and above)"
-	@# hook 正本は agents/hooks/ に置き、claude/hooks/ と codex/hooks/ から symlink で参照する。
-	@# git ls-files は symlink も列挙するため、実体を 3 回検査してしまう。symlink を除外する。
-	@# SC2088: agents/hooks/block-dangerous-commands.sh の `"~/..."` 等はリテラル一致を意図した
-	@# 設計 (旧 `"[~]"` バグ修正済み)。tilde 展開したくない false positive のため除外する。
-	@git ls-files '*.sh' | while read -r f; do [ -L "$$f" ] || printf '%s\n' "$$f"; done | xargs shellcheck -S warning -e SC2088
+	@# symlink 除外: claude/hooks と codex/hooks は agents/hooks への symlink なので実体だけ検査する。
+	@# SC2088 除外は agents/hooks/ 配下だけ (block-dangerous-commands.sh の意図的リテラル tilde 対応)。
+	@non_hook=$$(git ls-files '*.sh' | while read -r f; do [ -L "$$f" ] || printf '%s\n' "$$f"; done | grep -v '^agents/hooks/' || true); \
+	    [ -n "$$non_hook" ] && echo "$$non_hook" | xargs shellcheck -S warning
+	@git ls-files 'agents/hooks/*.sh' | xargs shellcheck -S warning -e SC2088
 	@echo "==> JSON validation"
 	@git ls-files '*.json' | while read -r f; do \
 	    jq empty "$$f" >/dev/null || { echo "FAIL: $$f"; exit 1; }; \
