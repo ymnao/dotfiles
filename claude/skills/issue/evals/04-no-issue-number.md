@@ -12,4 +12,4 @@ sandbox clone 内、main で clean な状態。issue 番号は渡さない。
 - [ ] ブランチを作成していない
 
 ## Cleanup
-不要 (何も作成されないため)。
+不要。
