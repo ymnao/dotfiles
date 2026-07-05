@@ -49,8 +49,6 @@ scenario() {
     echo "FAIL $name: expected=$want got=$tier ($got)"
     fail=$((fail + 1))
   fi
-  git checkout -q main
-  git branch -qD "case-$name"
 }
 
 T=$(printf '\t')
