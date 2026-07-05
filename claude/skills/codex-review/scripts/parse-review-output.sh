@@ -44,7 +44,11 @@ if ! validated=$(printf '%s' "$json" | jq -ce '
   end
 ' 2>/dev/null); then
   echo "ERROR: could not parse codex output as review JSON. Raw head:" >&2
-  printf '%s\n' "$raw" | head -20 >&2
+  # awk 'NR<=20' は全入力を読み切るので printf が SIGPIPE で 141 終了しない。
+  # set -euo pipefail のもとで `head -20` を使うと、raw が長いと printf が
+  # SIGPIPE を受けてパイプが非ゼロで終わり、下の exit 1 に到達せず 141 で
+  # 落ちる (parse error は exit 1 の契約が破れる)。
+  printf '%s\n' "$raw" | awk 'NR<=20' >&2
   exit 1
 fi
 
