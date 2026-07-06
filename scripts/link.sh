@@ -115,6 +115,10 @@ if [[ -d "$DOTFILES_DIR/claude" ]]; then
     if [[ -d "$DOTFILES_DIR/claude/agents" ]]; then
         link_file "$DOTFILES_DIR/claude/agents" "$HOME/.claude/agents"
     fi
+
+    if [[ -f "$DOTFILES_DIR/claude/statusline.sh" ]]; then
+        link_file "$DOTFILES_DIR/claude/statusline.sh" "$HOME/.claude/statusline.sh"
+    fi
 fi
 
 # Codex CLI configuration
