@@ -43,6 +43,7 @@ automatic_backups/
 # Claude
 .claude/*
 !.claude/settings.json
+!.claude/stop-gate.conf
 
 # Serena
 .serena/
