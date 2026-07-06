@@ -47,7 +47,8 @@
         "~/.cache/uv",
         "~/.cache/pip",
         "~/Library/Caches/uv",
-        "~/Library/Caches/pip"
+        "~/Library/Caches/pip",
+        "~/.codex"
       ],
       "denyRead": [
         "~/.ssh",
@@ -71,7 +72,8 @@
         "codeload.github.com",
         "objects.githubusercontent.com",
         "pypi.org",
-        "files.pythonhosted.org"
+        "files.pythonhosted.org",
+        "chatgpt.com"
       ]
     },
     "excludedCommands": [
