@@ -111,6 +111,10 @@ if [[ -d "$DOTFILES_DIR/claude" ]]; then
     if [[ -d "$DOTFILES_DIR/claude/hooks" ]]; then
         link_file "$DOTFILES_DIR/claude/hooks" "$HOME/.claude/hooks"
     fi
+
+    if [[ -d "$DOTFILES_DIR/claude/agents" ]]; then
+        link_file "$DOTFILES_DIR/claude/agents" "$HOME/.claude/agents"
+    fi
 fi
 
 # Codex CLI configuration
