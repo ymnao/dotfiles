@@ -92,14 +92,13 @@ if [ "$count" -ge 3 ]; then
   exit 0
 fi
 
-# Homebrew PATH 補完 (GUI 起動時に不足する。末尾追加で既存 PATH を優先)
-for d in /opt/homebrew/bin /usr/local/bin; do
-  case ":$PATH:" in *":$d:"*) ;; *) PATH="$PATH:$d" ;; esac
-done
+# Homebrew PATH 補完 (GUI 起動時に不足する。末尾追加で既存 PATH を優先。重複エントリは無害)
+PATH="$PATH:/opt/homebrew/bin:/usr/local/bin"
 export PATH
 
 # 検証コマンドを fresh な bash -c で実行 (set -u/pipefail を継承させない)。
-# perl でタイムアウト監視: 子を独立プロセスグループにして fork し、alarm 発火時は
+# perl でタイムアウト監視 (timeout(1) は macOS 標準に無いため perl で実装):
+# 子を独立プロセスグループにして fork し、alarm 発火時は
 # グループごと TERM → KILL (孫プロセスが stdout パイプを握ったまま orphan になり
 # コマンド置換が hang するのを防ぐ)。タイムアウト時は status 142。
 timeout_secs="${STOP_GATE_TIMEOUT_SECS:-300}"

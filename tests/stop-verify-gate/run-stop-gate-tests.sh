@@ -60,6 +60,21 @@ check() {
   fi
 }
 
+# hook を実行し stderr に期待パターンが含まれるか検証する。
+# $1=テスト名, $2=cwd, $3=session_id, $4=grep パターン
+check_stderr_contains() {
+  local json out
+  json=$(jq -cn --arg cwd "$2" --arg sid "$3" \
+    '{"session_id":$sid,"hook_event_name":"Stop","stop_hook_active":false,"cwd":$cwd}')
+  out=$(printf '%s' "$json" | TMPDIR="$BASE/hook-tmp" bash "$HOOK" 2>&1 >/dev/null) || true
+  if printf '%s' "$out" | grep -q "$4"; then
+    pass=$((pass + 1))
+  else
+    echo "FAIL $1: stderr にパターンが含まれない: $4"
+    fail=$((fail + 1))
+  fi
+}
+
 mkdir -p "$BASE/hook-tmp"
 
 # 1. git リポジトリ外 → 許可
@@ -126,15 +141,7 @@ check "reset-cap-4" 0 "$(run_gate "$repo" s08)"
 repo=$(make_repo r09)
 mkdir -p "$repo/.claude"
 printf 'echo BOOM-MARKER; false\n' >"$repo/.claude/stop-gate.conf"
-json=$(jq -cn --arg cwd "$repo" \
-  '{"session_id":"s09","hook_event_name":"Stop","stop_hook_active":false,"cwd":$cwd}')
-stderr_out=$(printf '%s' "$json" | TMPDIR="$BASE/hook-tmp" bash "$HOOK" 2>&1 >/dev/null) || true
-if printf '%s' "$stderr_out" | grep -q "BOOM-MARKER"; then
-  pass=$((pass + 1))
-else
-  echo "FAIL stderr-feedback: 失敗出力が stderr に含まれない"
-  fail=$((fail + 1))
-fi
+check_stderr_contains "stderr-feedback" "$repo" s09 "BOOM-MARKER"
 
 # 10. JSON に cwd が無い場合は実行時 pwd にフォールバック
 repo=$(make_repo r10)
@@ -171,15 +178,7 @@ printf 'false\n' >"$repo/.claude/stop-gate.conf"
 run_gate "$repo" s12 >/dev/null
 run_gate "$repo" s12 >/dev/null
 run_gate "$repo" s12 >/dev/null
-json=$(jq -cn --arg cwd "$repo" \
-  '{"session_id":"s12","hook_event_name":"Stop","stop_hook_active":false,"cwd":$cwd}')
-stderr_out=$(printf '%s' "$json" | TMPDIR="$BASE/hook-tmp" bash "$HOOK" 2>&1 >/dev/null) || true
-if printf '%s' "$stderr_out" | grep -q "手動で確認してください"; then
-  pass=$((pass + 1))
-else
-  echo "FAIL cap-manual-message: cap 発動メッセージが stderr に含まれない"
-  fail=$((fail + 1))
-fi
+check_stderr_contains "cap-manual-message" "$repo" s12 "手動で確認してください"
 
 # H-9. hook_event_name が Stop 以外 (PreToolUse) なら fail する conf + dirty tree でも許可
 repo=$(make_repo r13)
@@ -215,37 +214,23 @@ else
   fail=$((fail + 1))
 fi
 
-# H-5. タイムアウトでブロックし、stderr に「タイムアウト」が含まれる (run_gate は env を通さないので直接呼ぶ)
+# H-5. タイムアウトでブロック: 孫プロセスが stdout を掴む最悪ケースでも group kill でパイプが
+#      閉じてすぐブロックに落ち (旧 exec 方式なら bg の sleep 30 がパイプを握って ~30 秒 hang)、
+#      stderr にタイムアウト注記が載る (run_gate は env を通さないので直接呼ぶ)
 repo=$(make_repo r17)
-mkdir -p "$repo/.claude"
-printf 'sleep 3\n' >"$repo/.claude/stop-gate.conf"
-rc=0
-json=$(jq -cn --arg cwd "$repo" \
-  '{"session_id":"s17","hook_event_name":"Stop","stop_hook_active":false,"cwd":$cwd}')
-stderr_out=$(printf '%s' "$json" | STOP_GATE_TIMEOUT_SECS=1 TMPDIR="$BASE/hook-tmp" bash "$HOOK" 2>&1 >/dev/null) || rc=$?
-check "timeout-block" 2 "$rc"
-if printf '%s' "$stderr_out" | grep -q "タイムアウト"; then
-  pass=$((pass + 1))
-else
-  echo "FAIL timeout-message: タイムアウト注記が stderr に含まれない"
-  fail=$((fail + 1))
-fi
-
-# H-5b. 孫プロセスが stdout を掴んで hang するケース: group kill でパイプが閉じ、
-#       タイムアウト後すぐブロックに落ちる (旧実装なら bg の sleep 30 がパイプを握って ~30 秒 hang)
-repo=$(make_repo r18)
 mkdir -p "$repo/.claude"
 printf 'sleep 30 & wait\n' >"$repo/.claude/stop-gate.conf"
 rc=0
 json=$(jq -cn --arg cwd "$repo" \
-  '{"session_id":"s18","hook_event_name":"Stop","stop_hook_active":false,"cwd":$cwd}')
-h5b_start=$(date +%s)
-printf '%s' "$json" | STOP_GATE_TIMEOUT_SECS=1 TMPDIR="$BASE/hook-tmp" bash "$HOOK" >/dev/null 2>&1 || rc=$?
-h5b_elapsed=$(( $(date +%s) - h5b_start ))
-if [ "$rc" = 2 ] && [ "$h5b_elapsed" -lt 15 ]; then
+  '{"session_id":"s17","hook_event_name":"Stop","stop_hook_active":false,"cwd":$cwd}')
+h5_start=$(date +%s)
+stderr_out=$(printf '%s' "$json" | STOP_GATE_TIMEOUT_SECS=1 TMPDIR="$BASE/hook-tmp" bash "$HOOK" 2>&1 >/dev/null) || rc=$?
+h5_elapsed=$(( $(date +%s) - h5_start ))
+check "timeout-block" 2 "$rc"
+if [ "$h5_elapsed" -lt 15 ] && printf '%s' "$stderr_out" | grep -q "タイムアウト"; then
   pass=$((pass + 1))
 else
-  echo "FAIL timeout-orphan-grandchild: rc=$rc elapsed=${h5b_elapsed}s (exit 2 かつ 15 秒未満を期待)"
+  echo "FAIL timeout-group-kill: elapsed=${h5_elapsed}s (15 秒未満 + stderr のタイムアウト注記を期待)"
   fail=$((fail + 1))
 fi
 
