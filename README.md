@@ -69,7 +69,7 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 - **WezTerm** - ターミナルエミュレータ（Kanagawa/OneDarkテーマ、プラットフォーム対応キーバインド）
 - **Neovim** - エディタ（Lazy.nvimでプラグイン管理）
 - **Git** - バージョン管理（delta diff付き）
-- **Claude Code** - AI開発アシスタント（設定・スキル管理）
+- **Claude Code** - AI開発アシスタント（設定・スキル管理、運用方針は [docs/ai-operations.md](docs/ai-operations.md)）
 
 ### macOS
 - **Fish** - シェル
