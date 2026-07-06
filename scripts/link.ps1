@@ -260,6 +260,12 @@ if (Test-Path $claudeHooksSource) {
     New-DirectoryLink -Source $claudeHooksSource -Destination $claudeHooksDest
 }
 
+$claudeAgentsSource = Join-Path $DOTFILES_DIR "claude\agents"
+$claudeAgentsDest = Join-Path $claudeDir "agents"
+if (Test-Path $claudeAgentsSource) {
+    New-DirectoryLink -Source $claudeAgentsSource -Destination $claudeAgentsDest
+}
+
 # Codex CLI
 Write-Info "`nLinking Codex CLI configuration..."
 $codexSource = Join-Path $DOTFILES_DIR "codex"
