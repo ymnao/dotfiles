@@ -266,6 +266,12 @@ if (Test-Path $claudeAgentsSource) {
     New-DirectoryLink -Source $claudeAgentsSource -Destination $claudeAgentsDest
 }
 
+$claudeRulesSource = Join-Path $DOTFILES_DIR "claude\rules"
+$claudeRulesDest = Join-Path $claudeDir "rules"
+if (Test-Path $claudeRulesSource) {
+    New-DirectoryLink -Source $claudeRulesSource -Destination $claudeRulesDest
+}
+
 $claudeStatuslineSource = Join-Path $DOTFILES_DIR "claude\statusline.sh"
 $claudeStatuslineDest = Join-Path $claudeDir "statusline.sh"
 if (Test-Path $claudeStatuslineSource) {
