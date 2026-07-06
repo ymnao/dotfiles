@@ -21,35 +21,11 @@
 
 (プロジェクトに合わせて編集)
 
-## npm 操作の指針
+## 注意
 
-- **依存追加**: `npm install <pkg>` (`--save-dev` で dev 依存)
-- **依存削除**: `npm uninstall <pkg>`
-- **クリーンインストール**: `npm ci` — `package-lock.json` から再現性ある環境を作る
-- **依存ツリー確認**: `npm ls --depth=0`
-- **重複解決**: `npm dedupe`
-- **`package-lock.json` を直接編集しない** — 必ず `npm install` / `npm update` 経由で更新する
+- 依存の追加 (`npm install <pkg>`) や `npx` は hook でブロックされる。必要なときはユーザーに依頼する
+- `~/.npmrc` は `ignore-scripts=true`。ネイティブモジュール (esbuild, sharp, prisma 等) が必要な場合はプロジェクトの `.npmrc` で `ignore-scripts=false` を設定する (サプライチェーン経由のビルド時実行を許すため、影響範囲を理解した上で)
 
-## ネイティブモジュール (esbuild, sharp, prisma 等)
+## プロジェクト固有の注意点
 
-`~/.npmrc` の `ignore-scripts=true` 環境では postinstall ビルドが走らない。必要なパッケージは個別に `--ignore-scripts=false` を付けるか、プロジェクトの `.npmrc` で上書きする:
-
-```
-# .npmrc (project local)
-ignore-scripts=false
-```
-
-ただしプロジェクト `.npmrc` で全許可にするとサプライチェーン経由のビルド時実行を許してしまうため、影響範囲を理解した上で設定すること。
-
-## セキュリティ
-
-- `.env*` は Read/Edit 拒否（settings.json で設定済み）
-- 新しい依存追加 (`npm install <pkg>`) はプロンプト確認
-- `npx` は supply chain リスクあり、プロンプト確認
-- `npm install -g` / `npm i -g` は禁止（system Node を汚染するため）
-- `npm publish` は禁止
-- `node_modules/` および `package-lock.json` の手動編集は禁止
-
-## 注意点
-
-(プロジェクト固有の注意点をここに)
+(ここに記載)
