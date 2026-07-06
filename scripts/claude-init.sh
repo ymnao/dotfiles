@@ -32,7 +32,7 @@ usage() {
     local templates_list="  (no templates found)"
     if [[ -d "$TEMPLATES_DIR" ]]; then
         local listing
-        listing=$(ls -1 "$TEMPLATES_DIR" 2>/dev/null | sed 's/^/  - /' || true)
+        listing=$(find "$TEMPLATES_DIR" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | sort | sed 's/^/  - /' || true)
         [[ -n "$listing" ]] && templates_list="$listing"
     fi
     cat <<EOF

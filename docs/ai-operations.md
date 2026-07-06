@@ -63,7 +63,7 @@
    Markdown なので全文監査できる)・最小権限・lethal trifecta
    (秘密データ+信頼できないコンテンツ+外部送信の同時成立)を作らないか
 5. 半年ごとに棚卸し: 「今のモデル性能でもまだ必要か?」を問う
-   (例: sequential-thinking MCP は adaptive thinking 内蔵化で 2026-07 に削除)
+   (例: sequential-thinking MCP は adaptive thinking 内蔵化で 2026-07 に削除予定)
 
 ## 6. レビューと理解の保ち方
 
