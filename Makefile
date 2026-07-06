@@ -61,6 +61,7 @@ test: ## Verify shell scripts (shellcheck), JSON files (jq), and hooks
 	@bash tests/agents-md-sync/run-agents-md-sync-check.sh
 	@bash tests/statusline/run-statusline-tests.sh
 	@bash tests/stop-verify-gate/run-stop-gate-tests.sh
+	@bash tests/post-format/run-post-format-tests.sh
 	@echo "OK: all checks passed"
 
 test-hooks: ## Run hook regression tests
