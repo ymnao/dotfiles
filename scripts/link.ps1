@@ -266,6 +266,12 @@ if (Test-Path $claudeAgentsSource) {
     New-DirectoryLink -Source $claudeAgentsSource -Destination $claudeAgentsDest
 }
 
+$claudeStatuslineSource = Join-Path $DOTFILES_DIR "claude\statusline.sh"
+$claudeStatuslineDest = Join-Path $claudeDir "statusline.sh"
+if (Test-Path $claudeStatuslineSource) {
+    New-FileLink -Source $claudeStatuslineSource -Destination $claudeStatuslineDest
+}
+
 # Codex CLI
 Write-Info "`nLinking Codex CLI configuration..."
 $codexSource = Join-Path $DOTFILES_DIR "codex"
