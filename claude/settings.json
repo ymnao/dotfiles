@@ -102,6 +102,17 @@
         ]
       }
     ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/post-format.sh\""
+          }
+        ]
+      }
+    ],
     "Notification": [
       {
         "matcher": "",
