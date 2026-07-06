@@ -116,6 +116,10 @@ if [[ -d "$DOTFILES_DIR/claude" ]]; then
         link_file "$DOTFILES_DIR/claude/agents" "$HOME/.claude/agents"
     fi
 
+    if [[ -d "$DOTFILES_DIR/claude/rules" ]]; then
+        link_file "$DOTFILES_DIR/claude/rules" "$HOME/.claude/rules"
+    fi
+
     if [[ -f "$DOTFILES_DIR/claude/statusline.sh" ]]; then
         link_file "$DOTFILES_DIR/claude/statusline.sh" "$HOME/.claude/statusline.sh"
     fi
