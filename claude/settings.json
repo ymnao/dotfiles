@@ -119,6 +119,10 @@
         "hooks": [
           {
             "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/stop-verify-gate.sh\""
+          },
+          {
+            "type": "command",
             "command": "osascript -e 'display notification \"タスクが完了しました\" with title \"Claude Code\" sound name \"Glass\"'"
           }
         ]
