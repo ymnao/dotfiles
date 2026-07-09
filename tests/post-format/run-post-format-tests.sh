@@ -15,6 +15,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd "$SCRIPT_DIR" && git rev-parse --show-toplevel)"
 HOOK="${HOOK_PATH:-$REPO_ROOT/claude/hooks/post-format.sh}"
 
+if ! command -v jq >/dev/null 2>&1; then
+  echo "ERROR: jq not installed (Brewfile: brew install jq)" >&2
+  exit 1
+fi
+
 if [ ! -f "$HOOK" ]; then
   echo "ERROR: hook not found: $HOOK (HOOK_PATH で上書き可)" >&2
   exit 1

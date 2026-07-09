@@ -11,10 +11,11 @@
 # Usage:
 #   backup_path=$(unique_backup_path "/path/to/file")
 
+# -e / -L 併用: 壊れた symlink (-e が false になる) も「衝突」扱いにする
 unique_backup_path() {
     local dest="$1"
     local backup="$dest.backup"
-    if [[ ! -e "$backup" ]]; then
+    if [[ ! -e "$backup" && ! -L "$backup" ]]; then
         printf '%s' "$backup"
         return
     fi
@@ -22,7 +23,7 @@ unique_backup_path() {
     ts=$(date +%Y%m%d%H%M%S)
     backup="$dest.backup.$ts"
     local i=1
-    while [[ -e "$backup" ]]; do
+    while [[ -e "$backup" || -L "$backup" ]]; do
         backup="$dest.backup.$ts.$i"
         i=$((i + 1))
     done

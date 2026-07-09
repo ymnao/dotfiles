@@ -68,6 +68,14 @@ for i in 1 2 3 4; do touch "$DEST.backup.$FIXED_TS.$i"; done
 got=$(unique_backup_path "$DEST")
 assert_eq loop-terminates "$DEST.backup.$FIXED_TS.5" "$got"
 
+# case 6: 壊れた symlink の backup ($dest.backup が存在しない相手を指す) も衝突扱い
+# ([[ -e ]] だけだと壊れた symlink を「未使用」と誤判定してしまうため -L 併用が必要)
+DEST="$WORKDIR/case6"
+touch "$DEST"
+ln -s "$WORKDIR/nonexistent" "$DEST.backup"
+got=$(unique_backup_path "$DEST")
+assert_eq broken-symlink-backup "$DEST.backup.$FIXED_TS" "$got"
+
 echo "link-backup tests: $pass passed, $fail failed"
 [ "$fail" = 0 ] || exit 1
 exit 0
