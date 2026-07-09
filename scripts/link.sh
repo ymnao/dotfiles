@@ -29,8 +29,12 @@ link_file() {
 
     # If destination exists and is not a symlink, back it up
     if [[ -e "$dest" ]] && [[ ! -L "$dest" ]]; then
-        warn "Backing up existing file: $dest"
-        mv "$dest" "$dest.backup"
+        local backup="$dest.backup"
+        if [[ -e "$backup" ]]; then
+            backup="$dest.backup.$(date +%Y%m%d%H%M%S)"
+        fi
+        warn "Backing up existing file: $dest -> $backup"
+        mv "$dest" "$backup"
     fi
 
     # Remove old symlink if it exists

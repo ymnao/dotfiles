@@ -36,6 +36,8 @@ fi
 files=$(git diff "$REF...HEAD" --name-only)
 # 追加行のみ (+++ ヘッダを除く)。バイナリ diff は git が行を出さないので自然に無視される
 added=$(git diff "$REF...HEAD" --unified=0 2>/dev/null | grep -E '^\+' | grep -vE '^\+\+\+' || true)
+# 削除されたファイル (rename は R として別扱いになるため含まれない)
+deleted=$(git diff "$REF...HEAD" --name-only --diff-filter=D)
 
 reasons=""
 add_reason() {
@@ -59,16 +61,26 @@ check_content() {
   return 0
 }
 
+# 削除ルール: 削除されたファイル名が ERE にマッチしたら HIGH
+# (エージェントが「テストを消して green にする」事故の検出。変更・追加は対象外)
+check_deleted() {
+  local rule="$1" pattern="$2" m
+  m=$(printf '%s\n' "$deleted" | grep -iE "$pattern" | head -3 || true)
+  [ -n "$m" ] && add_reason "$rule (deleted): $(printf '%s' "$m" | tr '\n' ' ')"
+  return 0
+}
+
 # ---- RULES (ここだけ編集すればルールを増減できる) ----
 check_path "auth-code"    '(^|/)(auth|login|session|oauth|token|secret|password|crypt|credential)[^/]*(/|$)'
 check_path "ci-config"    '^\.github/workflows/|Jenkinsfile|\.gitlab-ci|^\.circleci/'
-check_path "dependency"   'package\.json$|package-lock\.json$|pnpm-lock\.yaml$|yarn\.lock$|bun\.lockb$|pyproject\.toml$|uv\.lock$|requirements[^/]*\.txt$|go\.(mod|sum)$|Cargo\.(toml|lock)$|Gemfile(\.lock)?$|Brewfile$'
+check_path "dependency"   'package\.json$|package-lock\.json$|pnpm-lock\.yaml$|yarn\.lock$|bun\.lockb?$|pyproject\.toml$|uv\.lock$|poetry\.lock$|requirements[^/]*\.txt$|go\.(mod|sum)$|Cargo\.(toml|lock)$|Gemfile(\.lock)?$|Brewfile$'
 check_path "agent-config" 'settings[^/]*\.json$|(^|/)hooks/|hooks\.json$|AGENTS\.md$|CLAUDE\.md$|\.mcp\.json$'
 check_path "env-files"    '(^|/)\.env|\.npmrc$|config\.toml$'
 check_path "infra"        'Dockerfile|docker-compose|\.tf$|\.tfvars$'
 check_content "exec-pattern"        'eval |child_process|subprocess|os\.system|exec\(|dangerouslySetInnerHTML'
 check_content "pipe-to-shell"       '(curl|wget)[^|;]*\|[[:space:]]*(ba|z|da)?sh'
 check_content "permission-widening" 'chmod (777|666)|--dangerously|--no-verify'
+check_deleted "test-removal" '(^|/)(tests?|__tests__|spec)/|\.(test|spec)\.[a-z]+$|_test\.(go|py|rb|ts|tsx|js|jsx)$|\.cases\.jsonl$'
 LOW_ONLY_PATTERN='\.md$|^docs/|^LICENSE|\.txt$'
 # ---- /RULES ----
 

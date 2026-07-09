@@ -39,6 +39,7 @@ brew "openjdk@17"
 # ========================================
 brew "shellcheck"
 brew "actionlint"
+brew "jq"
 
 # ========================================
 # AWS Development

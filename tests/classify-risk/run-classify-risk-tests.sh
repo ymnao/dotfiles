@@ -91,6 +91,55 @@ scenario exec-pattern high <<EOF
 src/run.py${T}import subprocess
 EOF
 
+scenario bun-text-lockfile high <<EOF
+bun.lock${T}{}
+EOF
+
+scenario poetry-lockfile high <<EOF
+poetry.lock${T}[[package]]
+EOF
+
+# --- テスト削除シグナル (2026-07-07 追加) ---
+# 削除シナリオは base 側にテストファイルが必要なので main に先にコミットする
+git checkout -q main
+mkdir -p tests src
+printf 'assert 1\n' > tests/util_test.py
+printf 'x = 1\n' > src/keep.py
+git add tests src && git commit -qm "add test fixture"
+
+expect_tier() {
+  # $1=name, $2=want。カレントブランチの分類を assert
+  local got tier
+  got=$(bash "$CLASSIFIER" main)
+  tier=$(printf '%s' "$got" | jq -r '.tier')
+  if [ "$tier" = "$2" ]; then
+    pass=$((pass + 1))
+  else
+    echo "FAIL $1: expected=$2 got=$tier ($got)"
+    fail=$((fail + 1))
+  fi
+}
+
+# テストファイル削除 → high
+git checkout -qb case-test-removal
+git rm -q tests/util_test.py
+git commit -qm "remove test"
+expect_tier test-removal high
+
+# テストファイルの変更 (削除でない) → medium のまま
+git checkout -q main
+git checkout -qb case-test-modify
+printf 'assert 2\n' >> tests/util_test.py
+git commit -qam "modify test"
+expect_tier test-modify medium
+
+# テスト以外のファイル削除 → high にしない (通常 tier)
+git checkout -q main
+git checkout -qb case-src-removal
+git rm -q src/keep.py
+git commit -qm "remove src"
+expect_tier non-test-removal medium
+
 echo "classify-risk tests: $pass passed, $fail failed"
 [ "$fail" = 0 ] || exit 1
 exit 0
