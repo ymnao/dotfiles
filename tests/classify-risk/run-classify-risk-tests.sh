@@ -15,6 +15,11 @@ if [ ! -f "$CLASSIFIER" ]; then
   exit 1
 fi
 
+if ! command -v jq >/dev/null 2>&1; then
+  echo "ERROR: jq not installed (Brewfile: brew install jq)" >&2
+  exit 1
+fi
+
 WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/classify-risk.XXXXXX")"
 cleanup() { [ -n "${WORKDIR:-}" ] && rm -rf "$WORKDIR"; }
 trap cleanup EXIT
@@ -23,8 +28,13 @@ cd "$WORKDIR"
 git init -q -b main .
 git config user.email "test@example.com"
 git config user.name "test"
+# rename 検出を明示 ON にして、host の diff.renames グローバル設定に依存しない
+# (rename は check_deleted の --diff-filter=D から除外されるため挙動が変わる)
+git config diff.renames true
 echo "init" > init.txt
 git add . && git commit -qm "init"
+# 削除シナリオが main を汚染しない基準点として init sha を保持する
+INITIAL_MAIN_SHA=$(git rev-parse HEAD)
 
 pass=0
 fail=0
@@ -107,76 +117,87 @@ poetry.lock${T}[[package]]
 EOF
 
 # --- テスト削除シグナル (2026-07-07 追加) ---
-# ここから下は削除シナリオ専用。base 側にテスト fixture を仕込む必要があり、
-# main を汚染するため以降に scenario() を追記しないこと (base tree が変わり
-# 既存 scenario と結果が変わる)。追加シナリオは上の scenario 群に足すこと
-git checkout -q main
-mkdir -p tests __tests__ spec src fixtures
-printf 'assert 1\n' > tests/util_test.py
-printf 'export const t = 1\n' > __tests__/foo.js
-printf 'describe "x"\n' > spec/foo.rb
-printf 'test\n' > src/foo.test.ts
-printf 'test\n' > src/foo.spec.ts
-printf '{}\n' > fixtures/example.cases.jsonl
-printf 'x = 1\n' > src/keep.py
-git add tests __tests__ spec src fixtures && git commit -qm "add test fixture"
+# 削除シナリオは main 側に fixture を必要とするが、各ケースの直前に main を
+# INITIAL_MAIN_SHA まで巻き戻して単一 fixture コミットを積むことで、シナリオ
+# 同士が互いを汚染しない。順序非依存で新規シナリオを自由に追加できる
+#
+# deletion_scenario <name> <expected-tier> <fixture-path> <fixture-content>
+# fixture を base main にコミット → 削除ブランチを切って rm → 分類 → assert
+deletion_scenario() {
+  local name="$1" want="$2" path="$3" content="$4"
+  git checkout -q main
+  git reset -q --hard "$INITIAL_MAIN_SHA"
+  git clean -fdq
+  mkdir -p "$(dirname "$path")"
+  printf '%s' "$content" > "$path"
+  git add "$path" && git commit -qm "fixture: $name"
+  git checkout -qb "case-$name"
+  git rm -q "$path"
+  git commit -qm "case: remove $name"
+  assert_tier "$name" "$want"
+}
+
+# 削除ではなく変更で呼ぶ姉妹ヘルパー (誤検知しないことを確認するため)
+modification_scenario() {
+  local name="$1" want="$2" path="$3" initial="$4" appended="$5"
+  git checkout -q main
+  git reset -q --hard "$INITIAL_MAIN_SHA"
+  git clean -fdq
+  mkdir -p "$(dirname "$path")"
+  printf '%s' "$initial" > "$path"
+  git add "$path" && git commit -qm "fixture: $name"
+  git checkout -qb "case-$name"
+  printf '%s' "$appended" >> "$path"
+  git commit -qam "case: modify $name"
+  assert_tier "$name" "$want"
+}
 
 # テストファイル削除 → high (削除 ERE の各分岐)
-git checkout -qb case-test-removal
-git rm -q tests/util_test.py
-git commit -qm "remove test"
-assert_tier test-removal high
-
-git checkout -q main
-git checkout -qb case-jest-removal
-git rm -q __tests__/foo.js
-git commit -qm "remove jest test"
-assert_tier __tests__-removal high
-
-git checkout -q main
-git checkout -qb case-spec-removal
-git rm -q spec/foo.rb
-git commit -qm "remove spec"
-assert_tier spec-removal high
-
-git checkout -q main
-git checkout -qb case-dot-test-removal
-git rm -q src/foo.test.ts
-git commit -qm "remove .test.ts"
-assert_tier dot-test-removal high
-
-git checkout -q main
-git checkout -qb case-dot-spec-removal
-git rm -q src/foo.spec.ts
-git commit -qm "remove .spec.ts"
-assert_tier dot-spec-removal high
-
-git checkout -q main
-git checkout -qb case-cases-jsonl-removal
-git rm -q fixtures/example.cases.jsonl
-git commit -qm "remove cases jsonl"
-assert_tier cases-jsonl-removal high
+deletion_scenario test-removal          high tests/util_test.py       $'assert 1\n'
+deletion_scenario jest-removal          high __tests__/foo.js         $'export const t = 1\n'
+deletion_scenario spec-removal          high spec/foo.rb              $'describe "x"\n'
+deletion_scenario dot-test-removal      high src/foo.test.ts          $'test\n'
+deletion_scenario dot-spec-removal      high src/foo.spec.ts          $'test\n'
+deletion_scenario cases-jsonl-removal   high fixtures/example.cases.jsonl $'{}\n'
 
 # テストファイルの変更 (削除でない) → check_deleted は発火しない
-git checkout -q main
-git checkout -qb case-test-modify
-printf 'assert 2\n' >> tests/util_test.py
-git commit -qam "modify test"
-assert_tier test-modify medium
+modification_scenario test-modify       medium tests/util_test.py $'assert 1\n' $'assert 2\n'
 
 # 削除 ERE 対象パターンのファイルを「変更」しても high にならない (誤検知しない)
-git checkout -q main
-git checkout -qb case-dot-test-modify
-printf 'more\n' >> src/foo.test.ts
-git commit -qam "modify .test.ts"
-assert_tier dot-test-modify medium
+modification_scenario dot-test-modify   medium src/foo.test.ts   $'test\n'      $'more\n'
 
 # テスト以外のファイル削除 → high にしない (通常 tier)
+deletion_scenario non-test-removal      medium src/keep.py       $'x = 1\n'
+
+# 大文字混在パスの削除 → grep -iE で case-insensitive にマッチして high
+deletion_scenario upper-tests-dir-removal high Tests/foo.py      $'assert 1\n'
+deletion_scenario upper-dot-test-removal  high src/Foo.TEST.ts   $'test\n'
+
+# rename → check_deleted は --diff-filter=D なので発火しない (test-modify 相当)
 git checkout -q main
-git checkout -qb case-src-removal
-git rm -q src/keep.py
-git commit -qm "remove src"
-assert_tier non-test-removal medium
+git reset -q --hard "$INITIAL_MAIN_SHA"
+git clean -fdq
+mkdir -p tests
+printf 'assert 1\n' > tests/util_test.py
+git add tests && git commit -qm "fixture: test-rename"
+git checkout -qb case-test-rename
+git mv tests/util_test.py tests/renamed_test.py
+git commit -qm "rename test"
+assert_tier test-rename medium
+
+# テスト削除 + docs 変更が混在 → test-removal が発火して high 維持
+git checkout -q main
+git reset -q --hard "$INITIAL_MAIN_SHA"
+git clean -fdq
+mkdir -p tests docs
+printf 'assert 1\n' > tests/util_test.py
+printf 'old docs\n' > docs/guide.md
+git add tests docs && git commit -qm "fixture: mixed"
+git checkout -qb case-test-removal-with-docs
+git rm -q tests/util_test.py
+printf 'new docs\n' > docs/guide.md
+git add docs && git commit -qm "remove test + docs update"
+assert_tier test-removal-with-docs high
 
 echo "classify-risk tests: $pass passed, $fail failed"
 [ "$fail" = 0 ] || exit 1

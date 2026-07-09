@@ -5,6 +5,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source-path=SCRIPTDIR source=lib/log.sh
 source "$SCRIPT_DIR/lib/log.sh"
+# shellcheck source-path=SCRIPTDIR source=lib/backup.sh
+source "$SCRIPT_DIR/lib/backup.sh"
 
 # Check for Windows
 case "$(uname -s)" in
@@ -29,17 +31,8 @@ link_file() {
 
     # If destination exists and is not a symlink, back it up
     if [[ -e "$dest" ]] && [[ ! -L "$dest" ]]; then
-        local backup="$dest.backup"
-        if [[ -e "$backup" ]]; then
-            local ts
-            ts=$(date +%Y%m%d%H%M%S)
-            backup="$dest.backup.$ts"
-            local i=1
-            while [[ -e "$backup" ]]; do
-                backup="$dest.backup.$ts.$i"
-                i=$((i + 1))
-            done
-        fi
+        local backup
+        backup=$(unique_backup_path "$dest")
         warn "Backing up existing file: $dest -> $backup"
         mv "$dest" "$backup"
     fi

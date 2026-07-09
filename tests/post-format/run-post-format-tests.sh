@@ -154,6 +154,20 @@ repo=$(make_repo r12); f="$repo/a.sh"; printf '%s' "$ORIG_CONTENT" >"$f"
 install_fake_prettier "$repo"; touch "$repo/.prettierrc"
 check_case "unmapped-ext-noop" 0 "$(run_hook Edit "$f")" "$f" original
 
+# 13. MultiEdit ツールでも整形される (settings.json の matcher と hook 両方で通ることを保証)
+repo=$(make_repo r13); f="$repo/a.ts"; printf '%s' "$ORIG_CONTENT" >"$f"
+install_fake_prettier "$repo"; touch "$repo/.prettierrc"
+check_case "multiedit-tool-formats" 0 "$(run_hook MultiEdit "$f")" "$f" formatted
+
+# 14. settings.json 側の PostToolUse matcher が MultiEdit を含むこと
+# (matcher と hook 実装の両方が MultiEdit に対応していることをまとめて保証する)
+SETTINGS="$REPO_ROOT/claude/settings.json"
+matcher=$(jq -r '.hooks.PostToolUse[] | select(.hooks[]?.command | test("post-format.sh")) | .matcher' "$SETTINGS")
+case "$matcher" in
+  *MultiEdit*) pass=$((pass + 1)) ;;
+  *) echo "FAIL settings-matcher-contains-multiedit: got=$matcher"; fail=$((fail + 1)) ;;
+esac
+
 echo "----"
 echo "post-format tests: $pass passed, $fail failed"
 [ "$fail" = 0 ] || exit 1
