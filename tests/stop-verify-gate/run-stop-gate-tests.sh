@@ -234,22 +234,25 @@ else
   fail=$((fail + 1))
 fi
 
-# H-9b. malformed JSON (jq が失敗) → fail-open。fail conf + dirty tree でも許可
-repo=$(make_repo r19)
-mkdir -p "$repo/.claude"
-printf 'false\n' >"$repo/.claude/stop-gate.conf"
+# H-9b. malformed JSON (jq が失敗) → fail-open。
+# hook 内 jq 失敗 → 即 exit 0 なので repo/conf は不要 (dead setup 削除済)
 rc=0
 printf 'not json at all' | TMPDIR="$BASE/hook-tmp" bash "$HOOK" >/dev/null 2>&1 || rc=$?
 check "malformed-json" 0 "$rc"
 
-# H-9c. hook_event_name フィールド欠落 → fail-open (Stop 以外に落ちる)
-repo=$(make_repo r20)
-mkdir -p "$repo/.claude"
-printf 'false\n' >"$repo/.claude/stop-gate.conf"
+# H-9c. hook_event_name フィールド欠落 → fail-open (Stop 以外に落ちる)。
+# event="" 判定で cwd/conf を読む前に即 exit 0 (dead setup 削除済)
 rc=0
-json=$(jq -cn --arg cwd "$repo" '{"session_id":"s20","stop_hook_active":false,"cwd":$cwd}')
-printf '%s' "$json" | TMPDIR="$BASE/hook-tmp" bash "$HOOK" >/dev/null 2>&1 || rc=$?
+printf '%s' '{"session_id":"s20","stop_hook_active":false,"cwd":"/tmp"}' \
+  | TMPDIR="$BASE/hook-tmp" bash "$HOOK" >/dev/null 2>&1 || rc=$?
 check "missing-event-field" 0 "$rc"
+
+# CR-1. bash -c で pipefail を有効化: パイプ head の失敗が block される
+# (旧: bash -c pipefail 未継承 → tee 成功で素通り。CR-1 fix 後は exit 2 でブロック)
+repo=$(make_repo r22)
+mkdir -p "$repo/.claude"
+printf 'false | true\n' >"$repo/.claude/stop-gate.conf"
+check "pipefail-head-fail" 2 "$(run_gate "$repo" s22)"
 
 # H-7. 複数行 conf は先頭 1 行のみ採用 (2 行目以降は無視)
 repo=$(make_repo r21)

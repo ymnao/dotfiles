@@ -96,12 +96,16 @@ fi
 PATH="$PATH:/opt/homebrew/bin:/usr/local/bin"
 export PATH
 
-# 検証コマンドを fresh な bash -c で実行 (set -u/pipefail を継承させない)。
+# 検証コマンドを fresh な bash -c で実行する。
+#   - `set -u` は継承しない (conf 内の unset var 参照で意図せず fail させないため)
+#   - `set -o pipefail` は明示的に有効化する (conf に `pnpm test | tee log` のような
+#     パイプを書いたとき、head の失敗が握りつぶされてゲート素通りするのを防ぐ)
 # perl でタイムアウト監視 (timeout(1) は macOS 標準に無いため perl で実装):
 # 子を独立プロセスグループにして fork し、alarm 発火時は
 # グループごと TERM → KILL (孫プロセスが stdout パイプを握ったまま orphan になり
 # コマンド置換が hang するのを防ぐ)。タイムアウト時は status 142。
 timeout_secs="${STOP_GATE_TIMEOUT_SECS:-300}"
+gate_wrapped="set -o pipefail; $gate_cmd"
 if command -v perl >/dev/null 2>&1; then
   output=$( (cd "$repo_root" && perl -e '
     my $t = shift;
@@ -113,9 +117,9 @@ if command -v perl >/dev/null 2>&1; then
     waitpid($pid, 0);
     alarm 0;
     exit(($? & 127) ? 128 + ($? & 127) : $? >> 8);
-  ' "$timeout_secs" bash -c "$gate_cmd") 2>&1 )
+  ' "$timeout_secs" bash -c "$gate_wrapped") 2>&1 )
 else
-  output=$( (cd "$repo_root" && bash -c "$gate_cmd") 2>&1 )
+  output=$( (cd "$repo_root" && bash -c "$gate_wrapped") 2>&1 )
 fi
 status=$?
 if [ "$status" -eq 0 ]; then
