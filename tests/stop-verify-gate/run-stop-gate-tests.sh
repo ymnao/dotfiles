@@ -60,17 +60,17 @@ check() {
   fi
 }
 
-# hook を実行し stderr に期待パターンが含まれるか検証する。
-# $1=テスト名, $2=cwd, $3=session_id, $4=grep パターン
+# hook を実行し exit code と stderr の期待パターンを両方検証する。
+# $1=テスト名, $2=cwd, $3=session_id, $4=期待 exit code, $5=grep パターン
 check_stderr_contains() {
-  local json out
+  local json out rc=0
   json=$(jq -cn --arg cwd "$2" --arg sid "$3" \
     '{"session_id":$sid,"hook_event_name":"Stop","stop_hook_active":false,"cwd":$cwd}')
-  out=$(printf '%s' "$json" | TMPDIR="$BASE/hook-tmp" bash "$HOOK" 2>&1 >/dev/null) || true
-  if printf '%s' "$out" | grep -q "$4"; then
+  out=$(printf '%s' "$json" | TMPDIR="$BASE/hook-tmp" bash "$HOOK" 2>&1 >/dev/null) || rc=$?
+  if [ "$rc" = "$4" ] && printf '%s' "$out" | grep -q "$5"; then
     pass=$((pass + 1))
   else
-    echo "FAIL $1: stderr にパターンが含まれない: $4"
+    echo "FAIL $1: rc=$rc (期待 $4) / パターン=$5"
     fail=$((fail + 1))
   fi
 }
@@ -141,7 +141,7 @@ check "reset-cap-4" 0 "$(run_gate "$repo" s08)"
 repo=$(make_repo r09)
 mkdir -p "$repo/.claude"
 printf 'echo BOOM-MARKER; false\n' >"$repo/.claude/stop-gate.conf"
-check_stderr_contains "stderr-feedback" "$repo" s09 "BOOM-MARKER"
+check_stderr_contains "stderr-feedback" "$repo" s09 2 "BOOM-MARKER"
 
 # 10. JSON に cwd が無い場合は実行時 pwd にフォールバック
 repo=$(make_repo r10)
@@ -157,7 +157,7 @@ check "cwd-fallback" 2 "$rc"
 #      stderr に載り、line-10 は載らない。ヘッダも確認
 repo=$(make_repo r11)
 mkdir -p "$repo/.claude"
-printf 'for i in $(seq -w 1 30); do echo line-$i; done; false\n' >"$repo/.claude/stop-gate.conf"
+printf 'i=1; while [ "$i" -le 30 ]; do printf "line-%%02d\\n" "$i"; i=$((i+1)); done; false\n' >"$repo/.claude/stop-gate.conf"
 json=$(jq -cn --arg cwd "$repo" \
   '{"session_id":"s11","hook_event_name":"Stop","stop_hook_active":false,"cwd":$cwd}')
 stderr_out=$(printf '%s' "$json" | TMPDIR="$BASE/hook-tmp" bash "$HOOK" 2>&1 >/dev/null) || true
@@ -178,7 +178,7 @@ printf 'false\n' >"$repo/.claude/stop-gate.conf"
 run_gate "$repo" s12 >/dev/null
 run_gate "$repo" s12 >/dev/null
 run_gate "$repo" s12 >/dev/null
-check_stderr_contains "cap-manual-message" "$repo" s12 "手動で確認してください"
+check_stderr_contains "cap-manual-message" "$repo" s12 0 "手動で確認してください"
 
 # H-9. hook_event_name が Stop 以外 (PreToolUse) なら fail する conf + dirty tree でも許可
 repo=$(make_repo r13)
@@ -231,6 +231,38 @@ if [ "$h5_elapsed" -lt 15 ] && printf '%s' "$stderr_out" | grep -q "タイムア
   pass=$((pass + 1))
 else
   echo "FAIL timeout-group-kill: elapsed=${h5_elapsed}s (15 秒未満 + stderr のタイムアウト注記を期待)"
+  fail=$((fail + 1))
+fi
+
+# H-9b. malformed JSON (jq が失敗) → fail-open。fail conf + dirty tree でも許可
+repo=$(make_repo r19)
+mkdir -p "$repo/.claude"
+printf 'false\n' >"$repo/.claude/stop-gate.conf"
+rc=0
+printf 'not json at all' | TMPDIR="$BASE/hook-tmp" bash "$HOOK" >/dev/null 2>&1 || rc=$?
+check "malformed-json" 0 "$rc"
+
+# H-9c. hook_event_name フィールド欠落 → fail-open (Stop 以外に落ちる)
+repo=$(make_repo r20)
+mkdir -p "$repo/.claude"
+printf 'false\n' >"$repo/.claude/stop-gate.conf"
+rc=0
+json=$(jq -cn --arg cwd "$repo" '{"session_id":"s20","stop_hook_active":false,"cwd":$cwd}')
+printf '%s' "$json" | TMPDIR="$BASE/hook-tmp" bash "$HOOK" >/dev/null 2>&1 || rc=$?
+check "missing-event-field" 0 "$rc"
+
+# H-7. 複数行 conf は先頭 1 行のみ採用 (2 行目以降は無視)
+repo=$(make_repo r21)
+mkdir -p "$repo/.claude"
+printf 'true\necho SHOULD-NOT-RUN >&2; false\n' >"$repo/.claude/stop-gate.conf"
+json=$(jq -cn --arg cwd "$repo" \
+  '{"session_id":"s21","hook_event_name":"Stop","stop_hook_active":false,"cwd":$cwd}')
+rc=0
+stderr_out=$(printf '%s' "$json" | TMPDIR="$BASE/hook-tmp" bash "$HOOK" 2>&1 >/dev/null) || rc=$?
+if [ "$rc" = 0 ] && ! printf '%s' "$stderr_out" | grep -q "SHOULD-NOT-RUN"; then
+  pass=$((pass + 1))
+else
+  echo "FAIL multiline-conf-first-only: rc=$rc / stderr に 2 行目由来出力が混入"
   fail=$((fail + 1))
 fi
 
