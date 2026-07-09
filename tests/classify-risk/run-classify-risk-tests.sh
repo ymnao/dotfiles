@@ -111,23 +111,65 @@ EOF
 # main を汚染するため以降に scenario() を追記しないこと (base tree が変わり
 # 既存 scenario と結果が変わる)。追加シナリオは上の scenario 群に足すこと
 git checkout -q main
-mkdir -p tests src
+mkdir -p tests __tests__ spec src fixtures
 printf 'assert 1\n' > tests/util_test.py
+printf 'export const t = 1\n' > __tests__/foo.js
+printf 'describe "x"\n' > spec/foo.rb
+printf 'test\n' > src/foo.test.ts
+printf 'test\n' > src/foo.spec.ts
+printf '{}\n' > fixtures/example.cases.jsonl
 printf 'x = 1\n' > src/keep.py
-git add tests src && git commit -qm "add test fixture"
+git add tests __tests__ spec src fixtures && git commit -qm "add test fixture"
 
-# テストファイル削除 → high
+# テストファイル削除 → high (削除 ERE の各分岐)
 git checkout -qb case-test-removal
 git rm -q tests/util_test.py
 git commit -qm "remove test"
 assert_tier test-removal high
 
-# テストファイルの変更 (削除でない) → medium のまま
+git checkout -q main
+git checkout -qb case-jest-removal
+git rm -q __tests__/foo.js
+git commit -qm "remove jest test"
+assert_tier __tests__-removal high
+
+git checkout -q main
+git checkout -qb case-spec-removal
+git rm -q spec/foo.rb
+git commit -qm "remove spec"
+assert_tier spec-removal high
+
+git checkout -q main
+git checkout -qb case-dot-test-removal
+git rm -q src/foo.test.ts
+git commit -qm "remove .test.ts"
+assert_tier dot-test-removal high
+
+git checkout -q main
+git checkout -qb case-dot-spec-removal
+git rm -q src/foo.spec.ts
+git commit -qm "remove .spec.ts"
+assert_tier dot-spec-removal high
+
+git checkout -q main
+git checkout -qb case-cases-jsonl-removal
+git rm -q fixtures/example.cases.jsonl
+git commit -qm "remove cases jsonl"
+assert_tier cases-jsonl-removal high
+
+# テストファイルの変更 (削除でない) → check_deleted は発火しない
 git checkout -q main
 git checkout -qb case-test-modify
 printf 'assert 2\n' >> tests/util_test.py
 git commit -qam "modify test"
 assert_tier test-modify medium
+
+# 削除 ERE 対象パターンのファイルを「変更」しても high にならない (誤検知しない)
+git checkout -q main
+git checkout -qb case-dot-test-modify
+printf 'more\n' >> src/foo.test.ts
+git commit -qam "modify .test.ts"
+assert_tier dot-test-modify medium
 
 # テスト以外のファイル削除 → high にしない (通常 tier)
 git checkout -q main
