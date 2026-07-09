@@ -29,9 +29,23 @@ git add . && git commit -qm "init"
 pass=0
 fail=0
 
+# assert_tier <name> <expected-tier> — カレントブランチの分類結果を assert
+# (scenario / 削除シナリオ両方から呼ぶ共通アサート)
+assert_tier() {
+  local name="$1" want="$2" got tier
+  got=$(bash "$CLASSIFIER" main)
+  tier=$(printf '%s' "$got" | jq -r '.tier')
+  if [ "$tier" = "$want" ]; then
+    pass=$((pass + 1))
+  else
+    echo "FAIL $name: expected=$want got=$tier ($got)"
+    fail=$((fail + 1))
+  fi
+}
+
 # scenario <name> <expected-tier> — stdin に「作るファイル相対パス<TAB>内容」を行区切りで受ける
 scenario() {
-  local name="$1" want="$2" path content got tier
+  local name="$1" want="$2" path content
   git checkout -q main
   git checkout -qb "case-$name"
   while IFS=$(printf '\t') read -r path content; do
@@ -41,14 +55,7 @@ scenario() {
     git add "$path"
   done
   git commit -qm "case: $name"
-  got=$(bash "$CLASSIFIER" main)
-  tier=$(printf '%s' "$got" | jq -r '.tier')
-  if [ "$tier" = "$want" ]; then
-    pass=$((pass + 1))
-  else
-    echo "FAIL $name: expected=$want got=$tier ($got)"
-    fail=$((fail + 1))
-  fi
+  assert_tier "$name" "$want"
 }
 
 T=$(printf '\t')
@@ -100,45 +107,34 @@ poetry.lock${T}[[package]]
 EOF
 
 # --- テスト削除シグナル (2026-07-07 追加) ---
-# 削除シナリオは base 側にテストファイルが必要なので main に先にコミットする
+# ここから下は削除シナリオ専用。base 側にテスト fixture を仕込む必要があり、
+# main を汚染するため以降に scenario() を追記しないこと (base tree が変わり
+# 既存 scenario と結果が変わる)。追加シナリオは上の scenario 群に足すこと
 git checkout -q main
 mkdir -p tests src
 printf 'assert 1\n' > tests/util_test.py
 printf 'x = 1\n' > src/keep.py
 git add tests src && git commit -qm "add test fixture"
 
-expect_tier() {
-  # $1=name, $2=want。カレントブランチの分類を assert
-  local got tier
-  got=$(bash "$CLASSIFIER" main)
-  tier=$(printf '%s' "$got" | jq -r '.tier')
-  if [ "$tier" = "$2" ]; then
-    pass=$((pass + 1))
-  else
-    echo "FAIL $1: expected=$2 got=$tier ($got)"
-    fail=$((fail + 1))
-  fi
-}
-
 # テストファイル削除 → high
 git checkout -qb case-test-removal
 git rm -q tests/util_test.py
 git commit -qm "remove test"
-expect_tier test-removal high
+assert_tier test-removal high
 
 # テストファイルの変更 (削除でない) → medium のまま
 git checkout -q main
 git checkout -qb case-test-modify
 printf 'assert 2\n' >> tests/util_test.py
 git commit -qam "modify test"
-expect_tier test-modify medium
+assert_tier test-modify medium
 
 # テスト以外のファイル削除 → high にしない (通常 tier)
 git checkout -q main
 git checkout -qb case-src-removal
 git rm -q src/keep.py
 git commit -qm "remove src"
-expect_tier non-test-removal medium
+assert_tier non-test-removal medium
 
 echo "classify-risk tests: $pass passed, $fail failed"
 [ "$fail" = 0 ] || exit 1

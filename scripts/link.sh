@@ -31,7 +31,14 @@ link_file() {
     if [[ -e "$dest" ]] && [[ ! -L "$dest" ]]; then
         local backup="$dest.backup"
         if [[ -e "$backup" ]]; then
-            backup="$dest.backup.$(date +%Y%m%d%H%M%S)"
+            local ts
+            ts=$(date +%Y%m%d%H%M%S)
+            backup="$dest.backup.$ts"
+            local i=1
+            while [[ -e "$backup" ]]; do
+                backup="$dest.backup.$ts.$i"
+                i=$((i + 1))
+            done
         fi
         warn "Backing up existing file: $dest -> $backup"
         mv "$dest" "$backup"
