@@ -6,17 +6,38 @@
 
 ## 1. モデル運用(役割分担)
 
-| 役割 | モデル | effort |
-|---|---|---|
-| 計画・設計・レビュー | Opus 4.8 | xhigh |
-| 実装ループ | Sonnet 5 | high(難所は xhigh) |
-| 探索・サブエージェント | Haiku 4.5 | - |
+AGENTS.md「モデル分担ルール」節の最小規範を、こちらで役割・モデル対応・
+根拠込みに詳細化する。
 
-- 切り替え: `/model`、サブエージェント定義の `model` フィールド
+| 役割 | モデル | effort | 用途 |
+|---|---|---|---|
+| メイン(統括・意思決定) | Opus 4.7(**4.8 は使わない**) | high(難所は xhigh) | 全体制御・decisions・並列調整・軽 verify・PR 作成 |
+| 実装ループ(詳細 plan あり) | Sonnet 5 | high(難所は xhigh) | ファイル/関数/追加行の意図まで指定された実装、機械的 refactor、テスト追加 |
+| 並列 fan-out(中軽度並列) | Sonnet 5 | high | /simplify・/code-review の観点別 finder、多点調査 |
+| 独立第二意見(別モデル系統) | Fable など | - | fresh context のレビュー、難しい設計判断、cascade でメインが疑わしいと判定したときのエスカレーション先 |
+| 探索・情報収集 | Haiku 4.5 | - | 軽い調査・ファイル探索 |
+
+- 切り替え: `/model`、Agent ツールの `model` パラメータ
+  (例: `Agent(subagent_type: "general-purpose", model: "sonnet", prompt: ...)`
+  独立第二意見は `model: "fable"`)
 - 原則: **浅い推論を見たらプロンプトを工夫する前に effort を上げる**
   (公式推奨。モデル変更より effort が先のレバー)
 - レビュー系タスクで下位モデルを使うときは「重要度でフィルタせず全部
   報告 → 後段でフィルタ」の 2 段にする(literal 特性への公式対策)
+
+### 根拠(業界 BP)
+
+- **生成者とレビュアーは同一モデル系統にしない**: self-preference bias
+  で自己生成物を過大評価する(arXiv:2410.21819)。Anthropic ネイティブの
+  reviewer には Fable のような別系統を、あるいは cross-vendor(codex-review
+  等)を差す
+- **並列 fan-out は中モデル + orchestrator パターンが上位モデル単体より
+  高性能かつ安い**: Anthropic の multi-agent research system の実測で
+  Opus lead + Sonnet subagent が単体 Opus を 90.2% 上回った
+- **cascade 型エスカレーション**(中モデル実装 → メイン軽 verify → 疑わし
+  ければ第二意見)が静的割り当てよりコスト最適(FrugalGPT 系サーベイ)
+- **委譲は「自己完結タスク → 結果を返す型」に限る**: 逐次質問往復は
+  fresh context の利点を消すのでメインで拾う
 
 ## 2. Fable 5 → 下位モデル移行チェックリスト
 
