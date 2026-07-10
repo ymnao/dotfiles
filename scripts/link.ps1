@@ -69,8 +69,18 @@ function New-DirectoryLink {
         }
 
         if ($isLink) {
-            # Remove existing link
-            Remove-Item $Destination -Force
+            # Short-circuit: already pointing to the intended source
+            $currentTarget = @($item.Target)[0]
+            if ($currentTarget -and ((Resolve-Path -LiteralPath $currentTarget -ErrorAction SilentlyContinue).Path -eq $Source.Path)) {
+                Write-Skip "Link already correct: $Destination -> $currentTarget"
+                return $true
+            }
+            # Remove existing (stale) link
+            try {
+                [System.IO.Directory]::Delete($Destination, $false)
+            } catch {
+                Remove-Item -LiteralPath $Destination -Force
+            }
             Write-Info "Removed existing link: $Destination"
         } elseif ($Force) {
             # Backup regular file/directory (avoid overwriting an existing backup)
@@ -149,8 +159,14 @@ function New-FileLink {
         }
 
         if ($isLink) {
-            # Remove existing link
-            Remove-Item $Destination -Force
+            # Short-circuit: already pointing to the intended source
+            $currentTarget = @($item.Target)[0]
+            if ($currentTarget -and ((Resolve-Path -LiteralPath $currentTarget -ErrorAction SilentlyContinue).Path -eq $Source.Path)) {
+                Write-Skip "Link already correct: $Destination -> $currentTarget"
+                return $true
+            }
+            # Remove existing (stale) link
+            Remove-Item -LiteralPath $Destination -Force
             Write-Info "Removed existing link: $Destination"
         } elseif ($Force) {
             # Backup regular file (avoid overwriting an existing backup)
