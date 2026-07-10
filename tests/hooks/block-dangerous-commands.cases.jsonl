@@ -109,3 +109,17 @@
 {"name":"codex-find-delete","expect":"block","command":"find .codex -delete","reason":"find は -delete/-exec を持つため allowlist 外"}
 {"name":"codex-wrapper-read","expect":"block","command":"env grep foo .codex/y","reason":"ラッパー越しは追跡せず安全側で不許可"}
 {"name":"codex-dynamic-read","expect":"block","command":"grep $(pwd) .codex/y","reason":"動的展開があるものは不許可"}
+# --- 2026-07-07 FP ラチェット (リダイレクト判定の除外1/除外2) ---
+{"name":"fp-devnull-redirect-var","expect":"allow","command":"src=\"${pair%%:*}\"; diff -q \"$src\" b >/dev/null 2>&1","reason":"実FP: 変数展開+デバイスリダイレクトのみ (出力破棄はファイル構築に使えない)"}
+{"name":"fp-devnull-redirect-subst","expect":"allow","command":"grep -c foo \"$f\" >/dev/null","reason":"実FP同型: 変数展開+/dev/null"}
+{"name":"fp-which-subst-read","expect":"allow","command":"ls -la \"$(which claude)\" 2>/dev/null","reason":"実FP: 読み取り専用イントロスペクション置換+stderr破棄"}
+{"name":"fp-command-v-subst-read","expect":"allow","command":"ls -la \"$(command -v codex)\" 2>/dev/null","reason":"実FP同型: command -v"}
+{"name":"fp-pwd-subst-devnull","expect":"allow","command":"echo \"$(pwd)\" > /dev/null","reason":"pwd 置換+デバイスリダイレクト"}
+{"name":"fp-revparse-devnull","expect":"allow","command":"diff \"$(git rev-parse --show-toplevel)/Makefile\" Makefile >/dev/null","reason":"git rev-parse 置換+デバイスリダイレクト"}
+{"name":"adv-file-redirect-var","expect":"block","command":"echo \"$x\" > out.txt","reason":"動的展開+ファイルへのリダイレクトは従来どおりブロック"}
+{"name":"adv-file-append-var","expect":"block","command":"echo \"$x\" >> log.txt","reason":"追記も同様"}
+{"name":"adv-devnull-then-file","expect":"block","command":"echo \"$(date)\" > /dev/null; echo \"$(date)\" > f.txt","reason":"デバイス破棄が混ざっても後続のファイルリダイレクトはブロック"}
+{"name":"adv-dev-nullx-lookalike","expect":"block","command":"echo \"$x\" > /dev/nullx","reason":"/dev/null の見せかけ (末尾境界) は除外しない"}
+{"name":"adv-redirect-into-subst","expect":"block","command":"echo x > \"$(which claude)\"","reason":"置換結果への書き込み (バイナリ上書き) は除外2 の対象外"}
+{"name":"adv-which-dotcodex","expect":"block","command":"touch \"$(which .codex)\" > /dev/null","reason":"先頭ドットの WORD は除外せず .codex 参照判定が効く"}
+{"name":"adv-revparse-dotarg","expect":"block","command":"echo x $(git rev-parse .codex) > out.log","reason":"ドット入り引数の rev-parse は除外しない"}
