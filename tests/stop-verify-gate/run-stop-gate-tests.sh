@@ -60,6 +60,21 @@ check() {
   fi
 }
 
+# hook を実行し exit code と stderr の期待パターンを両方検証する。
+# $1=テスト名, $2=cwd, $3=session_id, $4=期待 exit code, $5=grep パターン
+check_stderr_contains() {
+  local json out rc=0
+  json=$(jq -cn --arg cwd "$2" --arg sid "$3" \
+    '{"session_id":$sid,"hook_event_name":"Stop","stop_hook_active":false,"cwd":$cwd}')
+  out=$(printf '%s' "$json" | TMPDIR="$BASE/hook-tmp" bash "$HOOK" 2>&1 >/dev/null) || rc=$?
+  if [ "$rc" = "$4" ] && printf '%s' "$out" | grep -q "$5"; then
+    pass=$((pass + 1))
+  else
+    echo "FAIL $1: rc=$rc (期待 $4) / パターン=$5"
+    fail=$((fail + 1))
+  fi
+}
+
 mkdir -p "$BASE/hook-tmp"
 
 # 1. git リポジトリ外 → 許可
@@ -126,32 +141,7 @@ check "reset-cap-4" 0 "$(run_gate "$repo" s08)"
 repo=$(make_repo r09)
 mkdir -p "$repo/.claude"
 printf 'echo BOOM-MARKER; false\n' >"$repo/.claude/stop-gate.conf"
-json=$(jq -cn --arg cwd "$repo" \
-  '{"session_id":"s09","hook_event_name":"Stop","stop_hook_active":false,"cwd":$cwd}')
-stderr_out=$(printf '%s' "$json" | TMPDIR="$BASE/hook-tmp" bash "$HOOK" 2>&1 >/dev/null) || true
-if printf '%s' "$stderr_out" | grep -q "BOOM-MARKER"; then
-  pass=$((pass + 1))
-else
-  echo "FAIL stderr-feedback: 失敗出力が stderr に含まれない"
-  fail=$((fail + 1))
-fi
-
-# 9b. session_id にパス文字が含まれてもカウンタが機能する
-#     (未サニタイズだと count ファイルの書き込みが失敗し cap が永久に発動しない)
-repo=$(make_repo r09b)
-mkdir -p "$repo/.claude"
-printf 'false\n' >"$repo/.claude/stop-gate.conf"
-check "sanitize-block-1" 2 "$(run_gate "$repo" '../evil')"
-check "sanitize-block-2" 2 "$(run_gate "$repo" '../evil')"
-check "sanitize-block-3" 2 "$(run_gate "$repo" '../evil')"
-check "sanitize-cap-4" 0 "$(run_gate "$repo" '../evil')"
-# カウンタが hook-tmp の外 (パストラバーサル先) に書かれていないこと
-if [ -e "$BASE/evil.count" ]; then
-  echo "FAIL sanitize-containment: カウンタが TMPDIR 外に書かれた"
-  fail=$((fail + 1))
-else
-  pass=$((pass + 1))
-fi
+check_stderr_contains "stderr-feedback" "$repo" s09 2 "BOOM-MARKER"
 
 # 10. JSON に cwd が無い場合は実行時 pwd にフォールバック
 repo=$(make_repo r10)
@@ -162,6 +152,145 @@ rc=0
 printf '%s' '{"session_id":"s10","hook_event_name":"Stop","stop_hook_active":false}' \
   | (cd "$repo" && TMPDIR="$BASE/hook-tmp" bash "$HOOK" >/dev/null 2>&1) || rc=$?
 check "cwd-fallback" 2 "$rc"
+
+# T-1. tail -n 20 の境界: 30 行出力して fail するとき末尾 20 行 (line-30..line-11) が
+#      stderr に載り、line-10 は載らない。ヘッダも確認
+repo=$(make_repo r11)
+mkdir -p "$repo/.claude"
+printf 'i=1; while [ "$i" -le 30 ]; do printf "line-%%02d\\n" "$i"; i=$((i+1)); done; false\n' >"$repo/.claude/stop-gate.conf"
+json=$(jq -cn --arg cwd "$repo" \
+  '{"session_id":"s11","hook_event_name":"Stop","stop_hook_active":false,"cwd":$cwd}')
+stderr_out=$(printf '%s' "$json" | TMPDIR="$BASE/hook-tmp" bash "$HOOK" 2>&1 >/dev/null) || true
+if printf '%s' "$stderr_out" | grep -q "検証コマンドが失敗しました" \
+  && printf '%s' "$stderr_out" | grep -q "line-30" \
+  && printf '%s' "$stderr_out" | grep -q "line-11" \
+  && ! printf '%s' "$stderr_out" | grep -q "line-10"; then
+  pass=$((pass + 1))
+else
+  echo "FAIL tail-boundary: tail -n 20 の境界 or ヘッダが期待どおりでない"
+  fail=$((fail + 1))
+fi
+
+# T-2. cap 発動 (4 回目) の stderr に「手動で確認してください」が含まれる
+repo=$(make_repo r12)
+mkdir -p "$repo/.claude"
+printf 'false\n' >"$repo/.claude/stop-gate.conf"
+run_gate "$repo" s12 >/dev/null
+run_gate "$repo" s12 >/dev/null
+run_gate "$repo" s12 >/dev/null
+check_stderr_contains "cap-manual-message" "$repo" s12 0 "手動で確認してください"
+
+# H-9. hook_event_name が Stop 以外 (PreToolUse) なら fail する conf + dirty tree でも許可
+repo=$(make_repo r13)
+mkdir -p "$repo/.claude"
+printf 'false\n' >"$repo/.claude/stop-gate.conf"
+rc=0
+json=$(jq -cn --arg cwd "$repo" \
+  '{"session_id":"s13","hook_event_name":"PreToolUse","stop_hook_active":false,"cwd":$cwd}')
+printf '%s' "$json" | TMPDIR="$BASE/hook-tmp" bash "$HOOK" >/dev/null 2>&1 || rc=$?
+check "non-stop-event" 0 "$rc"
+
+# H-2. conf が unset var を素で参照しても hook の set -u で死なない (fresh bash -c)
+repo=$(make_repo r14)
+mkdir -p "$repo/.claude"
+printf 'test -z "$STOP_GATE_TEST_UNSET_VAR_1234"\n' >"$repo/.claude/stop-gate.conf"
+check "unset-var-no-inherit" 0 "$(run_gate "$repo" s14)"
+
+# H-3. CRLF 行末の conf でもコマンドが正しく採用される
+repo=$(make_repo r15)
+mkdir -p "$repo/.claude"
+printf 'true\r\n' >"$repo/.claude/stop-gate.conf"
+check "crlf-conf" 0 "$(run_gate "$repo" s15)"
+
+# H-1. session_id にパストラバーサルを渡しても [A-Za-z0-9._-] へ正規化され、
+#      counter は hook-tmp 内 (stop-gate..._evil_x.count) に作られる
+repo=$(make_repo r16)
+mkdir -p "$repo/.claude"
+printf 'false\n' >"$repo/.claude/stop-gate.conf"
+check "sid-traversal-block" 2 "$(run_gate "$repo" '../evil/x')"
+if [ -f "$BASE/hook-tmp/stop-gate..._evil_x.count" ] && [ ! -e "$BASE/hook-tmp/../evil/x" ]; then
+  pass=$((pass + 1))
+else
+  echo "FAIL sid-traversal-path: counter が hook-tmp/stop-gate..._evil_x.count に作られていない (tr サニタイズ後の期待名)"
+  fail=$((fail + 1))
+fi
+
+# H-1b. サニタイズされた session_id で cap カウンタが正しく積まれる:
+#       同じ '../evil' を 3 回渡すと 3 連続 block → 4 回目は fail-open (cap 発動)
+repo=$(make_repo r16b)
+mkdir -p "$repo/.claude"
+printf 'false\n' >"$repo/.claude/stop-gate.conf"
+check "sanitize-cap-block-1" 2 "$(run_gate "$repo" '../evil')"
+check "sanitize-cap-block-2" 2 "$(run_gate "$repo" '../evil')"
+check "sanitize-cap-block-3" 2 "$(run_gate "$repo" '../evil')"
+check "sanitize-cap-failopen-4" 0 "$(run_gate "$repo" '../evil')"
+
+# H-5. タイムアウトでブロック: 孫プロセスが stdout を掴む最悪ケースでも group kill でパイプが
+#      閉じてすぐブロックに落ち (旧 exec 方式なら bg の sleep 30 がパイプを握って ~30 秒 hang)、
+#      stderr にタイムアウト注記が載る (run_gate は env を通さないので直接呼ぶ)
+repo=$(make_repo r17)
+mkdir -p "$repo/.claude"
+printf 'sleep 30 & wait\n' >"$repo/.claude/stop-gate.conf"
+rc=0
+json=$(jq -cn --arg cwd "$repo" \
+  '{"session_id":"s17","hook_event_name":"Stop","stop_hook_active":false,"cwd":$cwd}')
+h5_start=$(date +%s)
+stderr_out=$(printf '%s' "$json" | STOP_GATE_TIMEOUT_SECS=1 TMPDIR="$BASE/hook-tmp" bash "$HOOK" 2>&1 >/dev/null) || rc=$?
+h5_elapsed=$(( $(date +%s) - h5_start ))
+check "timeout-block" 2 "$rc"
+if [ "$h5_elapsed" -lt 15 ] && printf '%s' "$stderr_out" | grep -q "タイムアウト"; then
+  pass=$((pass + 1))
+else
+  echo "FAIL timeout-group-kill: elapsed=${h5_elapsed}s (15 秒未満 + stderr のタイムアウト注記を期待)"
+  fail=$((fail + 1))
+fi
+
+# H-9b. malformed JSON (jq が失敗) → fail-open。
+# hook 内 jq 失敗 → 即 exit 0 なので repo/conf は不要 (dead setup 削除済)
+rc=0
+printf 'not json at all' | TMPDIR="$BASE/hook-tmp" bash "$HOOK" >/dev/null 2>&1 || rc=$?
+check "malformed-json" 0 "$rc"
+
+# H-9c. hook_event_name フィールド欠落 → fail-open (Stop 以外に落ちる)。
+# event="" 判定で cwd/conf を読む前に即 exit 0 (dead setup 削除済)
+rc=0
+printf '%s' '{"session_id":"s20","stop_hook_active":false,"cwd":"/tmp"}' \
+  | TMPDIR="$BASE/hook-tmp" bash "$HOOK" >/dev/null 2>&1 || rc=$?
+check "missing-event-field" 0 "$rc"
+
+# CR-1. bash -c で pipefail を有効化: パイプ head の失敗が block される
+# (旧: bash -c pipefail 未継承 → tee 成功で素通り。CR-1 fix 後は exit 2 でブロック)
+repo=$(make_repo r22)
+mkdir -p "$repo/.claude"
+printf 'false | true\n' >"$repo/.claude/stop-gate.conf"
+check "pipefail-head-fail" 2 "$(run_gate "$repo" s22)"
+
+# H-7. 複数行 conf は先頭 1 行のみ採用 (2 行目以降は無視)
+repo=$(make_repo r21)
+mkdir -p "$repo/.claude"
+printf 'true\necho SHOULD-NOT-RUN >&2; false\n' >"$repo/.claude/stop-gate.conf"
+json=$(jq -cn --arg cwd "$repo" \
+  '{"session_id":"s21","hook_event_name":"Stop","stop_hook_active":false,"cwd":$cwd}')
+rc=0
+stderr_out=$(printf '%s' "$json" | TMPDIR="$BASE/hook-tmp" bash "$HOOK" 2>&1 >/dev/null) || rc=$?
+if [ "$rc" = 0 ] && ! printf '%s' "$stderr_out" | grep -q "SHOULD-NOT-RUN"; then
+  pass=$((pass + 1))
+else
+  echo "FAIL multiline-conf-first-only: rc=$rc / stderr に 2 行目由来出力が混入"
+  fail=$((fail + 1))
+fi
+
+# H-8. stdin が EOF (/dev/null) なら read -t 10 で待たず即 exit 0
+h8_start=$(date +%s)
+rc=0
+TMPDIR="$BASE/hook-tmp" bash "$HOOK" </dev/null >/dev/null 2>&1 || rc=$?
+h8_elapsed=$(( $(date +%s) - h8_start ))
+if [ "$rc" = 0 ] && [ "$h8_elapsed" -lt 5 ]; then
+  pass=$((pass + 1))
+else
+  echo "FAIL stdin-eof: rc=$rc elapsed=${h8_elapsed}s (即 exit 0 を期待)"
+  fail=$((fail + 1))
+fi
 
 echo "----"
 echo "stop-verify-gate tests: $pass passed, $fail failed"
