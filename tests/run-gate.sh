@@ -17,8 +17,9 @@ cd "$REPO_ROOT"
 # 変更ファイル一覧を NUL 区切りで array に集める。
 # - `git status --porcelain=v1 -z -uall`: NUL 終端・quote 無し・未追跡ディレクトリは配下ファイル単位に展開
 # - `core.quotePath=false`: 非 ASCII パスの octal escape を抑止し case マッチを正しく機能させる
-# - rename/copy (R/C) は "XY new\0old" の 2 エントリで来るため old 側もペア追加
-# - ベースブランチ (origin/main → main → master → origin/master) 以降で commit 済みの
+# - rename/copy (R/C) は "XY new\0old" の 2 エントリで来るため old 側もペア追加。
+#   worktree Y 列は rename/copy にならず X 列 (index) のみで発生するため `R?|C?` で十分
+# - ベースブランチ (origin/main → main → origin/master → master) 以降で commit 済みの
 #   変更もスコープに含める。ターン中に commit された hook 変更が corpus トリガから
 #   漏れる問題への対応
 changed_paths=()
@@ -30,18 +31,16 @@ for ref in origin/main main origin/master master; do
     break
   fi
 done
-if [ -n "$base_ref" ] && [ "$base_ref" != "HEAD" ]; then
+if [ -n "$base_ref" ]; then
   while IFS= read -r -d '' p; do
     changed_paths+=("$p")
   done < <(git -c core.quotePath=false diff --name-only -z "$base_ref"...HEAD)
 fi
 
 while IFS= read -r -d '' entry; do
-  status=${entry:0:2}
-  path=${entry:3}
-  changed_paths+=("$path")
-  case "$status" in
-    R?|C?|?R|?C)
+  changed_paths+=("${entry:3}")
+  case "${entry:0:2}" in
+    R?|C?)
       if IFS= read -r -d '' oldpath; then
         changed_paths+=("$oldpath")
       fi
@@ -49,25 +48,36 @@ while IFS= read -r -d '' entry; do
   esac
 done < <(git -c core.quotePath=false status --porcelain=v1 -z -uall)
 
-# bash 3.2 では set -u 下で空 array の "${arr[@]}" が unbound エラーになるため
-# 長さで分岐する。
-has_changes=0
-[ "${#changed_paths[@]}" -gt 0 ] && has_changes=1
+# 変更ファイルを 1 パスで走査し (a) shellcheck 対象収集 (b) JSON 検証
+# (c) hook corpus トリガ判定 の 3 用途に振り分ける。
+# bash 3.2 の set -u では空 array の "${arr[@]}" が unbound エラーになるため
+# 長さ 0 なら走査自体をスキップする。
+sh_targets=()
+run_corpus=0
+if [ "${#changed_paths[@]}" -gt 0 ]; then
+  for f in "${changed_paths[@]}"; do
+    case "$f" in
+      *.sh)
+        if [ -f "$f" ] && [ ! -L "$f" ]; then
+          sh_targets+=("$f")
+        fi
+        ;;
+      *.json)
+        if [ -f "$f" ]; then
+          jq empty "$f" >/dev/null || { echo "FAIL: invalid JSON: $f"; exit 1; }
+        fi
+        ;;
+    esac
+    case "$f" in
+      agents/hooks/*|claude/hooks/*|codex/hooks/*|tests/hooks/*|tests/run-hook-tests.sh)
+        run_corpus=1
+        ;;
+    esac
+  done
+fi
 
-# 1) 変更対象の *.sh のみ shellcheck (symlink は実体側で検査されるため除外)
+# 1) 変更対象の *.sh のみ shellcheck (symlink は実体側で検査されるため除外済み)
 if command -v shellcheck >/dev/null 2>&1; then
-  sh_targets=()
-  if [ "$has_changes" = 1 ]; then
-    for f in "${changed_paths[@]}"; do
-      case "$f" in
-        *.sh)
-          if [ -f "$f" ] && [ ! -L "$f" ]; then
-            sh_targets+=("$f")
-          fi
-          ;;
-      esac
-    done
-  fi
   if [ "${#sh_targets[@]}" -gt 0 ]; then
     echo "==> shellcheck (changed files)"
     shellcheck -S warning "${sh_targets[@]}"
@@ -76,19 +86,7 @@ else
   echo "NOTE: shellcheck 未導入のためスキップ (make test では必須)"
 fi
 
-# 2) 変更対象の *.json のみ検証
-if [ "$has_changes" = 1 ]; then
-  for f in "${changed_paths[@]}"; do
-    case "$f" in
-      *.json)
-        [ -f "$f" ] || continue
-        jq empty "$f" >/dev/null || { echo "FAIL: invalid JSON: $f"; exit 1; }
-        ;;
-    esac
-  done
-fi
-
-# 3) 軽量テスト群 (常時)
+# 2) 軽量テスト群 (常時)
 bash tests/parse-review-output/run-parser-tests.sh
 bash tests/classify-risk/run-classify-risk-tests.sh
 bash tests/agents-md-sync/run-agents-md-sync-check.sh
@@ -102,17 +100,7 @@ bash tests/link-backup/run-link-backup-tests.sh
 [ -f tests/integrity/run-integrity-check.sh ] && bash tests/integrity/run-integrity-check.sh
 [ -f tests/session-compact/run-session-compact-tests.sh ] && bash tests/session-compact/run-session-compact-tests.sh
 
-# 4) hook 関連ファイルが変更されているときだけ重いコーパスを実行
-run_corpus=0
-if [ "$has_changes" = 1 ]; then
-  for f in "${changed_paths[@]}"; do
-    case "$f" in
-      agents/hooks/*|claude/hooks/*|codex/hooks/*|tests/hooks/*|tests/run-hook-tests.sh)
-        run_corpus=1
-        ;;
-    esac
-  done
-fi
+# 3) hook 関連ファイルが変更されているときだけ重いコーパスを実行
 if [ "$run_corpus" = 1 ]; then
   echo "==> hook regression corpus (hook files changed)"
   bash tests/run-hook-tests.sh
