@@ -123,3 +123,12 @@
 {"name":"adv-redirect-into-subst","expect":"block","command":"echo x > \"$(which claude)\"","reason":"置換結果への書き込み (バイナリ上書き) は除外2 の対象外"}
 {"name":"adv-which-dotcodex","expect":"block","command":"touch \"$(which .codex)\" > /dev/null","reason":"先頭ドットの WORD は除外せず .codex 参照判定が効く"}
 {"name":"adv-revparse-dotarg","expect":"block","command":"echo x $(git rev-parse .codex) > out.log","reason":"ドット入り引数の rev-parse は除外しない"}
+# --- 2026-07-10 codex qa-fixture round1 追加 (デバイス多様化 / command -v .codex) ---
+{"name":"fp-devnull-stderr-only","expect":"allow","command":"src=\"$1\"; grep foo \"$src\" 2>/dev/null","reason":"stderr のみのデバイス破棄 + 変数展開 (allow)"}
+{"name":"fp-devstderr-redirect","expect":"allow","command":"echo \"$msg\" 2>/dev/stderr","reason":"/dev/stderr リダイレクト + 変数展開 (allow)"}
+{"name":"fp-devtty-redirect","expect":"allow","command":"printf '%s\\n' \"$log\" >/dev/tty","reason":"/dev/tty リダイレクト + 変数展開 (allow)"}
+{"name":"fp-amp-devnull","expect":"allow","command":"grep foo \"$f\" &>/dev/null","reason":"&> 演算子 + 変数展開 + デバイス破棄 (allow)"}
+{"name":"fp-amp-append-devnull","expect":"allow","command":"tail -f \"$log\" &>>/dev/null","reason":"&>> 演算子 + 変数展開 + デバイス破棄 (allow)"}
+{"name":"adv-fdnum-append-file","expect":"block","command":"echo \"$x\" 1>>log.txt","reason":"1>> ファイル追記 + 変数展開はブロック (演算子網羅)"}
+{"name":"adv-pipe-clobber-file","expect":"block","command":"echo \"$x\" >|out.txt","reason":">| 上書きも書き込みリダイレクトとしてブロック"}
+{"name":"adv-command-v-dotcodex","expect":"block","command":"command -v .codex","reason":"bare command -v .codex は .codex 参照判定でブロック (has_dynamic=0 → literal .codex 検出)"}
