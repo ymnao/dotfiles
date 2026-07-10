@@ -84,7 +84,6 @@ ehthumbs_vista.db
 shell/powershell/config.local.ps1
 **/history.txt
 
-
 # Build artifacts
 result
 .devenv
