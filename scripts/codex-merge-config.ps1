@@ -30,8 +30,10 @@ function Get-PreservedSections {
     $lines = New-Object System.Collections.Generic.List[string]
     foreach ($line in (Get-Content -Path $Path -Encoding UTF8)) {
         if ($line -match '^\[') {
+            # -cmatch (case-sensitive) で sh の awk ~ と 1:1 対応。
+            # TOML section 名は case-sensitive なので [Projects.*] は別テーブル扱い。
             # [projects.*] / [plugins.*] / [notice.*] / [tui.*] / [hooks.state]
-            $keep = $line -match '^\[(projects|plugins|notice|tui|hooks\.state)([.\]])'
+            $keep = $line -cmatch '^\[(projects|plugins|notice|tui|hooks\.state)([.\]])'
         }
         if ($keep) { $lines.Add($line) }
     }
@@ -39,17 +41,19 @@ function Get-PreservedSections {
 }
 
 $preserved = @()
-$destExists = Test-Path $Destination
+# Get-Item -Force + SilentlyContinue で dangling symlink (reparse point exists
+# but target missing) も検出する。Test-Path は dangling symlink に対し $false を
+# 返すため、sh の `-L` 独立判定と 1:1 対応にならない。
+$item = Get-Item $Destination -Force -ErrorAction SilentlyContinue
 $destIsLink = $false
-if ($destExists) {
-    $item = Get-Item $Destination -Force
+if ($item) {
     $destIsLink = [bool]$item.LinkType
     if (-not $destIsLink) {
         $preserved = Get-PreservedSections -Path $Destination
     }
 }
 
-# 既存が symlink (旧 link.ps1 の挙動) なら削除して実体ファイルに置き換える
+# 既存が symlink (旧 link.ps1 の挙動、dangling 含む) なら削除して実体ファイルに置き換える
 if ($destIsLink) {
     Remove-Item $Destination -Force
 }
