@@ -55,3 +55,6 @@ __pycache__/
 
 # Claude Code handoff
 HANDOFF.md
+
+# Claude Code scratch writes
+**/.claude/.cc-writes/
