@@ -232,6 +232,7 @@ New-FileLink -Source $gitIgnoreSource -Destination $gitIgnoreDest
 # 異なり単純移植不可。必要になったら別 PR で対応する)
 
 # npm/pnpm configuration
+Write-Info "`nLinking npm/pnpm configuration..."
 $npmrcSource = Join-Path $DOTFILES_DIR "npm\npmrc"
 $npmrcDest = Join-Path $env:USERPROFILE ".npmrc"
 if (Test-Path $npmrcSource) {
