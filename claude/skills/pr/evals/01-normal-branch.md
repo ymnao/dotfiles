@@ -10,6 +10,8 @@ git commit -am "feat: sub 関数を追加"
 printf '// eval comment\n' >> src/util.js
 git commit -am "chore: コメント追記"
 ```
+codex CLI が未インストールの環境では、この eval の codex-review 項目は
+「skipped (codex not installed) がエビデンスに記録されること」に読み替える。
 
 ## Prompt
 /pr を実行して

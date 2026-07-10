@@ -97,8 +97,16 @@ else
   BASE_BRANCH="main"
 fi
 
+# ローカルにベースブランチが無い環境 (worktree・shallow clone 等) では
+# origin/<base> にフォールバックする。classify-risk.sh / gather-branch-info.sh
+# と同じ解決順にして、pr skill との不整合 (分類は成功するのに review だけ
+# ERROR) を防ぐ。
 if ! git rev-parse --verify "$BASE_BRANCH" >/dev/null 2>&1; then
-  error "base branch '$BASE_BRANCH' not found in current repo (cwd: $CWD). Set CODEX_REVIEW_BASE to override."
+  if git rev-parse --verify "origin/$BASE_BRANCH" >/dev/null 2>&1; then
+    BASE_BRANCH="origin/$BASE_BRANCH"
+  else
+    error "base branch '$BASE_BRANCH' not found in current repo (cwd: $CWD). Set CODEX_REVIEW_BASE to override."
+  fi
 fi
 
 # Fail fast if the branch has no commits beyond base (matches SKILL.md
@@ -120,8 +128,9 @@ DIFF_CONTENT="$(git diff "$BASE_BRANCH...HEAD")"
 # of shell command-substitution interpretation on codex's side.
 #
 # codex の生出力は一時ファイルに保存し、parse-review-output.sh で
-# JSON 抽出+schema 検証してから返す。exit code はパーサのものを継承する
-# (0 = pass / 2 = findings / 1 = parse error / 3 = sandbox skip)。
+# JSON 抽出+schema 検証してから返す。exit code 契約:
+# 0 = pass / 2 = findings / 1 = parse error (パーサの 0/2/1 を継承)、
+# 3 = sandbox skip (本スクリプト自身が返す。パーサは関与しない)。
 RAW_OUT="$(mktemp "${TMPDIR:-/tmp}/codex-review.XXXXXX")"
 RAW_ERR="$(mktemp "${TMPDIR:-/tmp}/codex-review.err.XXXXXX")"
 cleanup() { rm -f "$RAW_OUT" "$RAW_ERR"; }
