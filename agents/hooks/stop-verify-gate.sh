@@ -75,7 +75,10 @@ gate_cmd=$(awk '{ sub(/\r$/, "") } NF == 0 { next } $1 ~ /^#/ { next } { print; 
 [ -n "$(git -C "$repo_root" status --porcelain 2>/dev/null)" ] || exit 0
 
 # session_id をカウンタファイルパスに使う前にサニタイズ (パストラバーサル防御)
-case "$session_id" in ''|*[!A-Za-z0-9-]*) session_id=unknown ;; esac
+# tr -c で [A-Za-z0-9._-] 以外を '_' に置換し、`../evil` のような値も安全な
+# ファイル名に正規化する (case の unknown 置換より情報を残す)
+session_id=$(printf '%s' "$session_id" | tr -c 'A-Za-z0-9._-' '_')
+[ -n "$session_id" ] || session_id=unknown
 
 # 連続ブロックカウンタ (セッション単位、TMPDIR に保持)
 count_file="${TMPDIR:-/tmp}/stop-gate.${session_id}.count"

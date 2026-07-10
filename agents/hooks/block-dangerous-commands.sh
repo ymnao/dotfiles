@@ -163,7 +163,7 @@ fi
 # $(brew --prefix)/bin/cmd や ${PYTHON:-python3} script.py 等の動的パス起動は副作用として
 # ブロックされるが、静的パス（/opt/homebrew/bin/cmd や python3）で代替可能。
 if printf '%s' "$command" | grep -qE '(^|[;&|({])[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=([^[:space:];&|]|\$\([^)]*\)|`[^`]*`|\$\{[^}]*\}|\$[a-zA-Z_][a-zA-Z0-9_]*)*[[:space:]]+)*((env|command|nice|exec|nohup|setsid|stdbuf|timeout|ionice|chrt|time)([[:space:]]+([-+][^[:space:]]+([[:space:]]+[^-+<[:space:];&|][^[:space:];&|]*)?|[0-9][^[:space:];&|]*|[A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*))*[[:space:]]+)*([^[:space:];&|]*/)?([^[:space:];&|()`{}<>$=]|\$\([^)]*\)|`[^`]*`|\$\{[^}]*\}|\$[a-zA-Z_][a-zA-Z0-9_]*)*(\$\([^)]*\)|`[^`]*`|\$\{[^}]*\}|\$[a-zA-Z_][a-zA-Z0-9_]*)([^[:space:];&|()`{}<>$=]|\$\([^)]*\)|`[^`]*`|\$\{[^}]*\}|\$[a-zA-Z_][a-zA-Z0-9_]*)*([[:space:]]|[;&|)}`]|$)'; then
-  echo "ブロック: コマンド名トークンに動的展開を含むコマンドは安全側で禁止されています（危険コマンド名の動的構築対策）。コマンド名は静的リテラルで書いてください。" >&2
+  echo "ブロック: コマンド名トークンに動的展開を含むコマンドは安全側で禁止されています（危険コマンド名の動的構築対策）。コマンド名は静的リテラルで書くか、コマンド列をスクリプトファイルに書いて bash <ファイル> で実行してください。" >&2
   exit 2
 fi
 
@@ -340,7 +340,29 @@ fi
 # 例: echo x > .$(echo codex)/config.toml → 実行時に .codex/config.toml へ書き込み。
 # 対象演算子: > / >> / >| / &> / &>> / N> / N>> （N は fd 番号）
 # 入力リダイレクト < / << / <<< と fd コピー >& は対象外（書き込み先がファイルでない）。
-if [[ "$has_dynamic" = 1 ]] && printf '%s' "$residual" | grep -qE '(^|[^&0-9])>[>|]?[^&]|&>>?[^&]|[0-9]+>>?[^&]'; then
+# この判定に限り、2026-07-07 の実 FP ラチェットとして 2 つの除外を適用する
+# (.codex 参照判定・書き込み系コマンド判定には適用しない — 安全側期待を維持):
+#   除外1: リダイレクト先がデバイス系リテラル (/dev/null, /dev/stdout, /dev/stderr,
+#     /dev/tty) はファイル構築に使えない。`diff a b >/dev/null 2>&1` のような
+#     出力破棄が変数展開と同居するだけでブロックされていた。/dev/nullx 等の
+#     見せかけは末尾境界 ([^A-Za-z0-9_/]|$) で除外されない
+#   除外2: 読み取り専用イントロスペクションのコマンド置換
+#     $(pwd) / $(which WORD) / $(command -v WORD) / $(git rev-parse ARGS)。
+#     WORD は先頭ドット禁止 ([A-Za-z0-9_-] 始まり) で `which .codex` は除外されない。
+#     git rev-parse の引数はドット・スラッシュなしのフラグ/ref 形のみ。
+#     `ls -la "$(which claude)" 2>/dev/null` のような読み取りが FP になっていた。
+#     なお $(...) の中身は前段の nested 展開で command 末尾に複製済みのため、
+#     中身の危険コマンドは他の判定が引き続き見る
+# 順序が重要: (1) デバイスリダイレクト除去 → (2) リダイレクト先に現れる
+# コマンド置換を保護マーカー化 (`echo x > "$(which claude)"` のような
+# 「置換結果への書き込み」= バイナリ上書き等は除外2 の対象にせずブロック維持)
+# → (3) 読み取り専用イントロスペクション置換の除去。
+residual_redirect=$(printf '%s' "$residual" | sed -E \
+  -e 's#((^|[^&0-9])>[>|]?|&>>?|[0-9]+>>?)[[:space:]]*/dev/(null|stdout|stderr|tty)([^A-Za-z0-9_/]|$)#\2\4#g' \
+  -e 's#(>[>|]?[[:space:]]*"?)\$\(#\1\$REDIRECT_TARGET_SUBST(#g' \
+  -e 's/\$\((pwd|which[[:space:]]+[A-Za-z0-9_-][A-Za-z0-9_.-]*|command[[:space:]]+-v[[:space:]]+[A-Za-z0-9_-][A-Za-z0-9_.-]*|git[[:space:]]+rev-parse([[:space:]]+[A-Za-z0-9_@{}=-]+)*)\)/ /g')
+if printf '%s' "$residual_redirect" | grep -qE '\$\(|`|\$[a-zA-Z_{]' \
+  && printf '%s' "$residual_redirect" | grep -qE '(^|[^&0-9])>[>|]?[^&]|&>>?[^&]|[0-9]+>>?[^&]'; then
   echo "ブロック: 動的展開を含む書き込み系リダイレクトは安全側で禁止されています（.codex 構築の可能性、Cymulate notify エスケープ対策）" >&2
   exit 2
 fi
@@ -475,6 +497,10 @@ protected_name="$(printf '\056codex')"
 command_lower=$(printf '%s' "$command" | tr '[:upper:]' '[:lower:]')
 cwd_lower=$(printf '%s' "$(pwd -P)" | tr '[:upper:]' '[:lower:]')
 normalized_command=$(printf '%s\n' "$command_lower" | tr ';&|(){}<>' '        ')
+# set -f: unquoted 展開は word splitting のみが目的。glob 展開を許すと
+# `cat .co*` のようなトークンが cwd の実ファイル (.codex 等) に展開され、
+# 同一コマンドの判定が実行ディレクトリの中身に依存してしまう (非決定的な誤ブロック)。
+set -f
 for token in $normalized_command; do
   token="${token#\"}"
   token="${token%\"}"
@@ -537,6 +563,7 @@ for token in $normalized_command; do
       ;;
   esac
 done
+set +f
 
 # --- chmod 777 ---
 if printf '%s\n' "$command" | grep -qiE '(^|[;&|({`[:space:]/\])chmod[[:space:]]+(-[a-zA-Z]*[[:space:]]+)*777([[:space:]]|[;&|)}`]|$)'; then

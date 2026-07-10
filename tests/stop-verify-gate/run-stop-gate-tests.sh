@@ -202,17 +202,28 @@ mkdir -p "$repo/.claude"
 printf 'true\r\n' >"$repo/.claude/stop-gate.conf"
 check "crlf-conf" 0 "$(run_gate "$repo" s15)"
 
-# H-1. session_id にパストラバーサルを渡しても unknown に落ち、counter は hook-tmp 内に作られる
+# H-1. session_id にパストラバーサルを渡しても [A-Za-z0-9._-] へ正規化され、
+#      counter は hook-tmp 内 (stop-gate..._evil_x.count) に作られる
 repo=$(make_repo r16)
 mkdir -p "$repo/.claude"
 printf 'false\n' >"$repo/.claude/stop-gate.conf"
 check "sid-traversal-block" 2 "$(run_gate "$repo" '../evil/x')"
-if [ -f "$BASE/hook-tmp/stop-gate.unknown.count" ] && [ ! -e "$BASE/hook-tmp/../evil/x" ]; then
+if [ -f "$BASE/hook-tmp/stop-gate..._evil_x.count" ] && [ ! -e "$BASE/hook-tmp/../evil/x" ]; then
   pass=$((pass + 1))
 else
-  echo "FAIL sid-traversal-path: counter が hook-tmp/stop-gate.unknown.count に作られていない"
+  echo "FAIL sid-traversal-path: counter が hook-tmp/stop-gate..._evil_x.count に作られていない (tr サニタイズ後の期待名)"
   fail=$((fail + 1))
 fi
+
+# H-1b. サニタイズされた session_id で cap カウンタが正しく積まれる:
+#       同じ '../evil' を 3 回渡すと 3 連続 block → 4 回目は fail-open (cap 発動)
+repo=$(make_repo r16b)
+mkdir -p "$repo/.claude"
+printf 'false\n' >"$repo/.claude/stop-gate.conf"
+check "sanitize-cap-block-1" 2 "$(run_gate "$repo" '../evil')"
+check "sanitize-cap-block-2" 2 "$(run_gate "$repo" '../evil')"
+check "sanitize-cap-block-3" 2 "$(run_gate "$repo" '../evil')"
+check "sanitize-cap-failopen-4" 0 "$(run_gate "$repo" '../evil')"
 
 # H-5. タイムアウトでブロック: 孫プロセスが stdout を掴む最悪ケースでも group kill でパイプが
 #      閉じてすぐブロックに落ち (旧 exec 方式なら bg の sleep 30 がパイプを握って ~30 秒 hang)、
