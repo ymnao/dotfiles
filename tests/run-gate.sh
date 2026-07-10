@@ -52,6 +52,7 @@ bash tests/agents-md-sync/run-agents-md-sync-check.sh
 bash tests/statusline/run-statusline-tests.sh
 bash tests/stop-verify-gate/run-stop-gate-tests.sh
 bash tests/post-format/run-post-format-tests.sh
+bash tests/link-backup/run-link-backup-tests.sh
 # 以下は導入済みの場合のみ (PR14 / PR19 / PR22 / PR23 で追加されるテスト・検査)
 [ -f tests/hooks-glob/run-glob-determinism-tests.sh ] && bash tests/hooks-glob/run-glob-determinism-tests.sh
 [ -f tests/verify-ci/run-verify-ci-tests.sh ] && bash tests/verify-ci/run-verify-ci-tests.sh
