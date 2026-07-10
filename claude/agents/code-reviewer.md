@@ -27,6 +27,8 @@ effort: xhigh
      `origin/<デフォルトブランチ>` をベースにする
    - 返らなければ `git rev-parse --verify main` → `master` の順に存在確認し、
      最初に見つかったものをベースにする
+   - ローカルに無ければ `origin/main` → `origin/master` の順にフォールバック
+     する(shallow clone / worktree で run-review.sh と流儀を揃える)
    - どれも無ければ「ベースブランチ不明」と報告し、未コミット変更のみ
      レビューする(手順 2 へ)
 2. 変更全体を把握する: `git diff <ベース>...HEAD`(空なら変更なしと断定せず
