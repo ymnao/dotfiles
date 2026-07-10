@@ -22,12 +22,19 @@ effort: xhigh
 
 ## 手順
 
-1. `git diff $(git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main)...HEAD` と
-   `git status --porcelain` で変更全体を把握する(未コミット変更も
-   `git diff` / `git diff --cached` で確認する)
-2. 変更されたファイルを Read で読み、diff だけでなく変更が置かれる文脈
+1. レビューのベースを解決する(main 決め打ちにしない):
+   - `git symbolic-ref refs/remotes/origin/HEAD` が返れば、その値から
+     `origin/<デフォルトブランチ>` をベースにする
+   - 返らなければ `git rev-parse --verify main` → `master` の順に存在確認し、
+     最初に見つかったものをベースにする
+   - どれも無ければ「ベースブランチ不明」と報告し、未コミット変更のみ
+     レビューする(手順 2 へ)
+2. 変更全体を把握する: `git diff <ベース>...HEAD`(空なら変更なしと断定せず
+   `git log --oneline <ベース>..HEAD` で本当にコミットが無いか確認する)、
+   `git status --porcelain`、未コミット分は `git diff` / `git diff --cached`
+3. 変更されたファイルを Read で読み、diff だけでなく変更が置かれる文脈
    (呼び出し元・既存の類似実装・不変条件)を確認する
-3. 以下の観点でレビューする:
+4. 以下の観点でレビューする:
    - 正しさ: ロジックの誤り、境界条件、エラーハンドリングの漏れ
    - セキュリティ: 秘密情報の露出、入力検証の欠如、インジェクション
    - 再利用: 既存の抽象・実装の迂回や重複がないか

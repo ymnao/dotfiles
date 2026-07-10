@@ -21,9 +21,14 @@ Run each `gh` command as a bare invocation and substitute prior output literally
 4. Classify risk and run tier-appropriate review (do NOT skip this step):
    - Run `bash "$HOME/.codex/skills/pr/scripts/classify-risk.sh" <base_branch>` — yields `{"tier": ..., "reasons": [...]}`
    - **low**: if the project defines lint / typecheck commands, run them and fix failures. No review needed.
-   - **medium**: run the codex-review `security` perspective (follow the codex-review skill's detect→verify→apply steps for that one perspective). Also run the project's test suite if one exists.
-   - **high**: run all 3 codex-review perspectives AND the project's test suite. Then do the explain-the-diff walkthrough (step 5).
-   - If codex is not installed: record "codex-review skipped (codex not installed)" in the evidence section and continue. Do not silently skip.
+   - **medium**: run the project's test suite if one exists. Independent AI review is
+     NOT available in this harness (codex reviewing its own diff is self-review, which
+     defeats the purpose — the codex-review skill exists only on the Claude Code side).
+     Record "independent review skipped (codex harness — run /codex-review from
+     Claude Code before merge)" in the evidence section.
+   - **high**: same as medium, plus the explain-the-diff walkthrough (step 5) and
+     create the PR as **draft**. Recommend in the PR report that the user run the
+     Claude-side review (code-reviewer subagent or /codex-review) before merging.
    - If review leaves UNRESOLVED findings: do not abort — record them in the evidence section and create the PR as **draft**.
 5. Explain-the-diff walkthrough (tier=high only):
    - Split the diff into meaningful units. For each unit present: what changed / why / what could break.
@@ -60,10 +65,10 @@ tier: <tier> — <reasons を列挙>
 |---|---|---|
 | テスト | `<実行したコマンド>` | <PASS/FAIL と件数> |
 | Lint | `<実行したコマンド>` | <結果> |
-| レビュー | codex-review <観点> | <PASS / N findings (M fixed, K report-only)> |
+| レビュー | independent review | <skipped (codex harness — run /codex-review from Claude Code before merge) / tier=low のため未実施> |
 
 ## レビュー指摘と対応
-<codex-review の Report format 表を転記。レビュー未実施なら「tier=low のため未実施」>
+<この harness では独立レビュー不可。tier=medium/high の場合は「merge 前に Claude Code 側で /codex-review または code-reviewer サブエージェントを実行すること」と明記>
 
 </details>
 ```
