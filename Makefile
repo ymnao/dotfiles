@@ -1,4 +1,4 @@
-.PHONY: help install link update clean brewfile lint test test-hooks
+.PHONY: help install link update clean brewfile lint test test-hooks gate
 
 # Default target
 .DEFAULT_GOAL := help
@@ -68,3 +68,7 @@ test: ## Verify shell scripts (shellcheck), JSON files (jq), and hooks
 
 test-hooks: ## Run hook regression tests
 	@bash tests/run-hook-tests.sh
+
+gate: ## Fast verification gate (used by the Stop hook; full checks = make test)
+	@command -v jq >/dev/null || { echo "jq not installed. Run: brew install jq"; exit 1; }
+	@bash tests/run-gate.sh
