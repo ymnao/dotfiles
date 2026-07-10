@@ -73,9 +73,18 @@ function New-DirectoryLink {
             Remove-Item $Destination -Force
             Write-Info "Removed existing link: $Destination"
         } elseif ($Force) {
-            # Backup regular file/directory
+            # Backup regular file/directory (avoid overwriting an existing backup)
             $backup = "$Destination.backup"
-            Move-Item $Destination $backup -Force
+            if (Test-Path -LiteralPath $backup) {
+                $ts = Get-Date -Format "yyyyMMddHHmmss"
+                $backup = "$Destination.backup.$ts"
+                $i = 1
+                while (Test-Path -LiteralPath $backup) {
+                    $backup = "$Destination.backup.$ts.$i"
+                    $i++
+                }
+            }
+            Move-Item $Destination $backup
             Write-Warn "Backed up existing item: $Destination -> $backup"
         } else {
             Write-Skip "Destination already exists (use -Force to overwrite): $Destination"
@@ -144,9 +153,18 @@ function New-FileLink {
             Remove-Item $Destination -Force
             Write-Info "Removed existing link: $Destination"
         } elseif ($Force) {
-            # Backup regular file
+            # Backup regular file (avoid overwriting an existing backup)
             $backup = "$Destination.backup"
-            Move-Item $Destination $backup -Force
+            if (Test-Path -LiteralPath $backup) {
+                $ts = Get-Date -Format "yyyyMMddHHmmss"
+                $backup = "$Destination.backup.$ts"
+                $i = 1
+                while (Test-Path -LiteralPath $backup) {
+                    $backup = "$Destination.backup.$ts.$i"
+                    $i++
+                }
+            }
+            Move-Item $Destination $backup
             Write-Warn "Backed up existing file: $Destination -> $backup"
         } else {
             Write-Skip "Destination already exists (use -Force to overwrite): $Destination"
