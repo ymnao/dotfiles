@@ -228,6 +228,16 @@ $gitIgnoreSource = Join-Path $DOTFILES_DIR "git\ignore"
 $gitIgnoreDest = Join-Path $gitDir "ignore"
 New-FileLink -Source $gitIgnoreSource -Destination $gitIgnoreDest
 
+# gh/config.yml は Windows 版では意図的にスキップ (パス体系が %AppData%\GitHub CLI\ で
+# 異なり単純移植不可。必要になったら別 PR で対応する)
+
+# npm/pnpm configuration
+$npmrcSource = Join-Path $DOTFILES_DIR "npm\npmrc"
+$npmrcDest = Join-Path $env:USERPROFILE ".npmrc"
+if (Test-Path $npmrcSource) {
+    New-FileLink -Source $npmrcSource -Destination $npmrcDest
+}
+
 # PowerShell Profile
 Write-Info "`nLinking PowerShell profile..."
 $profileSource = Join-Path $DOTFILES_DIR "shell\powershell\profile.ps1"
@@ -327,10 +337,14 @@ if (Test-Path $codexSource) {
         New-FileLink -Source $codexAgentsSource -Destination $codexAgentsDest
     }
 
+    # config.toml はマージ方式 (link.sh と同じ理由。symlink だと Codex CLI の
+    # 動的書き込み ([projects.*] / [plugins.*] / [notice.*] / [tui.*] / [hooks.state])
+    # が dotfiles リポジトリを汚染する)
     $codexConfigSource = Join-Path $codexSource "config.toml"
     $codexConfigDest = Join-Path $codexDir "config.toml"
     if (Test-Path $codexConfigSource) {
-        New-FileLink -Source $codexConfigSource -Destination $codexConfigDest
+        & (Join-Path $scriptDir "codex-merge-config.ps1") `
+            -Source $codexConfigSource -Destination $codexConfigDest
     }
 
     $codexHooksJsonSource = Join-Path $codexSource "hooks.json"
