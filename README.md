@@ -70,6 +70,7 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 - **Neovim** - エディタ（Lazy.nvimでプラグイン管理）
 - **Git** - バージョン管理（delta diff付き）
 - **Claude Code** - AI開発アシスタント（設定・スキル管理、運用方針は [docs/ai-operations.md](docs/ai-operations.md)）
+- **Codex CLI** - AI開発アシスタント（設定・skills 共通化、運用方針は [docs/ai-operations.md](docs/ai-operations.md)）
 
 ### macOS
 - **Fish** - シェル
@@ -83,15 +84,21 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 
 ```
 dotfiles/
+├── agents/         # AI エージェント共通設定（AGENTS.md、hook 正本）
+├── claude/         # Claude Code 設定（settings/skills/agents/rules/statusline）
+├── codex/          # Codex CLI 設定
+├── docs/           # 運用ドキュメント（ai-operations.md）
+├── tests/          # 設定・hook の回帰テスト
 ├── fish/           # Fish設定（macOS/Linux）
 ├── git/            # Git設定
+├── gh/             # GitHub CLI設定
+├── npm/            # npm/pnpm設定
 ├── karabiner/      # Karabiner設定（macOS）
 ├── nvim/           # Neovim設定
 ├── wezterm/        # WezTerm設定（プラットフォーム対応）
 ├── shell/          # PowerShell設定（Windows）
 ├── keyboard/       # AutoHotkey設定（Windows）
 ├── packages/       # パッケージ管理（Winget）
-├── claude/         # Claude Code設定
 ├── scripts/        # セットアップスクリプト
 ├── Brewfile        # Homebrewパッケージリスト
 └── Makefile        # タスクランナー
@@ -104,6 +111,11 @@ make help       # ヘルプ表示
 make install    # フルインストール
 make link       # シンボリックリンク作成
 make update     # Homebrewパッケージ更新
+make lint       # secretlint でシークレット漏洩チェック
+make test       # 設定ファイル・hook の検証（フル）
+make test-hooks # hook 回帰テストのみ
+make gate       # Stop hook 用の高速ゲート
+make clean      # 壊れたシンボリックリンクを削除
 ```
 
 ## ⚠️ セキュリティ注意事項
