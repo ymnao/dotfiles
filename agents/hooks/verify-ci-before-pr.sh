@@ -121,7 +121,18 @@ parsed=$(printf '%s' "$result" | jq -r '
   exit 0
 }
 
-IFS=$'\t' read -r state pending failed <<<"$parsed"
+# タブ区切りの分解はパラメータ展開で行う。IFS=$'\t' read はタブが空白系
+# IFS のため連続タブ (空フィールド) を潰し、pending が空のとき failed の
+# 内容が pending 側にずれるバグがあった。cut -f もタブ空フィールドは
+# 保持するが、check 名に改行が混入した場合 (jq `-r` は改行を raw 出力)
+# parsed が多行化し cut -f1 が "FAILURE\nname2" を返して case が
+# default に落ち fail-open する退行があるため、パラメータ展開で先頭行
+# だけを取り出してから 3 分割する。
+first_line=${parsed%%$'\n'*}
+state=${first_line%%$'\t'*}
+rest=${first_line#*$'\t'}
+pending=${rest%%$'\t'*}
+failed=${rest#*$'\t'}
 
 case "$state" in
   MISSING)
