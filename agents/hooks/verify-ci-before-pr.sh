@@ -121,7 +121,12 @@ parsed=$(printf '%s' "$result" | jq -r '
   exit 0
 }
 
-IFS=$'\t' read -r state pending failed <<<"$parsed"
+# タブ区切りの分解は cut で行う。IFS=$'\t' read はタブが空白系 IFS のため
+# 連続タブ (空フィールド) を潰し、pending が空のとき failed の内容が
+# pending 側にずれる (失敗 check 名が「詳細不明」になる) バグがあった。
+state=$(printf '%s' "$parsed" | cut -f1)
+pending=$(printf '%s' "$parsed" | cut -f2)
+failed=$(printf '%s' "$parsed" | cut -f3)
 
 case "$state" in
   MISSING)

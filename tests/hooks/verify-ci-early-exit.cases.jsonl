@@ -1,6 +1,8 @@
 # verify-ci-before-pr.sh の早期 exit 経路のみテストする。
 # ネットワーク (gh / GitHub API) に到達する経路はテスト対象外。
 # 一時ディレクトリ (git リポ外) で実行される前提。
+# block 経路 (MISSING/PENDING/FAILURE / draft bypass / stderr 契約) は
+# tests/verify-ci/run-verify-ci-tests.sh が担当する (git+スタブ方式)。
 {"name":"git-status","expect":"allow","command":"git status","reason":"gh pr create を含まない → 即許可"}
 {"name":"ls","expect":"allow","command":"ls -la","reason":"同上"}
 {"name":"gh-pr-list","expect":"allow","command":"gh pr list","reason":"create でない"}
