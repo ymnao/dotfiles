@@ -1,5 +1,15 @@
 #!/usr/bin/env bash
+# -e を外している: hook は block を exit 2 で表す正常仕様なので、
+# run_hook_in のサブシェルで `|| rc=$?` により exit code を受ける。
+# -e を追加すると block 経路 (ci-failure / ci-pending 等) でランナー
+# 自身が死に、期待値 2 のケースを検証できなくなる。
 set -uo pipefail
+
+# 開発者環境の ~/.gitconfig (commit.gpgsign=true, core.hooksPath 等) が
+# make_repo の初期コミットを spurious fail させないよう global/system
+# config を切り離す。
+export GIT_CONFIG_GLOBAL=/dev/null
+export GIT_CONFIG_SYSTEM=/dev/null
 
 # verify-ci-before-pr.sh の block 経路を含むシナリオテスト。
 # 旧テスト (tests/hooks/verify-ci-early-exit.cases.jsonl) は非 git の一時
@@ -117,13 +127,17 @@ check() {
   fi
 }
 
-# 早期 exit 経路 (API 到達なし — fixture 未設定でも成功すべき)
-check "non-pr-command"   0 "$(run_hook_in "$GH_REPO" "" 'git status')"
-check "gh-pr-list"       0 "$(run_hook_in "$GH_REPO" "" 'gh pr list')"
-check "draft-bypass"     0 "$(run_hook_in "$GH_REPO" "" 'gh pr create --draft --title t --body b')"
-check "draft-d-bypass"   0 "$(run_hook_in "$GH_REPO" "" 'gh pr create -d --title t')"
-check "no-workflows"     0 "$(run_hook_in "$NO_WF_REPO" "" 'gh pr create --title t --body b')"
-check "non-github"       0 "$(run_hook_in "$NON_GH_REPO" "" 'gh pr create --title t --body b')"
+# 早期 exit 経路 (bypass / 対象外)。あえて failure fixture を渡すことで、
+# bypass 判定が退行して API 到達経路へ落ちた場合に curl スタブが失敗
+# JSON を返し hook が exit 2 → テスト FAIL となる (退行検出可)。
+# fixture 未設定だと curl スタブが exit 22 → hook が fail-open (exit 0) し、
+# 期待値と一致するため退行が検出できない (finding: bypass regression 不可視化)。
+check "non-pr-command"   0 "$(run_hook_in "$GH_REPO" failure 'git status')"
+check "gh-pr-list"       0 "$(run_hook_in "$GH_REPO" failure 'gh pr list')"
+check "draft-bypass"     0 "$(run_hook_in "$GH_REPO" failure 'gh pr create --draft --title t --body b')"
+check "draft-d-bypass"   0 "$(run_hook_in "$GH_REPO" failure 'gh pr create -d --title t')"
+check "no-workflows"     0 "$(run_hook_in "$NO_WF_REPO" failure 'gh pr create --title t --body b')"
+check "non-github"       0 "$(run_hook_in "$NON_GH_REPO" failure 'gh pr create --title t --body b')"
 
 # API 到達経路 (fixture で CI 状態を固定)
 check "ci-success"       0 "$(run_hook_in "$GH_REPO" success 'gh pr create --title t --body b')"
