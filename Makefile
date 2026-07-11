@@ -16,9 +16,9 @@ link: ## Create symlinks for dotfiles
 	@bash scripts/link.sh
 
 update: ## Update Homebrew packages
-	@brew update && brew upgrade && brew cleanup
-	@# Brewfile 記載パッケージが未インストール状態でないかを検出する
-	@# (check は non-destructive、一方向 = 記載 → 実インストールのみ)。
+	@# Brewfile 記載パッケージが未インストール状態でないかを先にチェックし、
+	@# 乖離があれば fail-fast する (upgrade は数分かかるので順序が重要)。
+	@# check は non-destructive、一方向 = Brewfile 記載 → 実インストールのみ。
 	@# 逆方向 (未記載だがインストール済み) は check では検出できず、
 	@# 破壊的な bundle cleanup / dump を避けるため今回はスコープ外。
 	@# cleanup は Brewfile 手動編集の構造を破壊するため使わない (CLAUDE.md 参照)。
@@ -30,6 +30,7 @@ update: ## Update Homebrew packages
 	    echo "HINT: 未インストールのパッケージがある。brew bundle install で導入するか、Brewfile から該当行を削除する (make brewfile は使わない)"; \
 	    exit 1; \
 	}
+	@brew update && brew upgrade && brew cleanup
 
 clean: ## Remove broken symlinks
 	@find ~ -maxdepth 1 -type l ! -exec test -e {} \; -delete
