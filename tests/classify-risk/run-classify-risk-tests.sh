@@ -55,10 +55,22 @@ assert_tier() {
 
 # scenario <name> <expected-tier> — stdin に「作るファイル相対パス<TAB>内容」を行区切りで受ける
 scenario() {
-  local name="$1" want="$2" path content
+  local name="$1" want="$2" path content line
   git checkout -q main
   git checkout -qb "case-$name"
-  while IFS=$(printf '\t') read -r path content; do
+  # タブ分解は cut で行う。IFS=$(printf '\t') read はタブが空白系 IFS の
+  # ため連続タブ (空フィールド) を潰し、将来 fixture が leading tab や空
+  # path 形式に拡張された時に content が path 位置に昇格して誤テストが
+  # silently PASS するリスクがある (verify-ci hook で修正済みバグの同型)。
+  # タブ無し行では cut -f2- が行全体を返してしまうため、tab 有無を明示
+  # 判定して content を分岐する (旧 read 実装は content="" になっていた)。
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    path=$(printf '%s' "$line" | cut -f1)
+    case "$line" in
+      *"$T"*) content=$(printf '%s' "$line" | cut -f2-) ;;
+      *) content="" ;;
+    esac
     [ -n "$path" ] || continue
     mkdir -p "$(dirname "$path")"
     printf '%s\n' "$content" > "$path"
