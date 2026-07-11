@@ -18,6 +18,9 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
+      # 開発機は Brewfile 経由 (Homebrew) で shellcheck/jq を入れるが、CI は
+      # ubuntu-latest 上で Linuxbrew を起動するオーバーヘッド (数分) を避けるため
+      # apt で入れる。install 経路が dev↔CI で分岐している点は意図。
       - name: Install shellcheck and jq
         run: |
           sudo apt-get update
