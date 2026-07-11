@@ -55,9 +55,28 @@ if [ "${1:-}" = "auth" ] && [ "${2:-}" = "token" ]; then
 fi
 exit 1
 EOF
-# curl: 引数を無視して VERIFY_CI_FIXTURE の内容を返す (GraphQL 応答の固定)
+# curl: 引数を検証してから VERIFY_CI_FIXTURE の内容を返す。
+# hook が Authorization header・testowner/testrepo を含む GraphQL body を
+# 正しく送っていることを assert する (誤 endpoint・auth 抜けの退行検出)。
 cat >"$BASE/bin/curl" <<'EOF'
 #!/bin/sh
+args="$*"
+case "$args" in
+  *"Authorization: bearer stub-token"*) ;;
+  *) echo "curl stub: missing/wrong Authorization header: $args" >&2; exit 90 ;;
+esac
+case "$args" in
+  *"api.github.com/graphql"*) ;;
+  *) echo "curl stub: unexpected endpoint: $args" >&2; exit 91 ;;
+esac
+case "$args" in
+  *testowner*) ;;
+  *) echo "curl stub: GraphQL body missing owner=testowner: $args" >&2; exit 92 ;;
+esac
+case "$args" in
+  *testrepo*) ;;
+  *) echo "curl stub: GraphQL body missing repo=testrepo: $args" >&2; exit 92 ;;
+esac
 if [ -n "${VERIFY_CI_FIXTURE:-}" ] && [ -f "$VERIFY_CI_FIXTURE" ]; then
   cat "$VERIFY_CI_FIXTURE"
   exit 0
