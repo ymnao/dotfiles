@@ -126,10 +126,18 @@ NON_GH_REPO=$(make_repo non-gh "https://gitlab.com/o/r.git" yes)
 pass=0
 fail=0
 
-# $1=cwd, $2=fixture 名 ("" なら未設定), $3=command。exit code を echo
+# $1=cwd, $2=fixture 名 ("" なら未設定), $3=command。exit code を echo。
+# fixture 名の typo で curl スタブが exit 22 → hook fail-open (exit 0) と
+# なり expect-0 テストが vacuous pass するのを防ぐため fixture 存在を assert。
 run_hook_in() {
   local json rc=0 fixture_env=""
-  [ -n "$2" ] && fixture_env="$BASE/fixtures/$2.json"
+  if [ -n "$2" ]; then
+    fixture_env="$BASE/fixtures/$2.json"
+    if [ ! -f "$fixture_env" ]; then
+      echo "run_hook_in: fixture not found: $fixture_env" >&2
+      exit 1
+    fi
+  fi
   json=$(jq -cn --arg c "$3" '{"tool_input":{"command":$c}}')
   printf '%s' "$json" \
     | (cd "$1" && PATH="$BASE/bin:$PATH" VERIFY_CI_FIXTURE="$fixture_env" bash "$HOOK" >/dev/null 2>&1) || rc=$?
