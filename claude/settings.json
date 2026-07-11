@@ -86,7 +86,7 @@
     "credentials": {
       "files": [
         { "path": "~/.ssh", "mode": "deny" },
-        { "path": "~/.aws/credentials", "mode": "deny" },
+        { "path": "~/.aws", "mode": "deny" },
         { "path": "~/.config/gcloud", "mode": "deny" },
         { "path": "~/.gnupg", "mode": "deny" }
       ]

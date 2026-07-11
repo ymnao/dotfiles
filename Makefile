@@ -17,14 +17,17 @@ link: ## Create symlinks for dotfiles
 
 update: ## Update Homebrew packages
 	@brew update && brew upgrade && brew cleanup
-	@# Brewfile と実インストール状態の乖離を検出する (check は non-destructive)。
+	@# Brewfile 記載パッケージが未インストール状態でないかを検出する
+	@# (check は non-destructive、一方向 = 記載 → 実インストールのみ)。
+	@# 逆方向 (未記載だがインストール済み) は check では検出できず、
+	@# 破壊的な bundle cleanup / dump を避けるため今回はスコープ外。
 	@# cleanup は Brewfile 手動編集の構造を破壊するため使わない (CLAUDE.md 参照)。
 	@# --greedy は auto_updates cask (claude-code 等) の版遅延を拾うが、
 	@#   cask 側の更新頻度に依存するため常時採用はせず、今回は check のみ。
-	@echo "==> Brewfile 乖離チェック"
+	@echo "==> Brewfile 記載パッケージのインストール状態チェック"
 	@brew bundle check --file=Brewfile --verbose || { \
 	    echo ""; \
-	    echo "HINT: 上記の乖離は手動で Brewfile を更新して解消する (make brewfile は使わない)"; \
+	    echo "HINT: 未インストールのパッケージがある。brew bundle install で導入するか、Brewfile から該当行を削除する (make brewfile は使わない)"; \
 	    exit 1; \
 	}
 
