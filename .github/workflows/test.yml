@@ -1,0 +1,36 @@
+# dotfiles の検証 CI。配置先: .github/workflows/test.yml
+#
+# トリガーは push (全ブランチ)。PR イベントを重ねると同一コミットに 2 回走るため
+# 使わない。verify-ci-before-pr hook は「HEAD コミットの CI 状態」を見るので、
+# PR 作成前の push で走るこの形が必須。
+name: test
+
+on:
+  push:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck and jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck jq
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: make test
+        run: make test
+
+      - name: make lint
+        run: make lint
