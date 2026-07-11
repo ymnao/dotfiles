@@ -68,7 +68,7 @@ scenario() {
     [ -n "$line" ] || continue
     path=$(printf '%s' "$line" | cut -f1)
     case "$line" in
-      *"$(printf '\t')"*) content=$(printf '%s' "$line" | cut -f2-) ;;
+      *"$T"*) content=$(printf '%s' "$line" | cut -f2-) ;;
       *) content="" ;;
     esac
     [ -n "$path" ] || continue
