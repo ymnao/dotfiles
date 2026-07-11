@@ -58,7 +58,14 @@ scenario() {
   local name="$1" want="$2" path content
   git checkout -q main
   git checkout -qb "case-$name"
-  while IFS=$(printf '\t') read -r path content; do
+  # タブ分解は cut で行う。IFS=$(printf '\t') read はタブが空白系 IFS の
+  # ため連続タブ (空フィールド) を潰し、将来 fixture が leading tab や空
+  # path 形式に拡張された時に content が path 位置に昇格して誤テストが
+  # silently PASS するリスクがある (verify-ci hook で修正済みバグの同型)。
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    path=$(printf '%s' "$line" | cut -f1)
+    content=$(printf '%s' "$line" | cut -f2-)
     [ -n "$path" ] || continue
     mkdir -p "$(dirname "$path")"
     printf '%s\n' "$content" > "$path"
