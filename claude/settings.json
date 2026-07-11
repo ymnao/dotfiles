@@ -82,8 +82,17 @@
       "brew *",
       "pnpm test:e2e *"
     ],
-    "allowUnsandboxedCommands": false
+    "allowUnsandboxedCommands": false,
+    "credentials": {
+      "files": [
+        { "path": "~/.ssh", "mode": "deny" },
+        { "path": "~/.aws/credentials", "mode": "deny" },
+        { "path": "~/.config/gcloud", "mode": "deny" },
+        { "path": "~/.gnupg", "mode": "deny" }
+      ]
+    }
   },
+  "requiredMinimumVersion": "2.1.195",
   "hooks": {
     "PreToolUse": [
       {

@@ -17,6 +17,16 @@ link: ## Create symlinks for dotfiles
 
 update: ## Update Homebrew packages
 	@brew update && brew upgrade && brew cleanup
+	@# Brewfile と実インストール状態の乖離を検出する (check は non-destructive)。
+	@# cleanup は Brewfile 手動編集の構造を破壊するため使わない (CLAUDE.md 参照)。
+	@# --greedy は auto_updates cask (claude-code 等) の版遅延を拾うが、
+	@#   cask 側の更新頻度に依存するため常時採用はせず、今回は check のみ。
+	@echo "==> Brewfile 乖離チェック"
+	@brew bundle check --file=Brewfile --verbose || { \
+	    echo ""; \
+	    echo "HINT: 上記の乖離は手動で Brewfile を更新して解消する (make brewfile は使わない)"; \
+	    exit 1; \
+	}
 
 clean: ## Remove broken symlinks
 	@find ~ -maxdepth 1 -type l ! -exec test -e {} \; -delete
