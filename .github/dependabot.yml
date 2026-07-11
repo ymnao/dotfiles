@@ -1,0 +1,12 @@
+# 配置先: .github/dependabot.yml
+# CI (make test) がゲートになったので、依存更新 PR を安全に受けられる。
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly

@@ -1,0 +1,42 @@
+# dotfiles の検証 CI。配置先: .github/workflows/test.yml
+#
+# トリガーは push (全ブランチ)。PR イベントを重ねると同一コミットに 2 回走るため
+# 使わない。verify-ci-before-pr hook は「HEAD コミットの CI 状態」を見るので、
+# PR 作成前の push で走るこの形が必須。
+name: test
+
+on:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      # 開発機は Brewfile 経由 (Homebrew) で shellcheck/jq を入れるが、CI は
+      # ubuntu-latest 上で Linuxbrew を起動するオーバーヘッド (数分) を避けるため
+      # apt で入れる。install 経路が dev↔CI で分岐している点は意図。
+      - name: Install shellcheck and jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck jq
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: make test
+        run: make test
+
+      - name: make lint
+        run: make lint
