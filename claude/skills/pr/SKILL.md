@@ -24,12 +24,13 @@ Run each `gh` command as a bare invocation and substitute prior output literally
    - **medium**: run the codex-review `security` perspective (follow the codex-review skill's detect→verify→apply steps for that one perspective). Also run the project's test suite if one exists.
    - **high**: run all 3 codex-review perspectives AND the project's test suite. Then do the explain-the-diff walkthrough (step 5).
    - If codex is not installed: record "codex-review skipped (codex not installed)" in the evidence section and continue. Do not silently skip.
-   - If review leaves **UNRESOLVED findings** (= 本 PR で fix すべきだが未対応、または blocker として判断保留): record them in the evidence section and create the PR as **draft**.
-   - **REPORT-ONLY findings**(verbatim/spec 制約で本 PR 対応不可 / 追跡別 PR に回す / net-neutral と判断して意図的に skip)は draft 条件に **含めない**。件数の多寡は判断材料にしない。evidence には記録する。
+   - Draft 判定は **PR-level triage**(本 PR 内で fix すべき finding が残っているか)で行う。codex-review の per-finding 分類 (`REPORT-ONLY` / `UNRESOLVED`、`claude/skills/codex-review/SKILL.md` 参照) は入力の一部として扱う。
+     - **UNRESOLVED** (本 PR で fix すべきだが未対応、または blocker として判断保留): evidence に記録し **draft** で作成
+     - **REPORT-ONLY** (verbatim/spec 制約で本 PR 対応不可 / 追跡別 PR に回す / net-neutral で意図的 skip): evidence に記録するのみ。件数の多寡を draft 判定に使わない
 5. Explain-the-diff walkthrough (tier=high only):
    - Split the diff into meaningful units. For each unit present: what changed / why / what could break.
    - Wait for the user's confirmation before `gh pr create`.
-     - **user が確認済み**(walkthrough 出力後に「進めて」「OK」「/pr」再実行など、明示的な承認シグナル): normal で作成
+     - **user が確認済み**(「進めて」「OK」「/pr」再実行など、明示的な承認シグナル): normal で作成
      - **非対話で実行**(automation / no-tty で user 応答を待てない): walkthrough を出力し **draft** で作成
 6. Generate PR title and body:
    - **Title**: under 70 characters, summarizing the changes
