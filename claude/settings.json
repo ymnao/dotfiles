@@ -157,7 +157,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$HOME/.claude/hooks/session-compact-context.sh\""
+            "command": "bash \"$HOME/.claude/hooks/session-compact-context.sh\"",
+            "timeout": 10
           }
         ]
       }
