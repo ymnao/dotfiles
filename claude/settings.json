@@ -150,6 +150,17 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/session-compact-context.sh\""
+          }
+        ]
+      }
     ]
   },
   "statusLine": {
