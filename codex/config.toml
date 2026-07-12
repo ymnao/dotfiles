@@ -5,16 +5,13 @@
 # Codex CLI が動的に書き込む [projects.*] / [plugins.*] / [notice.*] /
 # [tui.*] / [hooks.state] は dest 側で保護されるため、ここには含めない。
 
-model = "gpt-5.5"
-model_reasoning_effort = "high"
-web_search = "live"
+model = "gpt-5.6-sol"
+model_reasoning_effort = "medium"
 allow_login_shell = false
 notify = [
     "/Users/nakiym/.codex/computer-use/Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient",
     "turn-ended",
 ]
-sandbox_mode = "workspace-write"
-service_tier = "priority"
 
 [shell_environment_policy]
 inherit = "all"
