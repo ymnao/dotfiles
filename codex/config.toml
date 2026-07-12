@@ -6,10 +6,23 @@
 # [tui.*] / [hooks.state] は dest 側で保護されるため、ここには含めない。
 
 model = "gpt-5.5"
-model_reasoning_effort = "medium"
-
+model_reasoning_effort = "high"
+web_search = "live"
 allow_login_shell = false
+notify = [
+    "/Users/nakiym/.codex/computer-use/Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient",
+    "turn-ended",
+]
+sandbox_mode = "workspace-write"
+service_tier = "priority"
 
 [shell_environment_policy]
 inherit = "all"
-include_only = ["PATH", "HOME", "USER", "LANG", "SHELL", "TERM"]
+include_only = [
+    "PATH",
+    "HOME",
+    "USER",
+    "LANG",
+    "SHELL",
+    "TERM",
+]
