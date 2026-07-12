@@ -79,6 +79,7 @@ test: ## Verify shell scripts (shellcheck), JSON files (jq), and hooks
 	@bash tests/hooks-glob/run-glob-determinism-tests.sh
 	@bash tests/link-backup/run-link-backup-tests.sh
 	@bash tests/verify-ci/run-verify-ci-tests.sh
+	@bash tests/integrity/run-integrity-selftest.sh
 	@echo "OK: all checks passed"
 
 test-hooks: ## Run hook regression tests
