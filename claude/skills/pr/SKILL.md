@@ -34,7 +34,7 @@ Run each `gh` command as a bare invocation and substitute prior output literally
    - **Title**: under 70 characters, summarizing the changes
    - **Body**: use the repo's PR template if `pr_template` is not null, otherwise the default template below. ALWAYS append the evidence section (below) at the end of the body.
 7. If `has_remote` is false, run `git push -u origin <branch_name>`
-8. Create the PR with `gh pr create`. Add `--draft` when step 4 **OR** step 5 decided draft(**draft が優先** — 一方でも draft 判定なら `--draft` を付ける)。If `linked_issue` exists, include `Closes #<number>` in the body.
+8. Create the PR with `gh pr create`. Add `--draft` when step 4 **or** step 5 decided draft (draft-wins). If `linked_issue` exists, include `Closes #<number>` in the body.
 
 ## Default template (fallback)
 
