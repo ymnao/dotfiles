@@ -24,10 +24,13 @@ Run each `gh` command as a bare invocation and substitute prior output literally
    - **medium**: run the codex-review `security` perspective (follow the codex-review skill's detect→verify→apply steps for that one perspective). Also run the project's test suite if one exists.
    - **high**: run all 3 codex-review perspectives AND the project's test suite. Then do the explain-the-diff walkthrough (step 5).
    - If codex is not installed: record "codex-review skipped (codex not installed)" in the evidence section and continue. Do not silently skip.
-   - If review leaves UNRESOLVED findings: do not abort — record them in the evidence section and create the PR as **draft**.
+   - If review leaves **UNRESOLVED findings** (= 本 PR で fix すべきだが未対応、または blocker として判断保留): record them in the evidence section and create the PR as **draft**.
+   - **REPORT-ONLY findings**(verbatim/spec 制約で本 PR 対応不可 / 追跡別 PR に回す / net-neutral と判断して意図的に skip)は draft 条件に **含めない**。件数の多寡は判断材料にしない。evidence には記録する。
 5. Explain-the-diff walkthrough (tier=high only):
    - Split the diff into meaningful units. For each unit present: what changed / why / what could break.
-   - Wait for the user's confirmation before `gh pr create`. If running non-interactively, output the walkthrough and create the PR as **draft**.
+   - Wait for the user's confirmation before `gh pr create`.
+     - **user が確認済み**(walkthrough 出力後に「進めて」「OK」「/pr」再実行など、明示的な承認シグナル): normal で作成
+     - **非対話で実行**(automation / no-tty で user 応答を待てない): walkthrough を出力し **draft** で作成
 6. Generate PR title and body:
    - **Title**: under 70 characters, summarizing the changes
    - **Body**: use the repo's PR template if `pr_template` is not null, otherwise the default template below. ALWAYS append the evidence section (below) at the end of the body.
