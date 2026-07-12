@@ -1,0 +1,6 @@
+# ~/.claude.json に存在してよい MCP サーバー名の許可リスト (1 行 1 名)。
+# 追加は docs/ai-operations.md §5 の審査 (CLI → skill → MCP) を通してから。
+
+chrome-devtools
+context7
+serena
