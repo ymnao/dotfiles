@@ -29,12 +29,16 @@ Run each `gh` command as a bare invocation and substitute prior output literally
      - **本 PR で fix する必要がない finding のみ**(verbatim/spec 制約で対応不可 / 追跡別 PR に回す / net-neutral で意図的 skip): evidence に記録するのみ。件数の多寡を draft 判定に使わない
 5. Explain-the-diff walkthrough (tier=high only):
    - Split the diff into meaningful units. For each unit present: what changed / why / what could break.
-   - Wait for the user's confirmation before `gh pr create`. **Default-deny**: 直前の walkthrough に対する user の明示的な承認応答(「進めて」「OK」等)を確認できたときのみ normal で作成。それ以外(非対話 / 曖昧応答 / 無応答 / 過去会話文脈からの推定 / `/pr` 再実行など walkthrough を提示していないタイミングでの入力)はすべて **draft** で作成し、walkthrough を出力する。
+   - Wait for the user's response. 3 分岐で処理する:
+     - (a) **明示的承認**(「進めて」「OK」等、直前の walkthrough を受けた応答): normal で作成
+     - (b) **明示的却下 / 修正要求**: `gh pr create` せず中止し、user と対話
+     - (c) **曖昧応答 / 無応答**(「うーん」「そうか」等、interactive で直前の walkthrough を受けたが明確でない): PR を作成せず、user に明示的な yes/no を **聞き返す**
+   - **walkthrough 未提示のタイミングでの入力**(非対話 / no-tty / `/pr` 再実行など、この turn で walkthrough を提示していない): walkthrough を先に出力し、その turn では **`gh pr create` を実行しない**(次 turn の user 応答を上記 3 分岐で処理する)。
 6. Generate PR title and body:
    - **Title**: under 70 characters, summarizing the changes
    - **Body**: use the repo's PR template if `pr_template` is not null, otherwise the default template below. ALWAYS append the evidence section (below) at the end of the body.
 7. If `has_remote` is false, run `git push -u origin <branch_name>`
-8. Create the PR with `gh pr create`. Add `--draft` when step 4 **or** step 5 decided draft (draft-wins). If `linked_issue` exists, include `Closes #<number>` in the body.
+8. Create the PR with `gh pr create`. Add `--draft` when step 4 **or** step 5 decided draft (draft-wins). **Exception**: user が step 5 で「step 4 の finding は別 PR で追う。normal で作って」等、step 4 の draft 判定を明示的に override する指示を出した場合は normal で作成し、その override 内容を evidence に記録する。If `linked_issue` exists, include `Closes #<number>` in the body.
 
 ## Default template (fallback)
 
