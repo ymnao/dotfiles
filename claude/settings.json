@@ -8,9 +8,12 @@
       "Bash(gh pr view:*)",
       "Bash(gh pr diff:*)",
       "Bash(gh pr checks:*)",
+      "Bash(gh pr comment:*)",
+      "Bash(gh pr close:*)",
       "Bash(gh repo view:*)",
       "Bash(gh run list:*)",
       "Bash(gh run view:*)",
+      "Bash(gh run watch:*)",
       "Bash(git branch --show-current:*)",
       "Bash(jq:*)",
       "Bash(npm run *)",
@@ -21,7 +24,8 @@
       "Bash(pytest:*)",
       "Bash(make *)",
       "Bash(bash \"$HOME/.claude/skills/pr/scripts/gather-branch-info.sh\":*)",
-      "Bash(bash \"$HOME/.claude/skills/pr/scripts/classify-risk.sh\":*)"
+      "Bash(bash \"$HOME/.claude/skills/pr/scripts/classify-risk.sh\":*)",
+      "Bash(bash \"$HOME/.claude/skills/dependabot-bulk/scripts/list-dependabot-prs.sh\":*)"
     ],
     "deny": [
       "Bash(rm -rf *)",
