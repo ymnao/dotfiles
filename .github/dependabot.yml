@@ -6,6 +6,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # 他 PR merge 時の自動 rebase (= CI 再走行) を止める。conflict 時は
+    # `@dependabot rebase` で手動発行する
+    rebase-strategy: disabled
     groups:
       all:
         patterns:
@@ -14,6 +17,7 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    rebase-strategy: disabled
     groups:
       all:
         patterns:

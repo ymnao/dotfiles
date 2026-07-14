@@ -5,7 +5,11 @@ description: Consolidate open Dependabot PRs into one integration branch to comp
 
 open な Dependabot PR を 1 branch に統合し、push を 1 回にして CI 実行を N 回 → 原則 1 回に圧縮する。個別 PR ごとに `.github/workflows/test.yml` (push トリガー) が走ることによる GitHub Actions 分数の消費を抑える。
 
-**前提**: `.github/dependabot.yml` に `groups: { all: { patterns: ["*"] } }` (companion change) は既に導入済み。このスキルは「既に立った PR の後処理 / cross-ecosystem 統合 / groups 未対応 ecosystem 追加時の後方互換」を担う。
+**前提**: `.github/dependabot.yml` に以下 2 点は導入済み。
+- `groups: { all: { patterns: ["*"] } }` — ecosystem 内は 1 PR に集約
+- `rebase-strategy: disabled` — 他 PR merge 時の自動 rebase (= CI 再走行) 抑制
+
+これにより「PR 1 件 merge するたびに残 Dependabot PR が全部 CI を再消費する」問題は設定側で解消。このスキルは「既に立った PR の後処理 / cross-ecosystem 統合 / groups 未対応 ecosystem 追加時の後方互換」を担う。
 
 ## Steps
 
