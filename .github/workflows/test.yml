@@ -8,6 +8,13 @@ name: test
 on:
   push:
 
+# 同一ブランチへの連続 push で古い run を打ち切り、Actions 分数を節約する。
+# main は cancel-in-progress: false にして完走させる (verify-ci-before-pr hook が
+# main の CI 結果を参照するため、途中打ち切りで状態が曖昧になるのを避ける)。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 permissions:
   contents: read
 
