@@ -24,15 +24,21 @@ Run each `gh` command as a bare invocation and substitute prior output literally
    - **medium**: run the codex-review `security` perspective (follow the codex-review skill's detect→verify→apply steps for that one perspective). Also run the project's test suite if one exists.
    - **high**: run all 3 codex-review perspectives AND the project's test suite. Then do the explain-the-diff walkthrough (step 5).
    - If codex is not installed: record "codex-review skipped (codex not installed)" in the evidence section and continue. Do not silently skip.
-   - If review leaves UNRESOLVED findings: do not abort — record them in the evidence section and create the PR as **draft**.
+   - Draft 判定は **PR-level triage** で行う(codex-review の per-finding 分類 `REPORT-ONLY` / `UNRESOLVED` は参考情報として `$HOME/.claude/skills/codex-review/SKILL.md` の定義に従う。pr の draft 判定に自動流用しない):
+     - **本 PR で fix すべき finding が残っている**(未対応、または blocker として判断保留): evidence に記録し **draft** で作成
+     - **本 PR で fix する必要がない finding のみ**(verbatim/spec 制約で対応不可 / 追跡別 PR に回す / net-neutral で意図的 skip): evidence に記録するのみ。件数の多寡を draft 判定に使わない
 5. Explain-the-diff walkthrough (tier=high only):
    - Split the diff into meaningful units. For each unit present: what changed / why / what could break.
-   - Wait for the user's confirmation before `gh pr create`. If running non-interactively, output the walkthrough and create the PR as **draft**.
+   - Wait for the user's response. 3 分岐で処理する:
+     - (a) **明示的承認**(「進めて」「OK」等、直前の walkthrough を受けた応答): normal で作成
+     - (b) **明示的却下 / 修正要求**: `gh pr create` せず中止し、user と対話
+     - (c) **曖昧応答 / 無応答**(「うーん」「そうか」等、interactive で直前の walkthrough を受けたが明確でない): PR を作成せず、user に明示的な yes/no を **聞き返す**
+   - **walkthrough 未提示のタイミングでの入力**(非対話 / no-tty / `/pr` 再実行など、この turn で walkthrough を提示していない): walkthrough を先に出力し、その turn では **`gh pr create` を実行しない**(次 turn の user 応答を上記 3 分岐で処理する)。
 6. Generate PR title and body:
    - **Title**: under 70 characters, summarizing the changes
    - **Body**: use the repo's PR template if `pr_template` is not null, otherwise the default template below. ALWAYS append the evidence section (below) at the end of the body.
 7. If `has_remote` is false, run `git push -u origin <branch_name>`
-8. Create the PR with `gh pr create` (add `--draft` when step 4/5 decided draft). If `linked_issue` exists, include `Closes #<number>` in the body.
+8. Create the PR with `gh pr create`. Add `--draft` when step 4 **or** step 5 decided draft (draft-wins). **Exception**: user が step 5 で「step 4 の finding は別 PR で追う。normal で作って」等、step 4 の draft 判定を明示的に override する指示を出した場合は normal で作成し、その override 内容を evidence に記録する。If `linked_issue` exists, include `Closes #<number>` in the body.
 
 ## Default template (fallback)
 
