@@ -1,27 +1,27 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Dependabot PR 一覧 JSON (stdin) を semver / ecosystem / security / breaking-hint
-# で分類して JSON 配列として出力する。
+# Dependabot PR 一覧 JSON (stdin) を semver / ecosystem / security で分類して
+# JSON 配列として出力する。
 #
-# 呼び出し側 (SKILL.md) が gh を直接叩き、その出力を stdin で渡す構造にしてある。
+# 呼び出し側 (SKILL.md) が gh を直接叩き、その出力を stdin で渡す構造。
 # 理由: bash → gh のネストは macOS Keychain 認証が切れる (memory
 # feedback_skill_gh_no_nested と gather-branch-info.sh 冒頭コメント参照)。
 #
 # 入力: gh pr list --author app/dependabot --state open --json number,title,headRefName,url,body,labels
-# 出力: 各 PR に semver / ecosystem / security / breaking_hint を付与した JSON 配列
+# 出力: 各 PR に semver / ecosystem / security を付与した JSON 配列
+#
+# 分類は保守側に倒す方針: 判別できない (grouped PR / 非標準 title / pre-release)
+# は semver=unknown → SKILL.md 側で「個別維持」扱いに落とす。breaking_hint 検出は
+# substring match が false-positive を量産するため廃止し、「major は人間判断」の
+# 一点に絞る (issue #105 の「安全性の depth」節)。
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "ERROR: jq is not installed" >&2
   exit 1
 fi
 
-INPUT=$(cat)
-
 # ecosystem 判定: dependabot が付ける headRefName の prefix を使う
-#   github_actions → github-actions
-#   npm_and_yarn   → npm
-#   その他は unknown (将来 ecosystem 追加時に手を入れる)
 classify_ecosystem() {
   case "$1" in
     dependabot/github_actions/*) printf 'github-actions' ;;
@@ -30,14 +30,28 @@ classify_ecosystem() {
   esac
 }
 
-# semver 判定: PR title の "from X to Y" を正規表現でパース
-#   例: "Bump actions/checkout from 4.1.1 to 4.2.0" → 4.1.1 → 4.2.0 → minor
-# major が変われば major、minor だけなら minor、それ以外は patch
-# パース不能 (pre-release / commit sha 等) は unknown → 安全側で「統合しない」扱いに倒せる
+# grouped PR 判定: dependabot.yml の groups 機能で複数依存を 1 PR にまとめた
+# ケース。title は 'Bumps the <name> group with N updates: bumps A ... and B ...'
+# のような形式で from/to が複数入るため semver 単一 pair 判定は不能。
+# is_grouped が真なら classify_semver は unknown に倒す。
+is_grouped() {
+  case "$1" in
+    *"the "*" group with "*|*" and bumps "*|*" and updates "*) return 0 ;;
+  esac
+  return 1
+}
+
+# semver 判定: title 冒頭に anchor した 'Bump[s]? <pkg> from [v]X.Y[.Z] to [v]A.B[.C]'
+# パターンで from/to を抜く。v prefix (v4.1.1) を許容。grouped は先に unknown。
+# パース不能は unknown → 統合しない扱いに倒す。
 classify_semver() {
   local title="$1" from to fmaj fmin tmaj tmin
-  from=$(printf '%s' "$title" | sed -nE 's/.*from ([0-9]+\.[0-9]+(\.[0-9]+)?).*/\1/p')
-  to=$(printf '%s' "$title" | sed -nE 's/.*to ([0-9]+\.[0-9]+(\.[0-9]+)?).*/\1/p')
+  if is_grouped "$title"; then
+    printf 'unknown'
+    return
+  fi
+  from=$(printf '%s' "$title" | sed -nE 's/^[Bb]ump[s]? +[^ ]+ +from +v?([0-9]+\.[0-9]+(\.[0-9]+)?) +to +v?[0-9]+\.[0-9]+.*/\1/p')
+  to=$(printf '%s' "$title"   | sed -nE 's/^[Bb]ump[s]? +[^ ]+ +from +v?[0-9]+\.[0-9]+(\.[0-9]+)? +to +v?([0-9]+\.[0-9]+(\.[0-9]+)?).*/\2/p')
   if [ -z "$from" ] || [ -z "$to" ]; then
     printf 'unknown'
     return
@@ -55,45 +69,44 @@ classify_semver() {
   fi
 }
 
-# security 判定: PR body に GHSA リンクを含む or labels に security 系
+# security 判定: false-positive を避けるため厳密なパターンに絞る。
+# - body: GHSA-<4>-<4>-<4> の GitHub Security Advisory ID 実体 (英数ハイフンで
+#   'GitHub Security Advisory Database' などの定型文言は拾わない)
+# - labels: comma-separated リストに 'security' / 'vulnerability' の exact match
 is_security() {
-  if printf '%s\n%s' "$1" "$2" | grep -qiE 'GHSA-[a-z0-9-]+|security|vulnerab'; then
+  local body="$1" labels="$2"
+  if printf '%s' "$body" | grep -qE 'GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}'; then
     printf 'true'
-  else
-    printf 'false'
+    return
   fi
+  case ",$labels," in
+    *,security,*|*,Security,*|*,vulnerability,*|*,Vulnerability,*) printf 'true'; return ;;
+  esac
+  printf 'false'
 }
 
-# breaking-hint: PR body に BREAK / breaking / deprecat を含むか (大文字小文字無視)
-# 外部 fetch は一切しない。Dependabot が body に埋める release notes のみが対象
-has_breaking_hint() {
-  if printf '%s' "$1" | grep -qiE 'breaking|deprecat'; then
-    printf 'true'
-  else
-    printf 'false'
-  fi
-}
-
-# パッケージ名: PR title の "Bump <pkg> from ..." から抜く
+# パッケージ名: title の 'Bump[s]? <pkg> from ...' から抜く
 extract_package() {
   printf '%s' "$1" | sed -nE 's/^[Bb]ump[s]? +([^ ]+) +from .*/\1/p'
 }
 
 # 各 PR を classify して JSON 配列にまとめる。
-# 外側で jq を 1 回だけ実行し @tsv で全フィールドを流し、shell 側は
-# read で受ける (per-PR の jq fork を 6 → 0 にする)。
-# @tsv は tab/newline/backslash をエスケープするので、body に改行があっても
-# 1 PR = 1 行を保つ。エスケープ後の "\n" は grep 判定に影響しない
-# (breaking などの単語検出は substring match のため)。
-# 各 ENTRY は jq -n で組み立てて stdout に流し、最後に `jq -s '.'` で
-# 配列にまとめる (旧実装の O(N²) array-rebuild を排除)。
-printf '%s' "$INPUT" \
-  | jq -r '.[] | [.number, .title, .headRefName, .url, (.body // ""), ([.labels[]?.name] | join(","))] | @tsv' \
-  | while IFS=$'\t' read -r NUMBER TITLE HEAD URL BODY LABELS; do
+# @tsv 経由だと jq のエスケープ (\t, \n, \\) を read が解釈せず literal 混入する
+# ため、1 PR = 1 JSON object を stream し per-PR で jq -r 抽出する。fork は 6N
+# 程度に増えるが N は Dependabot open PR 数で通常 5-10、レイテンシは無視できる。
+# ENTRY を stdout に流し末尾で jq -s '.' で配列にまとめる (O(N²) 累積は回避)。
+jq -c '.[]' \
+  | while read -r pr_json; do
+      NUMBER=$(printf '%s' "$pr_json" | jq -r '.number')
+      TITLE=$(printf '%s'  "$pr_json" | jq -r '.title')
+      HEAD=$(printf '%s'   "$pr_json" | jq -r '.headRefName')
+      URL=$(printf '%s'    "$pr_json" | jq -r '.url')
+      BODY=$(printf '%s'   "$pr_json" | jq -r '.body // ""')
+      LABELS=$(printf '%s' "$pr_json" | jq -r '[.labels[]?.name] | join(",")')
+
       ECOSYSTEM=$(classify_ecosystem "$HEAD")
       SEMVER=$(classify_semver "$TITLE")
       SECURITY=$(is_security "$BODY" "$LABELS")
-      BREAKING=$(has_breaking_hint "$BODY")
       PACKAGE=$(extract_package "$TITLE")
 
       jq -n \
@@ -105,7 +118,6 @@ printf '%s' "$INPUT" \
         --arg ecosystem "$ECOSYSTEM" \
         --arg semver "$SEMVER" \
         --argjson security "$SECURITY" \
-        --argjson breaking_hint "$BREAKING" \
-        '{number: $number, title: $title, headRefName: $headRefName, url: $url, package: $package, ecosystem: $ecosystem, semver: $semver, security: $security, breaking_hint: $breaking_hint}'
+        '{number: $number, title: $title, headRefName: $headRefName, url: $url, package: $package, ecosystem: $ecosystem, semver: $semver, security: $security}'
     done \
   | jq -s '.'
