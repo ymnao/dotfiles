@@ -34,20 +34,20 @@ assert_field() {
   fi
 }
 
-# assert_exit <name> <input> <expected_exit>
+# assert_exit <name> <input> <expected> — expected は "0" または "nonzero"
 # 非 0 終了時は stdout が空 (partial JSON を残さない) ことを厳密に確認する
 assert_exit() {
-  local name="$1" input="$2" want_exit="$3" got_exit stdout
+  local name="$1" input="$2" want="$3" got_exit stdout
   set +e
   stdout=$(printf '%s' "$input" | bash "$CLASSIFIER" 2>/dev/null)
   got_exit=$?
   set -e
-  if [ "$got_exit" != "$want_exit" ]; then
-    fail=$((fail + 1))
-    echo "FAIL: $name exit (want=$want_exit got=$got_exit)" >&2
-    return
-  fi
-  if [ "$want_exit" != "0" ] && [ -n "$stdout" ]; then
+  case "$want" in
+    0)       [ "$got_exit" = "0" ] || { fail=$((fail + 1)); echo "FAIL: $name want=0 got=$got_exit" >&2; return; } ;;
+    nonzero) [ "$got_exit" != "0" ] || { fail=$((fail + 1)); echo "FAIL: $name want=nonzero got=0" >&2; return; } ;;
+    *)       fail=$((fail + 1)); echo "FAIL: $name invalid want=$want" >&2; return ;;
+  esac
+  if [ "$want" = "nonzero" ] && [ -n "$stdout" ]; then
     fail=$((fail + 1))
     echo "FAIL: $name stdout not empty on error (got $(printf '%s' "$stdout" | head -c 80))" >&2
     return
@@ -123,7 +123,7 @@ assert_field "security: partial GHSA not matched"        "$SEC_JSON" '.[7].secur
 
 # ---- stream / edge cases (F6, F7) ----
 assert_field "empty array"    '[]' 'length' '0'
-assert_exit  "empty stdin"    ''   '0'
+assert_exit  "empty stdin (invalid, caller must pass JSON array)" '' 'nonzero'
 
 # JSON 出力が常に valid (F6)
 MULTI_JSON='[
@@ -152,6 +152,29 @@ COMMA_LABEL_JSON='[
   {"number":1,"title":"Bump lodash from 4.17.20 to 4.17.21","headRefName":"dependabot/npm_and_yarn/lodash","url":"u","body":"","labels":[{"name":"triage,security"}]}
 ]'
 assert_field "security: comma in label name → false" "$COMMA_LABEL_JSON" '.[0].security' 'false'
+
+# GHSA-ID 境界 (過長 / 埋め込み)
+GHSA_BOUNDARY_JSON='[
+  {"number":1,"title":"Bump foo from 1.0.0 to 1.0.1","headRefName":"dependabot/npm_and_yarn/foo","url":"u","body":"Fixes GHSA-abcd-1234-efghi issue","labels":[]},
+  {"number":2,"title":"Bump foo from 1.0.0 to 1.0.1","headRefName":"dependabot/npm_and_yarn/foo","url":"u","body":"xGHSA-abcd-1234-efgh","labels":[]},
+  {"number":3,"title":"Bump foo from 1.0.0 to 1.0.1","headRefName":"dependabot/npm_and_yarn/foo","url":"u","body":"See advisory (GHSA-abcd-1234-efgh) for details","labels":[]}
+]'
+assert_field "security: GHSA over-long (5-char last group) → false" "$GHSA_BOUNDARY_JSON" '.[0].security' 'false'
+assert_field "security: GHSA prefixed with alnum → false"           "$GHSA_BOUNDARY_JSON" '.[1].security' 'false'
+assert_field "security: GHSA with paren/space boundary → true"      "$GHSA_BOUNDARY_JSON" '.[2].security' 'true'
+
+# 壊れた JSON / 非配列 root (F qa-fixture 追加)
+assert_exit "malformed JSON (missing brackets)" '{"a":1' 'nonzero'
+assert_exit "non-array root (object)"           '{"foo":"bar"}' 'nonzero'
+
+# labels 欠落 / null (F qa-fixture 追加、.labels[]? は missing / null を吸収)
+LABELS_MISSING_JSON='[
+  {"number":1,"title":"Bump foo from 1.0.0 to 1.0.1","headRefName":"dependabot/npm_and_yarn/foo","url":"u","body":""},
+  {"number":2,"title":"Bump foo from 1.0.0 to 1.0.1","headRefName":"dependabot/npm_and_yarn/foo","url":"u","body":"","labels":null}
+]'
+assert_field "labels missing → security false"   "$LABELS_MISSING_JSON" '.[0].security' 'false'
+assert_field "labels null → security false"      "$LABELS_MISSING_JSON" '.[1].security' 'false'
+assert_field "labels missing → still 2 elements" "$LABELS_MISSING_JSON" 'length'         '2'
 
 # ---- jq 不在 (F7) ----
 # PATH から jq を外して起動、非 0 終了になることを確認 (mktemp で空 PATH dir)

@@ -82,7 +82,9 @@ classify_semver() {
 # ため、here-string で pipeline を作らない
 is_security() {
   local body="$1" labels="$2" line
-  if grep -qE 'GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}' <<<"$body"; then
+  # GHSA-ID は英数 4-4-4。前後に英数字が続くと過長で無効なので境界を明示
+  # (\b は BSD/GNU 差があるため [^a-z0-9] と行頭/行末で挟む)。
+  if grep -qE '(^|[^a-z0-9])GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}([^a-z0-9]|$)' <<<"$body"; then
     printf 'true'
     return
   fi
@@ -99,12 +101,21 @@ extract_package() {
   printf '%s' "$1" | sed -nE 's/^[Bb]ump[s]? +([^ ]+) +from .*/\1/p'
 }
 
+# 入力を先に検証してから処理する。壊れた JSON / 非配列 root で
+# `jq -c '.[]' | while | jq -s '.'` の pipeline 末尾が空配列 [] を吐いてしまい
+# 「エラー時 stdout empty」の契約を破る問題を回避するため、input を buffer して
+# array 型チェックを通してから stream 処理に渡す。
+INPUT=$(cat)
+if ! printf '%s' "$INPUT" | jq -e 'type == "array"' >/dev/null 2>&1; then
+  echo "ERROR: input is not a JSON array" >&2
+  exit 1
+fi
+
 # 各 PR を classify して JSON 配列にまとめる。
-# @tsv 経由だと jq のエスケープ (\t, \n, \\) を read が解釈せず literal 混入する
-# ため、1 PR = 1 JSON object を stream し per-PR で jq -r 抽出する。fork は 6N
-# 程度に増えるが N は Dependabot open PR 数で通常 5-10、レイテンシは無視できる。
+# 1 PR = 1 JSON object を stream し per-PR で jq -r 抽出する (fork は 6N 程度に
+# 増えるが N は Dependabot open PR 数で通常 5-10、レイテンシは無視できる)。
 # ENTRY を stdout に流し末尾で jq -s '.' で配列にまとめる (O(N²) 累積は回避)。
-jq -c '.[]' \
+printf '%s' "$INPUT" | jq -c '.[]' \
   | while read -r pr_json; do
       NUMBER=$(printf '%s' "$pr_json" | jq -r '.number')
       TITLE=$(printf '%s'  "$pr_json" | jq -r '.title')
