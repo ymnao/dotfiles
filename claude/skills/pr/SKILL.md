@@ -26,7 +26,7 @@ Run each `gh` command as a bare invocation and substitute prior output literally
    - If codex is not installed: record "codex-review skipped (codex not installed)" in the evidence section and continue. Do not silently skip.
    - Draft 判定は **PR-level triage** で行う(codex-review の per-finding 分類 `REPORT-ONLY` / `UNRESOLVED` を pr の draft 判定に自動流用しない。用語の定義は `$HOME/.claude/skills/codex-review/SKILL.md` を参照)。**上から順に評価し、最初に一致した bullet を採用**する。いずれの判定でも根拠と該当 finding を evidence に記録する:
      - **本 PR で fix すべき finding が残っている**(未対応、または blocker として判断保留): **draft** で作成
-     - **追跡別 PR に回す finding があり、追跡 issue/PR URL が未起票**: **draft** で作成(user に起票の要否を確認する。step 5 で user が明示的に「別 PR で追う。normal で作って」等 override した場合は step 8 の Exception に従い normal で作成)
+     - **追跡別 PR に回す finding があり、追跡 issue/PR URL が未起票**: user に起票の要否を確認し、応答で分岐する。「起票する」→ 起票後 URL を evidence の追跡先に記載し、bullet 3 経路(normal)で作成。「起票しない / defer」→ **draft** で作成し、evidence の Draft 判定に defer 理由(user 応答の要約)を記録。step 5 で user が明示的に「別 PR で追う。normal で作って」等 override した場合は step 8 の Exception に従い normal で作成
      - **上記に該当しない**(fix 不要のみ / 追跡 URL 記載済 / 残件なし): **normal** で作成。件数の多寡を draft 判定に使わない。追跡 URL がある場合は evidence に必ず記載する
 5. Explain-the-diff walkthrough (tier=high only):
    - Split the diff into meaningful units. For each unit present: what changed / why / what could break.
@@ -71,6 +71,18 @@ tier: <tier> — <reasons を列挙>
 
 ## レビュー指摘と対応
 <codex-review の Report format 表を転記。レビュー未実施なら「tier=low のため未実施」>
+
+## 追跡先
+<本 PR で fix せず別 issue/PR に回した finding を列挙。無ければ「なし」>
+
+| Finding | Issue/PR URL |
+|---|---|
+| <finding summary> | <URL> |
+
+## Draft 判定
+- 判定: <normal / draft>
+- 根拠: <step 4 / step 5 / step 8 override> — <理由と該当 finding>
+- (該当時) override 内容: <user 指示の要約>
 
 </details>
 ```
