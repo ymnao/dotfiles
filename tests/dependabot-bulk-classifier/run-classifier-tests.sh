@@ -35,7 +35,7 @@ assert_field() {
 }
 
 # assert_exit <name> <input> <expected_exit>
-# stdout に partial JSON を残さないことも同時に確認 (0 = 有効な JSON 配列 or 空)
+# 非 0 終了時は stdout が空 (partial JSON を残さない) ことを厳密に確認する
 assert_exit() {
   local name="$1" input="$2" want_exit="$3" got_exit stdout
   set +e
@@ -47,13 +47,10 @@ assert_exit() {
     echo "FAIL: $name exit (want=$want_exit got=$got_exit)" >&2
     return
   fi
-  # 非 0 終了時は stdout が空 or 有効 JSON (partial 出力の混入を防ぐ)
   if [ "$want_exit" != "0" ] && [ -n "$stdout" ]; then
-    if ! printf '%s' "$stdout" | jq empty >/dev/null 2>&1; then
-      fail=$((fail + 1))
-      echo "FAIL: $name stdout not clean on error" >&2
-      return
-    fi
+    fail=$((fail + 1))
+    echo "FAIL: $name stdout not empty on error (got $(printf '%s' "$stdout" | head -c 80))" >&2
+    return
   fi
   pass=$((pass + 1))
 }
@@ -150,9 +147,16 @@ PKG_JSON='[
 assert_field "package: slash-name"      "$PKG_JSON" '.[0].package' 'actions/checkout'
 assert_field "package: scoped npm"      "$PKG_JSON" '.[1].package' '@secretlint/secretlint-formatter-sarif'
 
+# ---- label にカンマを含むケース (F5 追加) ----
+COMMA_LABEL_JSON='[
+  {"number":1,"title":"Bump lodash from 4.17.20 to 4.17.21","headRefName":"dependabot/npm_and_yarn/lodash","url":"u","body":"","labels":[{"name":"triage,security"}]}
+]'
+assert_field "security: comma in label name → false" "$COMMA_LABEL_JSON" '.[0].security' 'false'
+
 # ---- jq 不在 (F7) ----
 # PATH から jq を外して起動、非 0 終了になることを確認 (mktemp で空 PATH dir)
 JQFREE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/jqfree.XXXXXX")
+trap 'rm -rf "$JQFREE_DIR"' EXIT HUP INT TERM
 # 最低限の bash / sed / cut / grep / cat を link
 for cmd in bash sed cut grep cat printf; do
   cmd_path=$(command -v "$cmd") || continue
@@ -163,6 +167,7 @@ PATH="$JQFREE_DIR" bash "$CLASSIFIER" </dev/null >/dev/null 2>&1
 jqfree_exit=$?
 set -e
 rm -rf "$JQFREE_DIR"
+trap - EXIT HUP INT TERM
 if [ "$jqfree_exit" != "0" ]; then
   pass=$((pass + 1))
 else

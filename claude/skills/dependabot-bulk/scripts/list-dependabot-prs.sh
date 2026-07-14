@@ -75,16 +75,22 @@ classify_semver() {
 # security 判定: false-positive を避けるため厳密なパターンに絞る。
 # - body: GHSA-<4>-<4>-<4> の GitHub Security Advisory ID 実体 (英数ハイフンで
 #   'GitHub Security Advisory Database' などの定型文言は拾わない)
-# - labels: comma-separated リストに 'security' / 'vulnerability' の exact match
+# - labels: 改行区切りで渡された各ラベル名を case で完全一致判定
+#   (comma-separated だと 'foo,security' のようなラベル名自身にカンマを含む
+#   ケースで exact match 誤検出になるため \n-separated に切り替え)
+# grep -qE を pipeline 末尾に置くと SIGPIPE で pipefail が発火する場合がある
+# ため、here-string で pipeline を作らない
 is_security() {
-  local body="$1" labels="$2"
-  if printf '%s' "$body" | grep -qE 'GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}'; then
+  local body="$1" labels="$2" line
+  if grep -qE 'GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}' <<<"$body"; then
     printf 'true'
     return
   fi
-  case ",$labels," in
-    *,security,*|*,Security,*|*,vulnerability,*|*,Vulnerability,*) printf 'true'; return ;;
-  esac
+  while IFS= read -r line; do
+    case "$line" in
+      security|Security|vulnerability|Vulnerability) printf 'true'; return ;;
+    esac
+  done <<<"$labels"
   printf 'false'
 }
 
@@ -105,7 +111,9 @@ jq -c '.[]' \
       HEAD=$(printf '%s'   "$pr_json" | jq -r '.headRefName')
       URL=$(printf '%s'    "$pr_json" | jq -r '.url')
       BODY=$(printf '%s'   "$pr_json" | jq -r '.body // ""')
-      LABELS=$(printf '%s' "$pr_json" | jq -r '[.labels[]?.name] | join(",")')
+      # ラベル名は 1 行 1 個で is_security に渡す (ラベル名自身にカンマを含む
+      # ケースで exact match が破綻しないよう、区切り文字を改行にする)
+      LABELS=$(printf '%s' "$pr_json" | jq -r '.labels[]?.name')
 
       ECOSYSTEM=$(classify_ecosystem "$HEAD")
       SEMVER=$(classify_semver "$TITLE")
