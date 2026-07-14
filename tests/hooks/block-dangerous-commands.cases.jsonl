@@ -132,3 +132,14 @@
 {"name":"adv-fdnum-append-file","expect":"block","command":"echo \"$x\" 1>>log.txt","reason":"1>> ファイル追記 + 変数展開はブロック (演算子網羅)"}
 {"name":"adv-pipe-clobber-file","expect":"block","command":"echo \"$x\" >|out.txt","reason":">| 上書きも書き込みリダイレクトとしてブロック"}
 {"name":"adv-command-v-dotcodex","expect":"block","command":"command -v .codex","reason":"bare command -v .codex は .codex 参照判定でブロック (has_dynamic=0 → literal .codex 検出)"}
+# --- 2026-07-14 dotfile glob 経由の .codex 破壊 (block) ---
+{"name":"adv-rm-rf-dot-co-glob","expect":"block","command":"rm -rf .co*","reason":".co* は cwd で .codex にマッチしうる (literal 検出漏れ bypass 修正)"}
+{"name":"adv-rm-rf-dot-star","expect":"block","command":"rm -rf .*","reason":".* は .codex を含むあらゆるドットファイルにマッチ"}
+{"name":"adv-rm-rf-dot-c-star","expect":"block","command":"rm -rf .c*","reason":".c* も .codex にマッチしうる"}
+{"name":"adv-rm-rf-dot-codex-star","expect":"block","command":"rm -rf .codex*","reason":".codex* は .codex 本体にマッチ"}
+{"name":"adv-rm-rf-dot-bracket-codex","expect":"block","command":"rm -rf .[Cc]odex","reason":"bracket glob で case-insensitive 回避"}
+{"name":"adv-rm-rf-dot-cod-qmark","expect":"block","command":"rm -rf .cod?x","reason":"? glob で .codex にマッチ"}
+{"name":"adv-touch-dot-co-glob","expect":"block","command":"touch .co*/x","reason":"書き込み系コマンド + dotfile glob"}
+# --- 2026-07-14 dotfile glob だが .codex にマッチしない (allow) ---
+{"name":"allow-rm-rf-dot-git-glob","expect":"allow","command":"rm -rf .git*","reason":".git* は .codex prefix ではない"}
+{"name":"allow-rm-rf-dot-env-glob","expect":"allow","command":"rm -rf .env*","reason":".env* は .codex prefix ではない"}

@@ -22,8 +22,13 @@ input=$(cat)
 # （クォート分割・バックスラッシュ挿入による回避対策。本判定は正規化後に検出する）。
 input_lower=$(printf '%s' "$input" | tr '[:upper:]' '[:lower:]')
 gap='([\\"'"'"']|\\\\|\\")*'
+# dotfile glob (.co* / .* / .[c]odex / .cod?x 等) は literal "codex" 文字列を
+# 含まないため上の codex パターンでは screener を通過しない。実行時のシェル
+# glob 展開で .codex にマッチしうるため、`\.[a-z]*[*?[]` (先頭 . のあと英字
+# 0+ 文字 + glob メタ文字) を検出したら本判定に流す。後段の token 走査で
+# 実際に .codex の prefix かどうか判定する。
 if ! printf '%s' "$input_lower" \
-    | grep -qE "r${gap}m|g${gap}i${gap}t|c${gap}h${gap}m${gap}o${gap}d|s${gap}u${gap}d${gap}o|c${gap}o${gap}d${gap}e${gap}x|\\\$|\`"; then
+    | grep -qE "r${gap}m|g${gap}i${gap}t|c${gap}h${gap}m${gap}o${gap}d|s${gap}u${gap}d${gap}o|c${gap}o${gap}d${gap}e${gap}x|\\\$|\`|\\.[a-z]*[*?[]"; then
   exit 0
 fi
 
@@ -433,6 +438,44 @@ if printf '%s\n' "$command" | grep -qiE "$rm_rf_pattern"; then
     exit 2
   fi
 fi
+
+# --- 書き込み系コマンド + dotfile glob (.codex にマッチしうる) ---
+# `rm -rf .co*` / `touch .co*/x` / `mkdir .[Cc]odex` 等は literal `.codex` を
+# 含まないため後段の .codex 検出を素通りするが、実行時のシェル glob 展開で
+# .codex にマッチしうる。書き込み系コマンドの引数にある dotfile glob の
+# literal prefix が case-insensitive で .codex の prefix になっている場合に
+# 安全側でブロックする。read-only コマンド (cat/ls/grep 等) の引数にある
+# glob (`cat .co*` 等) は無害なので対象外。
+# 例: `rm -rf .co*` → prefix `.co` は `.codex` の prefix → block
+# 例: `rm -rf .git*` → prefix `.git` は `.codex` の prefix ではない → allow
+# 例: `cat .co*` → cat は read-only → allow (別途 codex_readonly_ok も許可)
+_write_cmd_re='^(rm|touch|mkdir|install|cp|mv|dd|tee|ln|chmod|chown|shred|sed)$'
+while IFS= read -r _seg; do
+  _seg="${_seg#"${_seg%%[![:space:]]*}"}"
+  [[ -z "$_seg" ]] && continue
+  _first="${_seg%%[[:space:]]*}"
+  _first="${_first##*/}"
+  _first=$(printf '%s' "$_first" | tr '[:upper:]' '[:lower:]')
+  printf '%s' "$_first" | grep -qE "$_write_cmd_re" || continue
+  # read -a で IFS 空白分割 (glob 展開なし → set -f 不要)
+  _args=()
+  read -r -a _args <<< "$_seg"
+  for _arg in "${_args[@]}"; do
+    _arg="${_arg#\"}"; _arg="${_arg%\"}"
+    _arg="${_arg#\'}"; _arg="${_arg%\'}"
+    _arg="${_arg#./}"
+    _arg_lower=$(printf '%s' "$_arg" | tr '[:upper:]' '[:lower:]')
+    case "$_arg_lower" in
+      .*\**|.*\?*|.*\[*)
+        _pfx="${_arg_lower%%[*?[]*}"
+        if [[ ".codex" == "$_pfx"* ]]; then
+          echo "ブロック: 書き込み系コマンドの引数に .codex にマッチしうる dotfile glob ($_arg) が指定されています（Cymulate notify エスケープ対策）" >&2
+          exit 2
+        fi
+        ;;
+    esac
+  done
+done <<< "$(printf '%s' "$command" | tr ';&|(){}' '\n\n\n\n\n\n\n')"
 
 # --- Git 破壊的操作 ---
 # git のグローバルオプション（-C <path> / -c <k>=<v> / --no-pager 等）をサブコマンド前に
