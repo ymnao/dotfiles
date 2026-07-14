@@ -132,3 +132,59 @@
 {"name":"adv-fdnum-append-file","expect":"block","command":"echo \"$x\" 1>>log.txt","reason":"1>> ファイル追記 + 変数展開はブロック (演算子網羅)"}
 {"name":"adv-pipe-clobber-file","expect":"block","command":"echo \"$x\" >|out.txt","reason":">| 上書きも書き込みリダイレクトとしてブロック"}
 {"name":"adv-command-v-dotcodex","expect":"block","command":"command -v .codex","reason":"bare command -v .codex は .codex 参照判定でブロック (has_dynamic=0 → literal .codex 検出)"}
+# --- 2026-07-14 dotfile glob 経由の .codex 破壊 (block) ---
+{"name":"adv-rm-rf-dot-co-glob","expect":"block","command":"rm -rf .co*","reason":".co* は cwd で .codex にマッチしうる (literal 検出漏れ bypass 修正)"}
+{"name":"adv-rm-rf-dot-star","expect":"block","command":"rm -rf .*","reason":".* は .codex を含むあらゆるドットファイルにマッチ"}
+{"name":"adv-rm-rf-dot-c-star","expect":"block","command":"rm -rf .c*","reason":".c* も .codex にマッチしうる"}
+{"name":"adv-rm-rf-dot-codex-star","expect":"block","command":"rm -rf .codex*","reason":".codex* は .codex 本体にマッチ"}
+{"name":"adv-rm-rf-dot-bracket-codex","expect":"block","command":"rm -rf .[Cc]odex","reason":"bracket glob で case-insensitive 回避"}
+{"name":"adv-rm-rf-dot-cod-qmark","expect":"block","command":"rm -rf .cod?x","reason":"? glob で .codex にマッチ"}
+{"name":"adv-touch-dot-co-glob","expect":"block","command":"touch .co*/x","reason":"書き込み系コマンド + dotfile glob"}
+# --- 2026-07-14 dotfile glob だが .codex にマッチしない (allow) ---
+{"name":"allow-rm-rf-dot-git-glob","expect":"allow","command":"rm -rf .git*","reason":".git* は .codex prefix ではない"}
+{"name":"allow-rm-rf-dot-env-glob","expect":"allow","command":"rm -rf .env*","reason":".env* は .codex prefix ではない"}
+# --- 2026-07-14 追加 review 対応: bracket-glob 誤検知修正 + 親相対 + redirect ---
+{"name":"allow-rm-rf-dot-bracket-git","expect":"allow","command":"rm -rf .[Gg]itignore","reason":"bracket glob だが `.codex` にマッチしない (component-wise glob match)"}
+{"name":"allow-rm-rf-dot-bracket-npm","expect":"allow","command":"rm -rf .[np]pmrc","reason":"同上 (.npmrc / .ppmrc 意図)"}
+{"name":"allow-sed-readonly-dot-glob","expect":"allow","command":"sed -n 1,5p .co*","reason":"read-only sed (-i なし) は書き込み文脈でない"}
+{"name":"allow-sed-e-dot-glob","expect":"allow","command":"sed -E 's/x/y/' .co*","reason":"同上 (in-place でない sed)"}
+{"name":"adv-sed-i-dot-glob","expect":"block","command":"sed -i '' s/a/b/ .co*","reason":"sed -i は書き込み文脈"}
+{"name":"adv-touch-parent-relative","expect":"block","command":"touch ../.codex*","reason":"親相対 dotfile glob (component `.codex*` が `.codex` にマッチ)"}
+{"name":"adv-mkdir-parent-relative","expect":"block","command":"mkdir ../.codex","reason":"親相対 literal .codex (既存 literal check でも block)"}
+{"name":"adv-echo-redirect-glob","expect":"block","command":"echo x > .co*/config.toml","reason":"write redirect target が dotfile glob"}
+{"name":"adv-echo-redirect-glob-nospace","expect":"block","command":"echo x >.co*/foo","reason":"redirect 演算子と target 隣接"}
+{"name":"adv-printf-redirect-bracket","expect":"block","command":"printf x > .[Cc]odex/config.toml","reason":"redirect target が bracket-glob"}
+{"name":"adv-echo-fd-redirect-glob","expect":"block","command":"echo x 1> .co*/x","reason":"fd 番号付き redirect"}
+{"name":"allow-echo-redirect-git-glob","expect":"allow","command":"echo x > .git*/foo","reason":".git* は `.codex` にマッチしない"}
+# --- 2026-07-14 codex-review shell-senior 指摘対応 ---
+{"name":"adv-command-wrapper-rm","expect":"block","command":"command rm -rf .co*","reason":"command wrapper 経由の rm bypass 修正"}
+{"name":"adv-env-wrapper-rm","expect":"block","command":"env rm -rf .co*","reason":"env wrapper 経由"}
+{"name":"adv-nice-wrapper-rm","expect":"block","command":"nice rm -rf .co*","reason":"nice wrapper 経由"}
+{"name":"adv-brace-expand-codex","expect":"block","command":"rm -rf .co{dex,foo}","reason":"brace 展開結果 `.codex` が block"}
+{"name":"adv-brace-expand-touch","expect":"block","command":"touch .co{dex,x}/x","reason":"brace 展開 (touch)"}
+{"name":"adv-glob-negation-bracket","expect":"block","command":"rm -rf .[!x]odex","reason":"bash [!x] 否定 glob が .codex にマッチ (ERE 変換で [^x] 化)"}
+{"name":"adv-sed-i-suffix","expect":"block","command":"sed -i.bak 's/a/b/' .co*","reason":"BSD/GNU sed -iSUFFIX 形式"}
+{"name":"allow-brace-git-hg","expect":"allow","command":"rm -rf .{git,hg}","reason":"brace 展開は .git / .hg で .codex にマッチしない"}
+# --- 2026-07-14 codex-review security 指摘対応 ---
+{"name":"adv-quoted-concat-glob","expect":"block","command":"touch \".co\"*/x","reason":"引用符連結 glob (screener を gap 経由で通過)"}
+{"name":"adv-quoted-concat-brace","expect":"block","command":"touch \".co\"{dex,x}/x","reason":"引用符連結 brace 展開"}
+{"name":"adv-env-var-assign-touch","expect":"block","command":"X=1 touch .co*","reason":"env-var 代入前置 (先頭単語 X=1 でも segment 内 touch で捕捉)"}
+{"name":"adv-if-then-touch","expect":"block","command":"if true; then touch .co*; fi","reason":"シェル制御構文 (segment 分割後の `then touch .co*` を捕捉)"}
+{"name":"adv-bang-glob-not-c","expect":"block","command":"touch .[!g]odex/x","reason":"[!g] は g 以外にマッチ、`.codex` の c にマッチ (ERE の [^g] 変換)"}
+{"name":"allow-bang-glob-excludes-c","expect":"allow","command":"touch .[!c]odex/x","reason":"[!c] は c を除外、`.codex` の c にマッチしない"}
+# --- 2026-07-14 codex-review qa-fixture 指摘対応 (redirect / sed 形式網羅) ---
+{"name":"adv-sed-combined-Ei","expect":"block","command":"sed -Ei s/a/b/ .co*","reason":"sed 結合オプション -Ei (i を含む短フラグクラスタ)"}
+{"name":"adv-touch-parent-relative-cp","expect":"block","command":"env touch .co*/x","reason":"env wrapper + touch (前指摘の rm 対応と同型)"}
+{"name":"adv-negation-bracket-caret","expect":"block","command":"touch .[^g]odex/x","reason":"[^g] 否定 (bash / ERE で同 semantics)"}
+{"name":"adv-pipe-tee-glob","expect":"block","command":"cat file | tee .co*/x","reason":"pipe 後段の tee segment"}
+{"name":"adv-logical-or-mkdir","expect":"block","command":"false || mkdir .co*","reason":"|| 後段の mkdir segment"}
+{"name":"adv-clobber-redirect","expect":"block","command":"echo x >|.co*/foo","reason":">| clobber redirect (>| を > に正規化してから分割)"}
+{"name":"adv-amp-redirect","expect":"block","command":"echo x &> .co*/foo","reason":"&> redirect"}
+{"name":"adv-amp-append-redirect","expect":"block","command":"echo x &>> .co*/foo","reason":"&>> redirect"}
+{"name":"adv-fd-append-redirect","expect":"block","command":"echo x 2>> .co*/foo","reason":"2>> fd 追記"}
+{"name":"allow-append-git-glob","expect":"allow","command":"echo x >> .git*/foo","reason":".git* redirect は `.codex` 非該当"}
+{"name":"adv-subshell-rm","expect":"block","command":"(rm -rf .co*)","reason":"subshell (...) 内の rm bypass 修正"}
+{"name":"adv-logical-and-touch","expect":"block","command":"true && touch .co*/x","reason":"&& 後段の touch"}
+{"name":"allow-bang-glob-star-excludes-c","expect":"allow","command":"rm -rf .[!c]*","reason":"[!c] は c 除外、`.codex` に非該当"}
+{"name":"adv-bang-glob-star","expect":"block","command":"rm -rf .[!g]*","reason":"[!g] は g 以外、`.codex` の c にマッチ"}
+{"name":"allow-cat-glob-devnull","expect":"allow","command":"cat .co* >/dev/null","reason":"read-only cat + device redirect のみ (write 扱いしない)"}

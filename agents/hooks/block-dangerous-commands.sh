@@ -22,8 +22,14 @@ input=$(cat)
 # （クォート分割・バックスラッシュ挿入による回避対策。本判定は正規化後に検出する）。
 input_lower=$(printf '%s' "$input" | tr '[:upper:]' '[:lower:]')
 gap='([\\"'"'"']|\\\\|\\")*'
+# dotfile glob (.co* / .* / .[c]odex / .cod?x 等) と dotfile brace 展開
+# (.co{dex,x} 等) は literal "codex" 文字列を含まないため上の codex パターンでは
+# screener を通過しない。実行時のシェル glob/brace 展開で .codex にマッチしうる
+# ため、`\.${gap}[a-z]*${gap}[*?[{]` (先頭 . のあと quote-connective の 0+ 英字 +
+# glob or brace メタ文字) を検出したら本判定に流す。gap を挟むことで
+# `touch ".co"*/x` や `touch ".co"{dex,x}` のような引用符連結による回避を捕捉。
 if ! printf '%s' "$input_lower" \
-    | grep -qE "r${gap}m|g${gap}i${gap}t|c${gap}h${gap}m${gap}o${gap}d|s${gap}u${gap}d${gap}o|c${gap}o${gap}d${gap}e${gap}x|\\\$|\`"; then
+    | grep -qE "r${gap}m|g${gap}i${gap}t|c${gap}h${gap}m${gap}o${gap}d|s${gap}u${gap}d${gap}o|c${gap}o${gap}d${gap}e${gap}x|\\\$|\`|\\.${gap}[a-z]*${gap}[*?[{]"; then
   exit 0
 fi
 
@@ -433,6 +439,122 @@ if printf '%s\n' "$command" | grep -qiE "$rm_rf_pattern"; then
     exit 2
   fi
 fi
+
+# --- 書き込み系コマンド + dotfile glob (.codex にマッチしうる) ---
+# `rm -rf .co*` / `touch .co*/x` / `mkdir .[Cc]odex` / `echo x > .co*/foo` 等は
+# literal `.codex` を含まないため後段の .codex 検出を素通りするが、実行時の
+# シェル glob 展開で .codex にマッチしうる。segment 単位で「書き込み文脈」
+# (write コマンド or write redirect) を判定し、引数の各 `/`-区切り component
+# を bash glob として `.codex` にマッチするか検査、マッチしたらブロック。
+#   - `.co*` → glob `.co*` は `.codex` にマッチ → block
+#   - `.git*` / `.[Gg]itignore` → マッチしない → allow
+#   - `.[Cc]odex` / `.[!x]odex` → マッチ → block
+#   - `../.codex*` → component `.codex*` が `.codex` にマッチ → block
+#   - `echo x > .co*/foo` → write redirect 文脈 → target の `.co*` が block
+#   - `.co{dex,foo}` → brace 展開結果 `.codex` が block
+#   - `command rm -rf .co*` / `env rm -rf .co*` → wrapper 透過 grep で write 判定
+#   - `cat .co*` → read-only 文脈 (write cmd でも redirect でもない) → allow
+# sed は `-i` フラグ付き (BSD `-i ''` / GNU `-i.bak`) のみ書き込み扱い
+# セグメント分割は `; & |` のみ (brace `{}` は展開文法で分割対象外)
+_seg_seps=';&|()'
+_write_cmd_names="rm|chmod|chown|shred|${write_cmds}"
+_write_cmd_boundary_re="(^|[[:space:]/\\])(${_write_cmd_names})([[:space:]]|$)"
+_sed_boundary_re='(^|[[:space:]/\\])sed([[:space:]]|$)'
+_sed_inplace_re='(^|[[:space:]])-[a-zA-Z]*i[a-zA-Z]*(\.[a-zA-Z0-9]*)?([[:space:]]|$)'
+_write_redirect_re='(^|[^&0-9])>[>|]?([^&]|$)|&>>?([^&]|$)|[0-9]+>>?([^&]|$)'
+# bash glob → ERE 変換。順序: `.` エスケープ → `*` → `.*` → `?` → `.` → `[!...]` → `[^...]`
+_glob_to_ere() {
+  local _g=$1
+  _g=${_g//./\\.}
+  _g=${_g//\*/.*}
+  _g=${_g//\?/.}
+  _g=${_g//\[\!/[^}
+  printf '%s' "$_g"
+}
+# `.codex` にマッチしうる component (glob 表記) か判定
+_matches_codex() {
+  local _comp=$1 _re
+  [[ -z "$_comp" ]] && return 1
+  _re=$(_glob_to_ere "$_comp")
+  [[ ".codex" =~ ^${_re}$ ]]
+}
+# arg の brace 展開 `{a,b,c}` を全パターンに展開して 1 行ずつ stdout に出力。
+# 未対応: ネスト `{a,{b,c}}` は再帰で解ける。空 alt (`{,x}`) は空要素として扱う。
+_expand_braces() {
+  local _in=$1 _pre _rest _mid _post _alt _alts
+  case "$_in" in
+    *"{"*","*"}"*)
+      _pre="${_in%%\{*}"
+      _rest="${_in#*\{}"
+      _mid="${_rest%%\}*}"
+      _post="${_rest#*\}}"
+      IFS=, read -r -a _alts <<< "$_mid"
+      for _alt in "${_alts[@]}"; do
+        _expand_braces "${_pre}${_alt}${_post}"
+      done
+      ;;
+    *)
+      printf '%s\n' "$_in"
+      ;;
+  esac
+}
+_check_glob_seg() {
+  local _seg=$1 _arg _comp _rest _seg_lower _seg_nodev
+  _seg="${_seg#"${_seg%%[![:space:]]*}"}"
+  [[ -z "$_seg" ]] && return 0
+  _seg_lower=$(printf '%s' "$_seg" | tr '[:upper:]' '[:lower:]')
+  # 書き込み文脈判定: (a) 書き込み系コマンドが token 境界で存在 (wrapper 透過)
+  #   (b) sed が token 境界で存在 かつ segment に -i (or -i.bak) が存在
+  #   (c) 非デバイス write redirect が存在 (`head foo 2>/dev/null` の device
+  #   破棄は write 扱いしない)
+  _seg_nodev=$(printf '%s' "$_seg" | sed -E 's#((^|[^&0-9])>[>|]?|&>>?|[0-9]+>>?)[[:space:]]*/dev/(null|stdout|stderr|tty)([^A-Za-z0-9_/]|$)#\2\4#g')
+  if ! [[ "$_seg_lower" =~ $_write_cmd_boundary_re ]] \
+     && ! { [[ "$_seg_lower" =~ $_sed_boundary_re && "$_seg" =~ $_sed_inplace_re ]]; } \
+     && ! [[ "$_seg_nodev" =~ $_write_redirect_re ]]; then
+    return 0
+  fi
+  local _args
+  read -r -a _args <<< "$_seg"
+  for _arg in "${_args[@]}"; do
+    _arg="${_arg//[\"\']/}"
+    case "$_arg" in
+      *[\<\>\&\|]*)
+        _arg="${_arg##*[\<\>\&\|]}"
+        ;;
+    esac
+    _arg=$(printf '%s' "$_arg" | tr '[:upper:]' '[:lower:]')
+    # brace 展開を全パターンに解いてから component-wise glob match
+    while IFS= read -r _expanded; do
+      _rest=$_expanded
+      while :; do
+        _comp="${_rest%%/*}"
+        if _matches_codex "$_comp"; then
+          echo "ブロック: 書き込み文脈の引数に .codex にマッチしうる glob/brace ($_arg) が指定されています（Cymulate notify エスケープ対策）" >&2
+          exit 2
+        fi
+        case "$_rest" in
+          */*) _rest="${_rest#*/}" ;;
+          *) break ;;
+        esac
+      done
+    done <<< "$(_expand_braces "$_arg")"
+  done
+}
+# 単一 segment (大多数のケース) は tr/here-string を回避。
+# `>|` (clobber redirect) は `|` を含むが pipe ではないため、tr 前に `>` に
+# 正規化する (semantics 上 `>` と `>|` は noclobber の有無以外同一で
+# security 判定に影響しない)。
+_command_norm=$(printf '%s' "$command" | sed -e 's/>|/>/g')
+case "$_command_norm" in
+  *[";&|()"]*)
+    while IFS= read -r _seg; do
+      _check_glob_seg "$_seg"
+    done <<< "$(printf '%s' "$_command_norm" | tr "$_seg_seps" '\n')"
+    ;;
+  *)
+    _check_glob_seg "$_command_norm"
+    ;;
+esac
 
 # --- Git 破壊的操作 ---
 # git のグローバルオプション（-C <path> / -c <k>=<v> / --no-pager 等）をサブコマンド前に
