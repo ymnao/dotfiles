@@ -26,8 +26,9 @@ Run each `gh` command as a bare invocation and substitute prior output literally
    - If codex is not installed: record "codex-review skipped (codex not installed)" in the evidence section and continue. Do not silently skip.
    - Draft 判定は **PR-level triage** で行う(codex-review の per-finding 分類 `REPORT-ONLY` / `UNRESOLVED` を pr の draft 判定に自動流用しない。用語の定義は `$HOME/.claude/skills/codex-review/SKILL.md` を参照):
      - **本 PR で fix すべき finding が残っている**(未対応、または blocker として判断保留): evidence に記録し **draft** で作成
-     - **本 PR で fix する必要がない finding のみ**(例: verbatim/spec 制約で対応不可 / 追跡別 PR に回す / net-neutral で意図的 skip / false positive / REFUTED): evidence に記録するのみ。件数の多寡を draft 判定に使わない。「追跡別 PR に回す」場合は evidence に追跡 issue/PR URL を必ず記載する(未起票なら draft 扱い)
-     - **finding が 0 件、または全て FIXED / REFUTED で残件なし**: evidence に記録し normal で作成
+     - **本 PR で fix する必要がない finding のみ**(verbatim/spec 制約で対応不可 / net-neutral で意図的 skip / false positive): evidence に記録し **normal** で作成。件数の多寡を draft 判定に使わない
+     - **追跡別 PR に回す finding がある場合**: evidence に追跡 issue/PR URL を必ず記載し **normal** で作成。未起票なら **draft** 扱い
+     - **finding が 0 件、または全て FIXED / REFUTED で残件なし**: evidence に記録し **normal** で作成
 5. Explain-the-diff walkthrough (tier=high only):
    - Split the diff into meaningful units. For each unit present: what changed / why / what could break.
    - Wait for the user's response. 3 分岐で処理する:
