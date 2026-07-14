@@ -18,13 +18,6 @@ fi
 
 INPUT=$(cat)
 
-# 空配列や空入力は素直にそのまま返す (呼び出し側で件数 0 判定できる)
-COUNT=$(printf '%s' "$INPUT" | jq 'length')
-if [ "$COUNT" = "0" ]; then
-  printf '[]\n'
-  exit 0
-fi
-
 # ecosystem 判定: dependabot が付ける headRefName の prefix を使う
 #   github_actions → github-actions
 #   npm_and_yarn   → npm
@@ -33,7 +26,6 @@ classify_ecosystem() {
   case "$1" in
     dependabot/github_actions/*) printf 'github-actions' ;;
     dependabot/npm_and_yarn/*)   printf 'npm' ;;
-    dependabot/*)                printf 'unknown' ;;
     *)                           printf 'unknown' ;;
   esac
 }
@@ -44,7 +36,6 @@ classify_ecosystem() {
 # パース不能 (pre-release / commit sha 等) は unknown → 安全側で「統合しない」扱いに倒せる
 classify_semver() {
   local title="$1" from to fmaj fmin tmaj tmin
-  # title から from/to を抜き出す (最初の "from X to Y" のみ)
   from=$(printf '%s' "$title" | sed -nE 's/.*from ([0-9]+\.[0-9]+(\.[0-9]+)?).*/\1/p')
   to=$(printf '%s' "$title" | sed -nE 's/.*to ([0-9]+\.[0-9]+(\.[0-9]+)?).*/\1/p')
   if [ -z "$from" ] || [ -z "$to" ]; then
@@ -66,16 +57,11 @@ classify_semver() {
 
 # security 判定: PR body に GHSA リンクを含む or labels に security 系
 is_security() {
-  local body="$1" labels="$2"
-  if printf '%s' "$body" | grep -qiE 'GHSA-[a-z0-9-]+'; then
+  if printf '%s\n%s' "$1" "$2" | grep -qiE 'GHSA-[a-z0-9-]+|security|vulnerab'; then
     printf 'true'
-    return
+  else
+    printf 'false'
   fi
-  if printf '%s' "$labels" | grep -qiE 'security|vulnerab'; then
-    printf 'true'
-    return
-  fi
-  printf 'false'
 }
 
 # breaking-hint: PR body に BREAK / breaking / deprecat を含むか (大文字小文字無視)
@@ -93,38 +79,33 @@ extract_package() {
   printf '%s' "$1" | sed -nE 's/^[Bb]ump[s]? +([^ ]+) +from .*/\1/p'
 }
 
-# 各 PR を classify して JSON 配列にまとめる
-OUT='[]'
-i=0
-while [ "$i" -lt "$COUNT" ]; do
-  PR=$(printf '%s' "$INPUT" | jq ".[$i]")
-  NUMBER=$(printf '%s' "$PR" | jq -r '.number')
-  TITLE=$(printf '%s' "$PR" | jq -r '.title')
-  HEAD=$(printf '%s' "$PR" | jq -r '.headRefName')
-  URL=$(printf '%s' "$PR" | jq -r '.url')
-  BODY=$(printf '%s' "$PR" | jq -r '.body // ""')
-  LABELS=$(printf '%s' "$PR" | jq -r '[.labels[]?.name] | join(",")')
+# 各 PR を classify して JSON 配列にまとめる。
+# 外側で jq を 1 回だけ実行し @tsv で全フィールドを流し、shell 側は
+# read で受ける (per-PR の jq fork を 6 → 0 にする)。
+# @tsv は tab/newline/backslash をエスケープするので、body に改行があっても
+# 1 PR = 1 行を保つ。エスケープ後の "\n" は grep 判定に影響しない
+# (breaking などの単語検出は substring match のため)。
+# 各 ENTRY は jq -n で組み立てて stdout に流し、最後に `jq -s '.'` で
+# 配列にまとめる (旧実装の O(N²) array-rebuild を排除)。
+printf '%s' "$INPUT" \
+  | jq -r '.[] | [.number, .title, .headRefName, .url, (.body // ""), ([.labels[]?.name] | join(","))] | @tsv' \
+  | while IFS=$'\t' read -r NUMBER TITLE HEAD URL BODY LABELS; do
+      ECOSYSTEM=$(classify_ecosystem "$HEAD")
+      SEMVER=$(classify_semver "$TITLE")
+      SECURITY=$(is_security "$BODY" "$LABELS")
+      BREAKING=$(has_breaking_hint "$BODY")
+      PACKAGE=$(extract_package "$TITLE")
 
-  ECOSYSTEM=$(classify_ecosystem "$HEAD")
-  SEMVER=$(classify_semver "$TITLE")
-  SECURITY=$(is_security "$BODY" "$LABELS")
-  BREAKING=$(has_breaking_hint "$BODY")
-  PACKAGE=$(extract_package "$TITLE")
-
-  ENTRY=$(jq -n \
-    --argjson number "$NUMBER" \
-    --arg title "$TITLE" \
-    --arg headRefName "$HEAD" \
-    --arg url "$URL" \
-    --arg package "$PACKAGE" \
-    --arg ecosystem "$ECOSYSTEM" \
-    --arg semver "$SEMVER" \
-    --argjson security "$SECURITY" \
-    --argjson breaking_hint "$BREAKING" \
-    '{number: $number, title: $title, headRefName: $headRefName, url: $url, package: $package, ecosystem: $ecosystem, semver: $semver, security: $security, breaking_hint: $breaking_hint}')
-
-  OUT=$(printf '%s' "$OUT" | jq --argjson e "$ENTRY" '. + [$e]')
-  i=$((i + 1))
-done
-
-printf '%s\n' "$OUT"
+      jq -n \
+        --argjson number "$NUMBER" \
+        --arg title "$TITLE" \
+        --arg headRefName "$HEAD" \
+        --arg url "$URL" \
+        --arg package "$PACKAGE" \
+        --arg ecosystem "$ECOSYSTEM" \
+        --arg semver "$SEMVER" \
+        --argjson security "$SECURITY" \
+        --argjson breaking_hint "$BREAKING" \
+        '{number: $number, title: $title, headRefName: $headRefName, url: $url, package: $package, ecosystem: $ecosystem, semver: $semver, security: $security, breaking_hint: $breaking_hint}'
+    done \
+  | jq -s '.'
