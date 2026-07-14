@@ -72,6 +72,7 @@ test: ## Verify shell scripts (shellcheck), JSON files (jq), and hooks
 	@bash tests/run-hook-tests.sh
 	@bash tests/parse-review-output/run-parser-tests.sh
 	@bash tests/classify-risk/run-classify-risk-tests.sh
+	@bash tests/dependabot-bulk-classifier/run-classifier-tests.sh
 	@bash tests/agents-md-sync/run-agents-md-sync-check.sh
 	@bash tests/statusline/run-statusline-tests.sh
 	@bash tests/stop-verify-gate/run-stop-gate-tests.sh
