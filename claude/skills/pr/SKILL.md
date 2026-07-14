@@ -21,12 +21,13 @@ Run each `gh` command as a bare invocation and substitute prior output literally
 4. Classify risk and run tier-appropriate review (do NOT skip this step):
    - Run `bash "$HOME/.claude/skills/pr/scripts/classify-risk.sh" <base_branch>` — yields `{"tier": ..., "reasons": [...]}`
    - **low**: if the project defines lint / typecheck commands, run them and fix failures. No review needed.
-   - **medium**: run the codex-review `security` perspective (follow the codex-review skill's detect→verify→apply steps for that one perspective). Also run the project's test suite if one exists.
+   - **medium**: run the codex-review `security` perspective (follow the codex-review skill's detect→verify→apply→confirm steps for that one perspective). Also run the project's test suite if one exists.
    - **high**: run all 3 codex-review perspectives AND the project's test suite. Then do the explain-the-diff walkthrough (step 5).
    - If codex is not installed: record "codex-review skipped (codex not installed)" in the evidence section and continue. Do not silently skip.
-   - Draft 判定は **PR-level triage** で行う(codex-review の per-finding 分類 `REPORT-ONLY` / `UNRESOLVED` は参考情報として `$HOME/.claude/skills/codex-review/SKILL.md` の定義に従う。pr の draft 判定に自動流用しない):
+   - Draft 判定は **PR-level triage** で行う(codex-review の per-finding 分類 `REPORT-ONLY` / `UNRESOLVED` を pr の draft 判定に自動流用しない。用語の定義は `$HOME/.claude/skills/codex-review/SKILL.md` を参照):
      - **本 PR で fix すべき finding が残っている**(未対応、または blocker として判断保留): evidence に記録し **draft** で作成
-     - **本 PR で fix する必要がない finding のみ**(verbatim/spec 制約で対応不可 / 追跡別 PR に回す / net-neutral で意図的 skip): evidence に記録するのみ。件数の多寡を draft 判定に使わない
+     - **本 PR で fix する必要がない finding のみ**(例: verbatim/spec 制約で対応不可 / 追跡別 PR に回す / net-neutral で意図的 skip / false positive / REFUTED): evidence に記録するのみ。件数の多寡を draft 判定に使わない。「追跡別 PR に回す」場合は evidence に追跡 issue/PR URL を必ず記載する(未起票なら draft 扱い)
+     - **finding が 0 件、または全て FIXED / REFUTED で残件なし**: evidence に記録し normal で作成
 5. Explain-the-diff walkthrough (tier=high only):
    - Split the diff into meaningful units. For each unit present: what changed / why / what could break.
    - Wait for the user's response. 3 分岐で処理する:
@@ -89,3 +90,4 @@ Created PR: <PR URL>
 | Changed files | <files_changed> files (+<insertions> -<deletions>) |
 | Risk tier | <tier> |
 | Review | <PASS / findings summary / skipped reason> |
+| Draft 判定 | <normal / draft> — <step 4 or 5, 理由> |
