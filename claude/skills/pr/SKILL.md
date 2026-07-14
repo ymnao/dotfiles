@@ -26,10 +26,10 @@ Run each `gh` command as a bare invocation and substitute prior output literally
    - If codex is not installed: record "codex-review skipped (codex not installed)" in the evidence section and continue. Do not silently skip.
    - Draft 判定は **PR-level triage** で行う(codex-review の per-finding 分類 `REPORT-ONLY` / `UNRESOLVED` を pr の draft 判定に自動流用しない。用語の定義は `$HOME/.claude/skills/codex-review/SKILL.md` を参照)。**上から順に評価し、最初に一致した bullet を採用**する。いずれの判定でも根拠と該当 finding を evidence に記録する:
      - **本 PR で fix すべき finding が残っている**(未対応、または blocker として判断保留): **draft** で作成
-     - **追跡別 PR に回す finding があり、追跡 issue/PR URL が未起票**: user に起票の要否を確認し、応答で分岐する:
-       - user「起票する」→ 起票後 URL を evidence の追跡先に記載し、bullet 3(normal)条件に自動該当 → normal で作成
-       - user「起票しない / defer」→ **draft** で作成し、evidence の Draft 判定に defer 理由(user 応答の要約)を記録
-       - step 5 で user が明示的に「別 PR で追う。normal で作って」等 override した場合は step 8 の Exception に従う
+     - **追跡別 PR に回す finding があり、追跡 issue/PR URL が未起票**: user に起票の要否を確認し、応答で分岐する。応答が曖昧・無応答(非対話 / no-tty 含む)の場合は **draft** を safe default とし、evidence の Draft 判定に「起票確認 pending」を記録:
+       - user「起票する」→ agent が `gh issue create` で起票し(user が自ら起票する応答なら URL を待つ)、URL を evidence の追跡先に記載してから bullet 3(normal)条件に該当 → normal で作成
+       - user「起票しない / defer」→ **draft** で作成し、evidence の Draft 判定に defer 理由(user 応答の要約)を記録。追跡先には finding を列挙し URL 欄に `defer(未起票)` と記載
+       - (tier=high 時) step 5 で user が明示的に「別 PR で追う。normal で作って」等 override した場合は step 8 の Exception に従う。tier=medium/low で step 5 前に override 意思表示があった場合も同 Exception を適用し、evidence に override 内容を記録
      - **上記に該当しない**(fix 不要のみ / 追跡 URL 記載済 / 残件なし): **normal** で作成。件数の多寡を draft 判定に使わない。追跡 URL がある場合は evidence に必ず記載する
 5. Explain-the-diff walkthrough (tier=high only):
    - Split the diff into meaningful units. For each unit present: what changed / why / what could break.
