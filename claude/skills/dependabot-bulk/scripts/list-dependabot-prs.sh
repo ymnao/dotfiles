@@ -50,8 +50,11 @@ classify_semver() {
     printf 'unknown'
     return
   fi
-  from=$(printf '%s' "$title" | sed -nE 's/^[Bb]ump[s]? +[^ ]+ +from +v?([0-9]+\.[0-9]+(\.[0-9]+)?) +to +v?[0-9]+\.[0-9]+.*/\1/p')
-  to=$(printf '%s' "$title"   | sed -nE 's/^[Bb]ump[s]? +[^ ]+ +from +v?[0-9]+\.[0-9]+(\.[0-9]+)? +to +v?([0-9]+\.[0-9]+(\.[0-9]+)?).*/\2/p')
+  # 末尾は空白または EOL でバージョンを閉じる。'to 2.0.0-beta.1' のような
+  # pre-release suffix を .* で吸って通常 major/minor/patch と誤分類しないよう、
+  # to 側の trailing .* を ( .*)?$ に置換して境界を明示する。
+  from=$(printf '%s' "$title" | sed -nE 's/^[Bb]ump[s]? +[^ ]+ +from +v?([0-9]+\.[0-9]+(\.[0-9]+)?) +to +v?[0-9]+\.[0-9]+(\.[0-9]+)?( .*)?$/\1/p')
+  to=$(printf '%s' "$title"   | sed -nE 's/^[Bb]ump[s]? +[^ ]+ +from +v?[0-9]+\.[0-9]+(\.[0-9]+)? +to +v?([0-9]+\.[0-9]+(\.[0-9]+)?)( .*)?$/\2/p')
   if [ -z "$from" ] || [ -z "$to" ]; then
     printf 'unknown'
     return
