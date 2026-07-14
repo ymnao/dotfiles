@@ -143,3 +143,16 @@
 # --- 2026-07-14 dotfile glob だが .codex にマッチしない (allow) ---
 {"name":"allow-rm-rf-dot-git-glob","expect":"allow","command":"rm -rf .git*","reason":".git* は .codex prefix ではない"}
 {"name":"allow-rm-rf-dot-env-glob","expect":"allow","command":"rm -rf .env*","reason":".env* は .codex prefix ではない"}
+# --- 2026-07-14 追加 review 対応: bracket-glob 誤検知修正 + 親相対 + redirect ---
+{"name":"allow-rm-rf-dot-bracket-git","expect":"allow","command":"rm -rf .[Gg]itignore","reason":"bracket glob だが `.codex` にマッチしない (component-wise glob match)"}
+{"name":"allow-rm-rf-dot-bracket-npm","expect":"allow","command":"rm -rf .[np]pmrc","reason":"同上 (.npmrc / .ppmrc 意図)"}
+{"name":"allow-sed-readonly-dot-glob","expect":"allow","command":"sed -n 1,5p .co*","reason":"read-only sed (-i なし) は書き込み文脈でない"}
+{"name":"allow-sed-e-dot-glob","expect":"allow","command":"sed -E 's/x/y/' .co*","reason":"同上 (in-place でない sed)"}
+{"name":"adv-sed-i-dot-glob","expect":"block","command":"sed -i '' s/a/b/ .co*","reason":"sed -i は書き込み文脈"}
+{"name":"adv-touch-parent-relative","expect":"block","command":"touch ../.codex*","reason":"親相対 dotfile glob (component `.codex*` が `.codex` にマッチ)"}
+{"name":"adv-mkdir-parent-relative","expect":"block","command":"mkdir ../.codex","reason":"親相対 literal .codex (既存 literal check でも block)"}
+{"name":"adv-echo-redirect-glob","expect":"block","command":"echo x > .co*/config.toml","reason":"write redirect target が dotfile glob"}
+{"name":"adv-echo-redirect-glob-nospace","expect":"block","command":"echo x >.co*/foo","reason":"redirect 演算子と target 隣接"}
+{"name":"adv-printf-redirect-bracket","expect":"block","command":"printf x > .[Cc]odex/config.toml","reason":"redirect target が bracket-glob"}
+{"name":"adv-echo-fd-redirect-glob","expect":"block","command":"echo x 1> .co*/x","reason":"fd 番号付き redirect"}
+{"name":"allow-echo-redirect-git-glob","expect":"allow","command":"echo x > .git*/foo","reason":".git* は `.codex` にマッチしない"}

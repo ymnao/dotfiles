@@ -440,45 +440,79 @@ if printf '%s\n' "$command" | grep -qiE "$rm_rf_pattern"; then
 fi
 
 # --- 書き込み系コマンド + dotfile glob (.codex にマッチしうる) ---
-# `rm -rf .co*` / `touch .co*/x` / `mkdir .[Cc]odex` 等は literal `.codex` を
-# 含まないため後段の .codex 検出を素通りするが、実行時のシェル glob 展開で
-# .codex にマッチしうる。書き込み系コマンドの引数にある dotfile glob の
-# literal prefix が case-insensitive で .codex の prefix なら安全側でブロック
-# (`.git*` は許可、`cat .co*` は read-only なのでこの判定の対象外)。
-# TODO: `echo x > .co*/foo` のような write redirect 経由 (segment 先頭が非 write
-# コマンド) と `git status; cat .co*` のような mixed segment は別 PR で対応。
-_dot_glob_write_re="^(rm|chmod|chown|shred|sed|${write_cmds})$"
+# `rm -rf .co*` / `touch .co*/x` / `mkdir .[Cc]odex` / `echo x > .co*/foo` 等は
+# literal `.codex` を含まないため後段の .codex 検出を素通りするが、実行時の
+# シェル glob 展開で .codex にマッチしうる。segment 単位で「書き込み文脈」
+# (write コマンド or write redirect) を判定し、引数の各 `/`-区切り component
+# を bash glob として `.codex` にマッチするか検査、マッチしたらブロック。
+#   - `.co*` → glob `.co*` は `.codex` にマッチ → block
+#   - `.git*` / `.[Gg]itignore` → マッチしない → allow
+#   - `.[Cc]odex` → マッチ → block
+#   - `../.codex*` → component `.codex*` が `.codex` にマッチ → block
+#   - `echo x > .co*/foo` → write redirect 文脈 → target の `.co*` が block
+#   - `cat .co*` → read-only 文脈 (write cmd でも redirect でもない) → allow
+# sed は `-i` フラグ付きのみ書き込み扱い (`sed -n 1p .co*` 等 read-only は allow)
+_seg_seps=';&|(){}'
+_dot_glob_write_re="^(rm|chmod|chown|shred|${write_cmds})$"
+_write_redirect_re='(^|[^&0-9])>[>|]?([^&]|$)|&>>?([^&]|$)|[0-9]+>>?([^&]|$)'
 _check_glob_seg() {
-  local _seg=$1 _first _arg _pfx _args=()
+  local _seg=$1 _first _arg _comp _rest
   _seg="${_seg#"${_seg%%[![:space:]]*}"}"
   [[ -z "$_seg" ]] && return 0
   _first="${_seg%%[[:space:]]*}"
   _first="${_first##*/}"
   _first=$(printf '%s' "$_first" | tr '[:upper:]' '[:lower:]')
-  [[ "$_first" =~ $_dot_glob_write_re ]] || return 0
-  # read -a は前回の要素を unset せず上書きするだけなので明示リセット
+  # 書き込み文脈判定: (a) write cmd (b) sed -i (c) 非デバイス write redirect
+  # のいずれか。`head foo 2>/dev/null` のような device 破棄は write 扱いしない
+  local _is_sed_inplace_re='(^|[[:space:]])-i([[:space:]]|$)'
+  local _seg_nodev
+  _seg_nodev=$(printf '%s' "$_seg" | sed -E 's#((^|[^&0-9])>[>|]?|&>>?|[0-9]+>>?)[[:space:]]*/dev/(null|stdout|stderr|tty)([^A-Za-z0-9_/]|$)#\2\4#g')
+  if ! [[ "$_first" =~ $_dot_glob_write_re ]] \
+     && ! { [[ "$_first" = "sed" && "$_seg" =~ $_is_sed_inplace_re ]]; } \
+     && ! [[ "$_seg_nodev" =~ $_write_redirect_re ]]; then
+    return 0
+  fi
+  local _args
   read -r -a _args <<< "$_seg"
   for _arg in "${_args[@]}"; do
     _arg="${_arg//[\"\']/}"
-    _arg="${_arg#./}"
-    _arg=$(printf '%s' "$_arg" | tr '[:upper:]' '[:lower:]')
+    # 先頭の redirect 演算子 (>, >>, N>, &> 等) を剥がす。例: `>.co*/foo` → `.co*/foo`
     case "$_arg" in
-      .*[*?[]*)
-        _pfx="${_arg%%[*?[]*}"
-        if [[ ".codex" == "$_pfx"* ]]; then
-          echo "ブロック: 書き込み系コマンドの引数に .codex にマッチしうる dotfile glob ($_arg) が指定されています（Cymulate notify エスケープ対策）" >&2
-          exit 2
-        fi
+      *[\<\>\&\|]*)
+        _arg="${_arg##*[\<\>\&\|]}"
         ;;
     esac
+    _arg=$(printf '%s' "$_arg" | tr '[:upper:]' '[:lower:]')
+    # `/`-区切りで各 component を bash glob として `.codex` に照合する。
+    # bash 3.2 では case pattern に unquoted 変数を置くと glob として評価される。
+    _rest=$_arg
+    while :; do
+      _comp="${_rest%%/*}"
+      if [[ -n "$_comp" ]]; then
+        # bash glob (_comp) を ERE regex (_re) に変換して =~ で照合。
+        # (`.` を `\.` にエスケープしてから `*` → `.*`, `?` → `.` に変換。
+        # 順序が重要: 先に * を変換すると escape 済み `\.` の `.` が誤マッチ)
+        local _re=${_comp//./\\.}
+        _re=${_re//\*/.*}
+        _re=${_re//\?/.}
+        if [[ ".codex" =~ ^${_re}$ ]]; then
+          echo "ブロック: 書き込み文脈の引数に .codex にマッチしうる dotfile glob ($_arg) が指定されています（Cymulate notify エスケープ対策）" >&2
+          exit 2
+        fi
+      fi
+      case "$_rest" in
+        */*) _rest="${_rest#*/}" ;;
+        *) break ;;
+      esac
+    done
   done
 }
 # 単一 segment (大多数のケース) は tr/here-string を回避
 case "$command" in
-  *[\;\&\|\(\)\{\}]*)
+  *[";&|(){}"]*)
     while IFS= read -r _seg; do
       _check_glob_seg "$_seg"
-    done <<< "$(printf '%s' "$command" | tr ';&|(){}' '\n\n\n\n\n\n\n')"
+    done <<< "$(printf '%s' "$command" | tr "$_seg_seps" '\n')"
     ;;
   *)
     _check_glob_seg "$command"
