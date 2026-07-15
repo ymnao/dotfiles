@@ -1,0 +1,23 @@
+# guard-codex-dir.sh 回帰ケース。tool_input を直接指定する形式。
+# ブロック条件: cwd 配下 (相対 / cwd 絶対) の Codex 設定ディレクトリへの操作。
+# 許可条件: cwd 外の絶対パス / ドット無しの codex/ 相対パス / path 系フィールドなし。
+
+{"name":"block: 相対 .codex/config.toml (Write file_path)","expect":"block","tool_input":{"file_path":".codex/config.toml"}}
+{"name":"block: 相対 .codex/agents.json (Edit file_path)","expect":"block","tool_input":{"file_path":".codex/agents.json"}}
+{"name":"block: subdir 経由 relpath","expect":"block","tool_input":{"file_path":"pkg/.codex/config.toml"}}
+{"name":"block: 大文字 .Codex (case-insensitive)","expect":"block","tool_input":{"file_path":".Codex/config.toml"}}
+{"name":"block: path フィールド","expect":"block","tool_input":{"path":".codex/foo"}}
+{"name":"block: filename フィールド","expect":"block","tool_input":{"filename":".codex/foo"}}
+{"name":"block: apply_patch add file","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Add File: .codex/config.toml\n+foo\n*** End Patch\n"}}
+{"name":"block: apply_patch update file","expect":"block","tool_input":{"input":"*** Begin Patch\n*** Update File: .codex/config.toml\n@@\n-foo\n+bar\n*** End Patch\n"}}
+{"name":"block: apply_patch delete file","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Delete File: .codex/config.toml\n*** End Patch\n"}}
+{"name":"block: apply_patch move to","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Move to: .codex/renamed.toml\n*** End Patch\n"}}
+{"name":"block: file_path が .codex そのもの","expect":"block","tool_input":{"file_path":".codex"}}
+{"name":"block: file_path が pkg/.codex で終端","expect":"block","tool_input":{"file_path":"pkg/.codex"}}
+{"name":"block: command と tool_input 両指定 → tool_input 優先","expect":"block","command":"echo safe","tool_input":{"file_path":".codex/config.toml"}}
+
+{"name":"allow: cwd 外絶対 /private/nonexistent/.codex/x","expect":"allow","tool_input":{"file_path":"/private/nonexistent/.codex/x"}}
+{"name":"allow: ドット無し codex/hooks/x.sh","expect":"allow","tool_input":{"file_path":"codex/hooks/guard-codex-dir.sh"}}
+{"name":"allow: 通常ファイル README.md","expect":"allow","tool_input":{"file_path":"README.md"}}
+{"name":"allow: path 系フィールドなし","expect":"allow","tool_input":{"other":"noop"}}
+{"name":"allow: apply_patch 本文中の .codex 言及 (ヘッダー以外)","expect":"allow","tool_input":{"patch":"*** Begin Patch\n*** Update File: README.md\n@@\n-old\n+we mention .codex/ in prose\n*** End Patch\n"}}

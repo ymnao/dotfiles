@@ -115,6 +115,15 @@
             "command": "bash \"$HOME/.claude/hooks/verify-ci-before-pr.sh\""
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/guard-codex-dir.sh\""
+          }
+        ]
       }
     ],
     "PostToolUse": [

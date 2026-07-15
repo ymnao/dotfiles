@@ -6,7 +6,9 @@ set -euo pipefail
 #   引数なし: このスクリプトと同階層の hooks/*.cases.jsonl を全実行
 #
 # ケース形式 (JSONL, 1 行 1 ケース。# 始まりの行と空行はスキップ):
-#   {"name":"...","expect":"allow|block","command":"...","reason":"..."}
+#   {"name":"...","expect":"allow|block","command":"...","reason":"..."}     # Bash 系 (tool_input.command)
+#   {"name":"...","expect":"allow|block","tool_input":{...},"reason":"..."}  # Edit/Write/apply_patch 系
+#   両方指定された場合は tool_input 側を優先する。
 #
 # 判定:
 #   - expect=allow → hook の exit code 0 を期待
@@ -90,13 +92,15 @@ for cf in "$@"; do
     case "$line" in ''|'#'*) continue ;; esac
     name=$(printf '%s' "$line" | jq -r '.name')
     expect=$(printf '%s' "$line" | jq -r '.expect')
-    cmd=$(printf '%s' "$line" | jq -r '.command')
     case "$expect" in
       allow) want=0 ;;
       block) want=2 ;;
       *) echo "FAIL $name: invalid expect '$expect'"; fail=$((fail + 1)); continue ;;
     esac
-    input=$(jq -cn --arg c "$cmd" '{"tool_input":{"command":$c}}')
+    # ケース形式: `tool_input` を JSON オブジェクトで直接指定 (Edit/Write/apply_patch 系)。
+    # 後方互換で `command` 文字列も受け付け、tool_input.command に組み立てる (Bash 系)。
+    # 両方指定された場合は tool_input 側を優先する。
+    input=$(printf '%s' "$line" | jq -c '{tool_input: (.tool_input // {command: .command})}')
 
     got_claude=""
     got_codex=""
@@ -113,7 +117,7 @@ for cf in "$@"; do
     if [ "$ok" = 1 ]; then
       pass=$((pass + 1))
     else
-      echo "FAIL $name: expected=$want claude=${got_claude:--} codex=${got_codex:--} cmd: $cmd"
+      echo "FAIL $name: expected=$want claude=${got_claude:--} codex=${got_codex:--} input: $input"
       fail=$((fail + 1))
     fi
   done < "$cf"
