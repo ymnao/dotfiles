@@ -85,6 +85,12 @@ if printf '%s' "$command" | grep -qE "\\\$'[^']*\\\\"; then
   exit 2
 fi
 
+# 段階1.5 で使う view として、raw (stage 1 の \X→X 前) の command を保存する。
+# printf format の \n / \r は stage 1 の一般的 backslash strip で `n`/`r` に潰されるため、
+# `printf 'X\nrm -rf ~' | bash` のような printf format 経由の危険再構成を検出するには
+# stage 1 適用前の raw view で extractor を走らせる必要がある。
+command_raw=$command
+
 # シェル意味論に従ってコマンドを正規化する（.co""dex / .co\dex / $d=.codex; ...
 # のような回避を解消するため、guard-pkg-install.sh と同じ方針）。
 # 段階1: 1 つの sed -E で以下をまとめて処理する:
@@ -118,44 +124,51 @@ command_pre_sq=$command
 # 動的展開を含む再パース対象は既存の段階6-7 (line 219/231/259 相当) が別途ブロックする。
 # ここで抽出するのは静的リテラルのみで足り、下流判定に流すだけで済む。
 _reparse_extract() {
-  # prefix: segment 先頭アンカー (`(^|[;&|({`])`) + 空白 + 代入語 + ラッパー + 絶対パス。
+  # wrapper: 代入語 + env/nice 等ラッパー + 絶対パス (segment 先頭アンカーを含まない
+  # 「invocation 直前の許容トークン」のみ)。prefix と E receiver の両方から再利用する。
+  local wrapper='([A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*[[:space:]]+)*((env|command|nice|exec|nohup|setsid|stdbuf|timeout|ionice|chrt|time)([[:space:]]+([-+][^[:space:]]+|[0-9][^[:space:];&|]*|[A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*))*[[:space:]]+)*([^[:space:];&|]*/)?'
+  # prefix: segment 先頭アンカー (`(^|[;&|({`])`) + 空白 + wrapper。
   # 初期 char class に [:space:] は含めない (echo/printf の引数中 shell 名を誤って
   # 「invocation」扱いする FP を防ぐ。既存段階6 判定A の segment-start と一致)。
-  local prefix='(^|[;&|({`])[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*[[:space:]]+)*((env|command|nice|exec|nohup|setsid|stdbuf|timeout|ionice|chrt|time)([[:space:]]+([-+][^[:space:]]+|[0-9][^[:space:];&|]*|[A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*))*[[:space:]]+)*([^[:space:];&|]*/)?'
+  local prefix="(^|[;&|({\`])[[:space:]]*${wrapper}"
   local shell='([a-zA-Z]*sh|nu)([[:space:]]+([-+][oO][[:space:]]+[^-+<[:space:];&|][^[:space:];&|]*|(--rcfile|--init-file)[[:space:]]+[^[:space:]]+|--[a-zA-Z][a-zA-Z-]*|[-+][^-[:space:]][^[:space:]]*|<))*'
   local dashc='[[:space:]]+(-[a-z]*c[a-z]*|--command)'
   # C/D/E の receiver 判定用の explicit allowlist (banish / polish / finish 等の非シェルを
   # `[a-zA-Z]*sh` の greedy match で拾わないようにする。A/B は -c/--command/eval の要件で
   # 別途タイトなため loose match でよい)。
+  # shell_receiver は shell 名 + 既存 shell と同じ flag 許容 (`bash -s <<<` / `bash --login <<<`
+  # のような shell と再パーストークンの間に挟まる option フラグを取りこぼさないため)。
   local shell_strict='(bash|zsh|dash|sh|fish|ksh|mksh|ash|tcsh|csh|yash|posh|nu)'
-  # A. *sh -c / --command + quoted arg (eval は B で扱う。dashc の有無で分岐)
+  local shell_receiver="${shell_strict}"'([[:space:]]+([-+][oO][[:space:]]+[^-+<[:space:];&|][^[:space:];&|]*|(--rcfile|--init-file)[[:space:]]+[^[:space:]]+|--[a-zA-Z][a-zA-Z-]*|[-+][^-[:space:]][^[:space:]]*|<))*'
+  # A. *sh -c / --command: 第 1 引数のみが code (第 2 引数以降は $0/$1...)。
+  # single-arg 抽出でよい。
   printf '%s' "$1" | grep -oE "${prefix}${shell}${dashc}[[:space:]]+'[^']*'" \
     | sed -E "s/.*'([^']*)'\$/\\1/"
   printf '%s' "$1" | grep -oE "${prefix}${shell}${dashc}"'[[:space:]]+"[^"]*"' \
     | sed -E 's/.*"([^"]*)"$/\1/'
-  # B. eval + quoted arg (-c フラグ不要。prefix は共通)
-  printf '%s' "$1" | grep -oE "${prefix}eval[[:space:]]+'[^']*'" \
+  # B. eval: 全引数を空白連結して再評価するため multi-arg 対応が必要
+  # (例: `eval 'rm -rf' '~'` → 内部で `rm -rf ~` を評価しチルダ展開が発生)。
+  # segment 終端まで region を抽出し、外側クォートを除去する。
+  printf '%s' "$1" | grep -oE "${prefix}eval[[:space:]]+[^;&|(){}]+" \
+    | sed -E "s/.*eval[[:space:]]+//; s/['\"]//g; s/\\\\[nr]/;/g; s/\\\\t/ /g"
+  # C. *sh <<< 'X': here-string は単一 arg のみが reparse 対象。single-arg でよい。
+  # receiver は *sh/nu 系のみに限定 (cat/grep 等の非シェル <<< は単なる stdin 供給)。
+  # `bash -s <<< 'X'` のような option フラグ挟みも shell_receiver で許容。
+  printf '%s' "$1" | grep -oE "${prefix}${shell_receiver}[[:space:]]*<<<[[:space:]]*'[^']*'" \
     | sed -E "s/.*'([^']*)'\$/\\1/"
-  printf '%s' "$1" | grep -oE "${prefix}"'eval[[:space:]]+"[^"]*"' \
+  printf '%s' "$1" | grep -oE "${prefix}${shell_receiver}"'[[:space:]]*<<<[[:space:]]*"[^"]*"' \
     | sed -E 's/.*"([^"]*)"$/\1/'
-  # C. *sh <<< quoted (receiver は *sh/nu 系のみ reparse する。cat/grep 等の非シェル
-  # here-string は単なる stdin 供給なので抽出しない)。
-  printf '%s' "$1" | grep -oE "${prefix}${shell_strict}[[:space:]]*<<<[[:space:]]*'[^']*'" \
-    | sed -E "s/.*'([^']*)'\$/\\1/"
-  printf '%s' "$1" | grep -oE "${prefix}${shell_strict}"'[[:space:]]*<<<[[:space:]]*"[^"]*"' \
-    | sed -E 's/.*"([^"]*)"$/\1/'
-  # D. *sh|source|. <(echo|printf ... quoted ...) — receiver に shell / source / `.` を要求。
-  #    head <(...) / diff <(...) のような process subst 引数化用途は reparse しないため対象外。
-  printf '%s' "$1" | grep -oE "${prefix}(${shell_strict}|source|\\.)[[:space:]]+<\\((echo|printf)[[:space:]][^)]*'[^')]*'" \
-    | sed -E "s/.*'([^']*)'\$/\\1/"
-  printf '%s' "$1" | grep -oE "${prefix}(${shell_strict}|source|\\.)"'[[:space:]]+<\((echo|printf)[[:space:]][^)]*"[^")]*"' \
-    | sed -E 's/.*"([^"]*)"$/\1/'
-  # E. echo|printf ... quoted ... | *sh|nu (pipe 経由の LHS。receiver に allowlist + word
-  # boundary を要求)
-  printf '%s' "$1" | grep -oE "(^|[;&|({\`])[[:space:]]*(echo|printf)[[:space:]][^|]*'[^']*'[^|]*\\|[[:space:]]*${shell_strict}([[:space:]]|\$|[;&|])" \
-    | sed -E "s/.*'([^']*)'[^']*\|.*/\\1/"
-  printf '%s' "$1" | grep -oE '(^|[;&|({`])[[:space:]]*(echo|printf)[[:space:]][^|]*"[^"]*"[^|]*\|[[:space:]]*'"${shell_strict}"'([[:space:]]|$|[;&|])' \
-    | sed -E 's/.*"([^"]*)"[^"]*\|.*/\1/'
+  # D. *sh|source|. <(echo|printf ...): echo/printf の全引数が空白 (echo) / フォーマット
+  # 展開後 (printf) の文字列として script 側に流れる。`(...)` 内の region を抽出して
+  # クォート除去する。receiver 制約で head/diff 等の process subst 引数化は除外。
+  printf '%s' "$1" | grep -oE "${prefix}(${shell_receiver}|source|\\.)[[:space:]]+<\\((echo|printf)[[:space:]]+[^)]+\\)" \
+    | sed -E "s/.*<\\((echo|printf)[[:space:]]+//; s/\\)\$//; s/['\"]//g; s/\\\\[nr]/;/g; s/\\\\t/ /g"
+  # E. echo|printf ... | *sh|nu: echo/printf の全引数が pipe 経由で shell に再パースされる。
+  # `|` までの region を抽出してクォート除去。receiver は allowlist + word boundary で
+  # banish/polish 等の greedy match を排除。option フラグ挟み (`| bash -s`)、絶対パス
+  # (`| /bin/bash`)、env 等ラッパー (`| env bash`) も wrapper 経由で許容。
+  printf '%s' "$1" | grep -oE "(^|[;&|({\`])[[:space:]]*(echo|printf)[[:space:]]+[^|;&(){}]+\\|[[:space:]]*${wrapper}${shell_receiver}([[:space:]]|\$|[;&|])" \
+    | sed -E "s/.*(echo|printf)[[:space:]]+//; s/[[:space:]]*\\|.*//; s/['\"]//g; s/\\\\[nr]/;/g; s/\\\\t/ /g"
 }
 # 再パーストークンを含まない入力は関数呼び出しごと skip する (hot path 最適化。
 # 通常 `git status` / `ls -la` 等は 0 fork でこの段階を抜ける)。
@@ -163,9 +176,14 @@ _reparse_extract() {
 # 結合フラグ `bash -ce 'X'` `-ec` `-cx` 等が case guard を通過して bypass にならないよう
 # extractor 側の regex 許容度と揃える)。
 _reparse=""
-_reparse_re='[[:space:]]-[a-z]*c[a-z]*[[:space:]]|--command|(^|[^A-Za-z0-9_])eval[[:space:]]|<<<|<\(|\|[[:space:]]*(bash|zsh|dash|sh|fish|ksh|mksh|ash|tcsh|csh|yash|posh|nu)([[:space:]]|$|[;&|])'
-if [[ "$command_pre_sq" =~ $_reparse_re ]]; then
-  _reparse=$(_reparse_extract "$command_pre_sq")
+_reparse_re='[[:space:]]-[a-z]*c[a-z]*[[:space:]]|--command|(^|[^A-Za-z0-9_])eval[[:space:]]|<<<|<\(|\|[[:space:]]*((bash|zsh|dash|sh|fish|ksh|mksh|ash|tcsh|csh|yash|posh|nu|env|command|nice|exec|nohup|setsid|stdbuf|timeout|ionice|chrt|time)([[:space:]]|$|[;&|])|/)'
+# extractor は raw (stage 1 前) の view で走らせる。stage 1 の \X→X 適用後だと
+# `printf 'X\nY' | bash` の \n が n に潰れて `XnY` になり、danger 判定が Y の rm を
+# 見つけられなくなるため。extractor 側で \n / \r → `;` 置換を行い、bare な segment 分割で
+# 下流判定に流す。ANSI-C $'...' は上で全面ブロック済み、backslash-space 越しの `bash\ -c`
+# 等の稀な escape 形は extractor が拾えないが、AGENTS.md で禁止済みなので影響は小さい。
+if [[ "$command_raw" =~ $_reparse_re ]]; then
+  _reparse=$(_reparse_extract "$command_raw")
 fi
 if [[ -n "$_reparse" ]]; then
   # 各抽出片を `;` で連結 (改行 → `;`)。抽出片は最外側 quote が剥がれた bare fragment
