@@ -66,6 +66,10 @@
 {"name":"npm-i-bare","expect":"block","command":"npm i","reason":"npm 全禁止"}
 {"name":"npm-run-build","expect":"block","command":"npm run build","reason":"npm 全禁止 (pnpm run を使う)"}
 {"name":"npm-test","expect":"block","command":"npm test","reason":"npm 全禁止 (pnpm test を使う)"}
+{"name":"npm-init-bare","expect":"block","command":"npm init","reason":"以前は対話モードとして許可されていたが npm 全禁止で block"}
+{"name":"npm-init-yes","expect":"block","command":"npm init -y","reason":"以前は flag のみとして許可されていたが npm 全禁止で block"}
+{"name":"npm-bare","expect":"block","command":"npm","reason":"引数なしの npm も全禁止"}
+{"name":"npm-version-flag","expect":"block","command":"npm --version","reason":"オプションのみでも block (列挙実装への後退防止)"}
 # --- allow: pnpm/yarn の復元・通常操作 ---
 {"name":"pnpm-install","expect":"allow","command":"pnpm install","reason":"素の形は復元"}
 {"name":"pnpm-i-bare","expect":"allow","command":"pnpm i","reason":"素の形は復元"}
