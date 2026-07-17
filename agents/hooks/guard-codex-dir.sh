@@ -29,10 +29,9 @@ if ! command -v jq &>/dev/null; then
   exit 2
 fi
 
-protected_name="$(printf '\056codex')"
+protected_name='.codex'
 # cwd 関連の正規化はパス毎ではなく 1 度だけ行う（macOS APFS 想定の case-insensitive 比較）
-cwd="$(pwd -P)"
-cwd_lower=$(printf '%s' "$cwd" | tr '[:upper:]' '[:lower:]')
+cwd_lower=$(pwd -P | tr '[:upper:]' '[:lower:]')
 
 # パスを解決し「cwd 配下の .codex/」を指しているかを判定する。
 # 判定基準: 相対パス / 絶対パスとも「cwd 基準に正規化した結果」が cwd/.codex/ prefix と
