@@ -104,6 +104,61 @@ command=$(printf '%s' "$command" | sed -E \
 
 command_pre_sq=$command
 
+# 段階1.5 (issue #56): 再パース経路 (bash -c / eval / <<< / <(...) / echo|printf ... | *sh)
+# の quoted 引数を抽出し、command / command_pre_sq の末尾に "; X" として追記する。
+# これにより下流の危険判定 (rm -rf ~ / .codex / git push --force / sudo / chmod 777 等) が、
+# 再パース対象をトップレベルコマンドとして直接検出する。
+#
+# 従来の挙動: 段階2 のシングルクォート除去 ($ / ` を含まない sq を unwrap) で偶発的に
+# 大半の再パース経路が catch されていた (`bash -c 'rm -rf /'` → `bash -c rm -rf /`)。
+# 例外: `~` を含む sq は sentinel 保護で command_for_tilde に quote が残るため、tilde
+# 判定の boundary クラス (`'` は非該当) を通過して素通りしていた。また `bash -c '...' &&
+# bash -c '...'` のような 2 段目 -c も同じ理由で漏れていた。
+#
+# 動的展開を含む再パース対象は既存の段階6-7 (line 219/231/259 相当) が別途ブロックする。
+# ここで抽出するのは静的リテラルのみで足り、下流判定に流すだけで済む。
+_reparse_extract() {
+  # A. *sh -c / --command + quoted arg (eval は B で扱う。dashc の有無で分岐)
+  #    prefix 前置は段階6 の判定A と揃える (代入語 / ラッパー / 絶対パス許容)
+  local prefix='(^|[;&|({`[:space:]])([A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*[[:space:]]+)*((env|command|nice|exec|nohup|setsid|stdbuf|timeout|ionice|chrt|time)([[:space:]]+([-+][^[:space:]]+|[0-9][^[:space:];&|]*|[A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*))*[[:space:]]+)*([^[:space:];&|]*/)?'
+  local shell='([a-zA-Z]*sh|nu)([[:space:]]+([-+][oO][[:space:]]+[^-+<[:space:];&|][^[:space:];&|]*|(--rcfile|--init-file)[[:space:]]+[^[:space:]]+|--[a-zA-Z][a-zA-Z-]*|[-+][^-[:space:]][^[:space:]]*|<))*'
+  local dashc='[[:space:]]+(-[a-z]*c[a-z]*|--command)'
+  printf '%s' "$1" | grep -oE "${prefix}${shell}${dashc}[[:space:]]+'[^']*'" \
+    | sed -E "s/.*'([^']*)'\$/\\1/"
+  printf '%s' "$1" | grep -oE "${prefix}${shell}${dashc}"'[[:space:]]+"[^"]*"' \
+    | sed -E 's/.*"([^"]*)"$/\1/'
+  # B. eval + quoted arg (-c フラグ不要。prefix は共通)
+  printf '%s' "$1" | grep -oE "${prefix}eval[[:space:]]+'[^']*'" \
+    | sed -E "s/.*'([^']*)'\$/\\1/"
+  printf '%s' "$1" | grep -oE "${prefix}"'eval[[:space:]]+"[^"]*"' \
+    | sed -E 's/.*"([^"]*)"$/\1/'
+  # C. *sh <<< quoted
+  printf '%s' "$1" | grep -oE "<<<[[:space:]]*'[^']*'" \
+    | sed -E "s/^<<<[[:space:]]*'([^']*)'\$/\\1/"
+  printf '%s' "$1" | grep -oE '<<<[[:space:]]*"[^"]*"' \
+    | sed -E 's/^<<<[[:space:]]*"([^"]*)"$/\1/'
+  # D. <(echo|printf ... quoted ...) — echo/printf に限定 (段階11 tilde 判定と同じ流儀。
+  #    任意コマンドの process subst を全部走査すると FP が増えるため)
+  printf '%s' "$1" | grep -oE "<\((echo|printf)[[:space:]][^)]*'[^')]*'" \
+    | sed -E "s/.*'([^']*)'\$/\\1/"
+  printf '%s' "$1" | grep -oE '<\((echo|printf)[[:space:]][^)]*"[^")]*"' \
+    | sed -E 's/.*"([^"]*)"$/\1/'
+  # E. echo|printf ... quoted ... | *sh|nu (pipe 経由の LHS)
+  printf '%s' "$1" | grep -oE "(^|[[:space:];&|({\`])(echo|printf)[[:space:]][^|]*'[^']*'[^|]*\|[[:space:]]*([a-zA-Z]*sh|nu)" \
+    | sed -E "s/.*'([^']*)'[^']*\|.*/\\1/"
+  printf '%s' "$1" | grep -oE '(^|[[:space:];&|({`])(echo|printf)[[:space:]][^|]*"[^"]*"[^|]*\|[[:space:]]*([a-zA-Z]*sh|nu)' \
+    | sed -E 's/.*"([^"]*)"[^"]*\|.*/\1/'
+}
+_reparse=$(_reparse_extract "$command_pre_sq")
+if [[ -n "$_reparse" ]]; then
+  # 各抽出片を `;` で連結 (改行 → `;`)。抽出片は最外側 quote が剥がれた bare fragment
+  # のため、下流の sq-strip / sentinel 保護のいずれにも影響しない (`rm -rf ~` が bare で
+  # 現れ、tilde 判定の boundary クラスに合致する)。
+  _reparse_joined=$(printf '%s' "$_reparse" | tr '\n' ';')
+  command="$command; $_reparse_joined"
+  command_pre_sq="$command_pre_sq; $_reparse_joined"
+fi
+
 # 段階2: シングルクォート '...' の処理（通常コマンド用、bash の quote removal を再現）:
 #   - 中身に $ または ` を含む場合: 動的展開リテラル（bash は展開しない）として
 #     空白に置換し、後段の判定経路に流さない。

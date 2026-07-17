@@ -188,3 +188,30 @@
 {"name":"allow-bang-glob-star-excludes-c","expect":"allow","command":"rm -rf .[!c]*","reason":"[!c] は c 除外、`.codex` に非該当"}
 {"name":"adv-bang-glob-star","expect":"block","command":"rm -rf .[!g]*","reason":"[!g] は g 以外、`.codex` の c にマッチ"}
 {"name":"allow-cat-glob-devnull","expect":"allow","command":"cat .co* >/dev/null","reason":"read-only cat + device redirect のみ (write 扱いしない)"}
+# --- 2026-07-17 issue #56: 再パース経路 + 静的リテラル (block) ---
+# シェル再パース経路 (bash -c / eval / <<< / <(...) / pipe-to-shell) の quoted リテラル引数を
+# 抽出して危険判定に再投入する。従来は sq-strip で偶発的に catch できていたが、~ 単独や
+# 二段目 -c の tilde は sentinel 保護で通過していた。
+{"name":"reparse-sh-c-sq-rm-tilde","expect":"block","command":"bash -c 'rm -rf ~'","reason":"再パース sq 内の rm ~ (従来 bypass)"}
+{"name":"reparse-sh-c-dq-rm-tilde","expect":"block","command":"bash -c \"rm -rf ~\"","reason":"再パース dq 内の rm ~"}
+{"name":"reparse-eval-sq-rm-tilde","expect":"block","command":"eval 'rm -rf ~'","reason":"eval 内の rm ~"}
+{"name":"reparse-herestring-rm-tilde","expect":"block","command":"bash <<< 'rm -rf ~'","reason":"here-string 内の rm ~"}
+{"name":"reparse-procsub-rm-tilde","expect":"block","command":"bash <(echo 'rm -rf ~')","reason":"process subst 内 echo の rm ~"}
+{"name":"reparse-pipe-rm-tilde","expect":"block","command":"echo 'rm -rf ~' | bash","reason":"pipe 経由 echo の rm ~"}
+{"name":"reparse-sh-c-double-second","expect":"block","command":"bash -c 'echo hi' && bash -c 'rm -rf ~'","reason":"2 段目 -c の rm ~ も抽出対象"}
+{"name":"reparse-sh-c-git-push-force","expect":"block","command":"bash -c 'git push --force'","reason":"再パース経路の git push --force"}
+{"name":"reparse-eval-sudo","expect":"block","command":"eval 'sudo whoami'","reason":"再パース経路の sudo"}
+{"name":"reparse-herestring-codex","expect":"block","command":"bash <<< 'touch .codex/x'","reason":"再パース経路の .codex 参照"}
+{"name":"reparse-procsub-printf-rm-tilde","expect":"block","command":"bash <(printf '%s\\n' 'rm -rf ~')","reason":"printf 経由 process subst"}
+{"name":"reparse-pipe-printf-rm-tilde","expect":"block","command":"printf '%s\\n' 'rm -rf ~' | bash","reason":"printf 経由 pipe"}
+# --- 2026-07-17 issue #56: 再パース経路 + 静的リテラル (allow) ---
+# 無害なリテラルは通過し続ける。
+{"name":"reparse-sh-c-sq-echo","expect":"allow","command":"bash -c 'echo hello'","reason":"無害 sq リテラル"}
+{"name":"reparse-eval-sq-echo","expect":"allow","command":"eval 'echo world'","reason":"eval 無害"}
+{"name":"reparse-herestring-echo","expect":"allow","command":"bash <<< 'echo hi'","reason":"here-string 無害"}
+{"name":"reparse-pipe-echo","expect":"allow","command":"echo hello | bash","reason":"pipe 無害 (unquoted)"}
+{"name":"reparse-procsub-echo","expect":"allow","command":"bash <(echo 'ls -la')","reason":"process subst 無害"}
+# 抽出は shell/eval 名を prefix で要求するため、shell 以外の -c FP を起こさない
+{"name":"reparse-git-c-not-shell","expect":"allow","command":"git -c core.editor='vim' status","reason":"git -c は shell 名ではないため抽出対象外"}
+{"name":"reparse-sh-c-login-flag","expect":"block","command":"bash --login -c 'rm -rf ~'","reason":"shell フラグ挟み形も抽出"}
+{"name":"reparse-env-bash-c","expect":"block","command":"env bash -c 'rm -rf ~'","reason":"env wrapper 越しも抽出 (prefix 許容)"}
