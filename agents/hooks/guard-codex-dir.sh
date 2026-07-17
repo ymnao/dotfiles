@@ -29,7 +29,7 @@ if ! command -v jq &>/dev/null; then
   exit 2
 fi
 
-protected_name="$(printf '\056codex')"
+protected_name='.codex'
 # cwd 関連の正規化はパス毎ではなく 1 度だけ行う（macOS APFS 想定の case-insensitive 比較）
 cwd="$(pwd -P)"
 cwd_lower=$(printf '%s' "$cwd" | tr '[:upper:]' '[:lower:]')

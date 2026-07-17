@@ -612,7 +612,7 @@ if [[ "$codex_readonly_ok" = 0 ]] && printf '%s\n' "$command" | grep -qiE '(^|[;
   exit 2
 fi
 
-protected_name="$(printf '\056codex')"
+protected_name='.codex'
 # command を 1 度だけ小文字化し、それ以降は全部小文字で比較する
 # （macOS APFS 想定で `.Codex` 等も拾う）。`$HOME` はシェル展開されない
 # リテラル文字列なので、小文字化された `$home` をパターンに含めて許可判定する。
