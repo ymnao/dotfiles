@@ -213,3 +213,22 @@
 {"name":"reparse-git-c-not-shell","expect":"allow","command":"git -c core.editor='vim' status","reason":"git -c は shell 名ではないため抽出対象外"}
 {"name":"reparse-sh-c-login-flag","expect":"block","command":"bash --login -c 'rm -rf ~'","reason":"shell フラグ挟み形も抽出"}
 {"name":"reparse-env-bash-c","expect":"block","command":"env bash -c 'rm -rf ~'","reason":"env wrapper 越しも抽出 (prefix 許容)"}
+# --- 2026-07-18 /code-review medium 追随修正: guard bypass + FP 回帰 ---
+# guard bypass 修正: 結合フラグ (-ce / -ec / -cx) と tab 区切りも bash =~ で捕捉
+{"name":"reparse-sh-ce-combined","expect":"block","command":"bash -ce 'rm -rf ~'","reason":"結合フラグ -ce も bypass しない (case guard → bash =~ に置換)"}
+{"name":"reparse-sh-ec-combined","expect":"block","command":"bash -ec 'rm -rf ~'","reason":"結合フラグ -ec も bypass しない"}
+{"name":"reparse-sh-cx-combined","expect":"block","command":"bash -cx 'rm -rf ~'","reason":"結合フラグ -cx も bypass しない"}
+{"name":"reparse-sh-c-tab","expect":"block","command":"bash\t-c\t'rm -rf ~'","reason":"tab 区切りも bypass しない (guard の [[:space:]] 対応)"}
+# A prefix の segment-start 化 regression 防止 (echo/printf 引数中の shell 名が
+# 「invocation」として extract されて誤 block されないこと)
+{"name":"reparse-echo-shname-string","expect":"allow","command":"echo sh -c 'rm -rf ~'","reason":"echo 引数中の sh -c は文字列出力のみ"}
+{"name":"reparse-printf-bash-c-string","expect":"allow","command":"printf '%s\\n' \"See: bash -c 'rm -rf ~'\"","reason":"printf エラーメッセージ内の bash -c 文字列"}
+# E receiver allowlist の regression 防止 (banish/polish 等の非シェルが `[a-zA-Z]*sh` の
+# greedy match で拾われないこと)
+{"name":"reparse-pipe-banish","expect":"allow","command":"echo 'rm -rf ~' | banish","reason":"banish は shell allowlist 外"}
+{"name":"reparse-pipe-polish","expect":"allow","command":"echo 'rm -rf ~' | polish","reason":"polish 同様"}
+# D receiver allowlist の regression 防止 (source/. も受ける)
+{"name":"reparse-source-procsub-static","expect":"allow","command":"source <(echo 'ls -la')","reason":"source <(...) は receiver に含めるが payload 無害"}
+# printf 変種の block テストも復活 (D/E の (echo|printf) alternation カバレッジ維持)
+{"name":"reparse-procsub-printf-rm-tilde","expect":"block","command":"bash <(printf '%s\\n' 'rm -rf ~')","reason":"printf 経由 process subst (D printf alt)"}
+{"name":"reparse-pipe-printf-rm-tilde","expect":"block","command":"printf '%s\\n' 'rm -rf ~' | bash","reason":"printf 経由 pipe (E printf alt)"}
