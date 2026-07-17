@@ -188,3 +188,87 @@
 {"name":"allow-bang-glob-star-excludes-c","expect":"allow","command":"rm -rf .[!c]*","reason":"[!c] は c 除外、`.codex` に非該当"}
 {"name":"adv-bang-glob-star","expect":"block","command":"rm -rf .[!g]*","reason":"[!g] は g 以外、`.codex` の c にマッチ"}
 {"name":"allow-cat-glob-devnull","expect":"allow","command":"cat .co* >/dev/null","reason":"read-only cat + device redirect のみ (write 扱いしない)"}
+# --- 2026-07-17 issue #56: 再パース経路 + 静的リテラル (block) ---
+# シェル再パース経路 (bash -c / eval / <<< / <(...) / pipe-to-shell) の quoted リテラル引数を
+# 抽出して危険判定に再投入する。従来は sq-strip で偶発的に catch できていたが、~ 単独や
+# 二段目 -c の tilde は sentinel 保護で通過していた。
+{"name":"reparse-sh-c-sq-rm-tilde","expect":"block","command":"bash -c 'rm -rf ~'","reason":"再パース sq 内の rm ~ (従来 bypass)"}
+{"name":"reparse-sh-c-dq-rm-tilde","expect":"block","command":"bash -c \"rm -rf ~\"","reason":"再パース dq 内の rm ~"}
+{"name":"reparse-eval-sq-rm-tilde","expect":"block","command":"eval 'rm -rf ~'","reason":"eval 内の rm ~"}
+{"name":"reparse-herestring-rm-tilde","expect":"block","command":"bash <<< 'rm -rf ~'","reason":"here-string 内の rm ~"}
+{"name":"reparse-procsub-rm-tilde","expect":"block","command":"bash <(echo 'rm -rf ~')","reason":"process subst 内 echo の rm ~"}
+{"name":"reparse-pipe-rm-tilde","expect":"block","command":"echo 'rm -rf ~' | bash","reason":"pipe 経由 echo の rm ~"}
+{"name":"reparse-sh-c-double-second","expect":"block","command":"bash -c 'echo hi' && bash -c 'rm -rf ~'","reason":"2 段目 -c の rm ~ も抽出対象"}
+{"name":"reparse-sh-c-git-push-force","expect":"block","command":"bash -c 'git push --force'","reason":"再パース経路の git push --force"}
+{"name":"reparse-eval-sudo","expect":"block","command":"eval 'sudo whoami'","reason":"再パース経路の sudo"}
+{"name":"reparse-herestring-codex","expect":"block","command":"bash <<< 'touch .codex/x'","reason":"再パース経路の .codex 参照"}
+# --- 2026-07-17 issue #56: 再パース経路 + 静的リテラル (allow) ---
+# 無害なリテラルは通過し続ける。
+{"name":"reparse-sh-c-sq-echo","expect":"allow","command":"bash -c 'echo hello'","reason":"無害 sq リテラル"}
+{"name":"reparse-eval-sq-echo","expect":"allow","command":"eval 'echo world'","reason":"eval 無害"}
+{"name":"reparse-herestring-echo","expect":"allow","command":"bash <<< 'echo hi'","reason":"here-string 無害"}
+{"name":"reparse-pipe-echo","expect":"allow","command":"echo hello | bash","reason":"pipe 無害 (unquoted)"}
+{"name":"reparse-procsub-echo","expect":"allow","command":"bash <(echo 'ls -la')","reason":"process subst 無害"}
+# 抽出は shell/eval 名を prefix で要求するため、shell 以外の -c FP を起こさない
+{"name":"reparse-git-c-not-shell","expect":"allow","command":"git -c core.editor='vim' status","reason":"git -c は shell 名ではないため抽出対象外"}
+{"name":"reparse-sh-c-login-flag","expect":"block","command":"bash --login -c 'rm -rf ~'","reason":"shell フラグ挟み形も抽出"}
+{"name":"reparse-env-bash-c","expect":"block","command":"env bash -c 'rm -rf ~'","reason":"env wrapper 越しも抽出 (prefix 許容)"}
+# --- 2026-07-18 /code-review medium 追随修正: guard bypass + FP 回帰 ---
+# guard bypass 修正: 結合フラグ (-ce / -ec / -cx) と tab 区切りも bash =~ で捕捉
+{"name":"reparse-sh-ce-combined","expect":"block","command":"bash -ce 'rm -rf ~'","reason":"結合フラグ -ce も bypass しない (case guard → bash =~ に置換)"}
+{"name":"reparse-sh-ec-combined","expect":"block","command":"bash -ec 'rm -rf ~'","reason":"結合フラグ -ec も bypass しない"}
+{"name":"reparse-sh-cx-combined","expect":"block","command":"bash -cx 'rm -rf ~'","reason":"結合フラグ -cx も bypass しない"}
+{"name":"reparse-sh-c-tab","expect":"block","command":"bash\t-c\t'rm -rf ~'","reason":"tab 区切りも bypass しない (guard の [[:space:]] 対応)"}
+# A prefix の segment-start 化 regression 防止 (echo/printf 引数中の shell 名が
+# 「invocation」として extract されて誤 block されないこと)
+{"name":"reparse-echo-shname-string","expect":"allow","command":"echo sh -c 'rm -rf ~'","reason":"echo 引数中の sh -c は文字列出力のみ"}
+{"name":"reparse-printf-bash-c-string","expect":"allow","command":"printf '%s\\n' \"See: bash -c 'rm -rf ~'\"","reason":"printf エラーメッセージ内の bash -c 文字列"}
+# E receiver allowlist の regression 防止 (banish/polish 等の非シェルが `[a-zA-Z]*sh` の
+# greedy match で拾われないこと)
+{"name":"reparse-pipe-banish","expect":"allow","command":"echo 'rm -rf ~' | banish","reason":"banish は shell allowlist 外"}
+{"name":"reparse-pipe-polish","expect":"allow","command":"echo 'rm -rf ~' | polish","reason":"polish 同様"}
+# D receiver allowlist の regression 防止 (source/. も受ける)
+{"name":"reparse-source-procsub-static","expect":"allow","command":"source <(echo 'ls -la')","reason":"source <(...) は receiver に含めるが payload 無害"}
+# printf 変種の block テストも復活 (D/E の (echo|printf) alternation カバレッジ維持)
+{"name":"reparse-procsub-printf-rm-tilde","expect":"block","command":"bash <(printf '%s\\n' 'rm -rf ~')","reason":"printf 経由 process subst (D printf alt)"}
+{"name":"reparse-pipe-printf-rm-tilde","expect":"block","command":"printf '%s\\n' 'rm -rf ~' | bash","reason":"printf 経由 pipe (E printf alt)"}
+# --- 2026-07-18 codex-review shell-senior 追随修正: multi-arg reparse ---
+# eval / echo|printf は複数引数を空白連結して評価するため、multi-arg 形の
+# 危険コマンドも再構成できる必要がある。B/D/E は full-region 抽出に変更済み。
+{"name":"reparse-eval-multi-arg","expect":"block","command":"eval 'rm -rf' '~'","reason":"eval 複数引数の空白連結で rm -rf ~"}
+{"name":"reparse-eval-multi-arg-3","expect":"block","command":"eval 'rm' '-rf' '~'","reason":"eval 3 引数の空白連結"}
+{"name":"reparse-procsub-multi-arg","expect":"block","command":"bash <(echo 'rm -rf' '~')","reason":"process subst 内 echo 複数引数"}
+{"name":"reparse-pipe-multi-arg","expect":"block","command":"echo 'rm -rf' '~' | bash","reason":"pipe 経由 echo 複数引数"}
+# bash -c は第 1 引数のみが code なので multi-arg 化しても危険にならない (第 2 引数は $0)
+{"name":"reparse-sh-c-multi-arg-safe","expect":"allow","command":"bash -c 'echo hello' '~'","reason":"bash -c は第 1 引数のみ code (~ は $0 として渡るが code ではない)"}
+# --- 2026-07-18 codex-review security 追随修正: shell と再パーストークン間のフラグ挟み ---
+# `bash -s <<<` / `bash --login <<<` / `| bash -s` のように shell 名と再パーストークンの間に
+# option フラグが挟まる形も receiver 判定 (shell_receiver) で許容する。
+{"name":"reparse-sh-s-herestring","expect":"block","command":"bash -s <<< 'rm -rf ~'","reason":"bash -s <<< (stdin から script 読み込み)"}
+{"name":"reparse-sh-login-herestring","expect":"block","command":"bash --login <<< 'rm -rf ~'","reason":"bash --login <<<"}
+{"name":"reparse-pipe-sh-s","expect":"block","command":"echo 'rm -rf ~' | bash -s","reason":"pipe → bash -s"}
+{"name":"reparse-sh-s-procsub","expect":"block","command":"bash -s <(echo 'rm -rf ~')","reason":"bash -s <(echo ...)"}
+{"name":"reparse-plain-sh-s-herestring","expect":"block","command":"sh -s <<< 'rm -rf ~'","reason":"sh -s <<< (bash と同経路)"}
+# --- 2026-07-18 codex-review security round 2: pipe wrapper / abs-path ---
+# `| env bash` / `| nice bash` / `| /bin/bash` のような pipe 経由の wrapper 越し・
+# 絶対パス shell も extractor E で拾う。
+{"name":"reparse-pipe-env-bash","expect":"block","command":"echo 'rm -rf ~' | env bash","reason":"pipe → env wrapper 越しの bash"}
+{"name":"reparse-pipe-nice-bash","expect":"block","command":"echo 'rm -rf ~' | nice bash","reason":"pipe → nice wrapper 越しの bash"}
+{"name":"reparse-pipe-abs-bash","expect":"block","command":"echo 'rm -rf ~' | /bin/bash","reason":"pipe → 絶対パス bash"}
+# --- 2026-07-18 codex-review qa-fixture 追随修正: printf format escape / 多形式カバレッジ ---
+# printf format の \n / \r は shell reparse 経路で新しい segment 境界になる。
+# extractor は raw command (stage 1 の \X→X 前) の view で走らせて \n → ; 置換する。
+{"name":"reparse-printf-newline-pipe","expect":"block","command":"printf 'echo safe\\nrm -rf ~' | bash","reason":"printf format の \\n が bash 側で改行として展開"}
+{"name":"reparse-printf-newline-procsub","expect":"block","command":"bash <(printf 'echo safe\\nrm -rf ~')","reason":"process subst 内 printf format の \\n"}
+# multi-arg (harmless を先頭・中間に置いたケース)
+{"name":"reparse-pipe-multi-arg-harmless-tail","expect":"block","command":"echo 'rm -rf ~' 'harmless' | bash","reason":"pipe multi-arg で危険を先頭に"}
+{"name":"reparse-procsub-multi-arg-harmless-tail","expect":"block","command":"bash <(echo 'rm -rf ~' 'harmless')","reason":"process subst multi-arg で危険を先頭に"}
+# 二重引用符 variant (D/E 分岐のカバレッジ)
+{"name":"reparse-eval-dq","expect":"block","command":"eval \"rm -rf ~\"","reason":"eval DQ variant"}
+{"name":"reparse-procsub-dq","expect":"block","command":"bash <(echo \"rm -rf ~\")","reason":"process subst DQ variant"}
+{"name":"reparse-pipe-dq","expect":"block","command":"echo \"rm -rf ~\" | bash","reason":"pipe DQ variant"}
+# --command long form / 代入語付き絶対パス / source|. receiver
+{"name":"reparse-sh-longcommand","expect":"block","command":"bash --command 'rm -rf ~'","reason":"--command 長形式"}
+{"name":"reparse-assign-abs-bash-c","expect":"block","command":"FOO=bar /bin/bash -c 'rm -rf ~'","reason":"代入語 + 絶対パス shell"}
+{"name":"reparse-source-procsub-dangerous","expect":"block","command":"source <(echo 'rm -rf ~')","reason":"source receiver 分岐"}
+{"name":"reparse-dot-procsub-dangerous","expect":"block","command":". <(echo 'rm -rf ~')","reason":". receiver 分岐"}
