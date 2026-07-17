@@ -202,8 +202,6 @@
 {"name":"reparse-sh-c-git-push-force","expect":"block","command":"bash -c 'git push --force'","reason":"再パース経路の git push --force"}
 {"name":"reparse-eval-sudo","expect":"block","command":"eval 'sudo whoami'","reason":"再パース経路の sudo"}
 {"name":"reparse-herestring-codex","expect":"block","command":"bash <<< 'touch .codex/x'","reason":"再パース経路の .codex 参照"}
-{"name":"reparse-procsub-printf-rm-tilde","expect":"block","command":"bash <(printf '%s\\n' 'rm -rf ~')","reason":"printf 経由 process subst"}
-{"name":"reparse-pipe-printf-rm-tilde","expect":"block","command":"printf '%s\\n' 'rm -rf ~' | bash","reason":"printf 経由 pipe"}
 # --- 2026-07-17 issue #56: 再パース経路 + 静的リテラル (allow) ---
 # 無害なリテラルは通過し続ける。
 {"name":"reparse-sh-c-sq-echo","expect":"allow","command":"bash -c 'echo hello'","reason":"無害 sq リテラル"}

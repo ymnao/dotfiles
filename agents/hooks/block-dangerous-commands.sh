@@ -149,12 +149,20 @@ _reparse_extract() {
   printf '%s' "$1" | grep -oE '(^|[[:space:];&|({`])(echo|printf)[[:space:]][^|]*"[^"]*"[^|]*\|[[:space:]]*([a-zA-Z]*sh|nu)' \
     | sed -E 's/.*"([^"]*)"[^"]*\|.*/\1/'
 }
-_reparse=$(_reparse_extract "$command_pre_sq")
+# 再パーストークンを含まない入力は関数呼び出しごと skip する (hot path 最適化。
+# 通常 `git status` / `ls -la` 等は 0 fork でこの段階を抜ける)。
+_reparse=""
+case "$command_pre_sq" in
+  *' -c '*|*'--command'*|*eval*|*'<<<'*|*'<('*|*'|'*)
+    _reparse=$(_reparse_extract "$command_pre_sq")
+    ;;
+esac
 if [[ -n "$_reparse" ]]; then
   # 各抽出片を `;` で連結 (改行 → `;`)。抽出片は最外側 quote が剥がれた bare fragment
   # のため、下流の sq-strip / sentinel 保護のいずれにも影響しない (`rm -rf ~` が bare で
   # 現れ、tilde 判定の boundary クラスに合致する)。
-  _reparse_joined=$(printf '%s' "$_reparse" | tr '\n' ';')
+  # bash param expansion で subshell を避ける (printf|tr より 3 fork 削減)。
+  _reparse_joined=${_reparse//$'\n'/;}
   command="$command; $_reparse_joined"
   command_pre_sq="$command_pre_sq; $_reparse_joined"
 fi
