@@ -49,6 +49,10 @@
 {"name":"corepack-enable","expect":"block","command":"corepack enable","reason":"PM 差し替え"}
 # --- block: 回避形 ---
 {"name":"which-npm-install","expect":"block","command":"$(which npm) install lodash","reason":"コマンド置換で PM 解決"}
+{"name":"dynbin-run-build","expect":"block","command":"$(get_pm_name) run build","reason":"動的経由 run は npm 全禁止に合わせて塞ぐ"}
+{"name":"dynbin-test","expect":"block","command":"$(get_pm_name) test","reason":"動的経由 test も塞ぐ"}
+{"name":"dynbin-ci","expect":"block","command":"$(get_pm_name) ci","reason":"動的経由 ci も塞ぐ"}
+{"name":"dynbin-publish","expect":"block","command":"$(get_pm_name) publish","reason":"動的経由 publish も塞ぐ"}
 {"name":"var-split-npm","expect":"block","command":"a=n; b=pm; $a$b install x","reason":"変数分割構築"}
 {"name":"quote-split-npm","expect":"block","command":"n\"\"pm install x","reason":"クォート分割"}
 {"name":"npm-upper","expect":"block","command":"NPM INSTALL x","reason":"大文字"}
@@ -56,15 +60,16 @@
 {"name":"timeout-npm-install","expect":"block","command":"timeout 10 npm install x","reason":"透過ラッパー経由"}
 {"name":"bash-c-npm-install","expect":"block","command":"bash -c \"npm install x\"","reason":"sh -c 経由"}
 {"name":"xargs-npm-install","expect":"block","command":"echo lodash | xargs npm install","reason":"引数注入ラッパー"}
-# --- allow: ロックファイル復元・通常操作 ---
-{"name":"npm-ci","expect":"allow","command":"npm ci","reason":"クリーンインストール"}
-{"name":"npm-install-bare","expect":"allow","command":"npm install","reason":"素の形は復元"}
-{"name":"npm-i-bare","expect":"allow","command":"npm i","reason":"素の形は復元"}
+# --- block: npm は pnpm への一本化のため全サブコマンド禁止 ---
+{"name":"npm-ci","expect":"block","command":"npm ci","reason":"npm 全禁止 (pnpm install --frozen-lockfile を使う)"}
+{"name":"npm-install-bare","expect":"block","command":"npm install","reason":"npm 全禁止 (pnpm install を使う)"}
+{"name":"npm-i-bare","expect":"block","command":"npm i","reason":"npm 全禁止"}
+{"name":"npm-run-build","expect":"block","command":"npm run build","reason":"npm 全禁止 (pnpm run を使う)"}
+{"name":"npm-test","expect":"block","command":"npm test","reason":"npm 全禁止 (pnpm test を使う)"}
+# --- allow: pnpm/yarn の復元・通常操作 ---
 {"name":"pnpm-install","expect":"allow","command":"pnpm install","reason":"素の形は復元"}
 {"name":"pnpm-i-bare","expect":"allow","command":"pnpm i","reason":"素の形は復元"}
 {"name":"yarn-install","expect":"allow","command":"yarn install","reason":"素の形は復元"}
-{"name":"npm-run-build","expect":"allow","command":"npm run build","reason":"スクリプト実行"}
-{"name":"npm-test","expect":"allow","command":"npm test","reason":"テスト実行"}
 {"name":"pnpm-run-lint","expect":"allow","command":"pnpm run lint","reason":"スクリプト実行"}
 {"name":"pnpm-exec-direct","expect":"allow","command":"pnpm exec secretlint --","reason":"exec 直接実行は許可 (実測)。make lint は make 経由なので影響なし"}
 {"name":"pnpm-exec-tsc","expect":"allow","command":"pnpm exec tsc --noEmit","reason":"exec 直接実行は許可 (実測)"}
