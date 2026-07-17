@@ -81,6 +81,7 @@ test: ## Verify shell scripts (shellcheck), JSON files (jq), and hooks
 	@bash tests/link-backup/run-link-backup-tests.sh
 	@bash tests/verify-ci/run-verify-ci-tests.sh
 	@bash tests/integrity/run-integrity-selftest.sh
+	@bash tests/integrity/verify-guard-codex-wiring.sh
 	@bash tests/session-compact/run-session-compact-tests.sh
 	@echo "OK: all checks passed"
 

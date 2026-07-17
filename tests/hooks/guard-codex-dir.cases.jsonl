@@ -1,0 +1,58 @@
+# guard-codex-dir.sh 回帰ケース。
+# tool_input を直接指定する形式 / command 形式 (Bash) / raw モードを混在。
+# {{CWD}} は runner が hook 実行時の一時 cwd 実パスに置換する (cwd 内絶対パス検証用)。
+#
+# ブロック条件: cwd 配下の Codex 設定ディレクトリ (.codex/) への操作 (Edit/Write/MultiEdit/NotebookEdit/Bash/apply_patch)
+# 許可条件: cwd 外の絶対 / 相対パス、ドット無しの codex/ 相対パス、path 系フィールドなし
+
+# --- Edit/Write/MultiEdit/apply_patch ブロックケース ---
+{"name":"block: 相対 .codex/config.toml (Write file_path)","expect":"block","tool_input":{"file_path":".codex/config.toml"}}
+{"name":"block: 相対 .codex/agents.json (Edit file_path)","expect":"block","tool_input":{"file_path":".codex/agents.json"}}
+{"name":"block: subdir 経由 relpath","expect":"block","tool_input":{"file_path":"pkg/.codex/config.toml"}}
+{"name":"block: 大文字 .Codex (case-insensitive)","expect":"block","tool_input":{"file_path":".Codex/config.toml"}}
+{"name":"block: path フィールド","expect":"block","tool_input":{"path":".codex/foo"}}
+{"name":"block: filename フィールド","expect":"block","tool_input":{"filename":".codex/foo"}}
+{"name":"block: apply_patch add file","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Add File: .codex/config.toml\n+foo\n*** End Patch\n"}}
+{"name":"block: apply_patch update file","expect":"block","tool_input":{"input":"*** Begin Patch\n*** Update File: .codex/config.toml\n@@\n-foo\n+bar\n*** End Patch\n"}}
+{"name":"block: apply_patch delete file","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Delete File: .codex/config.toml\n*** End Patch\n"}}
+{"name":"block: apply_patch move to","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Move to: .codex/renamed.toml\n*** End Patch\n"}}
+{"name":"block: file_path が .codex そのもの","expect":"block","tool_input":{"file_path":".codex"}}
+{"name":"block: file_path が pkg/.codex で終端","expect":"block","tool_input":{"file_path":"pkg/.codex"}}
+{"name":"block: command と tool_input 両指定 → tool_input 優先","expect":"block","command":"echo safe","tool_input":{"file_path":".codex/config.toml"}}
+{"name":"block: 引用符付き .codex/x","expect":"block","tool_input":{"file_path":"\".codex/x\""}}
+{"name":"block: ./ 始まりの .codex/x","expect":"block","tool_input":{"file_path":"./.codex/x"}}
+
+# --- NotebookEdit ケース ---
+{"name":"block: NotebookEdit notebook_path が .codex 配下","expect":"block","tool_input":{"notebook_path":".codex/nb.ipynb"}}
+{"name":"allow: NotebookEdit 通常の notebook","expect":"allow","tool_input":{"notebook_path":"notebooks/analysis.ipynb"}}
+
+# --- Bash ケース ---
+{"name":"block: Bash redirect > .codex/config.toml","expect":"block","command":"echo x > .codex/config.toml"}
+{"name":"block: Bash tee .codex/x","expect":"block","command":"echo x | tee .codex/x"}
+{"name":"block: Bash mkdir .codex","expect":"block","command":"mkdir .codex"}
+{"name":"block: Bash mv something .codex/","expect":"block","command":"mv foo.txt .codex/foo"}
+{"name":"block: Bash cwd 絶対の .codex","expect":"block","command":"echo y > {{CWD}}/.codex/y"}
+{"name":"allow: Bash 通常の ls","expect":"allow","command":"ls -la /tmp"}
+{"name":"allow: Bash cd codex/ (ドット無し)","expect":"allow","command":"cd codex/hooks && ls"}
+
+# --- cwd 内絶対 / 正規化ケース ({{CWD}} プレースホルダ) ---
+{"name":"block: cwd 絶対 {{CWD}}/.codex/foo","expect":"block","tool_input":{"file_path":"{{CWD}}/.codex/foo"}}
+{"name":"block: cwd 絶対 /./ 正規化","expect":"block","tool_input":{"file_path":"{{CWD}}/./.codex/foo"}}
+{"name":"block: cwd 絶対 /../ 経由で cwd 内 .codex","expect":"block","tool_input":{"file_path":"{{CWD}}/pkg/../.codex/foo"}}
+{"name":"allow: cwd 前方一致 (別ディレクトリ) {{CWD}}-other/.codex","expect":"allow","tool_input":{"file_path":"{{CWD}}-other/.codex/foo"}}
+
+# --- 許可ケース ---
+{"name":"allow: cwd 外絶対 /private/nonexistent/.codex/x","expect":"allow","tool_input":{"file_path":"/private/nonexistent/.codex/x"}}
+{"name":"allow: ドット無し codex/hooks/x.sh","expect":"allow","tool_input":{"file_path":"codex/hooks/guard-codex-dir.sh"}}
+{"name":"allow: 通常ファイル README.md","expect":"allow","tool_input":{"file_path":"README.md"}}
+{"name":"allow: path 系フィールドなし","expect":"allow","tool_input":{"other":"noop"}}
+{"name":"allow: apply_patch 本文中の .codex 言及 (ヘッダー以外)","expect":"allow","tool_input":{"patch":"*** Begin Patch\n*** Update File: README.md\n@@\n-old\n+we mention .codex/ in prose\n*** End Patch\n"}}
+{"name":"allow: 相対 ../other/.codex (cwd 外)","expect":"allow","tool_input":{"file_path":"../other-project/.codex/foo"}}
+
+# --- raw モード (malformed input fail-safe 検証) ---
+# raw:block: 壊れた JSON (jq が失敗) → fail-safe ブロック|block
+{"tool_input":{"file_path":".codex/config.toml"
+# raw:allow: 空入力 → fast-path なし、jq は空を返し candidates なし → 許可|allow
+
+# raw:allow: 非オブジェクト tool_input (数値) → object 判定で empty、candidates なし|allow
+{"tool_input": 42}

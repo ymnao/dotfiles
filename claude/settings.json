@@ -113,6 +113,19 @@
           {
             "type": "command",
             "command": "bash \"$HOME/.claude/hooks/verify-ci-before-pr.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/guard-codex-dir.sh\""
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/guard-codex-dir.sh\""
           }
         ]
       }

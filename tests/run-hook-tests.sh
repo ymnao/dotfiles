@@ -6,7 +6,19 @@ set -euo pipefail
 #   引数なし: このスクリプトと同階層の hooks/*.cases.jsonl を全実行
 #
 # ケース形式 (JSONL, 1 行 1 ケース。# 始まりの行と空行はスキップ):
-#   {"name":"...","expect":"allow|block","command":"...","reason":"..."}
+#   {"name":"...","expect":"allow|block","command":"...","reason":"..."}     # Bash 系 (tool_input.command)
+#   {"name":"...","expect":"allow|block","tool_input":{...},"reason":"..."}  # Edit/Write/apply_patch 系
+#   両方指定された場合は tool_input 側を優先する。
+#   tool_input / command 内の文字列に `{{CWD}}` が含まれる場合、hook 実行時の
+#   一時 cwd 実パスに置換される (cwd 内絶対パステスト用)。
+#
+# raw モード: line が `# raw:` で始まる場合、次行の JSON をそのまま stdin に流し、
+#   name/expect を JSON から読まない (壊れた JSON / 非オブジェクト tool_input の fail-safe 検証用)。
+#   形式:  # raw:<name>|allow|block
+#          <任意の生入力文字列>
+#
+# PATH モード: 環境変数 HOOK_TEST_STRIP_JQ=1 で jq を PATH から外して hook を実行し、
+#   fail-safe (exit 2 = ブロック) を検証する。
 #
 # 判定:
 #   - expect=allow → hook の exit code 0 を期待
@@ -62,10 +74,22 @@ pass=0
 fail=0
 
 run_hook() {
-  # $1=hook path, $2=input json。exit code を echo する (0/2 以外もそのまま)
+  # $1=hook path, $2=input (raw stdin content)。exit code を echo する (0/2 以外もそのまま)
+  # HOOK_TEST_STRIP_JQ=1 のとき PATH から jq を除外して hook を実行 (fail-safe 検証)。
   local rc=0
-  printf '%s' "$2" | (cd "$WORKDIR" && bash "$1" >/dev/null 2>&1) || rc=$?
+  if [ "${HOOK_TEST_STRIP_JQ:-0}" = "1" ]; then
+    printf '%s' "$2" | (cd "$WORKDIR" && PATH="$WORKDIR/no-jq-bin:/usr/bin:/bin" bash "$1" >/dev/null 2>&1) || rc=$?
+  else
+    printf '%s' "$2" | (cd "$WORKDIR" && bash "$1" >/dev/null 2>&1) || rc=$?
+  fi
   printf '%s' "$rc"
+}
+
+# {{CWD}} を実 cwd 実パスに置換する
+substitute_cwd() {
+  local s="$1"
+  # sed で置換 (WORKDIR は英数字のみなので safe)
+  printf '%s' "$s" | sed "s|{{CWD}}|$WORKDIR|g"
 }
 
 for cf in "$@"; do
@@ -86,17 +110,41 @@ for cf in "$@"; do
   fi
 
   echo "==> $base"
+  raw_pending=""
   while IFS= read -r line || [ -n "$line" ]; do
-    case "$line" in ''|'#'*) continue ;; esac
-    name=$(printf '%s' "$line" | jq -r '.name')
-    expect=$(printf '%s' "$line" | jq -r '.expect')
-    cmd=$(printf '%s' "$line" | jq -r '.command')
-    case "$expect" in
-      allow) want=0 ;;
-      block) want=2 ;;
-      *) echo "FAIL $name: invalid expect '$expect'"; fail=$((fail + 1)); continue ;;
-    esac
-    input=$(jq -cn --arg c "$cmd" '{"tool_input":{"command":$c}}')
+    # raw モード: 直前が `# raw:name|expect` で、この行が生入力
+    if [ -n "$raw_pending" ]; then
+      name=${raw_pending%%|*}
+      raw_expect_rest=${raw_pending#*|}
+      case "$raw_expect_rest" in
+        allow) want=0 ;;
+        block) want=2 ;;
+        *) echo "FAIL $name: invalid raw expect '$raw_expect_rest'"; fail=$((fail + 1)); raw_pending=""; continue ;;
+      esac
+      input=$(substitute_cwd "$line")
+      raw_pending=""
+    else
+      case "$line" in
+        '') continue ;;
+        '# raw:'*)
+          raw_pending=${line#'# raw:'}
+          continue
+          ;;
+        '#'*) continue ;;
+      esac
+      name=$(printf '%s' "$line" | jq -r '.name')
+      expect=$(printf '%s' "$line" | jq -r '.expect')
+      case "$expect" in
+        allow) want=0 ;;
+        block) want=2 ;;
+        *) echo "FAIL $name: invalid expect '$expect'"; fail=$((fail + 1)); continue ;;
+      esac
+      # ケース形式: `tool_input` を JSON オブジェクトで直接指定 (Edit/Write/apply_patch 系)。
+      # 後方互換で `command` 文字列も受け付け、tool_input.command に組み立てる (Bash 系)。
+      # 両方指定された場合は tool_input 側を優先する。
+      input=$(printf '%s' "$line" | jq -c '{tool_input: (.tool_input // {command: .command})}')
+      input=$(substitute_cwd "$input")
+    fi
 
     got_claude=""
     got_codex=""
@@ -113,11 +161,29 @@ for cf in "$@"; do
     if [ "$ok" = 1 ]; then
       pass=$((pass + 1))
     else
-      echo "FAIL $name: expected=$want claude=${got_claude:--} codex=${got_codex:--} cmd: $cmd"
+      echo "FAIL $name: expected=$want claude=${got_claude:--} codex=${got_codex:--} input: $input"
       fail=$((fail + 1))
     fi
   done < "$cf"
 done
+
+# guard-codex-dir: jq 不在時に exit 2 (フェイルセーフ) となることを検証。
+# 隔離した PATH で jq を見つけられない状態にして hook を直接実行する。
+if [ -z "${HOOK_DIR:-}" ] && [ -f "$REPO_ROOT/agents/hooks/guard-codex-dir.sh" ]; then
+  no_jq_bin="$WORKDIR/no-jq-bin"
+  mkdir -p "$no_jq_bin"
+  echo "==> guard-codex-dir (jq missing fail-safe)"
+  jq_missing_rc=0
+  printf '%s' '{"tool_input":{"file_path":".codex/config.toml"}}' \
+    | (cd "$WORKDIR" && PATH="$no_jq_bin:/usr/bin:/bin" bash "$REPO_ROOT/agents/hooks/guard-codex-dir.sh" >/dev/null 2>&1) \
+    || jq_missing_rc=$?
+  if [ "$jq_missing_rc" = "2" ]; then
+    pass=$((pass + 1))
+  else
+    echo "FAIL guard-codex-dir jq-missing fail-safe: expected exit 2, got $jq_missing_rc"
+    fail=$((fail + 1))
+  fi
+fi
 
 echo "----"
 echo "hook tests: $pass passed, $fail failed"

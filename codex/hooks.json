@@ -21,6 +21,12 @@
             "command": "bash \"$HOME/.codex/hooks/guard-pkg-install.sh\"",
             "timeout": 10,
             "statusMessage": "パッケージインストール検証中..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.codex/hooks/guard-codex-dir.sh\"",
+            "timeout": 5,
+            "statusMessage": ".codex/ 保護チェック中..."
           }
         ]
       },
