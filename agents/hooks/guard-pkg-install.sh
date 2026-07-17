@@ -6,10 +6,9 @@
 #
 # allowlist 方式: ロックファイルからの復元のみ許可し、依存の追加・実行時取得を
 # ブロックする。
-#   - npm ci（ロックファイルからの clean install）
-#   - npm install / npm i（オプション・引数なしの素の形のみ。公式 alias 含む）
-#   - pnpm install / pnpm i（同上）
+#   - pnpm install / pnpm i（オプション・引数なしの素の形のみ）
 #   - yarn install（同上）
+#   - npm / npx は pnpm への一本化のため全サブコマンド禁止
 #
 # 各セグメント（`;`/`&&`/`|` 等で分割）について「実際に実行されるバイナリ」を
 # 解決してから判定する。command/env/nice/timeout 等の透過ラッパーや bash -c /
@@ -230,9 +229,11 @@ npm_restore='install|i|add|in|ins|inst|insta|instal|isnt|isnta|isntal|isntall|in
 # PM 特化の語のみを含める。use/prepare/enable/disable/up/pack のような汎用語
 # （docker compose up / make prepare 等で使われる）は除外し、代わりに
 # $(which X) / `which X` / $(command -v X) を X に literal 展開する正規化で
-# 動的 corepack 経路を固定バイナリ分岐に合流させる。run は許可（$(which npm)
-# run build のような正当ケースを止めないため）、uv run --with* は別途検出。
-dyn_danger="${npm_restore}|a|dlx|exec|inject|tool|pip|create|uvx|bunx"
+# 動的 corepack 経路を固定バイナリ分岐に合流させる。run/test/ci/publish は
+# 直接 npm 全禁止に合わせて動的経路でも塞ぐ（$(get_pm_name) run build 等での
+# bypass を防ぐ）。pnpm run/test の正当ケースは固定バイナリ pnpm 分岐で処理される。
+# uv run --with* は別途検出。
+dyn_danger="${npm_restore}|a|dlx|exec|inject|tool|pip|create|uvx|bunx|run|test|ci|publish"
 
 # 透過的な実行ラッパー: 実行対象がラッパーの先にあり、内側のバイナリがそのまま
 # exec される。読み飛ばして「実際に実行されるバイナリ」を解決する。shell の -c や
@@ -425,7 +426,7 @@ while IFS= read -r segment; do
 
   case "$bin" in
     npx)
-      block "npx は実行時にパッケージを取得し得るため禁止されています"
+      block "npx は禁止されています。代わりに pnpm dlx を使ってください"
       ;;
     bunx)
       block "bunx は実行時にパッケージを取得し得るため禁止されています"
@@ -434,22 +435,11 @@ while IFS= read -r segment; do
       block "uvx は実行時にパッケージを取得するため禁止されています"
       ;;
     npm)
-      # exec / x / create は initializer や任意パッケージを取得・実行し得るため常に禁止。
-      pm_should_block 'exec|x|create' "$npm_restore" "${rest[@]}" \
-        && block "npm install <package> / npm exec / npm create は禁止されています。パッケージの追加はユーザーに依頼してください"
-      # init は非オプション引数（initializer 名）が来た時のみブロックする。
-      # 対話モード `npm init` / フラグのみの `npm init -y` / `--scope=@me` は許可。
-      init_seen=0
-      for tk in "${rest[@]}"; do
-        strip_token "$tk"
-        if [[ $init_seen -eq 0 && "$STRIPPED" == "init" ]]; then
-          init_seen=1
-          continue
-        fi
-        if [[ $init_seen -eq 1 && "$STRIPPED" != -* ]]; then
-          block "npm init <initializer> は実行時にパッケージを取得するため禁止されています"
-        fi
-      done
+      # npm は pnpm への一本化のため全サブコマンドを常にブロックする
+      # (install / ci / run / test / exec / init すべて対象)。
+      # 意図: lockfile drift 回避と pnpm 統一。npm 必須の緊急ケースは
+      # ユーザーに依頼するか、shell 直下で `command npm` (fish の function を回避) で叩く。
+      block "npm は禁止されています。pnpm を使ってください (install→pnpm install, run→pnpm run, exec→pnpm exec, dlx→pnpm dlx)"
       ;;
     pnpm)
       pm_should_block 'add|dlx|create' 'install|i' "${rest[@]}" \

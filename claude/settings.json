@@ -16,8 +16,6 @@
       "Bash(gh run watch:*)",
       "Bash(git branch --show-current:*)",
       "Bash(jq:*)",
-      "Bash(npm run *)",
-      "Bash(npm test *)",
       "Bash(pnpm run *)",
       "Bash(pnpm test *)",
       "Bash(uv run *)",

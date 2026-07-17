@@ -73,11 +73,11 @@
 npm/pypi 等のパッケージエコシステムはサプライチェーン攻撃の標的となっている。以下のルールを厳守すること:
 
 - **パッケージの追加コマンドを直接実行しない** — フックが allowlist 方式でガードしている
-- 許可されるのは `npm ci`、オプション・引数なしの素の `npm install` / `pnpm install` / `yarn install`（とその公式 alias。ロックファイルからの復元）のみ
-- `npm install <package>` は公式 alias（`npm add` / `npm i` / `npm in` / `npm isntall` / `npm it` 等）経由も含めてブロックされる
-- `npm install --global` / `--save-dev` / `--package-lock-only`、`yarn install --mode=update-lockfile` 等、復元を超える副作用を持つオプション付き install もブロックされる（前後どちらにオプションを挟んでも不可）
-- `npm exec`、`npx`、`pnpm add`、`pnpm dlx`、`yarn add`（`yarn global add` 含む）、`yarn dlx`、`bun add/install`、`bunx`、`pip install`、`pipx install/inject/run`、`uv add`、`uv tool install/run`、`uvx`、`poetry add` 等もすべてブロックされる
-- `npm create <initializer>` / `npm init <initializer>` / `pnpm create` / `yarn create` / `bun create` も initializer パッケージを実行時取得するためブロックされる（引数なしの `npm init` 対話モードは許可）
+- **npm / npx は全サブコマンド禁止** — pnpm への一本化のため `npm ci` / `npm install` / `npm run` / `npm test` / `npm exec` / `npm init` すべてブロックされる。`pnpm install` / `pnpm run` / `pnpm exec` / `pnpm dlx` を使うこと
+- 許可されるのは `pnpm install` / `yarn install`（とその公式 alias。ロックファイルからの復元）の素の形のみ
+- `pnpm install --frozen-lockfile` / `yarn install --mode=update-lockfile` 等、復元を超える副作用を持つオプション付き install もブロックされる（前後どちらにオプションを挟んでも不可）
+- `pnpm add`、`pnpm dlx`、`yarn add`（`yarn global add` 含む）、`yarn dlx`、`bun add/install`、`bunx`、`pip install`、`pipx install/inject/run`、`uv add`、`uv tool install/run`、`uvx`、`poetry add` 等もすべてブロックされる
+- `pnpm create` / `yarn create` / `bun create` も initializer パッケージを実行時取得するためブロックされる
 - `uv run --with <package>` / `uv run --with-editable` / `uv run --with-requirements` も実行時取得のためブロックされる（`uv run script.py` 単体は許可）
 - `corepack use` / `corepack install` / `corepack prepare` / `corepack enable` / `corepack disable` / `corepack up` / `corepack pack` も PM の取得・更新・有効化を伴うためブロックされる。`corepack pnpm add` / `corepack yarn add` のようなラッパー経由の委譲呼び出しは、内側の PM を解決して同じ allowlist で判定する
 - `python -m pip install` / `python -m pipx install/inject/run` も pip/pipx の直接起動として同様にブロックされる（`python -m venv` / `python -m unittest` 等の無害なモジュールは許可）
