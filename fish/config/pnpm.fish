@@ -1,3 +1,8 @@
+# pnpm 環境設定 (XDG Base Directory 準拠)
+# pnpm add -g の書き出し先を明示。fish_add_path は idempotent なので重複追加されない
+set -gx PNPM_HOME $HOME/.local/share/pnpm
+fish_add_path -g $PNPM_HOME/bin
+
 # npm を封じて pnpm への一本化を促す (advisory)
 # 緊急時は `command npm ...` で bypass 可能
 function npm --description "Block npm; use pnpm instead"
