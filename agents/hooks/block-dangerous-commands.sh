@@ -616,9 +616,8 @@ protected_name='.codex'
 # command を 1 度だけ小文字化し、それ以降は全部小文字で比較する
 # （macOS APFS 想定で `.Codex` 等も拾う）。`$HOME` はシェル展開されない
 # リテラル文字列なので、小文字化された `$home` をパターンに含めて許可判定する。
-command_lower=$(tr '[:upper:]' '[:lower:]' <<<"$command")
 cwd_lower=$(pwd -P | tr '[:upper:]' '[:lower:]')
-normalized_command=$(tr ';&|(){}<>' '        ' <<<"$command_lower")
+normalized_command=$(tr '[:upper:]' '[:lower:]' <<<"$command" | tr ';&|(){}<>' '        ')
 # set -f: unquoted 展開は word splitting のみが目的。glob 展開を許すと
 # `cat .co*` のようなトークンが cwd の実ファイル (.codex 等) に展開され、
 # 同一コマンドの判定が実行ディレクトリの中身に依存してしまう (非決定的な誤ブロック)。
