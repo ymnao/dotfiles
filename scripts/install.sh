@@ -61,6 +61,16 @@ if [[ "$OS_TYPE" == "macos" ]]; then
             printf 'dicdir = %s\n' "$dicdir_path" >> "$mecabrc"
         fi
     fi
+
+    # tealdeer は初回のみ tldr cache を取得する必要がある。
+    # brew bundle は Caveats を実行しないため、cache 未取得時に初期化する。
+    # `tldr --list` は cache 未取得だと非ゼロで返るので存在チェックに使う。
+    if brew --prefix tealdeer >/dev/null 2>&1; then
+        if ! tldr --list >/dev/null 2>&1; then
+            info "Initializing tealdeer cache: tldr --update"
+            tldr --update || warn "tealdeer cache init failed (network?): run 'tldr --update' manually later"
+        fi
+    fi
 fi
 
 # Symlinks
