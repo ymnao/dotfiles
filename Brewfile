@@ -22,6 +22,7 @@ brew "tmux"  # ローカル terminal multiplexer (リモート用ではない)
 # ========================================
 # fish native 統合や alias は fish/config/*.fish 側で定義する。
 brew "fzf"  # 対話型ファジー検索 (fish 統合は `fzf --fish | source`、0.48+)
+brew "zoxide"  # frecency 学習型 cd。`zoxide init fish --cmd cd` で cd を置き換え
 
 # ========================================
 # Development Languages & Tools
