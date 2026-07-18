@@ -28,6 +28,5 @@ branch=$(git branch --show-current)
 git checkout main
 [ "$branch" != "main" ] && git branch -D "$branch" 2>/dev/null || true
 git fetch origin main
-git branch -f main "$(git rev-parse origin/main)"   # fixture commit を巻き戻す
-git checkout -- README.md
+git checkout -B main origin/main   # fixture commit を巻き戻す (main を origin に合わせる)
 ```
