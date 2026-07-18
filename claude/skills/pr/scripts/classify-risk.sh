@@ -34,8 +34,30 @@ if ! git rev-parse --verify "$BASE" >/dev/null 2>&1; then
 fi
 
 files=$(git diff "$REF...HEAD" --name-only)
-# 追加行のみ (+++ ヘッダを除く)。バイナリ diff は git が行を出さないので自然に無視される
-added=$(git diff "$REF...HEAD" --unified=0 2>/dev/null | grep -E '^\+' | grep -vE '^\+\+\+' || true)
+# doc-only ファイル (LOW_ONLY_PATTERN と同一定義) を除いたコード側パス。
+# content check はこの subset の追加行のみを対象にする。eval fixture の
+# shell スニペットが exec-pattern として拾われる誤検知を防ぐため
+LOW_ONLY_PATTERN='\.md$|^docs/|^LICENSE|\.txt$'
+code_files=$(printf '%s\n' "$files" | grep -vE "$LOW_ONLY_PATTERN" || true)
+# 追加行 (+++ ヘッダを除く)。content check には code_files に絞った added_code
+# を渡し、path check 用の added はレガシー互換のため残す (現状 path check は
+# added を使わない)。バイナリ diff は git が行を出さないので自然に無視される
+added_code=""
+if [ -n "$code_files" ]; then
+  # xargs -r は BSD 非対応。空リスト時は `git diff -- <no paths>` が
+  # 全 diff にフォールバックしてしまうため、空判定を先に済ませてから
+  # bash 配列で pathspec を安全に渡す (空白入りパス・shell メタ文字対応)
+  paths=()
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    paths+=("$f")
+  done <<EOF
+$code_files
+EOF
+  if [ "${#paths[@]}" -gt 0 ]; then
+    added_code=$(git diff "$REF...HEAD" --unified=0 -- "${paths[@]}" 2>/dev/null | grep -E '^\+' | grep -vE '^\+\+\+' || true)
+  fi
+fi
 # 削除されたファイル (rename は R として別扱いになるため含まれない)
 deleted=$(git diff "$REF...HEAD" --name-only --diff-filter=D)
 
@@ -53,10 +75,10 @@ check_path() {
   return 0
 }
 
-# 内容ルール: 追加行が ERE にマッチしたら HIGH
+# 内容ルール: doc-only を除くコード側ファイルの追加行が ERE にマッチしたら HIGH
 check_content() {
   local rule="$1" pattern="$2" m
-  m=$(printf '%s\n' "$added" | grep -iE "$pattern" | head -2 || true)
+  m=$(printf '%s\n' "$added_code" | grep -iE "$pattern" | head -2 || true)
   [ -n "$m" ] && add_reason "$rule: $(printf '%s' "$m" | cut -c1-80 | tr '\n' ' ')"
   return 0
 }
@@ -81,7 +103,7 @@ check_content "exec-pattern"        'eval |child_process|subprocess|os\.system|e
 check_content "pipe-to-shell"       '(curl|wget)[^|;]*\|[[:space:]]*(ba|z|da)?sh'
 check_content "permission-widening" 'chmod (777|666)|--dangerously|--no-verify'
 check_deleted "test-removal" '(^|/)(tests?|__tests__|spec)/|\.(test|spec)\.[a-z]+$|_test\.(go|py|rb|ts|tsx|js|jsx)$|\.cases\.jsonl$'
-LOW_ONLY_PATTERN='\.md$|^docs/|^LICENSE|\.txt$'
+# LOW_ONLY_PATTERN は content check 絞り込みのため上部で定義済み
 # ---- /RULES ----
 
 tier="medium"

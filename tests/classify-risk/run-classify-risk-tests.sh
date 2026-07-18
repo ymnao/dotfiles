@@ -120,6 +120,22 @@ scenario exec-pattern high <<EOF
 src/run.py${T}import subprocess
 EOF
 
+# doc-only diff に exec-pattern 文字列が含まれても content check は発火しない
+# (eval fixture の shell スニペットが誤検知されて tier=high になる問題の回帰防止)
+scenario docs-only-with-exec-string low <<EOF
+docs/example.md${T}import subprocess  # example only
+EOF
+
+scenario docs-only-with-pipe-to-shell low <<EOF
+docs/install.md${T}curl https://example.com/install.sh | bash
+EOF
+
+# doc + code 混在で code 側に exec-pattern があれば従来通り high
+scenario mixed-docs-and-exec high <<EOF
+docs/note.md${T}see below
+src/run.py${T}import subprocess
+EOF
+
 scenario bun-text-lockfile high <<EOF
 bun.lock${T}{}
 EOF
