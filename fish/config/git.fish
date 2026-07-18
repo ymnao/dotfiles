@@ -1,7 +1,3 @@
-# Git abbreviations
-# fish abbr は space/enter で展開されるため、履歴に元コマンドが残り alias より読みやすい。
-# AGENTS.md の Shell 環境ルールで alias 禁止としているためこちらに寄せる。
-
 abbr -a g git
 abbr -a gs git status
 abbr -a gd git diff

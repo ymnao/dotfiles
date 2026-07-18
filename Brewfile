@@ -7,7 +7,7 @@ brew "git-filter-repo"
 brew "gh"
 brew "lazygit"
 brew "neovim"
-brew "tree-sitter-cli"  # nvim tree-sitter parser build 用
+brew "tree-sitter-cli"
 brew "fish"
 brew "starship"  # cross-shell prompt (fish から init して使用。pwsh 未配線)
 brew "ripgrep"
@@ -41,7 +41,6 @@ brew "openjdk@17"
 # ========================================
 brew "shellcheck"
 brew "actionlint"
-# jq: macOS 15+ 内蔵 (/usr/bin/jq 1.7.1-apple) を使用、hooks は fail-open ガード済
 
 # ========================================
 # AWS Development
@@ -68,8 +67,8 @@ brew "watchman"
 brew "ffmpeg"
 brew "imagemagick"
 brew "nkf"
-brew "marp-cli"  # Markdown → slides/PDF/PNG
-brew "mecab-ipadic"  # 日本語形態素解析辞書 (mecab を依存として自動導入)
+brew "marp-cli"
+brew "mecab-ipadic"
 
 # ========================================
 # Security
@@ -110,8 +109,6 @@ cask "claude"
 cask "claude-code"
 cask "codex"
 cask "codex-app"
-# kura は自作の menu bar app (ymnao/homebrew-tap 配信)。macism と同様、
-# HOMEBREW_REQUIRE_TAP_TRUST 下で bundle install が通るよう trusted: true。
 tap "ymnao/homebrew-tap"
 cask "ymnao/homebrew-tap/kura", trusted: true
 
