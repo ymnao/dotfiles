@@ -36,7 +36,7 @@ Run each `gh` command as a bare invocation and substitute prior output literally
 6. Generate PR title and body:
    - **Title**: under 70 characters, summarizing the changes
    - **Body**: use the repo's PR template if `pr_template` is not null, otherwise the default template below. ALWAYS append the evidence section (below) at the end of the body.
-7. If `has_remote` is false, run `git push -u origin <branch_name>`
+7. If `has_remote` is false, run `git push -u origin <branch_name>`. If `has_remote` is true, run `git push` anyway — it is a no-op when up to date, and it syncs review-fix commits made after an early push
 8. Create the PR with `gh pr create` (add `--draft` when step 4/5 decided draft). If `linked_issue` exists, include `Closes #<number>` in the body.
 
 ## Default template (fallback)
