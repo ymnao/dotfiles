@@ -24,6 +24,7 @@ brew "tmux"  # ローカル terminal multiplexer (リモート用ではない)
 brew "fzf"  # 対話型ファジー検索 (fish 統合は `fzf --fish | source`、0.48+)
 brew "zoxide"  # frecency 学習型 cd。`zoxide init fish --cmd cd` で cd を置き換え
 brew "eza"  # modern ls (git status 統合、tree、group-directories-first)
+brew "bat"  # cat + syntax highlight (sharkdp 製、fzf preview で使用)
 
 # ========================================
 # Development Languages & Tools
