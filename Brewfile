@@ -66,8 +66,8 @@ brew "watchman"
 # ========================================
 brew "ffmpeg"
 brew "imagemagick"
-brew "nkf"
 brew "marp-cli"
+brew "nkf"
 brew "mecab-ipadic"
 
 # ========================================
@@ -109,6 +109,10 @@ cask "claude"
 cask "claude-code"
 cask "codex"
 cask "codex-app"
+
+# ========================================
+# ymnao Tap
+# ========================================
 tap "ymnao/homebrew-tap"
 cask "ymnao/homebrew-tap/kura", trusted: true
 
