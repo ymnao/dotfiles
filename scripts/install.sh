@@ -47,6 +47,20 @@ if [[ "$OS_TYPE" == "macos" ]]; then
         info "Installing packages from Brewfile..."
         brew bundle install --file="$DOTFILES_DIR/Brewfile"
     fi
+
+    # mecab-ipadic は Caveats で mecabrc への dicdir 追記を要求する。
+    # brew bundle は Caveats を実行しないため、辞書が読めない状態で残る。
+    # 有効な (コメントアウトされていない) dicdir が無ければ追記する。
+    # (`brew --prefix <formula>` は未インストール時に非ゼロで存在チェックを兼ねる)
+    if brew --prefix mecab-ipadic >/dev/null 2>&1; then
+        brew_prefix="$(brew --prefix)"
+        mecabrc="$brew_prefix/etc/mecabrc"
+        dicdir_path="$brew_prefix/lib/mecab/dic/ipadic"
+        if [[ -f "$mecabrc" ]] && ! grep -Eq '^[[:space:]]*dicdir[[:space:]]*=' "$mecabrc"; then
+            info "Configuring mecabrc dicdir: $dicdir_path"
+            printf 'dicdir = %s\n' "$dicdir_path" >> "$mecabrc"
+        fi
+    fi
 fi
 
 # Symlinks
