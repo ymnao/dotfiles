@@ -18,6 +18,12 @@ brew "tmux"  # ローカル terminal multiplexer (リモート用ではない)
                 # Use macOS built-in compression or The Unarchiver instead
 
 # ========================================
+# Modern CLI Utilities
+# ========================================
+# fish native 統合や alias は fish/config/*.fish 側で定義する。
+brew "fzf"  # 対話型ファジー検索 (fish 統合は `fzf --fish | source`、0.48+)
+
+# ========================================
 # Development Languages & Tools
 # ========================================
 brew "go"
