@@ -67,8 +67,10 @@ ok=1
 [ "$rc" = 0 ] || { echo "FAIL c1: rc=$rc"; ok=0; }
 [ -L "$c1_home/.config/wezterm" ] && [ "$(readlink "$c1_home/.config/wezterm")" = "$c1_root/wezterm" ] \
   || { echo "FAIL c1: wezterm symlink"; ok=0; }
-[ -L "$c1_home/.config/nvim" ] || { echo "FAIL c1: nvim symlink"; ok=0; }
-[ -L "$c1_home/.config/starship.toml" ] || { echo "FAIL c1: starship symlink"; ok=0; }
+[ -L "$c1_home/.config/nvim" ] && [ "$(readlink "$c1_home/.config/nvim")" = "$c1_root/nvim" ] \
+  || { echo "FAIL c1: nvim symlink"; ok=0; }
+[ -L "$c1_home/.config/starship.toml" ] && [ "$(readlink "$c1_home/.config/starship.toml")" = "$c1_root/starship/starship.toml" ] \
+  || { echo "FAIL c1: starship symlink"; ok=0; }
 if [ "$ok" = 1 ]; then pass=$((pass+1)); else fail=$((fail+1)); sed 's/^/  /' "$c1_home/err"; fi
 
 # ---- case 2: 既存 regular file → .backup にリネーム、symlink 新規作成
@@ -82,7 +84,8 @@ printf 'old-user-config\n' > "$c2_home/.config/wezterm"  # 事前 regular file
 rc=$(run_link "$c2_root" "$c2_home" "$c2_home/out" "$c2_home/err")
 ok=1
 [ "$rc" = 0 ] || { echo "FAIL c2: rc=$rc"; ok=0; }
-[ -L "$c2_home/.config/wezterm" ] || { echo "FAIL c2: not symlink"; ok=0; }
+[ -L "$c2_home/.config/wezterm" ] && [ "$(readlink "$c2_home/.config/wezterm")" = "$c2_root/wezterm" ] \
+  || { echo "FAIL c2: not symlink"; ok=0; }
 # fresh fake_home では unique_backup_path (backup.sh) が必ず $dest.backup を返す
 backup="$c2_home/.config/wezterm.backup"
 [ -f "$backup" ] || { echo "FAIL c2: backup not created"; ok=0; }
@@ -142,7 +145,8 @@ ok=1
 # 各 skill は symlink で source を指す
 [ -L "$c5_home/.codex/skills/skillA" ] && [ "$(readlink "$c5_home/.codex/skills/skillA")" = "$c5_root/codex/skills/skillA" ] \
   || { echo "FAIL c5: skillA symlink"; ok=0; }
-[ -L "$c5_home/.codex/skills/skillB" ] || { echo "FAIL c5: skillB symlink"; ok=0; }
+[ -L "$c5_home/.codex/skills/skillB" ] && [ "$(readlink "$c5_home/.codex/skills/skillB")" = "$c5_root/codex/skills/skillB" ] \
+  || { echo "FAIL c5: skillB symlink"; ok=0; }
 if [ "$ok" = 1 ]; then pass=$((pass+1)); else fail=$((fail+1)); sed 's/^/  /' "$c5_home/err"; fi
 
 # ---- case 6: HOME/.codex/skills が既存 symlink → 実 dir + per-skill symlink に置換
@@ -158,7 +162,8 @@ ok=1
 [ "$rc" = 0 ] || { echo "FAIL c6: rc=$rc"; ok=0; }
 [ -d "$c6_home/.codex/skills" ] && [ ! -L "$c6_home/.codex/skills" ] \
   || { echo "FAIL c6: legacy symlink not replaced with real dir"; ok=0; }
-[ -L "$c6_home/.codex/skills/skillA" ] || { echo "FAIL c6: skillA per-skill symlink"; ok=0; }
+[ -L "$c6_home/.codex/skills/skillA" ] && [ "$(readlink "$c6_home/.codex/skills/skillA")" = "$c6_root/codex/skills/skillA" ] \
+  || { echo "FAIL c6: skillA per-skill symlink"; ok=0; }
 if [ "$ok" = 1 ]; then pass=$((pass+1)); else fail=$((fail+1)); sed 's/^/  /' "$c6_home/err"; fi
 
 # ---- case 7: codex/config.toml は symlink されず merge (regular file)
