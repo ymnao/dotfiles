@@ -58,8 +58,11 @@ run_link() {
 # dest が symlink として存在し、かつ期待 target を指すことを検証する
 assert_symlink() {
   local dest="$1" target="$2" label="$3"
-  [ -L "$dest" ] && [ "$(readlink "$dest")" = "$target" ] \
-    || { echo "FAIL $label"; ok=0; }
+  if [ ! -L "$dest" ]; then
+    echo "FAIL $label (not a symlink)"; ok=0
+  elif [ "$(readlink "$dest")" != "$target" ]; then
+    echo "FAIL $label (target: $(readlink "$dest"))"; ok=0
+  fi
 }
 
 # ---- case 1: fresh install → 期待 symlink が作成される
@@ -122,7 +125,7 @@ mkdir -p "$c4_root/wezterm"  # nvim / fish / karabiner / starship は無い
 rc=$(run_link "$c4_root" "$c4_home" "$c4_home/out" "$c4_home/err")
 ok=1
 [ "$rc" = 0 ] || { echo "FAIL c4: rc=$rc"; ok=0; }
-[ -L "$c4_home/.config/wezterm" ] || { echo "FAIL c4: wezterm should exist"; ok=0; }
+assert_symlink "$c4_home/.config/wezterm" "$c4_root/wezterm" "c4: wezterm should exist"
 for missing in nvim karabiner fish starship.toml; do
   if [ -e "$c4_home/.config/$missing" ] || [ -L "$c4_home/.config/$missing" ]; then
     echo "FAIL c4: unexpected $missing"; ok=0
