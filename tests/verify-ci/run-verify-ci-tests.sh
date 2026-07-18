@@ -226,6 +226,11 @@ check "body-file-var"        2 "$(run_hook_in "$GH_REPO" success 'gh pr create -
 # 存在しないパス
 check "body-file-missing"    2 "$(run_hook_in "$GH_REPO" success "gh pr create --title t --body-file $BASE/no-such.md")"
 check_stderr "stderr-fail-closed" "検査可能な実ファイルとして解決できません" success 'gh pr create --title t --body-file -'
+
+# --- 短縮エイリアス (-F / -b) も迂回できない --------------------------
+check "defer-short-F"       2 "$(run_hook_in "$GH_REPO" success "gh pr create --title t -F $BASE/defer-body.md")"
+check "defer-short-b"       2 "$(run_hook_in "$GH_REPO" success 'gh pr create --title t -b "追跡: defer(未起票)"')"
+check "clean-short-F"       0 "$(run_hook_in "$GH_REPO" success "gh pr create --title t -F $BASE/clean-body.md")"
 # draft は WIP なので defer が残っていても bypass (draft 判定が先勝ち)
 check "defer-draft-bypass" 0 "$(run_hook_in "$GH_REPO" failure "gh pr create --draft --title t --body-file $BASE/defer-body.md")"
 

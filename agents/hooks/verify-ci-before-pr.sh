@@ -57,21 +57,24 @@ fi
 DEFER_MARKER="defer(未起票)"
 # フラグ値の抽出 helper: 「double quote 囲み (スペース可)」→「single quote
 # 囲み (スペース可)」→「裸トークン」の順に試す。先頭の [[:space:]] anchor で
-# 他フラグの値内に現れた同名文字列への誤マッチを防ぐ。alternation は片方しか
-# マッチしないため \3\4 の連結で常に一方だけが残る。
+# 他フラグの値内に現れた同名文字列への誤マッチを防ぐ。$1 は ERE alternation 可
+# (例 '--body-file|-F')。flag 自体が group 1 になるため値は \4\5 / \3 で取る
+# (値側 alternation は片方しかマッチしないため連結で常に一方だけが残る)。
 extract_flag_value() {
   local flag="$1" v
   v=$(printf '%s\n' "$gh_segment" \
-    | sed -nE 's/.*[[:space:]]'"$flag"'(=|[[:space:]]+)("([^"]*)"|([^[:space:]]+)).*/\3\4/p')
+    | sed -nE 's/.*[[:space:]]('"$flag"')(=|[[:space:]]+)("([^"]*)"|([^[:space:]]+)).*/\4\5/p')
   if [[ -z "$v" || "$v" == \'* ]]; then
     v=$(printf '%s\n' "$gh_segment" \
-      | sed -nE "s/.*[[:space:]]$flag(=|[[:space:]]+)'([^']*)'.*/\\2/p")
+      | sed -nE "s/.*[[:space:]]($flag)(=|[[:space:]]+)'([^']*)'.*/\\3/p")
   fi
   printf '%s' "$v"
 }
-body_file=$(extract_flag_value '--body-file')
+# 短縮エイリアス (-F = --body-file, -b = --body) も対象にする (迂回防止)
+body_file=$(extract_flag_value '--body-file|-F')
 defer_found=""
-if [[ -n "$body_file" || $gh_segment == *--body-file* ]]; then
+if [[ -n "$body_file" || $gh_segment == *--body-file* ]] \
+  || printf '%s\n' "$gh_segment" | grep -qE '[[:space:]]-F([[:space:]=]|$)'; then
   # --body-file 指定時は fail-closed: stdin (`-`)・変数展開 (`"$TMPDIR/x.md"`)・
   # 存在しない相対パス等、hook から通常ファイルとして解決できない形式は
   # 検査不能 = defer 検査の迂回経路になるためブロックする (この hook の他の
@@ -93,10 +96,13 @@ else
   # 値に marker 文字列が含まれるだけで false positive block になるため)。
   # 比較は pure bash: printf | grep だと pipefail 下で producer の SIGPIPE が
   # 判定を壊す理論経路があり、fork も不要になる。
-  # 既知の限界: 実際の --body より前に置かれた他フラグの引用値内に
+  # 既知の限界: (1) 実際の --body より前に置かれた他フラグの引用値内に
   # 「 --body <marker>」文字列が含まれると誤 block する (シェル語彙解析なしの
-  # 正規表現抽出の限界。--draft で回避可能な保守的 false positive として受容)
-  body_value=$(extract_flag_value '--body')
+  # 正規表現抽出の限界。--draft で回避可能な保守的 false positive として受容)。
+  # (2) `--body "$(cat x)"` 等の動的展開値は文字列としてしか見えず fail-open
+  # だが、動的展開を含む書き込み系コマンドは block-dangerous-commands hook が
+  # 先にブロックするため、実質その hook が防御線になる
+  body_value=$(extract_flag_value '--body|-b')
   if [[ -n "$body_value" && "$body_value" == *"$DEFER_MARKER"* ]]; then
     defer_found="--body inline"
   fi
