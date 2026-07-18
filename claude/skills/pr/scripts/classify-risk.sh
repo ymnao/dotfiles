@@ -33,9 +33,37 @@ if ! git rev-parse --verify "$BASE" >/dev/null 2>&1; then
   fi
 fi
 
+# 全 file list (path check / tier=low 判定用)。改行含みパスは quote されうるが
+# path rule は行単位 grep なので実害なし。--name-only の quote は名前表示問題
+# だけで、実 pathspec を必要とするのは下の code_files 経路のみ
 files=$(git diff "$REF...HEAD" --name-only)
-# 追加行のみ (+++ ヘッダを除く)。バイナリ diff は git が行を出さないので自然に無視される
-added=$(git diff "$REF...HEAD" --unified=0 2>/dev/null | grep -E '^\+' | grep -vE '^\+\+\+' || true)
+
+# content check の除外対象: 「エージェントに指示として解釈されない」文書のみ。
+# `README*.md` / `docs/` / `LICENSE*` / `.txt` / `evals/*.md` fixture。
+# SKILL.md / AGENTS.md / CLAUDE.md / claude/skills/**/*.md などは
+# エージェントが指示として解釈するため content check の対象に残す
+# (security ゲート bypass 防止 / eval fixture 誤検知回避の両立)
+NOT_EXECUTABLE_DOC_PATTERN='(^|/)README[^/]*\.md$|^docs/|(^|/)LICENSE[^/]*$|\.txt$|(^|/)evals?/[^/]*\.md$'
+
+# code_files を pathspec 安全に取得するため -z (NUL 区切り) を使う。
+# 空白・改行・非 ASCII を含むパスでも正しく pathspec 復元できる
+added_code=""
+paths=()
+while IFS= read -r -d '' f; do
+  [ -n "$f" ] || continue
+  # NOT_EXECUTABLE_DOC_PATTERN にマッチするファイルは content check 対象外
+  if ! printf '%s' "$f" | grep -qE "$NOT_EXECUTABLE_DOC_PATTERN"; then
+    paths+=("$f")
+  fi
+done < <(git diff "$REF...HEAD" --name-only -z)
+
+if [ "${#paths[@]}" -gt 0 ]; then
+  # 追加行 (+++ ヘッダを除く)。バイナリ diff は git が行を出さないので無視される。
+  # --literal-pathspecs で diff 由来のパスに紛れ込みうる pathspec magic
+  # (`:(exclude)...` 等) を無効化し、別ファイルの content check を skip
+  # させる bypass を防ぐ
+  added_code=$(git --literal-pathspecs diff "$REF...HEAD" --unified=0 -- "${paths[@]}" 2>/dev/null | grep -E '^\+' | grep -vE '^\+\+\+' || true)
+fi
 # 削除されたファイル (rename は R として別扱いになるため含まれない)
 deleted=$(git diff "$REF...HEAD" --name-only --diff-filter=D)
 
@@ -53,10 +81,10 @@ check_path() {
   return 0
 }
 
-# 内容ルール: 追加行が ERE にマッチしたら HIGH
+# 内容ルール: doc-only を除くコード側ファイルの追加行が ERE にマッチしたら HIGH
 check_content() {
   local rule="$1" pattern="$2" m
-  m=$(printf '%s\n' "$added" | grep -iE "$pattern" | head -2 || true)
+  m=$(printf '%s\n' "$added_code" | grep -iE "$pattern" | head -2 || true)
   [ -n "$m" ] && add_reason "$rule: $(printf '%s' "$m" | cut -c1-80 | tr '\n' ' ')"
   return 0
 }
@@ -81,6 +109,9 @@ check_content "exec-pattern"        'eval |child_process|subprocess|os\.system|e
 check_content "pipe-to-shell"       '(curl|wget)[^|;]*\|[[:space:]]*(ba|z|da)?sh'
 check_content "permission-widening" 'chmod (777|666)|--dangerously|--no-verify'
 check_deleted "test-removal" '(^|/)(tests?|__tests__|spec)/|\.(test|spec)\.[a-z]+$|_test\.(go|py|rb|ts|tsx|js|jsx)$|\.cases\.jsonl$'
+# 全 diff がこのパターンにマッチする文書だけなら tier=low に落とす
+# (content check の除外パターン NOT_EXECUTABLE_DOC_PATTERN より広い —
+# 危険文字列がない SKILL.md/CLAUDE.md の tweak も low 扱いにするため)
 LOW_ONLY_PATTERN='\.md$|^docs/|^LICENSE|\.txt$'
 # ---- /RULES ----
 
