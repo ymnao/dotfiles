@@ -5,9 +5,10 @@ push もされていない・PR も無いローカルブランチを用意する
 
 ```bash
 git checkout main && git pull
-git checkout -b feature/eval-next-no-pr-$(date +%s)
+branch="feature/eval-next-no-pr-$(date +%s)"
+git checkout -b "$branch"
 echo y >> README.md && git commit -am "chore: eval-next no-pr fixture"
-gh pr view --json state 2>&1 | head -1   # -> エラー / no pull requests found
+gh pr view --json state; echo "gh pr view exit=$?"   # -> non-zero / "no pull requests found for branch"
 BEFORE_MAIN=$(git rev-parse main)
 BEFORE_BRANCH=$(git branch --show-current)
 ```
@@ -25,5 +26,5 @@ BEFORE_BRANCH=$(git branch --show-current)
 ## Cleanup
 ```bash
 git checkout main
-git branch -D <ブランチ>
+git branch -D "$branch"
 ```

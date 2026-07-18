@@ -7,7 +7,7 @@
 
 ```bash
 git checkout main && git pull
-git checkout -b feature/eval-review-cap-$(date +%s)
+git checkout -b "feature/eval-review-cap-$(date +%s)"
 ```
 
 ## Prompt

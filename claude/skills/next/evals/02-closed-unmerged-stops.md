@@ -5,11 +5,12 @@
 
 ```bash
 git checkout main && git pull
-git checkout -b feature/eval-next-closed-$(date +%s)
+branch="feature/eval-next-closed-$(date +%s)"
+git checkout -b "$branch"
 echo x >> README.md && git commit -am "chore: eval-next closed-unmerged fixture"
 git push -u origin HEAD
 gh pr create --fill --draft
-gh pr close $(gh pr view --json number -q .number)
+gh pr close "$(gh pr view --json number -q .number)"
 gh pr view --json state -q .state   # -> "CLOSED"
 BEFORE_MAIN=$(git rev-parse main)
 ```
@@ -26,6 +27,6 @@ BEFORE_MAIN=$(git rev-parse main)
 ## Cleanup
 ```bash
 git checkout main
-git branch -D feature/eval-next-closed-* 2>/dev/null || true
-git push origin --delete <該当リモートブランチ> 2>/dev/null || true
+git branch -D "$branch" 2>/dev/null || true
+git push origin --delete "$branch" 2>/dev/null || true
 ```

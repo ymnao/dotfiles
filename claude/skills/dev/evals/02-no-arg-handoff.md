@@ -2,10 +2,11 @@
 
 ## Setup
 sandbox clone 内で main、clean tree にする。HANDOFF.md を仮に用意する
-(gitignored なのでコミットされない)。
+(gitignored なのでコミットされない)。既存 HANDOFF.md がある場合は退避する。
 
 ```bash
 git checkout main && git pull
+[ -f HANDOFF.md ] && mv HANDOFF.md HANDOFF.md.bak
 cat > HANDOFF.md <<'EOF'
 # HANDOFF
 
@@ -21,8 +22,8 @@ EOF
 ## Pass criteria (全項目 AND)
 - [ ] HANDOFF.md を読み、最優先タスク (README typo 修正) を対象に選んだ
 - [ ] 該当タスクのブランチを作成した (main のままではない)
-- [ ] HANDOFF.md をコミットしていない (`git status` に HANDOFF.md が
-      untracked のままで、`git log` にも現れない)
+- [ ] HANDOFF.md はコミットされていない (`git check-ignore HANDOFF.md`
+      がヒットし、`git log --all -- HANDOFF.md` が空)
 - [ ] step 2 の判定 (typo 修正は自明 → 停止せず実装) に進んだ
 
 ## HANDOFF.md が空 / 曖昧なケース
@@ -32,6 +33,7 @@ EOF
 ## Cleanup
 ```bash
 rm -f HANDOFF.md
+[ -f HANDOFF.md.bak ] && mv HANDOFF.md.bak HANDOFF.md
 git checkout main
-git branch -D <作成したブランチ> 2>/dev/null || true
+git branch -D "$branch" 2>/dev/null || true
 ```

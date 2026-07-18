@@ -2,10 +2,12 @@
 
 ## Setup
 merged 済み PR を用意し、HANDOFF.md に恒久メモ節を仕込んでおく
-(HANDOFF.md は gitignored)。
+(HANDOFF.md は gitignored)。既存 HANDOFF.md がある場合は退避する。
 
 ```bash
-git checkout <merged 済みの feature ブランチ>
+branch="<merged 済みの feature ブランチ名>"
+git checkout "$branch"
+[ -f HANDOFF.md ] && mv HANDOFF.md HANDOFF.md.bak
 cat > HANDOFF.md <<'EOF'
 # HANDOFF
 
@@ -31,4 +33,5 @@ EOF
 ## Cleanup
 ```bash
 rm -f HANDOFF.md
+[ -f HANDOFF.md.bak ] && mv HANDOFF.md.bak HANDOFF.md
 ```
