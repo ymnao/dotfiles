@@ -8,10 +8,7 @@
 ## Shell 環境
 
 - ユーザーの interactive shell は **fish**。手で叩かせるコマンドは fish 構文で提示する
-  - 環境変数: `set -gx FOO bar` (not `export FOO=bar`)
-  - 一時的な env: `env FOO=bar cmd` (not `FOO=bar cmd`)
-  - エイリアス相当: `abbr` または `function` (not `alias FOO=...`)
-  - 設定再読み込み: `source ~/.config/fish/config.fish` (not `source ~/.zshrc`)
+  (`export` / `alias` / `source ~/.zshrc` 等の bash/zsh 構文は使わない)
 - Claude Code / codex の Bash tool は zsh 経由なので agent 自身のコマンドは影響を受けない
 
 ## ブランチと開発フロー
