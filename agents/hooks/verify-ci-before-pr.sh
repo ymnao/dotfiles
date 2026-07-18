@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 #
-# PreToolUse hook (Claude Code / Codex CLI 共通): `gh pr create` の実行前に HEAD コミットの CI が green か検証する
+# PreToolUse hook (Claude Code / Codex CLI 共通): `gh pr create` の実行前に
+# (1) HEAD コミットの CI が green か、(2) PR body に fix-or-issue ポリシー違反
+# (「defer(未起票)」marker) が残っていないか、の 2 点を検証する
 # 正本: agents/hooks/verify-ci-before-pr.sh
 # (claude/hooks/ と codex/hooks/ からは相対 symlink で参照される)
 #
@@ -54,9 +56,7 @@ fi
 # inline --body 内のマーカーは gh_segment 自体の文字列検査で拾う。
 DEFER_MARKER="defer(未起票)"
 body_file=$(printf '%s\n' "$gh_segment" \
-  | grep -oE '\-\-body-file(=|[[:space:]]+)[^[:space:]]+' \
-  | head -1 \
-  | sed -E 's/--body-file(=|[[:space:]]+)//' || true)
+  | sed -nE 's/.*--body-file(=|[[:space:]]+)([^[:space:]]+).*/\2/p')
 # quote 除去 (gh pr create --body-file "/tmp/x.md" 形式)
 body_file="${body_file%\"}"; body_file="${body_file#\"}"
 body_file="${body_file%\'}"; body_file="${body_file#\'}"

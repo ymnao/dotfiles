@@ -154,6 +154,21 @@ check() {
   fi
 }
 
+# block 時の stderr 内容検証 (フィードバック契約)。
+# $1=名前, $2=期待 grep パターン, $3=fixture 名, $4=command
+check_stderr() {
+  local json out
+  json=$(jq -cn --arg c "$4" '{"tool_input":{"command":$c}}')
+  out=$(printf '%s' "$json" \
+    | (cd "$GH_REPO" && PATH="$BASE/bin:$PATH" VERIFY_CI_FIXTURE="$BASE/fixtures/$3.json" bash "$HOOK" 2>&1 >/dev/null)) || true
+  if printf '%s' "$out" | grep -q "$2"; then
+    pass=$((pass + 1))
+  else
+    echo "FAIL $1: stderr が /$2/ にマッチしない"
+    fail=$((fail + 1))
+  fi
+}
+
 # 早期 exit 経路 (bypass / 対象外)。あえて failure fixture を渡すことで、
 # bypass 判定が退行して API 到達経路へ落ちた場合に curl スタブが失敗
 # JSON を返し hook が exit 2 → テスト FAIL となる (退行検出可)。
@@ -184,44 +199,34 @@ printf '## 追跡先\nなし\n' > "$BASE/clean-body.md"
 check "defer-in-body-file" 2 "$(run_hook_in "$GH_REPO" success "gh pr create --title t --body-file $BASE/defer-body.md")"
 check "defer-body-file-eq" 2 "$(run_hook_in "$GH_REPO" success "gh pr create --title t --body-file=$BASE/defer-body.md")"
 check "clean-body-file"    0 "$(run_hook_in "$GH_REPO" success "gh pr create --title t --body-file $BASE/clean-body.md")"
+# 引用符付きパス (gh pr create --body-file "/path/x.md" 形式) も解決される
+check "defer-body-file-quoted" 2 "$(run_hook_in "$GH_REPO" success "gh pr create --title t --body-file \"$BASE/defer-body.md\"")"
 # inline --body 内の marker も block
 check "defer-inline-body"  2 "$(run_hook_in "$GH_REPO" success 'gh pr create --title t --body "追跡: defer(未起票)"')"
 # draft は WIP なので defer が残っていても bypass (draft 判定が先勝ち)
 check "defer-draft-bypass" 0 "$(run_hook_in "$GH_REPO" failure "gh pr create --draft --title t --body-file $BASE/defer-body.md")"
 
-# defer block 時の stderr にポリシー説明が含まれる (フィードバック契約)
-json=$(jq -cn --arg c "gh pr create --title t --body-file $BASE/defer-body.md" '{"tool_input":{"command":$c}}')
-stderr_out=$(printf '%s' "$json" \
-  | (cd "$GH_REPO" && PATH="$BASE/bin:$PATH" VERIFY_CI_FIXTURE="$BASE/fixtures/success.json" bash "$HOOK" 2>&1 >/dev/null)) || true
-if printf '%s' "$stderr_out" | grep -q "fix-or-issue"; then
+# defer block 時の stderr にポリシー説明が含まれる
+check_stderr "stderr-defer-policy" "fix-or-issue" success "gh pr create --title t --body-file $BASE/defer-body.md"
+
+# marker 同期検証: hook の DEFER_MARKER リテラルが pr skill (SKILL.md) にも
+# 同一表記で存在すること。どちらか一方だけ表記を変えると fix-or-issue
+# ポリシーが黙って無効化される drift を機械的に検出する。
+hook_marker=$(sed -nE 's/^DEFER_MARKER="(.*)"$/\1/p' "$HOOK" | head -1)
+if [ -n "$hook_marker" ] && grep -qF "$hook_marker" "$REPO_ROOT/claude/skills/pr/SKILL.md"; then
   pass=$((pass + 1))
 else
-  echo "FAIL stderr-defer-policy: fix-or-issue ポリシー説明が stderr に含まれない"
+  echo "FAIL marker-sync: hook の DEFER_MARKER ('$hook_marker') が claude/skills/pr/SKILL.md に見つからない"
   fail=$((fail + 1))
 fi
 
-# ブロック時の stderr に失敗 check 名が含まれる (フィードバック契約)。
-# IFS=$'\t' read の空フィールド潰れ (pending 空のとき failed が pending 側に
-# ずれて「詳細不明」になる) の回帰検出を兼ねる。
-json=$(jq -cn '{"tool_input":{"command":"gh pr create --title t --body b"}}')
-stderr_out=$(printf '%s' "$json" \
-  | (cd "$GH_REPO" && PATH="$BASE/bin:$PATH" VERIFY_CI_FIXTURE="$BASE/fixtures/failure.json" bash "$HOOK" 2>&1 >/dev/null)) || true
-if printf '%s' "$stderr_out" | grep -q "ci (FAILURE)"; then
-  pass=$((pass + 1))
-else
-  echo "FAIL stderr-failed-check-names: 失敗 check 名が stderr に含まれない"
-  fail=$((fail + 1))
-fi
+# ブロック時の stderr に失敗 check 名が含まれる。IFS=$'\t' read の
+# 空フィールド潰れ (pending 空のとき failed が pending 側にずれて
+# 「詳細不明」になる) の回帰検出を兼ねる。
+check_stderr "stderr-failed-check-names" "ci (FAILURE)" failure 'gh pr create --title t --body b'
 
 # PENDING ブロック時の stderr に進行中 check 名が含まれる
-stderr_out=$(printf '%s' "$json" \
-  | (cd "$GH_REPO" && PATH="$BASE/bin:$PATH" VERIFY_CI_FIXTURE="$BASE/fixtures/pending.json" bash "$HOOK" 2>&1 >/dev/null)) || true
-if printf '%s' "$stderr_out" | grep -q "進行中: ci"; then
-  pass=$((pass + 1))
-else
-  echo "FAIL stderr-pending-check-names: 進行中 check 名が stderr に含まれない"
-  fail=$((fail + 1))
-fi
+check_stderr "stderr-pending-check-names" "進行中: ci" pending 'gh pr create --title t --body b'
 
 echo "----"
 echo "verify-ci tests: $pass passed, $fail failed"
