@@ -68,12 +68,6 @@ read -r FILES_CHANGED INSERTIONS DELETIONS < <(
     | awk '{f++; ins+=$1; del+=$2} END {printf "%d %d %d\n", f+0, ins+0, del+0}'
 )
 
-# Check if remote branch exists
-HAS_REMOTE=false
-if [ -n "$(git ls-remote --heads origin "$BRANCH_NAME" 2>/dev/null)" ]; then
-  HAS_REMOTE=true
-fi
-
 # Extract linked issue number from branch name (e.g., feature/add-auth-#42 → 42)
 LINKED_ISSUE="null"
 if [[ "$BRANCH_NAME" =~ \#([0-9]+)$ ]]; then
@@ -104,7 +98,6 @@ jq -n \
   --argjson files_changed "$FILES_CHANGED" \
   --argjson insertions "$INSERTIONS" \
   --argjson deletions "$DELETIONS" \
-  --argjson has_remote "$HAS_REMOTE" \
   --argjson linked_issue "$LINKED_ISSUE" \
   --arg pr_template "$PR_TEMPLATE" \
   '{
@@ -116,7 +109,6 @@ jq -n \
     files_changed: $files_changed,
     insertions: $insertions,
     deletions: $deletions,
-    has_remote: $has_remote,
     linked_issue: $linked_issue,
     pr_template: (if $pr_template == "" then null else $pr_template end)
   }'

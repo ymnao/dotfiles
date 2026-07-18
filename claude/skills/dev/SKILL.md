@@ -64,8 +64,11 @@ codex-review は step 5 の /pr が risk tier に応じて実行するため
 
 ### 5. PR 作成
 
-`/pr` skill を実行する (risk 分類 → tier 別 codex-review → fix-or-issue
-→ evidence 付き PR 作成まで /pr の手順に従う)。
+レビューループの最終 commit 直後にまず `git push -u origin <branch>` で
+push し、CI 実行と後続の evidence 組み立て・issue 起票を並走させる
+(CI green 確認ゲート自体は維持)。
+その上で `/pr` skill を実行する (risk 分類 → tier 別 codex-review →
+fix-or-issue → evidence 付き PR 作成まで /pr の手順に従う)。
 
 ### 6. 停止
 

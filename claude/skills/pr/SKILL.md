@@ -39,7 +39,7 @@ Run each `gh` command as a bare invocation and substitute prior output literally
 6. Generate PR title and body:
    - **Title**: under 70 characters, summarizing the changes
    - **Body**: use the repo's PR template if `pr_template` is not null, otherwise the default template below. ALWAYS append the evidence section (below) at the end of the body.
-7. If `has_remote` is false, run `git push -u origin <branch_name>`
+7. Run `git push -u origin <branch_name>` (no-op if origin is already up to date; also syncs review-fix commits made after an early push). If the push is rejected as non-fast-forward (origin advanced independently), do NOT force push — report the divergence to the user and stop
 8. Create the PR with `gh pr create`. Add `--draft` when step 4 **or** step 5 decided draft (draft-wins). **Exception**: user が PR 作成前の任意の時点(step 5 の walkthrough 応答 / それ以前 いずれも可、tier を問わない)で「step 4 の draft 判定は別 PR で追う。normal で作って」等、draft 判定を明示的に override する指示を出した場合は normal で作成し、その override 内容(受け取った user 指示の要約と受け取った step)を evidence の Draft 判定に記録する。**制約**: normal override でも hook の defer 検査は bypass されないため、未起票 finding が残ったまま normal 化するには起票が前提。user が起票も拒否して normal を求めた場合は、追跡先の URL 欄に `defer(未起票)` ではなく「追跡しない(user 指示: <要約>)」と記録して作成する(marker 文字列を残すと hook が block して deadlock になる)。ただし **tier=high で override が step 5 前に受け取られた場合**、step 5 walkthrough で新 finding が surface した際は override 継続意思を user に再確認する(walkthrough で見えた新事実に対して pre-walkthrough override が sticky にならないよう safety net)。If `linked_issue` exists, include `Closes #<number>` in the body.
 
 ## Default template (fallback)
