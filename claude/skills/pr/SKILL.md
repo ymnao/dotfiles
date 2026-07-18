@@ -23,14 +23,11 @@ Run each `gh` command as a bare invocation and substitute prior output literally
    - **low**: if the project defines lint / typecheck commands, run them and fix failures. No review needed.
    - **medium**: run the codex-review `security` perspective (follow the codex-review skill's detect→verify→apply→confirm steps for that one perspective). Also run the project's test suite if one exists.
    - **high**: run all 3 codex-review perspectives AND the project's test suite. Then do the explain-the-diff walkthrough (step 5).
-   - If codex is not installed: record "codex-review skipped (codex not installed)" in the evidence section and continue. Do not silently skip.
-   - Draft 判定は **PR-level triage** で行う(codex-review の per-finding 分類 `REPORT-ONLY` / `UNRESOLVED` を pr の draft 判定に自動流用しない。用語の定義は `$HOME/.claude/skills/codex-review/SKILL.md` を参照)。**上から順に評価し、最初に一致した bullet を採用**する。ただし bullet 内の user 応答で state が変わった場合(例: bullet 2 で追跡 URL が起票された、または 3 件中 1 件のみ起票された等)は変更後の state で bullet 1 から**再評価する**(残り finding が bullet 2 に依然一致する場合は再度 bullet 2 の user 応答フローに戻る)。**起票確認・walkthrough など user 応答を待つ判定は同 turn で「無応答」断定せず、次 turn の応答で判定する**(step 5 の「walkthrough 未提示のタイミング」ガードと同じ扱い、interactive user の回答機会を確保するため)。**ただし非対話・no-tty(検出 heuristic: `claude -p` / `--print` 系の single-turn 起動、`CLAUDE_NONINTERACTIVE=1` 等の env var、conversation 履歴が 1 turn のみで prior user 応答が無い、いずれか一つでも該当)を検出した場合は「次 turn」が来ないため、同 turn で即 draft を safe default とし 根拠 `step 4 pending` を記録して flow を終える**。いずれの判定でも根拠と該当 finding を evidence に記録する:
+   - **codex 不能時のフォールバック**(not installed / sandbox skip (exit 3) / rate-limit skip (exit 4) いずれも): 第二意見をゼロにせず、**別系統サブエージェント(Agent tool, `model: "fable"`)のフレッシュレビュー**で代替する。skip された観点のプロンプト(`codex/review-prompts/<P>.md`)と diff を渡し、findings は codex-review と同じ verify→apply 手順で処理する。evidence には「codex-review skipped (<理由>) → fable 代替: <結果>」と記録する。Do not silently skip.
+   - **Fix-or-issue ポリシー**: レビューで確認された finding の行き先は「本 PR で fix」か「issue 起票して追跡」の 2 つだけ。「起票せず次セッションに持ち越す」状態を作らない(verify-ci-before-pr hook も body 内の `defer(未起票)` を検出すると `gh pr create` をブロックする)
+   - Draft 判定は **PR-level triage** で行う(codex-review の per-finding 分類 `REPORT-ONLY` / `UNRESOLVED` を pr の draft 判定に自動流用しない。用語の定義は `$HOME/.claude/skills/codex-review/SKILL.md` を参照)。**上から順に評価し、最初に一致した bullet を採用**する。bullet 内の処理で state が変わった場合(起票成功で URL が付いた等)は変更後の state で bullet 1 から**再評価する**。いずれの判定でも根拠と該当 finding を evidence に記録する:
      - **本 PR で fix すべき finding が残っている**(未対応、または blocker として判断保留): **draft** で作成
-     - **追跡別 PR に回す finding があり、追跡 issue/PR URL が未起票**: user に起票の要否を確認し、次 turn の応答で分岐する(非対話・no-tty は前段の meta 規則により同 turn で draft 退避):
-       - user「起票する(agent が起票してよい)」→ agent が finding ごとに一時ファイル(例: `$TMPDIR/pr-issue-body-<n>.md`)へ body を書き出し、`gh issue create --title "<finding summary>" --body-file <path>` で起票する(`--body` に literal 代入せず、finding 抜粋内の `"` / `` ` `` / `$` / `\` による shell 破壊・injection を回避)。body には `finding の failure_scenario と該当 file:line 抜粋、リンク元 PR/branch` を含める。`gh issue create` は現状 settings.json allow-list 外のため初回 permission prompt が想定内。複数 finding のうち一部のみ起票する応答(例:「3 件中 A だけ起票」)は指示された件数のみ起票し、残り finding は state 変化後 bullet 1 から再評価。失敗時(auth / perms / archived / repo 未指定 等)は **draft** に退避し 根拠 `step 4 pending`(起票失敗、user 対応待ち)を記録。成功件数分の URL を evidence 追跡先に記載 → 再評価で bullet 3 到達なら normal 作成
-       - user「自ら起票する」→ 「決着」= URL 記載 or「defer」等の明確な結論応答、「継続意思」= 「少し待って」「起票中」等の未決だが継続意思を示す応答 と定義し、次 turn の応答で分岐: (i) **決着応答** → 追跡先に反映して再評価、(ii) **継続意思応答** → agent 側から prompt を出さず passive に次 turn を待つ(step 5(c) の active 「聞き返す」とは異なる、user 側で対応中のため)。継続意思応答も 2-turn counter を進める(リセットしない)、(iii) 決着なしの状態が 2 turn 連続した場合は (ii) より優先して **draft** に退避し 根拠 `step 4 pending`(user 起票待ち)を記録(indefinite 待機しない)
-       - user「起票しない / defer」→ **draft** で作成。Draft 判定 根拠 `step 4 defer` + defer 理由(user 応答の要約)を記録。追跡先には finding を `file:line — 短い summary(30 字以内)` で列挙し URL 欄に `defer(未起票)` と記載
-       - user が明示的に「別 PR で追う。normal で作って」等、draft 判定を override → step 8 の Exception に従う(tier / 応答 timing を問わず適用可能)
+     - **追跡別 PR に回す finding があり、追跡 issue/PR URL が未起票**: **user 確認なしで自動起票する**。finding ごとに一時ファイル(例: `$TMPDIR/pr-issue-body-<n>.md`)へ body を書き出し、`gh issue create --title "<finding summary>" --body-file <path>` で起票する(`--body` に literal 代入せず、finding 抜粋内の `"` / `` ` `` / `$` / `\` による shell 破壊・injection を回避)。body には `finding の failure_scenario と該当 file:line 抜粋、リンク元 PR/branch` を含める。成功分の URL を evidence 追跡先に記載 → bullet 1 から再評価(全件 URL 付きになれば bullet 3 到達で normal)。失敗時(auth / perms / archived / repo 未指定 等)は **draft** に退避し 根拠 `step 4 pending`(起票失敗、user 対応待ち)を記録。user が事前に「起票しない」等の明示指示を出している場合はそれに従い、指示内容を evidence に記録する
      - **上記に該当しない**(fix 不要のみ / 追跡 URL 記載済 / 残件なし): **normal** で作成。件数の多寡を draft 判定に使わない。追跡 URL がある場合は evidence に必ず記載する
 5. Explain-the-diff walkthrough (tier=high only):
    - Split the diff into meaningful units. For each unit present: what changed / why / what could break.
@@ -43,7 +40,7 @@ Run each `gh` command as a bare invocation and substitute prior output literally
    - **Title**: under 70 characters, summarizing the changes
    - **Body**: use the repo's PR template if `pr_template` is not null, otherwise the default template below. ALWAYS append the evidence section (below) at the end of the body.
 7. If `has_remote` is false, run `git push -u origin <branch_name>`
-8. Create the PR with `gh pr create`. Add `--draft` when step 4 **or** step 5 decided draft (draft-wins). **Exception**: user が PR 作成前の任意の時点(step 4 の起票確認応答 / step 5 の walkthrough 応答 / それ以前 いずれも可、tier を問わない)で「step 4 の draft 判定は別 PR で追う。normal で作って」等、draft 判定を明示的に override する指示を出した場合は normal で作成し、その override 内容(受け取った user 指示の要約と受け取った step)を evidence の Draft 判定に記録する。ただし **tier=high で override が step 5 前に受け取られた場合**、step 5 walkthrough で新 finding が surface した際は override 継続意思を user に再確認する(walkthrough で見えた新事実に対して pre-walkthrough override が sticky にならないよう safety net)。If `linked_issue` exists, include `Closes #<number>` in the body.
+8. Create the PR with `gh pr create`. Add `--draft` when step 4 **or** step 5 decided draft (draft-wins). **Exception**: user が PR 作成前の任意の時点(step 5 の walkthrough 応答 / それ以前 いずれも可、tier を問わない)で「step 4 の draft 判定は別 PR で追う。normal で作って」等、draft 判定を明示的に override する指示を出した場合は normal で作成し、その override 内容(受け取った user 指示の要約と受け取った step)を evidence の Draft 判定に記録する。ただし **tier=high で override が step 5 前に受け取られた場合**、step 5 walkthrough で新 finding が surface した際は override 継続意思を user に再確認する(walkthrough で見えた新事実に対して pre-walkthrough override が sticky にならないよう safety net)。If `linked_issue` exists, include `Closes #<number>` in the body.
 
 ## Default template (fallback)
 
@@ -77,15 +74,15 @@ tier: <tier> — <reasons を列挙>
 <codex-review の Report format 表を転記。レビュー未実施なら「tier=low のため未実施」>
 
 ## 追跡先
-<本 PR で fix せず別 issue/PR に回した finding を列挙。0 件なら「なし」とだけ書き、表は省略。Finding 列は `file:line — 短い summary(30 字以内)` の compound identifier で書く(codex-review Report format 表には file:line 列が無く、参照だけでは同定不能なため、短い summary を併記して人間可読性を確保)>
+<本 PR で fix せず issue に回した finding を列挙。0 件なら「なし」とだけ書き、表は省略。Finding 列は `file:line — 短い summary(30 字以内)` の compound identifier で書く(codex-review Report format 表には file:line 列が無く、参照だけでは同定不能なため、短い summary を併記して人間可読性を確保)。URL 列は必ず起票済み issue URL を書く(fix-or-issue ポリシーにより「未起票のまま列挙」は不可。hook が `defer(未起票)` を検出すると PR 作成をブロックする)>
 
-| Finding (file:line — summary) | Issue/PR URL |
+| Finding (file:line — summary) | Issue URL |
 |---|---|
-| <file:line — short summary> | <URL または `defer(未起票)`> |
+| <file:line — short summary> | <issue URL> |
 
 ## Draft 判定
 - 判定: <normal / draft>
-- 根拠: <step 4 / step 4 pending / step 4 defer / step 5 / step 8 override> — <理由と該当 finding>
+- 根拠: <step 4 / step 4 pending / step 5 / step 8 override> — <理由と該当 finding>
 - override 内容: <根拠が `step 8 override` のときのみ記載、user 指示の要約と override を受けた step>
 
 </details>
@@ -106,4 +103,4 @@ Created PR: <PR URL>
 | Changed files | <files_changed> files (+<insertions> -<deletions>) |
 | Risk tier | <tier> |
 | Review | <PASS / findings summary / skipped reason> |
-| Draft 判定 | <normal / draft> — <step 4 / step 4 pending / step 4 defer / step 5 / step 8 override, 理由> |
+| Draft 判定 | <normal / draft> — <step 4 / step 4 pending / step 5 / step 8 override, 理由> |

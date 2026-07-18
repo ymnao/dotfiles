@@ -175,6 +175,31 @@ check "commit-missing"   2 "$(run_hook_in "$GH_REPO" missing 'gh pr create --tit
 # --draft=false は bypass しない (draft 判定の退行検出。CI 失敗なら block)
 check "draft-false-no-bypass" 2 "$(run_hook_in "$GH_REPO" failure 'gh pr create --draft=false --title t')"
 
+# --- fix-or-issue ポリシー (defer(未起票) 検査) --------------------------
+# body-file に defer(未起票) が含まれる normal PR は block (CI 状態に無関係)。
+# fixture に success を渡すことで「defer 検査が退行して CI 経路に落ちたら
+# exit 0 になり FAIL する」構造にする (bypass 系テストと同じ退行検出設計)。
+printf '## 追跡先\n| f.sh:1 — x | defer(未起票) |\n' > "$BASE/defer-body.md"
+printf '## 追跡先\nなし\n' > "$BASE/clean-body.md"
+check "defer-in-body-file" 2 "$(run_hook_in "$GH_REPO" success "gh pr create --title t --body-file $BASE/defer-body.md")"
+check "defer-body-file-eq" 2 "$(run_hook_in "$GH_REPO" success "gh pr create --title t --body-file=$BASE/defer-body.md")"
+check "clean-body-file"    0 "$(run_hook_in "$GH_REPO" success "gh pr create --title t --body-file $BASE/clean-body.md")"
+# inline --body 内の marker も block
+check "defer-inline-body"  2 "$(run_hook_in "$GH_REPO" success 'gh pr create --title t --body "追跡: defer(未起票)"')"
+# draft は WIP なので defer が残っていても bypass (draft 判定が先勝ち)
+check "defer-draft-bypass" 0 "$(run_hook_in "$GH_REPO" failure "gh pr create --draft --title t --body-file $BASE/defer-body.md")"
+
+# defer block 時の stderr にポリシー説明が含まれる (フィードバック契約)
+json=$(jq -cn --arg c "gh pr create --title t --body-file $BASE/defer-body.md" '{"tool_input":{"command":$c}}')
+stderr_out=$(printf '%s' "$json" \
+  | (cd "$GH_REPO" && PATH="$BASE/bin:$PATH" VERIFY_CI_FIXTURE="$BASE/fixtures/success.json" bash "$HOOK" 2>&1 >/dev/null)) || true
+if printf '%s' "$stderr_out" | grep -q "fix-or-issue"; then
+  pass=$((pass + 1))
+else
+  echo "FAIL stderr-defer-policy: fix-or-issue ポリシー説明が stderr に含まれない"
+  fail=$((fail + 1))
+fi
+
 # ブロック時の stderr に失敗 check 名が含まれる (フィードバック契約)。
 # IFS=$'\t' read の空フィールド潰れ (pending 空のとき failed が pending 側に
 # ずれて「詳細不明」になる) の回帰検出を兼ねる。

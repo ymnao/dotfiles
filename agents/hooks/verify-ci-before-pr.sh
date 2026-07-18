@@ -47,6 +47,34 @@ if printf '%s\n' "$gh_segment" | grep -qE '([[:space:]]|^)(--draft(=([Tt][Rr][Uu
   exit 0
 fi
 
+# fix-or-issue ポリシー検査 (pr skill 参照): PR body に「defer(未起票)」が
+# 残ったままの normal PR 作成をブロックする。finding は「fix 済み」か
+# 「issue URL 起票済み」のどちらかでなければならない (draft は上で bypass 済み)。
+# --body-file <path> / --body-file=<path> の両形式からファイルを解決し、
+# inline --body 内のマーカーは gh_segment 自体の文字列検査で拾う。
+DEFER_MARKER="defer(未起票)"
+body_file=$(printf '%s\n' "$gh_segment" \
+  | grep -oE '\-\-body-file(=|[[:space:]]+)[^[:space:]]+' \
+  | head -1 \
+  | sed -E 's/--body-file(=|[[:space:]]+)//' || true)
+# quote 除去 (gh pr create --body-file "/tmp/x.md" 形式)
+body_file="${body_file%\"}"; body_file="${body_file#\"}"
+body_file="${body_file%\'}"; body_file="${body_file#\'}"
+defer_found=""
+if [[ -n "$body_file" && -f "$body_file" ]] && grep -qF "$DEFER_MARKER" "$body_file"; then
+  defer_found="body-file: $body_file"
+elif printf '%s\n' "$gh_segment" | grep -qF "$DEFER_MARKER"; then
+  defer_found="--body inline"
+fi
+if [[ -n "$defer_found" ]]; then
+  cat >&2 <<EOF
+[verify-ci-before-pr] PR body に「$DEFER_MARKER」が含まれています ($defer_found)。
+fix-or-issue ポリシー: 未 fix の finding は gh issue create で起票して URL を記載してください。
+WIP として進めたい場合は --draft を付ければスキップします。
+EOF
+  exit 2
+fi
+
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 
 workflows=( "$repo_root/.github/workflows/"*.yml "$repo_root/.github/workflows/"*.yaml )
