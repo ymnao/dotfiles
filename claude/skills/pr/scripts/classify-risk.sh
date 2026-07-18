@@ -103,7 +103,6 @@ check_content "exec-pattern"        'eval |child_process|subprocess|os\.system|e
 check_content "pipe-to-shell"       '(curl|wget)[^|;]*\|[[:space:]]*(ba|z|da)?sh'
 check_content "permission-widening" 'chmod (777|666)|--dangerously|--no-verify'
 check_deleted "test-removal" '(^|/)(tests?|__tests__|spec)/|\.(test|spec)\.[a-z]+$|_test\.(go|py|rb|ts|tsx|js|jsx)$|\.cases\.jsonl$'
-# LOW_ONLY_PATTERN は content check 絞り込みのため上部で定義済み
 # ---- /RULES ----
 
 tier="medium"
