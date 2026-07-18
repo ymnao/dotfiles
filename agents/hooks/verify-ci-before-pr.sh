@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 #
-# PreToolUse hook (Claude Code / Codex CLI 共通): `gh pr create` の実行前に HEAD コミットの CI が green か検証する
+# PreToolUse hook (Claude Code / Codex CLI 共通): `gh pr create` の実行前に
+# (1) HEAD コミットの CI が green か、(2) PR body に fix-or-issue ポリシー違反
+# (「defer(未起票)」marker) が残っていないか、の 2 点を検証する
 # 正本: agents/hooks/verify-ci-before-pr.sh
 # (claude/hooks/ と codex/hooks/ からは相対 symlink で参照される)
 #
@@ -45,6 +47,73 @@ gh_segment=$(printf '%s\n' "$command" \
 # --draft / -d は WIP 用 bypass (falsy 値 --draft=false 等は bypass しない)
 if printf '%s\n' "$gh_segment" | grep -qE '([[:space:]]|^)(--draft(=([Tt][Rr][Uu][Ee]|[Tt]|1))?|-d)([[:space:]]|$)'; then
   exit 0
+fi
+
+# fix-or-issue ポリシー検査 (pr skill 参照): PR body に「defer(未起票)」が
+# 残ったままの normal PR 作成をブロックする。finding は「fix 済み」か
+# 「issue URL 起票済み」のどちらかでなければならない (draft は上で bypass 済み)。
+# --body-file <path> / --body-file=<path> の両形式からファイルを解決し、
+# inline --body 内のマーカーは gh_segment 自体の文字列検査で拾う。
+DEFER_MARKER="defer(未起票)"
+# フラグ値の抽出 helper: 「double quote 囲み (スペース可)」→「single quote
+# 囲み (スペース可)」→「裸トークン」の順に試す。先頭の [[:space:]] anchor で
+# 他フラグの値内に現れた同名文字列への誤マッチを防ぐ。$1 は ERE alternation 可
+# (例 '--body-file|-F')。flag 自体が group 1 になるため値は \4\5 / \3 で取る
+# (値側 alternation は片方しかマッチしないため連結で常に一方だけが残る)。
+extract_flag_value() {
+  local flag="$1" v
+  v=$(printf '%s\n' "$gh_segment" \
+    | sed -nE 's/.*[[:space:]]('"$flag"')(=|[[:space:]]+)("([^"]*)"|([^[:space:]]+)).*/\4\5/p')
+  if [[ -z "$v" || "$v" == \'* ]]; then
+    v=$(printf '%s\n' "$gh_segment" \
+      | sed -nE "s/.*[[:space:]]($flag)(=|[[:space:]]+)'([^']*)'.*/\\3/p")
+  fi
+  printf '%s' "$v"
+}
+# 短縮エイリアス (-F = --body-file, -b = --body) も対象にする (迂回防止)
+body_file=$(extract_flag_value '--body-file|-F')
+defer_found=""
+if [[ -n "$body_file" || $gh_segment == *--body-file* ]] \
+  || printf '%s\n' "$gh_segment" | grep -qE '[[:space:]]-F([[:space:]=]|$)'; then
+  # --body-file 指定時は fail-closed: stdin (`-`)・変数展開 (`"$TMPDIR/x.md"`)・
+  # 存在しない相対パス等、hook から通常ファイルとして解決できない形式は
+  # 検査不能 = defer 検査の迂回経路になるためブロックする (この hook の他の
+  # 経路は fail-open だが、ここはポリシー強制が目的なので方針を変える)
+  if [[ -z "$body_file" || "$body_file" == "-" || ! -f "$body_file" || ! -r "$body_file" ]]; then
+    cat >&2 <<EOF
+[verify-ci-before-pr] --body-file の値を検査可能な実ファイルとして解決できません (got: '${body_file:-<未解決>}')。
+fix-or-issue ポリシー検査のため、変数展開や stdin (-) ではなくリテラルの実ファイルパスで渡してください。
+WIP として進めたい場合は --draft を付ければスキップします。
+EOF
+    exit 2
+  fi
+  # `grep -- `: `-` 始まりのファイル名がオプション解釈されるのを防ぐ
+  if grep -qF -- "$DEFER_MARKER" "$body_file"; then
+    defer_found="body-file: $body_file"
+  fi
+else
+  # inline --body の値のみ検査する (gh_segment 全体を grep すると --title 等の
+  # 値に marker 文字列が含まれるだけで false positive block になるため)。
+  # 比較は pure bash: printf | grep だと pipefail 下で producer の SIGPIPE が
+  # 判定を壊す理論経路があり、fork も不要になる。
+  # 既知の限界: (1) 実際の --body より前に置かれた他フラグの引用値内に
+  # 「 --body <marker>」文字列が含まれると誤 block する (シェル語彙解析なしの
+  # 正規表現抽出の限界。--draft で回避可能な保守的 false positive として受容)。
+  # (2) `--body "$(cat x)"` 等の動的展開値は文字列としてしか見えず fail-open
+  # だが、動的展開を含む書き込み系コマンドは block-dangerous-commands hook が
+  # 先にブロックするため、実質その hook が防御線になる
+  body_value=$(extract_flag_value '--body|-b')
+  if [[ -n "$body_value" && "$body_value" == *"$DEFER_MARKER"* ]]; then
+    defer_found="--body inline"
+  fi
+fi
+if [[ -n "$defer_found" ]]; then
+  cat >&2 <<EOF
+[verify-ci-before-pr] PR body に「$DEFER_MARKER」が含まれています ($defer_found)。
+fix-or-issue ポリシー: 未 fix の finding は gh issue create で起票して URL を記載してください。
+WIP として進めたい場合は --draft を付ければスキップします。
+EOF
+  exit 2
 fi
 
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0

@@ -15,7 +15,10 @@ set -euo pipefail
 # parse-review-output.sh).
 # Exit codes: 0 = verdict pass / 2 = findings / 1 = setup or parse error /
 #             3 = sandbox skip (codex CLI cannot initialize in the caller's
-#                 shell sandbox; treated as SKIP, not ERROR, by SKILL.md).
+#                 shell sandbox; treated as SKIP, not ERROR, by SKILL.md) /
+#             4 = rate-limit skip (codex アカウントの usage/rate limit 到達。
+#                 5 時間窓/週次窓のためセッション内リトライは無意味 —
+#                 SKILL.md は SKIP 扱いにして ERROR カウントに入れない).
 #
 # The review target is the caller's cwd (or CODEX_REVIEW_REPO if set). This
 # script does not `cd` unless CODEX_REVIEW_REPO is set. DOTFILES_ROOT is used
@@ -170,9 +173,26 @@ if ! {
   # エラーとの誤検出リスクが上がるため、あえて precise マッチのまま残す。
   if grep -qF 'failed to initialize in-process app-server client' "$RAW_ERR"; then
     # stdout は「検証済み JSON のみ」の契約なので、SKIP ログも stderr に流す
-    # (log.sh の skip() 自体は claude-init.sh の対話ログ用に stdout のまま)
+    # (log.sh の skip() 自体は claude-init.sh の対話ログ用の stdout のまま)
     skip "codex-review $PERSPECTIVE: sandbox blocks codex in-process app-server client init" >&2
     exit 3
+  fi
+  # Rate-limit skip 判定: codex アカウントの usage limit (ChatGPT プランの
+  # 5 時間窓/週次窓) 到達は「review 対象コードの問題」ではなく「実行環境の
+  # 制約」なので、sandbox skip (exit 3) と同様に通常エラーと区別して exit 4
+  # を返す。呼び側 (SKILL.md Step 1) は SKIPPED (rate limit) として記録し、
+  # 「2 連続 ERROR で全体停止」の閾値にはカウントしない。リトライしないのは
+  # リミット窓が時間単位でセッション内バックオフでは解消しないため。
+  # NOTE: 検出シグネチャは codex 0.144 系の stderr 文言準拠 (usage limit /
+  # rate limit / 429 Too Many Requests)。裸の数値 429 は含めない (ポート番号
+  # 等の無関係な stderr を rate-limit skip と誤判定し、本来 ERROR とすべき
+  # 失敗を隠蔽するため)。limit(s|ed)? + 非英字境界は "rate limiter
+  # initialization failed" のような部分一致の誤検出を防ぐ。codex 側の文言
+  # 変更で silent degradation する可能性がある — その場合はこの grep
+  # パターンを更新する (回帰テスト: tests/codex-review-skip/)。
+  if grep -qiE '(usage|rate) limit(s|ed)?([^a-z]|$)|too many requests' "$RAW_ERR"; then
+    skip "codex-review $PERSPECTIVE: codex account rate/usage limit reached" >&2
+    exit 4
   fi
   error "codex exec failed (see stderr above)"
 fi

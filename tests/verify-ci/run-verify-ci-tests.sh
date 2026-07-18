@@ -154,6 +154,21 @@ check() {
   fi
 }
 
+# block 時の stderr 内容検証 (フィードバック契約)。
+# $1=名前, $2=期待 grep パターン, $3=fixture 名, $4=command
+check_stderr() {
+  local json out
+  json=$(jq -cn --arg c "$4" '{"tool_input":{"command":$c}}')
+  out=$(printf '%s' "$json" \
+    | (cd "$GH_REPO" && PATH="$BASE/bin:$PATH" VERIFY_CI_FIXTURE="$BASE/fixtures/$3.json" bash "$HOOK" 2>&1 >/dev/null)) || true
+  if printf '%s' "$out" | grep -q "$2"; then
+    pass=$((pass + 1))
+  else
+    echo "FAIL $1: stderr が /$2/ にマッチしない"
+    fail=$((fail + 1))
+  fi
+}
+
 # 早期 exit 経路 (bypass / 対象外)。あえて failure fixture を渡すことで、
 # bypass 判定が退行して API 到達経路へ落ちた場合に curl スタブが失敗
 # JSON を返し hook が exit 2 → テスト FAIL となる (退行検出可)。
@@ -175,28 +190,79 @@ check "commit-missing"   2 "$(run_hook_in "$GH_REPO" missing 'gh pr create --tit
 # --draft=false は bypass しない (draft 判定の退行検出。CI 失敗なら block)
 check "draft-false-no-bypass" 2 "$(run_hook_in "$GH_REPO" failure 'gh pr create --draft=false --title t')"
 
-# ブロック時の stderr に失敗 check 名が含まれる (フィードバック契約)。
-# IFS=$'\t' read の空フィールド潰れ (pending 空のとき failed が pending 側に
-# ずれて「詳細不明」になる) の回帰検出を兼ねる。
-json=$(jq -cn '{"tool_input":{"command":"gh pr create --title t --body b"}}')
-stderr_out=$(printf '%s' "$json" \
-  | (cd "$GH_REPO" && PATH="$BASE/bin:$PATH" VERIFY_CI_FIXTURE="$BASE/fixtures/failure.json" bash "$HOOK" 2>&1 >/dev/null)) || true
-if printf '%s' "$stderr_out" | grep -q "ci (FAILURE)"; then
+# --- fix-or-issue ポリシー (defer(未起票) 検査) --------------------------
+# body-file に defer(未起票) が含まれる normal PR は block (CI 状態に無関係)。
+# fixture に success を渡すことで「defer 検査が退行して CI 経路に落ちたら
+# exit 0 になり FAIL する」構造にする (bypass 系テストと同じ退行検出設計)。
+printf '## 追跡先\n| f.sh:1 — x | defer(未起票) |\n' > "$BASE/defer-body.md"
+printf '## 追跡先\nなし\n' > "$BASE/clean-body.md"
+check "defer-in-body-file" 2 "$(run_hook_in "$GH_REPO" success "gh pr create --title t --body-file $BASE/defer-body.md")"
+check "defer-body-file-eq" 2 "$(run_hook_in "$GH_REPO" success "gh pr create --title t --body-file=$BASE/defer-body.md")"
+check "clean-body-file"    0 "$(run_hook_in "$GH_REPO" success "gh pr create --title t --body-file $BASE/clean-body.md")"
+# 引用符付きパス (gh pr create --body-file "/path/x.md" 形式) も解決される
+check "defer-body-file-quoted" 2 "$(run_hook_in "$GH_REPO" success "gh pr create --title t --body-file \"$BASE/defer-body.md\"")"
+# double quote 内のスペース含みパスも解決される (bare-token 抽出だと途中で
+# 切れて marker 検査が silent skip する退行の検出)
+mkdir -p "$BASE/sp ace"
+cp "$BASE/defer-body.md" "$BASE/sp ace/defer.md"
+check "defer-body-file-space-path" 2 "$(run_hook_in "$GH_REPO" success "gh pr create --title t --body-file \"$BASE/sp ace/defer.md\"")"
+# single quote 囲みのスペース含みパスも解決される
+check "defer-body-file-sq-space" 2 "$(run_hook_in "$GH_REPO" success "gh pr create --title t --body-file '$BASE/sp ace/defer.md'")"
+# inline --body 内の marker も block
+check "defer-inline-body"  2 "$(run_hook_in "$GH_REPO" success 'gh pr create --title t --body "追跡: defer(未起票)"')"
+# --title 内に marker 文字列があるだけでは block しない (--body 値限定検査。
+# CI success fixture なので defer 検査が誤発火しなければ exit 0)
+check "marker-in-title-only" 0 "$(run_hook_in "$GH_REPO" success 'gh pr create --title "defer(未起票) の説明" --body clean')"
+# 実際の --body が title より後にある通常順序では、title 値内の
+# 「 --body <marker>」文字列に惑わされない (greedy 抽出が最後の出現 = 実
+# --body を取るため。逆順は既知の保守的 false positive として hook 内に記載)
+check "fake-body-in-title" 0 "$(run_hook_in "$GH_REPO" success 'gh pr create --title "説明 --body defer(未起票)" --body clean')"
+
+# --- fail-closed: 検査不能な --body-file 形式は block -------------------
+# stdin 形式
+check "body-file-stdin"      2 "$(run_hook_in "$GH_REPO" success 'gh pr create --title t --body-file -')"
+# 変数展開 (hook からファイル解決不能)
+check "body-file-var"        2 "$(run_hook_in "$GH_REPO" success 'gh pr create --title t --body-file "$TMPDIR/body.md"')"
+# 存在しないパス
+check "body-file-missing"    2 "$(run_hook_in "$GH_REPO" success "gh pr create --title t --body-file $BASE/no-such.md")"
+check_stderr "stderr-fail-closed" "検査可能な実ファイルとして解決できません" success 'gh pr create --title t --body-file -'
+
+# 読み取り不能な body-file も fail-closed (grep 失敗 = 検査不能の迂回防止)。
+# root は chmod 000 でも読めるため skip (tests/brewfile-drift と同じ guard)
+if [ "$(id -u)" -ne 0 ]; then
+  cp "$BASE/defer-body.md" "$BASE/unreadable-body.md"
+  chmod 000 "$BASE/unreadable-body.md"
+  check "body-file-unreadable" 2 "$(run_hook_in "$GH_REPO" success "gh pr create --title t --body-file $BASE/unreadable-body.md")"
+fi
+
+# --- 短縮エイリアス (-F / -b) も迂回できない --------------------------
+check "defer-short-F"       2 "$(run_hook_in "$GH_REPO" success "gh pr create --title t -F $BASE/defer-body.md")"
+check "defer-short-b"       2 "$(run_hook_in "$GH_REPO" success 'gh pr create --title t -b "追跡: defer(未起票)"')"
+check "clean-short-F"       0 "$(run_hook_in "$GH_REPO" success "gh pr create --title t -F $BASE/clean-body.md")"
+# draft は WIP なので defer が残っていても bypass (draft 判定が先勝ち)
+check "defer-draft-bypass" 0 "$(run_hook_in "$GH_REPO" failure "gh pr create --draft --title t --body-file $BASE/defer-body.md")"
+
+# defer block 時の stderr にポリシー説明が含まれる
+check_stderr "stderr-defer-policy" "fix-or-issue" success "gh pr create --title t --body-file $BASE/defer-body.md"
+
+# marker 同期検証: hook の DEFER_MARKER リテラルが pr skill (SKILL.md) にも
+# 同一表記で存在すること。どちらか一方だけ表記を変えると fix-or-issue
+# ポリシーが黙って無効化される drift を機械的に検出する。
+hook_marker=$(sed -nE 's/^DEFER_MARKER="(.*)"$/\1/p' "$HOOK" | head -1)
+if [ -n "$hook_marker" ] && grep -qF "$hook_marker" "$REPO_ROOT/claude/skills/pr/SKILL.md"; then
   pass=$((pass + 1))
 else
-  echo "FAIL stderr-failed-check-names: 失敗 check 名が stderr に含まれない"
+  echo "FAIL marker-sync: hook の DEFER_MARKER ('$hook_marker') が claude/skills/pr/SKILL.md に見つからない"
   fail=$((fail + 1))
 fi
 
+# ブロック時の stderr に失敗 check 名が含まれる。IFS=$'\t' read の
+# 空フィールド潰れ (pending 空のとき failed が pending 側にずれて
+# 「詳細不明」になる) の回帰検出を兼ねる。
+check_stderr "stderr-failed-check-names" "ci (FAILURE)" failure 'gh pr create --title t --body b'
+
 # PENDING ブロック時の stderr に進行中 check 名が含まれる
-stderr_out=$(printf '%s' "$json" \
-  | (cd "$GH_REPO" && PATH="$BASE/bin:$PATH" VERIFY_CI_FIXTURE="$BASE/fixtures/pending.json" bash "$HOOK" 2>&1 >/dev/null)) || true
-if printf '%s' "$stderr_out" | grep -q "進行中: ci"; then
-  pass=$((pass + 1))
-else
-  echo "FAIL stderr-pending-check-names: 進行中 check 名が stderr に含まれない"
-  fail=$((fail + 1))
-fi
+check_stderr "stderr-pending-check-names" "進行中: ci" pending 'gh pr create --title t --body b'
 
 echo "----"
 echo "verify-ci tests: $pass passed, $fail failed"
