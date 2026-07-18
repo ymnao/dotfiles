@@ -239,6 +239,14 @@ if (Test-Path $npmrcSource) {
     New-FileLink -Source $npmrcSource -Destination $npmrcDest
 }
 
+# Starship configuration (pwsh でも starship を使う場合に有効。未使用でも実害なし)
+Write-Info "`nLinking Starship configuration..."
+$starshipSource = Join-Path $DOTFILES_DIR "starship\starship.toml"
+$starshipDest = Join-Path $env:USERPROFILE ".config\starship.toml"
+if (Test-Path $starshipSource) {
+    New-FileLink -Source $starshipSource -Destination $starshipDest
+}
+
 # PowerShell Profile
 Write-Info "`nLinking PowerShell profile..."
 $profileSource = Join-Path $DOTFILES_DIR "shell\powershell\profile.ps1"

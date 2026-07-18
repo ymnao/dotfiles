@@ -69,6 +69,17 @@ test: ## Verify shell scripts (shellcheck), JSON files (jq), and hooks
 	@git ls-files '*.json' | while read -r f; do \
 	    jq empty "$$f" >/dev/null || { echo "FAIL: $$f"; exit 1; }; \
 	done
+	@echo "==> TOML validation"
+	@command -v python3 >/dev/null || { echo "python3 not installed"; exit 1; }
+	@# tomllib は Python 3.11+ 標準。3.10 以下だと import で ModuleNotFoundError
+	@# となり意味不明な失敗になるため、明示的に version を検証する。
+	@python3 -c "import sys; sys.exit(0 if sys.version_info >= (3,11) else 1)" \
+	    || { echo "python3 >= 3.11 required (tomllib は 3.11+ の標準ライブラリ)"; exit 1; }
+	@# starship.toml の `\$` 系 escape ミス等、Rust 側 lenient parser では
+	@# 通ってしまう仕様外の TOML を CI で FAIL させる。
+	@git ls-files '*.toml' | while read -r f; do \
+	    python3 -c "import tomllib,sys; tomllib.load(open(sys.argv[1],'rb'))" "$$f" || { echo "FAIL: $$f"; exit 1; }; \
+	done
 	@bash tests/run-hook-tests.sh
 	@bash tests/parse-review-output/run-parser-tests.sh
 	@bash tests/classify-risk/run-classify-risk-tests.sh

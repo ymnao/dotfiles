@@ -1,0 +1,75 @@
+# Starship prompt configuration
+# Palette: kanagawa_dragon (wezterm/colors/kanagawa_dragon.lua と同系)
+
+# 2 行構成: 上段 = 情報 / 下段 = 入力プロンプト (❯)
+# path が長くてもコマンド入力位置が固定される
+
+format = """
+$directory\
+$git_branch\
+$git_status\
+$nodejs\
+$python\
+$rust\
+$golang\
+$cmd_duration\
+$line_break\
+$character"""
+
+[character]
+success_symbol = "[❯](bold #7FB4CA)"
+error_symbol = "[❯](bold #E46876)"
+vicmd_symbol = "[❮](bold #E6C384)"
+
+[directory]
+style = "bold #7AA89F"
+truncation_length = 3
+truncation_symbol = "…/"
+truncate_to_repo = true
+format = "[$path]($style)[$read_only]($read_only_style) "
+read_only = " "
+read_only_style = "#E46876"
+
+[git_branch]
+symbol = " "
+style = "bold #E6C384"
+format = "on [$symbol$branch]($style) "
+
+[git_status]
+style = "bold #C4746E"
+format = '([\[$all_status$ahead_behind\]]($style) )'
+conflicted = "="
+ahead = "⇡${count}"
+behind = "⇣${count}"
+diverged = "⇕⇡${ahead_count}⇣${behind_count}"
+untracked = "?${count}"
+stashed = '$${count}'
+modified = "!${count}"
+staged = "+${count}"
+renamed = "»${count}"
+deleted = "✘${count}"
+
+[cmd_duration]
+min_time = 500
+style = "#C4B28A"
+format = "took [$duration]($style) "
+
+[nodejs]
+symbol = " "
+style = "#87A987"
+format = "via [$symbol($version )]($style)"
+
+[python]
+symbol = " "
+style = "#7FB4CA"
+format = 'via [$symbol${pyenv_prefix}(${version} )(\($virtualenv\) )]($style)'
+
+[rust]
+symbol = " "
+style = "#C4746E"
+format = "via [$symbol($version )]($style)"
+
+[golang]
+symbol = " "
+style = "#7FB4CA"
+format = "via [$symbol($version )]($style)"

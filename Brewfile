@@ -8,6 +8,7 @@ brew "gh"
 brew "lazygit"
 brew "neovim"
 brew "fish"
+brew "starship"  # cross-shell prompt (fish から init して使用。pwsh 未配線)
 brew "ripgrep"
 brew "fd"
 brew "tree"
