@@ -24,21 +24,25 @@ after_cksum=$(cksum HANDOFF.md | awk '{print $1"_"$2}')
 
 ## merged 状態の再現(auto-delete 環境非依存化)
 
-hosting 側で auto-delete が有効な環境でも eval を実行できるよう、setup で
-fresh branch を毎回作成しローカル merge で merged 体裁を再現する:
+`/next` は `gh pr view` で MERGED 判定を行うため、実 remote に push
+した PR を `gh pr merge --admin` で merge する必要がある(local `git merge`
+では PR state が MERGED にならない)。auto-delete 環境でもローカル
+ブランチは残るので eval は続行できる:
 
 ```bash
 git checkout main && git pull
 branch="feature/eval-next-<name>-$(date +%s)"
 git checkout -b "$branch"
 echo x >> README.md && git commit -am "chore: eval fixture"
-git checkout main
-git merge --no-ff "$branch" -m "Merge $branch (eval fixture)"
-git checkout "$branch"  # 対象ブランチに戻す
+git push -u origin HEAD
+gh pr create --fill
+pr_number=$(gh pr view --json number -q .number)
+gh pr merge "$pr_number" --squash --admin
+# `gh pr merge` は local HEAD を動かさないので $branch のまま
 ```
 
-対象ブランチが `main` に merged で、かつ auto-delete で消えていない、と
-いう状態を hosting 非依存に作れる。
+remote auto-delete が有効な環境でも local branch は保持されるため、
+後続の `git branch -d` / `-d` 拒否検証は成立する。
 
 ## main SHA を意図的に古くする(next/04 用)
 

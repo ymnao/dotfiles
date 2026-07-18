@@ -15,8 +15,7 @@ git push -u origin HEAD
 gh pr create --fill
 pr_number=$(gh pr view --json number -q .number)
 gh pr merge "$pr_number" --squash --admin
-git fetch origin main
-git checkout "$branch"
+# `gh pr merge` は local HEAD を動かさないので $branch のまま。
 [ -f HANDOFF.md ] && mv HANDOFF.md HANDOFF.md.bak
 cp claude/skills/next/evals/fixtures/handoff-template.md HANDOFF.md
 ```

@@ -15,7 +15,7 @@ gh pr view --json state -q .state   # -> "OPEN"
 before_branch=$(git branch --show-current)
 before_head=$(git rev-parse HEAD)
 before_main=$(git rev-parse main)
-[ -f HANDOFF.md ] && cp HANDOFF.md HANDOFF.md.bak
+[ -f HANDOFF.md ] && mv HANDOFF.md HANDOFF.md.bak
 cp claude/skills/next/evals/fixtures/handoff-template.md HANDOFF.md
 before_handoff_cksum=$(cksum HANDOFF.md | awk '{print $1"_"$2}')
 ```

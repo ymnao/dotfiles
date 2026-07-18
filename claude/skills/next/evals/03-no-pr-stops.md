@@ -11,7 +11,7 @@ echo y >> README.md && git commit -am "chore: eval-next no-pr fixture"
 gh pr view --json state; echo "gh pr view exit=$?"   # -> non-zero / "no pull requests found for branch"
 before_main=$(git rev-parse main)
 before_branch=$(git branch --show-current)
-[ -f HANDOFF.md ] && cp HANDOFF.md HANDOFF.md.bak
+[ -f HANDOFF.md ] && mv HANDOFF.md HANDOFF.md.bak
 cp claude/skills/next/evals/fixtures/handoff-template.md HANDOFF.md
 before_handoff_cksum=$(cksum HANDOFF.md | awk '{print $1"_"$2}')
 ```

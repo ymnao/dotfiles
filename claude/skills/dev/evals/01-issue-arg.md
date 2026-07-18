@@ -30,8 +30,7 @@ before_head=$(git rev-parse HEAD)
 
 ## Cleanup
 ```bash
+branch=$(git branch --show-current)
 git checkout main
-branch=$(git branch --list 'feature/*' 'fix/*' 'refactor/*' 'docs/*' \
-    --format '%(refname:short)' | tail -1)
-[ -n "$branch" ] && git branch -D "$branch" 2>/dev/null || true
+[ "$branch" != "main" ] && git branch -D "$branch" 2>/dev/null || true
 ```

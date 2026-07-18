@@ -14,13 +14,11 @@ git push -u origin HEAD
 gh pr create --fill
 pr_number=$(gh pr view --json number -q .number)
 gh pr merge "$pr_number" --squash --admin
-# remote が auto-delete していても続行 (local branch は残っている)
+# remote が auto-delete していても続行 (local branch は残っている)。
+# `gh pr merge` は local HEAD を動かさないので $branch のまま。
 git fetch origin main
-git checkout "$branch"
 git branch -f main "$(git rev-parse origin/main)~1"   # main を 1 コミット戻す
-git checkout main
-before_main=$(git rev-parse HEAD)
-git checkout "$branch"
+before_main=$(git rev-parse main)
 gh pr view --json state,mergedAt -q '.state + " " + (.mergedAt // "null")'
 # -> "MERGED <timestamp>"
 ```
