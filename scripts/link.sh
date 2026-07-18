@@ -70,6 +70,11 @@ if [[ -d "$DOTFILES_DIR/fish" ]]; then
     link_file "$DOTFILES_DIR/fish" "$HOME/.config/fish"
 fi
 
+# Link Starship configuration
+if [[ -f "$DOTFILES_DIR/starship/starship.toml" ]]; then
+    link_file "$DOTFILES_DIR/starship/starship.toml" "$HOME/.config/starship.toml"
+fi
+
 # Git configuration
 mkdir -p "$HOME/.config/git"
 
