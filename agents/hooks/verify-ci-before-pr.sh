@@ -71,14 +71,33 @@ extract_flag_value() {
 }
 body_file=$(extract_flag_value '--body-file')
 defer_found=""
-# `grep -- ` のオプション終端: `-` 始まりのファイル名がオプション解釈されるのを防ぐ
-if [[ -n "$body_file" && -f "$body_file" ]] && grep -qF -- "$DEFER_MARKER" "$body_file"; then
-  defer_found="body-file: $body_file"
+if [[ -n "$body_file" || $gh_segment == *--body-file* ]]; then
+  # --body-file 指定時は fail-closed: stdin (`-`)・変数展開 (`"$TMPDIR/x.md"`)・
+  # 存在しない相対パス等、hook から通常ファイルとして解決できない形式は
+  # 検査不能 = defer 検査の迂回経路になるためブロックする (この hook の他の
+  # 経路は fail-open だが、ここはポリシー強制が目的なので方針を変える)
+  if [[ -z "$body_file" || "$body_file" == "-" || ! -f "$body_file" ]]; then
+    cat >&2 <<EOF
+[verify-ci-before-pr] --body-file の値を検査可能な実ファイルとして解決できません (got: '${body_file:-<未解決>}')。
+fix-or-issue ポリシー検査のため、変数展開や stdin (-) ではなくリテラルの実ファイルパスで渡してください。
+WIP として進めたい場合は --draft を付ければスキップします。
+EOF
+    exit 2
+  fi
+  # `grep -- `: `-` 始まりのファイル名がオプション解釈されるのを防ぐ
+  if grep -qF -- "$DEFER_MARKER" "$body_file"; then
+    defer_found="body-file: $body_file"
+  fi
 else
   # inline --body の値のみ検査する (gh_segment 全体を grep すると --title 等の
-  # 値に marker 文字列が含まれるだけで false positive block になるため)
+  # 値に marker 文字列が含まれるだけで false positive block になるため)。
+  # 比較は pure bash: printf | grep だと pipefail 下で producer の SIGPIPE が
+  # 判定を壊す理論経路があり、fork も不要になる。
+  # 既知の限界: 実際の --body より前に置かれた他フラグの引用値内に
+  # 「 --body <marker>」文字列が含まれると誤 block する (シェル語彙解析なしの
+  # 正規表現抽出の限界。--draft で回避可能な保守的 false positive として受容)
   body_value=$(extract_flag_value '--body')
-  if [[ -n "$body_value" ]] && printf '%s\n' "$body_value" | grep -qF -- "$DEFER_MARKER"; then
+  if [[ -n "$body_value" && "$body_value" == *"$DEFER_MARKER"* ]]; then
     defer_found="--body inline"
   fi
 fi

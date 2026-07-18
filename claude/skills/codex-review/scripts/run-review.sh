@@ -186,9 +186,11 @@ if ! {
   # NOTE: 検出シグネチャは codex 0.144 系の stderr 文言準拠 (usage limit /
   # rate limit / 429 Too Many Requests)。裸の数値 429 は含めない (ポート番号
   # 等の無関係な stderr を rate-limit skip と誤判定し、本来 ERROR とすべき
-  # 失敗を隠蔽するため)。codex 側の文言変更で silent degradation する
-  # 可能性がある — その場合はこの grep パターンを更新する。
-  if grep -qiE 'usage limit|rate limit|too many requests' "$RAW_ERR"; then
+  # 失敗を隠蔽するため)。limit(s|ed)? + 非英字境界は "rate limiter
+  # initialization failed" のような部分一致の誤検出を防ぐ。codex 側の文言
+  # 変更で silent degradation する可能性がある — その場合はこの grep
+  # パターンを更新する (回帰テスト: tests/codex-review-skip/)。
+  if grep -qiE '(usage|rate) limit(s|ed)?([^a-z]|$)|too many requests' "$RAW_ERR"; then
     skip "codex-review $PERSPECTIVE: codex account rate/usage limit reached" >&2
     exit 4
   fi

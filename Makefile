@@ -100,6 +100,7 @@ test: ## Verify shell scripts (shellcheck), JSON files (jq), and hooks
 	@bash tests/fish-pnpm/run-fish-pnpm-tests.sh
 	@bash tests/brewfile-drift/run-brewfile-drift-tests.sh
 	@bash tests/link/run-link-tests.sh
+	@bash tests/codex-review-skip/run-codex-skip-tests.sh
 	@echo "OK: all checks passed"
 
 test-hooks: ## Run hook regression tests

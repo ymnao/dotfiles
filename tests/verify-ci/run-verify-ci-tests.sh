@@ -213,6 +213,19 @@ check "defer-inline-body"  2 "$(run_hook_in "$GH_REPO" success 'gh pr create --t
 # --title 内に marker 文字列があるだけでは block しない (--body 値限定検査。
 # CI success fixture なので defer 検査が誤発火しなければ exit 0)
 check "marker-in-title-only" 0 "$(run_hook_in "$GH_REPO" success 'gh pr create --title "defer(未起票) の説明" --body clean')"
+# 実際の --body が title より後にある通常順序では、title 値内の
+# 「 --body <marker>」文字列に惑わされない (greedy 抽出が最後の出現 = 実
+# --body を取るため。逆順は既知の保守的 false positive として hook 内に記載)
+check "fake-body-in-title" 0 "$(run_hook_in "$GH_REPO" success 'gh pr create --title "説明 --body defer(未起票)" --body clean')"
+
+# --- fail-closed: 検査不能な --body-file 形式は block -------------------
+# stdin 形式
+check "body-file-stdin"      2 "$(run_hook_in "$GH_REPO" success 'gh pr create --title t --body-file -')"
+# 変数展開 (hook からファイル解決不能)
+check "body-file-var"        2 "$(run_hook_in "$GH_REPO" success 'gh pr create --title t --body-file "$TMPDIR/body.md"')"
+# 存在しないパス
+check "body-file-missing"    2 "$(run_hook_in "$GH_REPO" success "gh pr create --title t --body-file $BASE/no-such.md")"
+check_stderr "stderr-fail-closed" "検査可能な実ファイルとして解決できません" success 'gh pr create --title t --body-file -'
 # draft は WIP なので defer が残っていても bypass (draft 判定が先勝ち)
 check "defer-draft-bypass" 0 "$(run_hook_in "$GH_REPO" failure "gh pr create --draft --title t --body-file $BASE/defer-body.md")"
 

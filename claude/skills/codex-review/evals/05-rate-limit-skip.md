@@ -1,25 +1,26 @@
 # eval: codex-review — rate limit 到達で ERROR ではなく SKIP (exit 4)
 
 ## Setup
-実リミット到達は不要。PATH 前方に偽 `codex` 実行ファイルを置いて
-usage limit 到達時の stderr 文言を再現する。
+実リミット到達は不要。mktemp で隔離した専用ディレクトリに偽 `codex`
+実行ファイルを置いて usage limit 到達時の stderr 文言を再現する
+(固定共有パスだと既存ファイルの上書き・cleanup での巻き込み削除があるため)。
 
 ```bash
-mkdir -p "${TMPDIR:-/tmp}/mock-bin"
-cat > "${TMPDIR:-/tmp}/mock-bin/codex" <<'EOF'
+mock_dir=$(mktemp -d "${TMPDIR:-/tmp}/codex-review-eval.XXXXXX")
+cat > "$mock_dir/codex" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 echo "stream error: 429 Too Many Requests; you have hit your usage limit" >&2
 exit 1
 EOF
-chmod +x "${TMPDIR:-/tmp}/mock-bin/codex"
+chmod +x "$mock_dir/codex"
 ```
 
 ## Prompt
 レビュー対象リポジトリ (コミット済み差分のあるブランチ) の直下で、
 04 と同じ前置き代入形式で PATH を渡して単体実行する:
 ```bash
-PATH="${TMPDIR:-/tmp}/mock-bin:/usr/bin:/bin" bash "$HOME/.claude/skills/codex-review/scripts/run-review.sh" shell-senior
+PATH="$mock_dir:/usr/bin:/bin" bash "$HOME/.claude/skills/codex-review/scripts/run-review.sh" shell-senior
 ```
 skill 全体を通した確認は任意: 同じ PATH 前置きが効いた shell で
 `/codex-review を実行して` (最初の観点で偽 codex を踏む)。
@@ -42,4 +43,4 @@ skill 全体を通した確認は任意: 同じ PATH 前置きが効いた shell
       サブエージェントのフレッシュレビュー) の案内が含まれる
 
 ## Cleanup
-`rm -rf "${TMPDIR:-/tmp}/mock-bin"` (省略可 — 次回 Setup で上書き)。
+`rm -rf "$mock_dir"` (mktemp で作った専用ディレクトリのみ削除する)。
