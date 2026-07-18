@@ -206,8 +206,13 @@ check "defer-body-file-quoted" 2 "$(run_hook_in "$GH_REPO" success "gh pr create
 mkdir -p "$BASE/sp ace"
 cp "$BASE/defer-body.md" "$BASE/sp ace/defer.md"
 check "defer-body-file-space-path" 2 "$(run_hook_in "$GH_REPO" success "gh pr create --title t --body-file \"$BASE/sp ace/defer.md\"")"
+# single quote 囲みのスペース含みパスも解決される
+check "defer-body-file-sq-space" 2 "$(run_hook_in "$GH_REPO" success "gh pr create --title t --body-file '$BASE/sp ace/defer.md'")"
 # inline --body 内の marker も block
 check "defer-inline-body"  2 "$(run_hook_in "$GH_REPO" success 'gh pr create --title t --body "追跡: defer(未起票)"')"
+# --title 内に marker 文字列があるだけでは block しない (--body 値限定検査。
+# CI success fixture なので defer 検査が誤発火しなければ exit 0)
+check "marker-in-title-only" 0 "$(run_hook_in "$GH_REPO" success 'gh pr create --title "defer(未起票) の説明" --body clean')"
 # draft は WIP なので defer が残っていても bypass (draft 判定が先勝ち)
 check "defer-draft-bypass" 0 "$(run_hook_in "$GH_REPO" failure "gh pr create --draft --title t --body-file $BASE/defer-body.md")"
 

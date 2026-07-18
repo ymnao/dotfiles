@@ -8,6 +8,7 @@ usage limit 到達時の stderr 文言を再現する。
 mkdir -p "${TMPDIR:-/tmp}/mock-bin"
 cat > "${TMPDIR:-/tmp}/mock-bin/codex" <<'EOF'
 #!/usr/bin/env bash
+set -euo pipefail
 echo "stream error: 429 Too Many Requests; you have hit your usage limit" >&2
 exit 1
 EOF

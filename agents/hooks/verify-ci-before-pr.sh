@@ -55,20 +55,32 @@ fi
 # --body-file <path> / --body-file=<path> の両形式からファイルを解決し、
 # inline --body 内のマーカーは gh_segment 自体の文字列検査で拾う。
 DEFER_MARKER="defer(未起票)"
-# 値は「double quote 囲み (スペース含みパス可)」または「裸トークン」の 2 形式。
-# 先頭の [[:space:]] anchor で --title/--body の値内に現れた "--body-file"
-# 文字列への誤マッチを防ぐ。alternation は片方しかマッチしないため \3\4 の
-# 連結で常に一方だけが残る。single quote 囲みは sed program が single quote
-# のため表現できず、下の strip で裸トークン扱いにフォールバックする。
-body_file=$(printf '%s\n' "$gh_segment" \
-  | sed -nE 's/.*[[:space:]]--body-file(=|[[:space:]]+)("([^"]*)"|([^[:space:]]+)).*/\3\4/p')
-# quote 除去 (--body-file 'x.md' の裸トークン形式で残った single quote)
-body_file="${body_file%\'}"; body_file="${body_file#\'}"
+# フラグ値の抽出 helper: 「double quote 囲み (スペース可)」→「single quote
+# 囲み (スペース可)」→「裸トークン」の順に試す。先頭の [[:space:]] anchor で
+# 他フラグの値内に現れた同名文字列への誤マッチを防ぐ。alternation は片方しか
+# マッチしないため \3\4 の連結で常に一方だけが残る。
+extract_flag_value() {
+  local flag="$1" v
+  v=$(printf '%s\n' "$gh_segment" \
+    | sed -nE 's/.*[[:space:]]'"$flag"'(=|[[:space:]]+)("([^"]*)"|([^[:space:]]+)).*/\3\4/p')
+  if [[ -z "$v" || "$v" == \'* ]]; then
+    v=$(printf '%s\n' "$gh_segment" \
+      | sed -nE "s/.*[[:space:]]$flag(=|[[:space:]]+)'([^']*)'.*/\\2/p")
+  fi
+  printf '%s' "$v"
+}
+body_file=$(extract_flag_value '--body-file')
 defer_found=""
-if [[ -n "$body_file" && -f "$body_file" ]] && grep -qF "$DEFER_MARKER" "$body_file"; then
+# `grep -- ` のオプション終端: `-` 始まりのファイル名がオプション解釈されるのを防ぐ
+if [[ -n "$body_file" && -f "$body_file" ]] && grep -qF -- "$DEFER_MARKER" "$body_file"; then
   defer_found="body-file: $body_file"
-elif printf '%s\n' "$gh_segment" | grep -qF "$DEFER_MARKER"; then
-  defer_found="--body inline"
+else
+  # inline --body の値のみ検査する (gh_segment 全体を grep すると --title 等の
+  # 値に marker 文字列が含まれるだけで false positive block になるため)
+  body_value=$(extract_flag_value '--body')
+  if [[ -n "$body_value" ]] && printf '%s\n' "$body_value" | grep -qF -- "$DEFER_MARKER"; then
+    defer_found="--body inline"
+  fi
 fi
 if [[ -n "$defer_found" ]]; then
   cat >&2 <<EOF
