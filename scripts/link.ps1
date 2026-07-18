@@ -244,10 +244,6 @@ Write-Info "`nLinking Starship configuration..."
 $starshipSource = Join-Path $DOTFILES_DIR "starship\starship.toml"
 $starshipDest = Join-Path $env:USERPROFILE ".config\starship.toml"
 if (Test-Path $starshipSource) {
-    $starshipDir = Split-Path -Parent $starshipDest
-    if (-not (Test-Path $starshipDir)) {
-        New-Item -ItemType Directory -Path $starshipDir -Force | Out-Null
-    }
     New-FileLink -Source $starshipSource -Destination $starshipDest
 }
 
