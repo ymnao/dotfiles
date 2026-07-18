@@ -68,7 +68,7 @@ if [[ "$OS_TYPE" == "macos" ]]; then
     if brew --prefix tealdeer >/dev/null 2>&1; then
         if ! tldr --list >/dev/null 2>&1; then
             info "Initializing tealdeer cache: tldr --update"
-            tldr --update || true
+            tldr --update || warn "tealdeer cache init failed (network?): run 'tldr --update' manually later"
         fi
     fi
 fi
