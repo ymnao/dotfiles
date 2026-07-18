@@ -79,7 +79,7 @@ if [[ -n "$body_file" || $gh_segment == *--body-file* ]] \
   # 存在しない相対パス等、hook から通常ファイルとして解決できない形式は
   # 検査不能 = defer 検査の迂回経路になるためブロックする (この hook の他の
   # 経路は fail-open だが、ここはポリシー強制が目的なので方針を変える)
-  if [[ -z "$body_file" || "$body_file" == "-" || ! -f "$body_file" ]]; then
+  if [[ -z "$body_file" || "$body_file" == "-" || ! -f "$body_file" || ! -r "$body_file" ]]; then
     cat >&2 <<EOF
 [verify-ci-before-pr] --body-file の値を検査可能な実ファイルとして解決できません (got: '${body_file:-<未解決>}')。
 fix-or-issue ポリシー検査のため、変数展開や stdin (-) ではなくリテラルの実ファイルパスで渡してください。

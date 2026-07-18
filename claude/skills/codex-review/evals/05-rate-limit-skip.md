@@ -20,7 +20,7 @@ chmod +x "$mock_dir/codex"
 レビュー対象リポジトリ (コミット済み差分のあるブランチ) の直下で、
 04 と同じ前置き代入形式で PATH を渡して単体実行する:
 ```bash
-PATH="$mock_dir:/usr/bin:/bin" bash "$HOME/.claude/skills/codex-review/scripts/run-review.sh" shell-senior
+PATH="$mock_dir:$PATH" bash "$HOME/.claude/skills/codex-review/scripts/run-review.sh" shell-senior
 ```
 skill 全体を通した確認は任意: 同じ PATH 前置きが効いた shell で
 `/codex-review を実行して` (最初の観点で偽 codex を踏む)。
