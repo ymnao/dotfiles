@@ -83,19 +83,10 @@ rc=$(run_link "$c2_root" "$c2_home" "$c2_home/out" "$c2_home/err")
 ok=1
 [ "$rc" = 0 ] || { echo "FAIL c2: rc=$rc"; ok=0; }
 [ -L "$c2_home/.config/wezterm" ] || { echo "FAIL c2: not symlink"; ok=0; }
-# backup は .backup または .backup.<ts> のいずれか
-if ! ls "$c2_home/.config/wezterm".backup* >/dev/null 2>&1 && [ ! -e "$c2_home/.config/wezterm.backup" ]; then
-  echo "FAIL c2: backup not created"; ok=0
-fi
-# backup の中身が元 file 内容と一致する
-backup_file=$(ls "$c2_home/.config/wezterm".backup* 2>/dev/null | head -1)
-[ -z "$backup_file" ] && backup_file="$c2_home/.config/wezterm.backup"
-if [ -f "$backup_file" ]; then
-  content=$(cat "$backup_file")
-  [ "$content" = "old-user-config" ] || { echo "FAIL c2: backup content mismatch: $content"; ok=0; }
-else
-  echo "FAIL c2: backup path not a file: $backup_file"; ok=0
-fi
+# fresh fake_home では unique_backup_path (backup.sh) が必ず $dest.backup を返す
+backup="$c2_home/.config/wezterm.backup"
+[ -f "$backup" ] || { echo "FAIL c2: backup not created"; ok=0; }
+[ "$(cat "$backup" 2>/dev/null)" = "old-user-config" ] || { echo "FAIL c2: backup content mismatch"; ok=0; }
 if [ "$ok" = 1 ]; then pass=$((pass+1)); else fail=$((fail+1)); sed 's/^/  /' "$c2_home/err"; fi
 
 # ---- case 3: 既存 symlink (別 target) → backup せず置換
