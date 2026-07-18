@@ -41,6 +41,7 @@ brew "openjdk@17"
 # ========================================
 brew "shellcheck"
 brew "actionlint"
+brew "jq"  # Makefile / hooks / statusline が command -v jq で hard-fail
 
 # ========================================
 # AWS Development
@@ -109,10 +110,7 @@ cask "claude"
 cask "claude-code"
 cask "codex"
 cask "codex-app"
-
-# ========================================
-# ymnao Tap
-# ========================================
+# kura は自作の menu bar app。HOMEBREW_REQUIRE_TAP_TRUST 下でも通るよう trusted: true。
 tap "ymnao/homebrew-tap"
 cask "ymnao/homebrew-tap/kura", trusted: true
 

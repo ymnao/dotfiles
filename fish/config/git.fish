@@ -1,5 +1,4 @@
 abbr -a g git
-abbr -a gs git status
 abbr -a gd git diff
 abbr -a gds git diff --staged
 abbr -a ga git add
