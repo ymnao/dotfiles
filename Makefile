@@ -1,4 +1,4 @@
-.PHONY: help install link update clean brewfile lint test test-hooks gate
+.PHONY: help install link update clean brewfile brewfile-drift lint test test-hooks gate
 
 # Default target
 .DEFAULT_GOAL := help
@@ -46,6 +46,9 @@ brewfile: ## Regenerate Brewfile from installed packages (destructive; requires 
 	fi
 	@brew bundle dump --force --file=Brewfile
 	@echo "Brewfile updated"
+
+brewfile-drift: ## Detect packages installed but not tracked in Brewfile
+	@bash scripts/brewfile-drift.sh
 
 lint: ## Run secretlint to detect leaked secrets
 	@command -v pnpm >/dev/null || { echo "pnpm not installed. Run: brew install pnpm"; exit 1; }
