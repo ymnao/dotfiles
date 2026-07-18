@@ -20,6 +20,18 @@ git checkout -b "$branch"
 `<name>` は eval ごとの識別子(`issue-arg` / `review-loop-rerun` 等)。
 cleanup では `git branch -D "$branch" 2>/dev/null || true` の形で参照する。
 
+### スキルが作ったブランチの cleanup
+
+`/dev` は eval 実行中に自分でタスク用ブランチを作る。setup で `$branch`
+を宣言できないケース (dev/01, 02, 03, 05a, 05b, 05c, 08 等) は cleanup
+で `git branch --show-current` から取り、main ガードを付けて削除する:
+
+```bash
+branch=$(git branch --show-current)
+git checkout main
+[ "$branch" != "main" ] && git branch -D "$branch" 2>/dev/null || true
+```
+
 ### stash 独立性
 
 `git stash list` が空である前提を廃し、eval 実行前後の差分で判定する:

@@ -11,8 +11,7 @@ git checkout -b "$branch"
 echo x >> README.md && git commit -am "chore: eval-next delete-fail fixture (merged part)"
 git push -u origin HEAD
 gh pr create --fill
-pr_number=$(gh pr view --json number -q .number)
-gh pr merge "$pr_number" --squash --admin
+gh pr merge --squash --admin   # current branch の PR に対して merge
 # `gh pr merge` は local HEAD を動かさないので $branch のまま。
 # merged 済み扱いだが、この時点で local に main へ未 merge のコミットを追加
 echo "extra local commit not merged into main" >> README.md

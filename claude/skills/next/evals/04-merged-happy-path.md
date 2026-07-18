@@ -12,8 +12,7 @@ git checkout -b "$branch"
 echo x >> README.md && git commit -am "chore: eval-next merged fixture"
 git push -u origin HEAD
 gh pr create --fill
-pr_number=$(gh pr view --json number -q .number)
-gh pr merge "$pr_number" --squash --admin
+gh pr merge --squash --admin   # current branch の PR に対して merge
 # remote が auto-delete していても続行 (local branch は残っている)。
 # `gh pr merge` は local HEAD を動かさないので $branch のまま。
 git fetch origin main

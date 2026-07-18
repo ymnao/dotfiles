@@ -69,6 +69,6 @@ before_main=$(git rev-parse HEAD)
 
 ## fixtures
 
-- `fixtures/handoff-template.md` — HANDOFF テンプレ(next/01, 02, 06)。
+- `fixtures/handoff-template.md` — HANDOFF テンプレ(next/01, 02, 03, 06)。
   ファイル名を `HANDOFF.md` にしない(gitignored のため)、setup 内 cp
   でのみ HANDOFF.md 化する

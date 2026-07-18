@@ -37,11 +37,9 @@ before_handoff_cksum=$(cksum HANDOFF.md | awk '{print $1"_"$2}')
 
 ## Cleanup
 ```bash
-pr_number=$(gh pr view --json number -q .number 2>/dev/null)
 git checkout main
-git branch -D "$branch" 2>/dev/null || true
-[ -n "$pr_number" ] && gh pr close "$pr_number" --delete-branch 2>/dev/null || true
-git push origin --delete "$branch" 2>/dev/null || true
+gh pr close --delete-branch 2>/dev/null || true   # local + remote branch を同時削除
+git branch -D "$branch" 2>/dev/null || true       # gh pr close が local を消せなかった場合の保険
 rm -f HANDOFF.md
 [ -f HANDOFF.md.bak ] && mv HANDOFF.md.bak HANDOFF.md
 ```

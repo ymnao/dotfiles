@@ -1,15 +1,17 @@
 # eval: dev — 引数なし (HANDOFF.md 継続)
 
 ## Setup
-sandbox clone 内で main、clean tree にする。HANDOFF.md fixture と、
-`fooo` typo を含む README fixture を配置する (HANDOFF.md は gitignored
-なのでコミットされない)。
+sandbox clone 内で main、clean tree にする。`fooo` typo を含む README
+fixture は sandbox main に commit する (未 commit のまま cp すると
+`/dev` の dirty-worktree 停止チェックが先に発火し、HANDOFF-継続経路の
+検証にならないため)。HANDOFF.md は gitignored なのでコミットされない。
 
 ```bash
 git checkout main && git pull
 [ -f HANDOFF.md ] && mv HANDOFF.md HANDOFF.md.bak
-[ -f README.md ] && cp README.md README.md.bak
 cp claude/skills/dev/evals/fixtures/readme-typos.md README.md
+git add README.md
+git commit -m "chore: eval fixture (dev/02 sandbox)"
 cat > HANDOFF.md <<'EOF'
 # HANDOFF
 
@@ -35,11 +37,12 @@ EOF
 branch=$(git branch --show-current)
 git checkout main
 [ "$branch" != "main" ] && git branch -D "$branch" 2>/dev/null || true
-rm -f HANDOFF.md README.md
+git fetch origin main
+git branch -f main "$(git rev-parse origin/main)"   # fixture commit を巻き戻す
+git checkout -- README.md
+rm -f HANDOFF.md
 [ -f HANDOFF.md.bak ] && mv HANDOFF.md.bak HANDOFF.md
-[ -f README.md.bak ] && mv README.md.bak README.md
 ```
 
-## 関連 eval
-HANDOFF.md が空 / 曖昧なケース (user 確認で停止) は別 eval に分離する
-検討中。現状は自明タスク経路のみをカバーする。
+(HANDOFF.md が空 / 曖昧なケースの stop 挙動は 02 の scope 外。別 eval
+`02b-no-arg-empty-handoff.md` として追加起票する)

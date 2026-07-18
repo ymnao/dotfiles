@@ -1,12 +1,15 @@
 # eval: dev — 自由文タスク
 
 ## Setup
-`teh` typo を含む README fixture を配置する。
+`teh` typo を含む README fixture を sandbox main に commit する
+(未 commit のまま cp すると `/dev` の dirty-worktree 停止チェックが先に
+発火し、自由文経路の検証にならないため)。
 
 ```bash
 git checkout main && git pull
-[ -f README.md ] && cp README.md README.md.bak
 cp claude/skills/dev/evals/fixtures/readme-typos.md README.md
+git add README.md
+git commit -m "chore: eval fixture (dev/03 sandbox)"
 ```
 
 ## Prompt
@@ -24,6 +27,7 @@ cp claude/skills/dev/evals/fixtures/readme-typos.md README.md
 branch=$(git branch --show-current)
 git checkout main
 [ "$branch" != "main" ] && git branch -D "$branch" 2>/dev/null || true
-rm -f README.md
-[ -f README.md.bak ] && mv README.md.bak README.md
+git fetch origin main
+git branch -f main "$(git rev-parse origin/main)"   # fixture commit を巻き戻す
+git checkout -- README.md
 ```
