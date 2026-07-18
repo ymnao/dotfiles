@@ -21,20 +21,18 @@ cd "$SCRIPT_DIR/.." || error "cd to repo root failed"
 
 command -v brew >/dev/null || error "brew not installed"
 
-tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/brewfile-drift.XXXXXX")
-trap 'rm -rf "$tmpdir"' EXIT
-
 normalize() { awk -F/ '{print $NF}' | sort; }
 
 # $1: kind label (formula|cask)
-# $2: brew CLI 側の listing コマンド
-# $3: Brewfile 側の prefix (brew|cask)
+# $2: Brewfile 側の prefix (brew|cask)
+# $3..: brew CLI 側の listing コマンド
 check_drift() {
-    local kind=$1 list_cmd=$2 prefix=$3
-    eval "$list_cmd" 2>/dev/null | normalize > "$tmpdir/installed-$kind"
-    grep -E "^$prefix \"" Brewfile | sed "s/^$prefix \"\([^\"]*\)\".*/\1/" | normalize > "$tmpdir/brewfile-$kind"
+    local kind=$1 prefix=$2
+    shift 2
     local drift
-    drift=$(comm -23 "$tmpdir/installed-$kind" "$tmpdir/brewfile-$kind")
+    drift=$(comm -23 \
+        <("$@" 2>/dev/null | normalize) \
+        <(grep -E "^$prefix \"" Brewfile | sed "s/^$prefix \"\([^\"]*\)\".*/\1/" | normalize))
     if [ -n "$drift" ]; then
         warn "${kind}: installed but not in Brewfile"
         echo "$drift" | sed 's/^/  /'
@@ -44,8 +42,8 @@ check_drift() {
 }
 
 rc=0
-check_drift formula "brew leaves"    brew || rc=1
-check_drift cask    "brew list --cask" cask || rc=1
+check_drift formula brew brew leaves       || rc=1
+check_drift cask    cask brew list --cask  || rc=1
 
 if [ "$rc" -eq 0 ]; then
     info "no drift (installed leaves/casks all tracked in Brewfile)"
