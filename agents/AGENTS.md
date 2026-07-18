@@ -5,6 +5,15 @@
 - ユーザーへの返答・報告はすべて**日本語**で行う
 - コミットメッセージも日本語で書く(type プレフィックスは英語)
 
+## Shell 環境
+
+- ユーザーの interactive shell は **fish**。手で叩かせるコマンドは fish 構文で提示する
+  - 環境変数: `set -gx FOO bar` (not `export FOO=bar`)
+  - 一時的な env: `env FOO=bar cmd` (not `FOO=bar cmd`)
+  - エイリアス相当: `abbr` または `function` (not `alias FOO=...`)
+  - 設定再読み込み: `source ~/.config/fish/config.fish` (not `source ~/.zshrc`)
+- Claude Code / codex の Bash tool は zsh 経由なので agent 自身のコマンドは影響を受けない
+
 ## ブランチと開発フロー
 
 - **main への直接コミット禁止**。変更は 作業ブランチ → PR → レビュー → merge の順で行う
