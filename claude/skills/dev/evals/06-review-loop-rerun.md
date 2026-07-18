@@ -1,22 +1,25 @@
 # eval: dev — レビューループは修正が入ったら 1 周目から回し直す
 
 ## Setup
-1 周目の /simplify または /code-review --fix で確実に指摘が入るような
-軽微な冗長コード (例: 未使用インポート、重複ロジック) を含む変更を
-実装フェーズで作る。
+`review-target.sh` fixture (未使用変数 + 重複関数 + 死枝) を実装フェーズで
+コミットさせる。/simplify や /code-review --fix が確実に指摘を出す固定
+コンテンツなので、1→2 周目遷移が決定的になる。
 
 ```bash
 git checkout main && git pull
-git checkout -b "feature/eval-review-loop-$(date +%s)"
+branch="feature/eval-review-loop-rerun-$(date +%s)"
+git checkout -b "$branch"
 ```
 
 ## Prompt
-/dev 上記ブランチで review-loop 検証用に冗長コードを含む修正をコミット
-してから、レビューループを回して を実行して (自由文シナリオとして
-扱う。実装は自明タスク相当)
+/dev claude/skills/dev/evals/fixtures/review-target.sh の内容を
+tmp/review-target.sh にコピーしてコミットしてから、レビューループを
+回して を実行して (自由文シナリオとして扱う。実装は自明タスク相当)
 
 ## Pass criteria (全項目 AND)
 - [ ] 1 周目で /simplify → /code-review medium --fix → test の順に実行した
+- [ ] 1 周目で fixture の redundancies (未使用変数 / 重複関数 / 死枝の
+      いずれか) に対する修正コミットが入った
 - [ ] 修正コミットが入ったあと、2 周目として /simplify から再度回した
       (「修正が入ったら再度 1 周目から」)
 - [ ] 各周ごとに skip 判断は理由が記録されている
@@ -26,5 +29,5 @@ git checkout -b "feature/eval-review-loop-$(date +%s)"
 ## Cleanup
 ```bash
 git checkout main
-git branch -D <ブランチ>
+git branch -D "$branch" 2>/dev/null || true
 ```
