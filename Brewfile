@@ -7,6 +7,7 @@ brew "git-filter-repo"
 brew "gh"
 brew "lazygit"
 brew "neovim"
+brew "tree-sitter-cli"
 brew "fish"
 brew "starship"  # cross-shell prompt (fish から init して使用。pwsh 未配線)
 brew "ripgrep"
@@ -40,7 +41,7 @@ brew "openjdk@17"
 # ========================================
 brew "shellcheck"
 brew "actionlint"
-brew "jq"
+brew "jq"  # Makefile / hooks / statusline が command -v jq で hard-fail
 
 # ========================================
 # AWS Development
@@ -66,7 +67,9 @@ brew "watchman"
 # ========================================
 brew "ffmpeg"
 brew "imagemagick"
+brew "marp-cli"
 brew "nkf"
+brew "mecab-ipadic"
 
 # ========================================
 # Security
@@ -107,6 +110,9 @@ cask "claude"
 cask "claude-code"
 cask "codex"
 cask "codex-app"
+# kura は自作の menu bar app。HOMEBREW_REQUIRE_TAP_TRUST 下でも通るよう trusted: true。
+tap "ymnao/homebrew-tap"
+cask "ymnao/homebrew-tap/kura", trusted: true
 
 # ========================================
 # Fonts
