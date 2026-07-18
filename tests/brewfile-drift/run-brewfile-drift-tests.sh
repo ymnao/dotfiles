@@ -28,6 +28,12 @@ trap cleanup EXIT
 pass=0
 fail=0
 
+# mock brew shim を組み立てる。$1: `brew leaves` の body、$2: `brew list --cask` の body。
+# body は shell 文 (例: 'printf "ripgrep\n"' や ':')。
+make_stub() {
+  printf '#!/usr/bin/env bash\ncase "$*" in\n  "leaves") %s ;;\n  "list --cask") %s ;;\n  *) exit 99 ;;\nesac\n' "$1" "$2"
+}
+
 # 各ケースで fake repo root を用意して brewfile-drift.sh を実行する。
 # 実 script は `cd "$SCRIPT_DIR/.."` で自分の親を repo root にするので、
 # fake root に scripts/ サブディレクトリを掘って brewfile-drift.sh と
@@ -77,45 +83,25 @@ run_case no-drift \
 'brew "ripgrep"
 brew "jq"
 cask "wezterm"' \
-'#!/usr/bin/env bash
-case "$*" in
-  "leaves")     printf "ripgrep\njq\n" ;;
-  "list --cask") printf "wezterm\n" ;;
-  *) echo "unexpected brew args: $*" >&2; exit 99 ;;
-esac' \
+"$(make_stub 'printf "ripgrep\njq\n"' 'printf "wezterm\n"')" \
   0 "no drift" ""
 
 # case 2: formula drift 検出
 run_case formula-drift \
 'brew "ripgrep"' \
-'#!/usr/bin/env bash
-case "$*" in
-  "leaves")     printf "ripgrep\nfd\n" ;;
-  "list --cask") : ;;
-  *) exit 99 ;;
-esac' \
+"$(make_stub 'printf "ripgrep\nfd\n"' ':')" \
   1 "formula: installed but not in Brewfile" ""
 
 # case 3: cask drift 検出
 run_case cask-drift \
 'cask "wezterm"' \
-'#!/usr/bin/env bash
-case "$*" in
-  "leaves")     : ;;
-  "list --cask") printf "wezterm\nkarabiner-elements\n" ;;
-  *) exit 99 ;;
-esac' \
+"$(make_stub ':' 'printf "wezterm\nkarabiner-elements\n"')" \
   1 "cask: installed but not in Brewfile" ""
 
 # case 4: brew CLI 失敗 (leaves が exit 3) → drift なし表示ではなく失敗として扱う
 run_case brew-cli-fails \
 'brew "ripgrep"' \
-'#!/usr/bin/env bash
-case "$*" in
-  "leaves")     echo "brew: catastrophic failure" >&2; exit 3 ;;
-  "list --cask") : ;;
-  *) exit 99 ;;
-esac' \
+"$(make_stub 'echo "brew: catastrophic failure" >&2; exit 3' ':')" \
   1 "listing installed formula failed" "catastrophic failure"
 
 # case 5: Brewfile が読めない (permission 0) → 明示エラー
@@ -127,18 +113,10 @@ if [ "$(id -u)" -ne 0 ]; then
   ln -s "$REPO_ROOT/scripts/lib/log.sh" "$root/scripts/lib/log.sh"
   : > "$root/Brewfile"
   chmod 000 "$root/Brewfile"
-  cat > "$root/bin/brew" <<'STUB'
-#!/usr/bin/env bash
-case "$*" in
-  "leaves")     printf "ripgrep\n" ;;
-  "list --cask") : ;;
-  *) exit 99 ;;
-esac
-STUB
+  make_stub 'printf "ripgrep\n"' ':' > "$root/bin/brew"
   chmod +x "$root/bin/brew"
   rc=0
   PATH="$root/bin:$PATH" bash "$root/scripts/brewfile-drift.sh" >"$root/out" 2>"$root/err" || rc=$?
-  chmod 644 "$root/Brewfile"
   if [ "$rc" -eq 1 ] && grep -qE "Brewfile not readable" "$root/err"; then
     pass=$((pass + 1))
   else
@@ -152,23 +130,13 @@ fi
 # normalize() で末尾 "macism" 同士 → drift なし
 run_case tap-normalized \
 'brew "laishulu/homebrew/macism"' \
-'#!/usr/bin/env bash
-case "$*" in
-  "leaves")     printf "laishulu/homebrew/macism\n" ;;
-  "list --cask") : ;;
-  *) exit 99 ;;
-esac' \
+"$(make_stub 'printf "laishulu/homebrew/macism\n"' ':')" \
   0 "no drift" ""
 
 # case 7: brew leaves が空 (grep no-match でも drift 判定を壊さない)
 run_case empty-leaves \
 'brew "ripgrep"' \
-'#!/usr/bin/env bash
-case "$*" in
-  "leaves")     : ;;
-  "list --cask") : ;;
-  *) exit 99 ;;
-esac' \
+"$(make_stub ':' ':')" \
   0 "no drift" ""
 
 echo "brewfile-drift tests: $pass passed, $fail failed"
