@@ -29,6 +29,12 @@ local local_config = load_local_config()
 local config = {
   font = wezterm.font_with_fallback({"UDEV Gothic 35", "JetBrainsMono Nerd Font", "Cica"}),
   font_size = 13.0,
+  line_height = 1.1,
+  harfbuzz_features = { "calt=1", "clig=1", "liga=1" },
+  -- cursor_blink_rate は BlinkingBlock/Underline/Bar 系スタイルのみ有効。
+  -- SteadyBlock (デフォルト) では点滅しないため default_cursor_style も併記。
+  default_cursor_style = "BlinkingBlock",
+  cursor_blink_rate = 500,
   force_reverse_video_cursor = true,
 	adjust_window_size_when_changing_font_size = false,
 
