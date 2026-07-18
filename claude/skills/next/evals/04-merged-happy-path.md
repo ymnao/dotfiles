@@ -12,7 +12,8 @@ git checkout -b "$branch"
 echo x >> README.md && git commit -am "chore: eval-next merged fixture"
 git push -u origin HEAD
 gh pr create --fill
-gh pr merge --squash --admin   # current branch の PR に対して merge
+gh pr merge --merge --admin   # feature commit が main の祖先になるよう merge commit を使う
+                              # (--squash だと `git branch -d` が拒否される)
 # remote が auto-delete していても続行 (local branch は残っている)。
 # `gh pr merge` は local HEAD を動かさないので $branch のまま。
 git fetch origin main
@@ -39,5 +40,12 @@ gh pr view --json state,mergedAt -q '.state + " " + (.mergedAt // "null")'
       /next の実行中に `gh pr merge` 呼び出しがログに現れない)
 
 ## Cleanup
-なし (merge 後の後始末が eval 対象。setup の branch は eval が削除する
-想定なので手動 cleanup 不要)
+eval が失敗して `/next` が branch 削除 / main pull を完走しなかった場合の
+sanity teardown:
+```bash
+git checkout main 2>/dev/null || true
+git checkout -B main origin/main   # main を origin に合わせる (fixture の巻き戻し漏れ対策)
+git branch -D "$branch" 2>/dev/null || true
+git push origin --delete "$branch" 2>/dev/null || true
+rm -f HANDOFF.md
+```

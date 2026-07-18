@@ -36,10 +36,16 @@ git checkout -b "$branch"
 echo x >> README.md && git commit -am "chore: eval fixture"
 git push -u origin HEAD
 gh pr create --fill
-pr_number=$(gh pr view --json number -q .number)
-gh pr merge "$pr_number" --squash --admin
+gh pr merge --merge --admin   # current branch の PR に対して merge commit
 # `gh pr merge` は local HEAD を動かさないので $branch のまま
 ```
+
+**--squash と --merge の使い分け**: `/next` は merged 後に `git branch -d`
+(小文字 d) で feature branch を削除する。`--squash` merge では feature
+側の元コミットが main の祖先にならないため `git branch -d` が拒否される
+(happy path / handoff eval が成立しない)。happy path 系 (04, 06) は
+`--merge` を使い、branch-delete-fail 系 (05) は `--merge` で ancestor 化
+してから未 merge commit を意図的に追加する。
 
 remote auto-delete が有効な環境でも local branch は保持されるため、
 後続の `git branch -d` / `-d` 拒否検証は成立する。

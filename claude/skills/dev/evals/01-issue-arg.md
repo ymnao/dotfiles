@@ -8,9 +8,13 @@ sandbox clone 内で main、clean tree にする。参照する open な GitHub 
 ```bash
 git checkout main && git pull
 issue=$(gh issue list --state open --limit 1 --json number -q '.[0].number')
+created_issue=""
 if [ -z "$issue" ]; then
-    issue=$(gh issue create --title 'eval fixture (dev/01)' \
-        --body 'seeded by dev/01 eval' --json number -q .number)
+    # gh issue create は --json 非対応、URL 末尾から番号を抽出する
+    issue_url=$(gh issue create --title 'eval fixture (dev/01)' \
+        --body 'seeded by dev/01 eval')
+    issue=${issue_url##*/}
+    created_issue="$issue"   # cleanup で eval が作った分だけ close する
 fi
 echo "issue: $issue"
 before_head=$(git rev-parse HEAD)
@@ -33,4 +37,5 @@ before_head=$(git rev-parse HEAD)
 branch=$(git branch --show-current)
 git checkout main
 [ "$branch" != "main" ] && git branch -D "$branch" 2>/dev/null || true
+[ -n "$created_issue" ] && gh issue close "$created_issue" 2>/dev/null || true
 ```
