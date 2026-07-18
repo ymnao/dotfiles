@@ -201,6 +201,11 @@ check "defer-body-file-eq" 2 "$(run_hook_in "$GH_REPO" success "gh pr create --t
 check "clean-body-file"    0 "$(run_hook_in "$GH_REPO" success "gh pr create --title t --body-file $BASE/clean-body.md")"
 # 引用符付きパス (gh pr create --body-file "/path/x.md" 形式) も解決される
 check "defer-body-file-quoted" 2 "$(run_hook_in "$GH_REPO" success "gh pr create --title t --body-file \"$BASE/defer-body.md\"")"
+# double quote 内のスペース含みパスも解決される (bare-token 抽出だと途中で
+# 切れて marker 検査が silent skip する退行の検出)
+mkdir -p "$BASE/sp ace"
+cp "$BASE/defer-body.md" "$BASE/sp ace/defer.md"
+check "defer-body-file-space-path" 2 "$(run_hook_in "$GH_REPO" success "gh pr create --title t --body-file \"$BASE/sp ace/defer.md\"")"
 # inline --body 内の marker も block
 check "defer-inline-body"  2 "$(run_hook_in "$GH_REPO" success 'gh pr create --title t --body "追跡: defer(未起票)"')"
 # draft は WIP なので defer が残っていても bypass (draft 判定が先勝ち)

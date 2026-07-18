@@ -55,10 +55,14 @@ fi
 # --body-file <path> / --body-file=<path> の両形式からファイルを解決し、
 # inline --body 内のマーカーは gh_segment 自体の文字列検査で拾う。
 DEFER_MARKER="defer(未起票)"
+# 値は「double quote 囲み (スペース含みパス可)」または「裸トークン」の 2 形式。
+# 先頭の [[:space:]] anchor で --title/--body の値内に現れた "--body-file"
+# 文字列への誤マッチを防ぐ。alternation は片方しかマッチしないため \3\4 の
+# 連結で常に一方だけが残る。single quote 囲みは sed program が single quote
+# のため表現できず、下の strip で裸トークン扱いにフォールバックする。
 body_file=$(printf '%s\n' "$gh_segment" \
-  | sed -nE 's/.*--body-file(=|[[:space:]]+)([^[:space:]]+).*/\2/p')
-# quote 除去 (gh pr create --body-file "/tmp/x.md" 形式)
-body_file="${body_file%\"}"; body_file="${body_file#\"}"
+  | sed -nE 's/.*[[:space:]]--body-file(=|[[:space:]]+)("([^"]*)"|([^[:space:]]+)).*/\3\4/p')
+# quote 除去 (--body-file 'x.md' の裸トークン形式で残った single quote)
 body_file="${body_file%\'}"; body_file="${body_file#\'}"
 defer_found=""
 if [[ -n "$body_file" && -f "$body_file" ]] && grep -qF "$DEFER_MARKER" "$body_file"; then

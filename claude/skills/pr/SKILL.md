@@ -27,7 +27,7 @@ Run each `gh` command as a bare invocation and substitute prior output literally
    - **Fix-or-issue ポリシー**: レビューで確認された finding の行き先は「本 PR で fix」か「issue 起票して追跡」の 2 つだけ。「起票せず次セッションに持ち越す」状態を作らない(verify-ci-before-pr hook も body 内の `defer(未起票)` を検出すると `gh pr create` をブロックする)
    - Draft 判定は **PR-level triage** で行う(codex-review の per-finding 分類 `REPORT-ONLY` / `UNRESOLVED` を pr の draft 判定に自動流用しない。用語の定義は `$HOME/.claude/skills/codex-review/SKILL.md` を参照)。**上から順に評価し、最初に一致した bullet を採用**する。bullet 内の処理で state が変わった場合(起票成功で URL が付いた等)は変更後の state で bullet 1 から**再評価する**。いずれの判定でも根拠と該当 finding を evidence に記録する:
      - **本 PR で fix すべき finding が残っている**(未対応、または blocker として判断保留): **draft** で作成
-     - **追跡別 PR に回す finding があり、追跡 issue/PR URL が未起票**: **user 確認なしで自動起票する**。finding ごとに一時ファイル(例: `$TMPDIR/pr-issue-body-<n>.md`)へ body を書き出し、`gh issue create --title "<finding summary>" --body-file <path>` で起票する(`--body` に literal 代入せず、finding 抜粋内の `"` / `` ` `` / `$` / `\` による shell 破壊・injection を回避)。body には `finding の failure_scenario と該当 file:line 抜粋、リンク元 PR/branch` を含める。成功分の URL を evidence 追跡先に記載 → bullet 1 から再評価(全件 URL 付きになれば bullet 3 到達で normal)。失敗時(auth / perms / archived / repo 未指定 等)は **draft** に退避し 根拠 `step 4 pending`(起票失敗、user 対応待ち)を記録。user が事前に「起票しない」等の明示指示を出している場合はそれに従い、指示内容を evidence に記録する
+     - **追跡別 PR に回す finding があり、追跡 issue/PR URL が未起票**: **user 確認なしで自動起票する**。finding ごとに一時ファイル(例: `$TMPDIR/pr-issue-body-<n>.md`)へ body を書き出し、`gh issue create --title "<finding summary>" --body-file <path>` で起票する(`--body` に literal 代入せず、finding 抜粋内の `"` / `` ` `` / `$` / `\` による shell 破壊・injection を回避)。body には `finding の failure_scenario と該当 file:line 抜粋、リンク元 PR/branch` を含める。成功分の URL を evidence 追跡先に記載 → bullet 1 から再評価(全件 URL 付きになれば bullet 3 到達で normal)。失敗時(auth / perms / archived / repo 未指定 等)は **draft** に退避し 根拠 `step 4 pending`(起票失敗、user 対応待ち)を記録。user が事前に「起票しない」等の明示指示を出している場合は起票せず **draft** で作成し、根拠 `step 4 defer` + 指示内容の要約を記録する(追跡先の URL 欄は `defer(未起票)` と書く — draft は hook の defer 検査を bypass するため作成できる。normal に昇格する際に起票が必要)
      - **上記に該当しない**(fix 不要のみ / 追跡 URL 記載済 / 残件なし): **normal** で作成。件数の多寡を draft 判定に使わない。追跡 URL がある場合は evidence に必ず記載する
 5. Explain-the-diff walkthrough (tier=high only):
    - Split the diff into meaningful units. For each unit present: what changed / why / what could break.
@@ -74,15 +74,15 @@ tier: <tier> — <reasons を列挙>
 <codex-review の Report format 表を転記。レビュー未実施なら「tier=low のため未実施」>
 
 ## 追跡先
-<本 PR で fix せず issue に回した finding を列挙。0 件なら「なし」とだけ書き、表は省略。Finding 列は `file:line — 短い summary(30 字以内)` の compound identifier で書く(codex-review Report format 表には file:line 列が無く、参照だけでは同定不能なため、短い summary を併記して人間可読性を確保)。URL 列は必ず起票済み issue URL を書く(fix-or-issue ポリシーにより「未起票のまま列挙」は不可。hook が `defer(未起票)` を検出すると PR 作成をブロックする)>
+<本 PR で fix せず issue に回した finding を列挙。0 件なら「なし」とだけ書き、表は省略。Finding 列は `file:line — 短い summary(30 字以内)` の compound identifier で書く(codex-review Report format 表には file:line 列が無く、参照だけでは同定不能なため、短い summary を併記して人間可読性を確保)。URL 列は起票済み issue URL を書く(fix-or-issue ポリシーにより normal PR での「未起票のまま列挙」は不可 — hook が `defer(未起票)` を検出すると PR 作成をブロックする。例外は user 明示指示による draft のみで、その場合 `defer(未起票)` と書く)>
 
 | Finding (file:line — summary) | Issue URL |
 |---|---|
-| <file:line — short summary> | <issue URL> |
+| <file:line — short summary> | <issue URL または `defer(未起票)`(draft 限定)> |
 
 ## Draft 判定
 - 判定: <normal / draft>
-- 根拠: <step 4 / step 4 pending / step 5 / step 8 override> — <理由と該当 finding>
+- 根拠: <step 4 / step 4 pending / step 4 defer / step 5 / step 8 override> — <理由と該当 finding>
 - override 内容: <根拠が `step 8 override` のときのみ記載、user 指示の要約と override を受けた step>
 
 </details>
@@ -103,4 +103,4 @@ Created PR: <PR URL>
 | Changed files | <files_changed> files (+<insertions> -<deletions>) |
 | Risk tier | <tier> |
 | Review | <PASS / findings summary / skipped reason> |
-| Draft 判定 | <normal / draft> — <step 4 / step 4 pending / step 5 / step 8 override, 理由> |
+| Draft 判定 | <normal / draft> — <step 4 / step 4 pending / step 4 defer / step 5 / step 8 override, 理由> |
