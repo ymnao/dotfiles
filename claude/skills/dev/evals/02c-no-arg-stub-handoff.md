@@ -9,8 +9,11 @@ sandbox clone 内で main、clean tree にする。既存 HANDOFF.md は退避�
 
 ```bash
 git checkout main
-handoff_backup=$(mktemp)
-[ -f HANDOFF.md ] && mv HANDOFF.md "$handoff_backup"
+handoff_backup=""
+if [ -f HANDOFF.md ]; then
+    handoff_backup=$(mktemp)
+    mv HANDOFF.md "$handoff_backup"
+fi
 
 exclude_backup=$(mktemp)
 cp .git/info/exclude "$exclude_backup"
@@ -47,7 +50,7 @@ transcript 判定 (human runner):
 ## Cleanup
 ```bash
 rm -f HANDOFF.md
-[ -f "$handoff_backup" ] && mv "$handoff_backup" HANDOFF.md || rm -f "$handoff_backup"
+[ -n "$handoff_backup" ] && mv "$handoff_backup" HANDOFF.md
 mv "$exclude_backup" .git/info/exclude
 ```
 

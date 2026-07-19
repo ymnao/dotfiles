@@ -50,13 +50,19 @@ fixture として使う eval では既存を退避してから上書きし、cle
 退避先は既存 `HANDOFF.md.bak` 等との衝突を避けるため `mktemp` を使う:
 
 ```bash
-handoff_backup=$(mktemp)
-[ -f HANDOFF.md ] && mv HANDOFF.md "$handoff_backup"
+handoff_backup=""
+if [ -f HANDOFF.md ]; then
+    handoff_backup=$(mktemp)
+    mv HANDOFF.md "$handoff_backup"
+fi
 cp claude/skills/next/evals/fixtures/handoff-template.md HANDOFF.md
 # ... eval 実行 ...
 rm -f HANDOFF.md
-[ -f "$handoff_backup" ] && mv "$handoff_backup" HANDOFF.md || rm -f "$handoff_backup"
+[ -n "$handoff_backup" ] && mv "$handoff_backup" HANDOFF.md
 ```
+
+`$handoff_backup` を無条件 mktemp するパターンは避ける(元 HANDOFF.md が
+無かったケースで復元時に空ファイルを HANDOFF.md として置き残す)。
 
 fixture ファイル名は `HANDOFF.md` にしない(force add 事故の前歴あり)。
 setup 内 cp でのみ HANDOFF.md 化する。
