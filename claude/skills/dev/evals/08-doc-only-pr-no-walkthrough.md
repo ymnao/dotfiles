@@ -7,7 +7,7 @@ walkthrough が発火しないことを確認する回帰テスト。
 
 ## Setup
 ```bash
-git checkout main && git pull
+git checkout main
 mkdir -p /tmp/dev-eval-doc-only
 ```
 

@@ -6,7 +6,7 @@
 発火し、自由文経路の検証にならないため)。
 
 ```bash
-git checkout main && git pull
+git checkout main
 cp claude/skills/dev/evals/fixtures/readme-typos.md README.md
 git add README.md
 git commit -m "chore: eval fixture (dev/03 sandbox)"

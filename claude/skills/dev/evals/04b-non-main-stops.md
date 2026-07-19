@@ -2,7 +2,7 @@
 
 ## Setup
 ```bash
-git checkout main && git pull
+git checkout main
 branch="feature/eval-dev-non-main-$(date +%s)"
 git checkout -b "$branch"
 ```

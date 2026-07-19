@@ -43,21 +43,72 @@ after_stash_n=$(git stash list | wc -l)
 # Pass criteria: [ "$after_stash_n" = "$before_stash_n" ]
 ```
 
-### HANDOFF.md 退避 / 復元
+### HANDOFF.md 退避 / 復元 <a id="handoff-backup-restore"></a>
 
 HANDOFF.md はグローバル gitignored(memory `project_handoff_gitignored.md`)。
-fixture として使う eval では既存を退避してから上書きし、cleanup で戻す:
+fixture として使う eval では既存を退避してから上書きし、cleanup で戻す。
+退避先は既存 `HANDOFF.md.bak` 等との衝突を避けるため `mktemp` を使う:
 
 ```bash
-[ -f HANDOFF.md ] && mv HANDOFF.md HANDOFF.md.bak
+handoff_backup=""
+if [ -f HANDOFF.md ]; then
+    handoff_backup=$(mktemp)
+    mv HANDOFF.md "$handoff_backup"
+fi
 cp claude/skills/next/evals/fixtures/handoff-template.md HANDOFF.md
 # ... eval 実行 ...
 rm -f HANDOFF.md
-[ -f HANDOFF.md.bak ] && mv HANDOFF.md.bak HANDOFF.md
+[ -n "$handoff_backup" ] && mv "$handoff_backup" HANDOFF.md
 ```
+
+`$handoff_backup` を無条件 mktemp するパターンは避ける(元 HANDOFF.md が
+無かったケースで復元時に空ファイルを HANDOFF.md として置き残す)。
 
 fixture ファイル名は `HANDOFF.md` にしない(force add 事故の前歴あり)。
 setup 内 cp でのみ HANDOFF.md 化する。
+
+### HANDOFF.md gitignore を repo-local に強制する <a id="handoff-local-ignore"></a>
+
+HANDOFF.md の gitignored 前提は user のグローバル gitignore に依存している。
+CI や別環境ではグローバル gitignore が異なるため、`git check-ignore HANDOFF.md`
+が成立しない可能性がある。eval で `git check-ignore` に依存する場合は setup
+冒頭で `.git/info/exclude` に HANDOFF.md を追加し、cleanup で復元する:
+
+```bash
+exclude_backup=$(mktemp)
+cp .git/info/exclude "$exclude_backup"
+grep -qxF 'HANDOFF.md' .git/info/exclude || echo 'HANDOFF.md' >> .git/info/exclude
+# ... eval 実行 ...
+# cleanup:
+mv "$exclude_backup" .git/info/exclude
+```
+
+`.git/info/exclude` の write が sandbox / CI で失敗する場合はその eval を
+SKIP 扱いにする(fail ではない)。eval を途中 kill した場合は
+`.git/info/exclude` 末尾に `HANDOFF.md` 行が残るため、手で削除する。
+
+### setup で `git pull` を実行しない <a id="no-git-pull"></a>
+
+sandbox clone は固定 SHA 前提で作成されるため、setup 内で `git pull` を
+実行しない(ネットワーク到達性と remote main の可変状態への依存を排除、
+オフライン CI での再現性確保)。`git checkout main` で main に移るだけに
+留める。
+
+### PR 非作成の検証パターン <a id="pr-not-created-check"></a>
+
+「eval 中に PR を作っていない」ことを検証する eval では、既存 open PR に
+影響されずかつ eval 後に close された PR も検出できるよう `--state all`
+の PR 番号セットを setup で記録し、eval 後に diff が空であることを assert
+する(`--head` filter を使わない):
+
+```bash
+before_prs=$(gh pr list --state all --limit 1000 --json number -q '.[].number' | sort -u)
+# ... eval 実行 ...
+after_prs=$(gh pr list --state all --limit 1000 --json number -q '.[].number' | sort -u)
+# Pass criteria: [ "$after_prs" = "$before_prs" ]
+```
+
+前提として PR 総数が 1000 を超えると取りこぼす。現 repo 規模では十分。
 
 ### reviewer stub 契約(dev/06, dev/07 決定化) <a id="reviewer-stub-contract"></a>
 
@@ -96,7 +147,8 @@ stub 契約遵守は Pass criteria の transcript 判定チェックボックス
 
 - 01 — issue 番号受付
 - 02 — 引数なし(HANDOFF.md 継続 happy path)
-- 02b — 引数なし(HANDOFF.md 空 / 曖昧 → 停止)
+- 02b — 引数なし(HANDOFF.md 空 → 停止)
+- 02c — 引数なし(HANDOFF.md 曖昧 = TBD のみ → 停止)
 - 03 — 自由文タスク
 - 04a — dirty worktree で停止
 - 04b — non-main で停止
