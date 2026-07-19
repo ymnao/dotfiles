@@ -46,14 +46,16 @@ after_stash_n=$(git stash list | wc -l)
 ### HANDOFF.md 退避 / 復元 <a id="handoff-backup-restore"></a>
 
 HANDOFF.md はグローバル gitignored(memory `project_handoff_gitignored.md`)。
-fixture として使う eval では既存を退避してから上書きし、cleanup で戻す:
+fixture として使う eval では既存を退避してから上書きし、cleanup で戻す。
+退避先は既存 `HANDOFF.md.bak` 等との衝突を避けるため `mktemp` を使う:
 
 ```bash
-[ -f HANDOFF.md ] && mv HANDOFF.md HANDOFF.md.bak
+handoff_backup=$(mktemp)
+[ -f HANDOFF.md ] && mv HANDOFF.md "$handoff_backup"
 cp claude/skills/next/evals/fixtures/handoff-template.md HANDOFF.md
 # ... eval 実行 ...
 rm -f HANDOFF.md
-[ -f HANDOFF.md.bak ] && mv HANDOFF.md.bak HANDOFF.md
+[ -f "$handoff_backup" ] && mv "$handoff_backup" HANDOFF.md || rm -f "$handoff_backup"
 ```
 
 fixture ファイル名は `HANDOFF.md` にしない(force add 事故の前歴あり)。
@@ -68,16 +70,16 @@ CI や別環境ではグローバル gitignore が異なるため、`git check-i
 
 ```bash
 exclude_backup=$(mktemp)
-cp .git/info/exclude "$exclude_backup" 2>/dev/null || : > "$exclude_backup"
-grep -qxF 'HANDOFF.md' .git/info/exclude 2>/dev/null || \
-  echo 'HANDOFF.md' >> .git/info/exclude
+cp .git/info/exclude "$exclude_backup"
+grep -qxF 'HANDOFF.md' .git/info/exclude || echo 'HANDOFF.md' >> .git/info/exclude
 # ... eval 実行 ...
 # cleanup:
 mv "$exclude_backup" .git/info/exclude
 ```
 
 `.git/info/exclude` の write が sandbox / CI で失敗する場合はその eval を
-SKIP 扱いにする(fail ではない)。
+SKIP 扱いにする(fail ではない)。eval を途中 kill した場合は
+`.git/info/exclude` 末尾に `HANDOFF.md` 行が残るため、手で削除する。
 
 ### setup で `git pull` を実行しない <a id="no-git-pull"></a>
 
@@ -94,15 +96,13 @@ sandbox clone は固定 SHA 前提で作成されるため、setup 内で `git p
 する(`--head` filter を使わない):
 
 ```bash
-before_prs=$(gh pr list --state all --limit 100 --json number -q '.[].number' | sort -u)
+before_prs=$(gh pr list --state all --limit 1000 --json number -q '.[].number' | sort -u)
 # ... eval 実行 ...
-after_prs=$(gh pr list --state all --limit 100 --json number -q '.[].number' | sort -u)
-new_prs=$(comm -13 <(echo "$before_prs") <(echo "$after_prs"))
-# Pass criteria: [ -z "$new_prs" ]
+after_prs=$(gh pr list --state all --limit 1000 --json number -q '.[].number' | sort -u)
+# Pass criteria: [ "$after_prs" = "$before_prs" ]
 ```
 
-前提として PR 総数が 100 を超えると取りこぼす。現 repo 規模では十分だが、
-超える運用に入ったら `--limit` を上げる。
+前提として PR 総数が 1000 を超えると取りこぼす。現 repo 規模では十分。
 
 ### reviewer stub 契約(dev/06, dev/07 決定化) <a id="reviewer-stub-contract"></a>
 

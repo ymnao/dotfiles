@@ -43,11 +43,10 @@ transcript 判定 (human runner):
 - [ ] 修正コミット後、2 周目を round1 から再開した
 - [ ] 2 周目で round2 stub を読み、記載された残存指摘 1 件を **apply せず
       記録** した (fixture の「apply しない」指示に従った)
-- [ ] round2 stub 読込から /pr 起動直前までの区間で新規 fix コミット /
-      Edit / Write が **一切ない** (REPORT-ONLY 指摘に対しレビューループ内
-      で修正していないこと。/pr の fix-or-issue ポリシーで /pr 起動後に
-      発生する commit はこの区間外なので許容。区間境界は transcript の
-      stub 読込ログと /pr 起動ログで判別する)
+- [ ] round2 stub 読込〜/pr 起動の区間で fix コミット / Edit / Write が
+      **一切ない** (REPORT-ONLY 遵守。/pr 起動後の commit は区間外で許容。
+      構造化ログ化して機械検証する案は issue #148 finding 7 で追跡中、
+      当面は human runner が transcript 上で判別する)
 - [ ] cap (2 周上限) で停止し、残 finding を PR 本文 evidence または
       会話ログに明記した (黙って消えていない)
 - [ ] step 5 で /pr を呼び、残 finding が /pr の fix-or-issue ポリシー

@@ -16,16 +16,14 @@ handoff_backup=$(mktemp)
 [ -f HANDOFF.md ] && mv HANDOFF.md "$handoff_backup"
 
 exclude_backup=$(mktemp)
-cp .git/info/exclude "$exclude_backup" 2>/dev/null || : > "$exclude_backup"
-grep -qxF 'HANDOFF.md' .git/info/exclude 2>/dev/null || \
-  echo 'HANDOFF.md' >> .git/info/exclude
+cp .git/info/exclude "$exclude_backup"
+grep -qxF 'HANDOFF.md' .git/info/exclude || echo 'HANDOFF.md' >> .git/info/exclude
 
 : > HANDOFF.md
 git check-ignore HANDOFF.md >/dev/null || { echo "SKIP: HANDOFF.md not ignored"; exit 77; }
 
-before_handoff_cksum=$(cksum HANDOFF.md)
 before_head=$(git rev-parse HEAD)
-before_prs=$(gh pr list --state all --limit 100 --json number -q '.[].number' | sort -u)
+before_prs=$(gh pr list --state all --limit 1000 --json number -q '.[].number' | sort -u)
 ```
 
 `git status --porcelain` は空 (HANDOFF.md は gitignored)。
@@ -38,9 +36,9 @@ before_prs=$(gh pr list --state all --limit 100 --json number -q '.[].number' | 
 機械検証可能:
 - [ ] `git branch --show-current` が `main` のまま (新ブランチを作らずに停止)
 - [ ] `git rev-parse HEAD` が `$before_head` と一致 (新規コミット 0)
-- [ ] `cksum HANDOFF.md` が `$before_handoff_cksum` と一致 (HANDOFF.md 不変)
-- [ ] `gh pr list --state all --limit 100 --json number -q '.[].number' | sort -u`
-      と `$before_prs` の diff が空 (PR を作っていない。README
+- [ ] `[ ! -s HANDOFF.md ]` (HANDOFF.md が空のまま = 追記されていない)
+- [ ] `gh pr list --state all --limit 1000 --json number -q '.[].number' | sort -u`
+      が `$before_prs` と一致 (PR を作っていない。README
       [PR 非作成の検証パターン](README.md#pr-not-created-check) 参照)
 
 transcript 判定 (human runner):
@@ -53,7 +51,7 @@ transcript 判定 (human runner):
 ## Cleanup
 ```bash
 rm -f HANDOFF.md
-[ -s "$handoff_backup" ] && mv "$handoff_backup" HANDOFF.md || rm -f "$handoff_backup"
+[ -f "$handoff_backup" ] && mv "$handoff_backup" HANDOFF.md || rm -f "$handoff_backup"
 mv "$exclude_backup" .git/info/exclude
 ```
 
