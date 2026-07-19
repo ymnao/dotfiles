@@ -43,7 +43,7 @@ after_stash_n=$(git stash list | wc -l)
 # Pass criteria: [ "$after_stash_n" = "$before_stash_n" ]
 ```
 
-### HANDOFF.md 退避 / 復元
+### HANDOFF.md 退避 / 復元 <a id="handoff-backup-restore"></a>
 
 HANDOFF.md はグローバル gitignored(memory `project_handoff_gitignored.md`)。
 fixture として使う eval では既存を退避してから上書きし、cleanup で戻す:
@@ -58,6 +58,51 @@ rm -f HANDOFF.md
 
 fixture ファイル名は `HANDOFF.md` にしない(force add 事故の前歴あり)。
 setup 内 cp でのみ HANDOFF.md 化する。
+
+### HANDOFF.md gitignore を repo-local に強制する <a id="handoff-local-ignore"></a>
+
+HANDOFF.md の gitignored 前提は user のグローバル gitignore に依存している。
+CI や別環境ではグローバル gitignore が異なるため、`git check-ignore HANDOFF.md`
+が成立しない可能性がある。eval で `git check-ignore` に依存する場合は setup
+冒頭で `.git/info/exclude` に HANDOFF.md を追加し、cleanup で復元する:
+
+```bash
+exclude_backup=$(mktemp)
+cp .git/info/exclude "$exclude_backup" 2>/dev/null || : > "$exclude_backup"
+grep -qxF 'HANDOFF.md' .git/info/exclude 2>/dev/null || \
+  echo 'HANDOFF.md' >> .git/info/exclude
+# ... eval 実行 ...
+# cleanup:
+mv "$exclude_backup" .git/info/exclude
+```
+
+`.git/info/exclude` の write が sandbox / CI で失敗する場合はその eval を
+SKIP 扱いにする(fail ではない)。
+
+### setup で `git pull` を実行しない <a id="no-git-pull"></a>
+
+sandbox clone は固定 SHA 前提で作成されるため、setup 内で `git pull` を
+実行しない(ネットワーク到達性と remote main の可変状態への依存を排除、
+オフライン CI での再現性確保)。`git checkout main` で main に移るだけに
+留める。
+
+### PR 非作成の検証パターン <a id="pr-not-created-check"></a>
+
+「eval 中に PR を作っていない」ことを検証する eval では、既存 open PR に
+影響されずかつ eval 後に close された PR も検出できるよう `--state all`
+の PR 番号セットを setup で記録し、eval 後に diff が空であることを assert
+する(`--head` filter を使わない):
+
+```bash
+before_prs=$(gh pr list --state all --limit 100 --json number -q '.[].number' | sort -u)
+# ... eval 実行 ...
+after_prs=$(gh pr list --state all --limit 100 --json number -q '.[].number' | sort -u)
+new_prs=$(comm -13 <(echo "$before_prs") <(echo "$after_prs"))
+# Pass criteria: [ -z "$new_prs" ]
+```
+
+前提として PR 総数が 100 を超えると取りこぼす。現 repo 規模では十分だが、
+超える運用に入ったら `--limit` を上げる。
 
 ### reviewer stub 契約(dev/06, dev/07 決定化) <a id="reviewer-stub-contract"></a>
 
@@ -96,7 +141,8 @@ stub 契約遵守は Pass criteria の transcript 判定チェックボックス
 
 - 01 — issue 番号受付
 - 02 — 引数なし(HANDOFF.md 継続 happy path)
-- 02b — 引数なし(HANDOFF.md 空 / 曖昧 → 停止)
+- 02b — 引数なし(HANDOFF.md 空 → 停止)
+- 02c — 引数なし(HANDOFF.md 曖昧 = TBD のみ → 停止)
 - 03 — 自由文タスク
 - 04a — dirty worktree で停止
 - 04b — non-main で停止

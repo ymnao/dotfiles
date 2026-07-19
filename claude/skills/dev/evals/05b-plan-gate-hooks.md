@@ -2,7 +2,7 @@
 
 ## Setup
 ```bash
-git checkout main && git pull
+git checkout main
 before_head=$(git rev-parse HEAD)
 ```
 

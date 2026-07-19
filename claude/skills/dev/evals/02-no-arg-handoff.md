@@ -7,7 +7,7 @@ fixture は sandbox main に commit する (未 commit のまま cp すると
 検証にならないため)。HANDOFF.md は gitignored なのでコミットされない。
 
 ```bash
-git checkout main && git pull
+git checkout main
 [ -f HANDOFF.md ] && mv HANDOFF.md HANDOFF.md.bak
 cp claude/skills/dev/evals/fixtures/readme-typos.md README.md
 git add README.md

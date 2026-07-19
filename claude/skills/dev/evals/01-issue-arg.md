@@ -6,7 +6,7 @@ sandbox clone 内で main、clean tree にする。参照する open な GitHub 
 1 件作成する。
 
 ```bash
-git checkout main && git pull
+git checkout main
 issue=$(gh issue list --state open --limit 1 --json number -q '.[0].number')
 created_issue=""
 if [ -z "$issue" ]; then

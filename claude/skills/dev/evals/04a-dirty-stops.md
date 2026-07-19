@@ -2,7 +2,7 @@
 
 ## Setup
 ```bash
-git checkout main && git pull
+git checkout main
 before_stash_n=$(git stash list | wc -l)
 echo "dirty" >> README.md   # commit しない
 ```
