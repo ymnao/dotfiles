@@ -7,6 +7,34 @@
 
 ## 共通スニペット(全 eval で使う規約)
 
+### transcript 変数 <a id="transcript-var"></a>
+
+Pass criteria で `$transcript` を参照する eval (dev/06, dev/07 等の
+review-loop ログ検証) では、runner は `claude --model ... -p "..."` の
+標準出力をファイルに保存し、そのパスを `transcript` に束縛して Pass
+criteria の各 grep コマンドに渡す:
+
+```bash
+transcript=$(mktemp)
+claude --model claude-sonnet-5 -p "<Prompt の内容>" | tee "$transcript"
+# 以降 Pass criteria: grep ... "$transcript"
+# cleanup: rm -f "$transcript"
+```
+
+skill-creator の eval 実行機能を使う場合はそのセッション出力を同等の
+ファイルに落として `$transcript` として渡す。
+
+### レビューループの stub 契約遵守 grep <a id="review-loop-stub-not-invoked"></a>
+
+dev/06 / dev/07 のように reviewer stub 契約 ([`reviewer-stub-contract`](#reviewer-stub-contract))
+を適用する eval では、`/simplify` `/code-review` `codex-review` を
+実起動していないことを以下の共通 grep で検証する (単なる文中言及と
+区別するため `<command-name>` タグ形式に限定):
+
+```bash
+! grep -qE '^<command-name>(/?simplify|/?code-review|/?codex-review)</command-name>$' "$transcript"
+```
+
 ### branch 変数
 
 貼付でシェル構文エラーを起こさないため、setup / cleanup で `<...>` bracket
