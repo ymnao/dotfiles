@@ -1,23 +1,23 @@
 # eval: next — HANDOFF.md の恒久メモ節 (「次セッション持ち越しメモ」等) を保持する
 
 ## Setup
-merged 済み PR を用意し、HANDOFF.md に恒久メモ節を仕込んでおく
-(HANDOFF.md は gitignored)。既存 HANDOFF.md がある場合は退避する。
+毎回 fresh に merged 済み PR + 恒久メモ節を含む HANDOFF.md fixture を
+再現する (auto-delete 環境に依存しない)。HANDOFF.md fixture は
+`fixtures/handoff-template.md` に「次セッション持ち越しメモ」節と
+`#999` 参照を含めて配置してある。
 
 ```bash
-branch="<merged 済みの feature ブランチ名>"
-git checkout "$branch"
+git checkout main && git pull
+branch="feature/eval-next-handoff-notes-$(date +%s)"
+git checkout -b "$branch"
+echo x >> README.md && git commit -am "chore: eval-next handoff-notes fixture"
+git push -u origin HEAD
+gh pr create --fill
+gh pr merge --merge --admin   # feature commit が main の祖先になるよう merge commit を使う
+                              # (--squash だと後段の `git branch -d` が拒否される)
+# `gh pr merge` は local HEAD を動かさないので $branch のまま。
 [ -f HANDOFF.md ] && mv HANDOFF.md HANDOFF.md.bak
-cat > HANDOFF.md <<'EOF'
-# HANDOFF
-
-## 今回セッションで完了したこと
-- (省略)
-
-## 次セッション持ち越しメモ
-- codex-review 3 観点の閾値を再検討する (根拠: 2026-07-10 の議論)
-- HANDOFF.md 自体のフォーマット議論は #999 で継続
-EOF
+cp claude/skills/next/evals/fixtures/handoff-template.md HANDOFF.md
 ```
 
 ## Prompt
@@ -27,6 +27,8 @@ EOF
 - [ ] step 5 の /handoff 実行後も HANDOFF.md の「次セッション持ち越しメモ」
       節が残っている (`grep -F "次セッション持ち越しメモ" HANDOFF.md` がヒット)
 - [ ] 節内の各項目 (codex-review 閾値 / #999) が消えていない
+      (`grep -F "codex-review" HANDOFF.md` と `grep -F "#999" HANDOFF.md` の
+      両方がヒット)
 - [ ] HANDOFF.md がコミットされていない (`git status` に現れず、
       `git log` に HANDOFF.md 変更がない)
 
@@ -34,4 +36,7 @@ EOF
 ```bash
 rm -f HANDOFF.md
 [ -f HANDOFF.md.bak ] && mv HANDOFF.md.bak HANDOFF.md
+git checkout main 2>/dev/null || true
+git branch -D "$branch" 2>/dev/null || true
+git push origin --delete "$branch" 2>/dev/null || true
 ```

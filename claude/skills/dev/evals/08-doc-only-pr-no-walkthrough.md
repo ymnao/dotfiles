@@ -27,7 +27,8 @@ mkdir -p /tmp/dev-eval-doc-only
 
 ## Cleanup
 ```bash
+branch=$(git branch --show-current)
 git checkout main
-git branch -D <作成したブランチがあれば> 2>/dev/null || true
+[ "$branch" != "main" ] && git branch -D "$branch" 2>/dev/null || true
 rm -rf /tmp/dev-eval-doc-only
 ```

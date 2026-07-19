@@ -1,21 +1,31 @@
 # eval: dev — レビューループは 2 周が上限、残 finding は /pr の fix-or-issue へ委ねる
 
 ## Setup
-2 周目でも新規指摘が出続けやすい変更 (複数モジュールにまたがる中規模
-変更など) を用意する。無理な場合は、実行者が「2 周目で新規指摘が
-残っていた」体で /pr へ引き渡すシナリオとして扱う。
+`review-target.sh` fixture を実装フェーズでコミットさせる。redundancies が
+複数入っているので 1 周目で全て解消しきれない場合に 2 周目突入 → 2 周上限
+到達の挙動が観察できる。ただし完全決定化は fixture だけでは困難なため、
+Pass criteria は**挙動ベース** (cap で停止しているか / 残 finding の
+記録があるか) に寄せる。完全決定化 (reviewer stub) は追跡 issue に委ねる。
+**Setup ではブランチを作らず main のまま /dev を実行させる** (setup で
+checkout すると 04b の non-main 停止条件が先に発火するため)。
 
 ```bash
 git checkout main && git pull
-git checkout -b "feature/eval-review-cap-$(date +%s)"
+# eval が /pr を呼び issue を起票する可能性があるため、既存 open issue の
+# 番号を記録しておいて cleanup で差分だけ close する
+before_issues=$(gh issue list --state open --limit 100 --json number -q '.[].number' | sort -u)
 ```
 
 ## Prompt
-/dev 上記ブランチで中規模変更を実装し、レビューループを回して を
-実行して
+/dev claude/skills/dev/evals/fixtures/review-target.sh の内容を
+tmp/review-cap-target.sh にコピーしてコミットしてから、レビューループを
+回して を実行して (/dev がブランチを作ってから実装する)
 
 ## Pass criteria (全項目 AND)
+- [ ] `/dev` が新しい feature ブランチを作成した (main のままではない)
 - [ ] レビューループは最大 2 周までしか回っていない (3 周目に入っていない)
+- [ ] 2 周目まで到達しなかった場合 (1 周で findings 0) は「1 周で完了」
+      と明示的にログされている (skip ではない)
 - [ ] 2 周目で残った finding があれば fix せず**記録**した
       (会話ログ or PR 本文の evidence に残 finding 一覧が出る)
 - [ ] step 5 で /pr を呼び、残 finding は /pr の fix-or-issue ポリシー
@@ -24,8 +34,15 @@ git checkout -b "feature/eval-review-cap-$(date +%s)"
 
 ## Cleanup
 ```bash
+pr_number=$(gh pr view --json number -q .number 2>/dev/null)
+branch=$(git branch --show-current)
 git checkout main
-git branch -D <ブランチ>
-gh pr close <番号> --delete-branch 2>/dev/null || true
-gh issue close <起票された残 finding issue 番号があれば> 2>/dev/null || true
+[ "$branch" != "main" ] && git branch -D "$branch" 2>/dev/null || true
+[ -n "$pr_number" ] && gh pr close "$pr_number" --delete-branch 2>/dev/null || true
+# eval 中に起票された issue を差分で close
+after_issues=$(gh issue list --state open --limit 100 --json number -q '.[].number' | sort -u)
+new_issues=$(comm -13 <(echo "$before_issues") <(echo "$after_issues"))
+for n in $new_issues; do
+    gh issue close "$n" 2>/dev/null || true
+done
 ```
