@@ -15,11 +15,16 @@ review-loop ログ検証) では、runner は `claude --model ... -p "..."` の
 criteria の各 grep コマンドに渡す:
 
 ```bash
+set -o pipefail
 transcript=$(mktemp)
+trap 'rm -f "$transcript"' EXIT INT TERM
 claude --model claude-sonnet-5 -p "<Prompt の内容>" | tee "$transcript"
 # 以降 Pass criteria: grep ... "$transcript"
-# cleanup: rm -f "$transcript"
 ```
+
+`pipefail` 未設定だと `claude` が失敗しても `tee` の成功で runner が
+続行し途中 transcript を評価してしまう。`trap` は割り込み時の
+mktemp ファイル残留を防ぐ (両方セットで初めて安全)。
 
 skill-creator の eval 実行機能を使う場合はそのセッション出力を同等の
 ファイルに落として `$transcript` として渡す。

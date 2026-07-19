@@ -115,11 +115,14 @@ codex-review は step 5 の /pr が risk tier に応じて実行するため
 されるため前後に装飾を付けない):
 
 ```
-[dev/review-loop] round=N phase=start
-[dev/review-loop] round=N phase=end applied=N status=<complete|continue|cap-reached>
+[dev/review-loop] round=N phase=start head=<git HEAD の短縮 SHA> dirty=<0|1>
+[dev/review-loop] round=N phase=end applied=N status=<complete|continue|cap-reached> head=<sha> dirty=<0|1>
 ```
 
 - `N` (round) は 1 または 2 の整数
+- `head=<sha>` は当該時点の `git rev-parse --short HEAD` (7 文字前後)
+- `dirty=<0|1>` は当該時点で `git status --porcelain` の出力が空なら
+  `0`、あれば `1` (uncommitted changes の有無)
 - `applied=N` は当該 round で apply した指摘の件数 (fix commit 数ではなく
   simplify / code-review の指摘のうち fix した件数の合算、単位や
   カンマを付けずに整数のみ)
@@ -133,6 +136,11 @@ codex-review は step 5 の /pr が risk tier に応じて実行するため
   fix しない」規約 (本 step 冒頭) に従い round=2 の `applied` は必ず
   `0`。status は `complete` (残指摘 0) か `cap-reached` (残指摘あり)
   の 2 択で、`continue` は取らない
+- **round=2 の head/dirty 不変**: round=2 は「発散防止のため fix
+  しない」規約に従い、`phase=start` と `phase=end` の `head=` は
+  同一かつ `dirty=0` でなければならない (Bash / apply_patch / sed
+  経由の混入も含めて一切の変更禁止を機械検証可能にするため。
+  Edit / Write tool call マーカーだけでは Bash 経由の変更を取りこぼす)
 
 reviewer stub 契約を適用する eval では、上記に加えて stub 読込ログ
 (`phase=stub-loaded`) の出力義務がある。詳細は
