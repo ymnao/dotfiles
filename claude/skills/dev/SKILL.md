@@ -110,22 +110,33 @@ codex-review は step 5 の /pr が risk tier に応じて実行するため
 
 #### 構造化ログ (周回数と完了状態の機械検証用)
 
-各 round の開始時と終了時に、以下を **行頭から一字一句この形式** で
-応答テキストに出力する (grep で検証されるため前後に装飾を付けない):
+各 round の開始時と終了時に、以下を **行頭から (テンプレートの `N`
+は整数値に展開して) この形式** で応答テキストに出力する (grep で検証
+されるため前後に装飾を付けない):
 
 ```
 [dev/review-loop] round=N phase=start
-[dev/review-loop] round=N phase=end applied=<指摘 apply 数> status=<complete|continue|cap-reached>
+[dev/review-loop] round=N phase=end applied=N status=<complete|continue|cap-reached>
 ```
 
-- `applied=` は当該 round で apply した指摘の件数 (fix commit 数ではなく
-  simplify / code-review の指摘のうち fix した件数の合算)
+- `N` (round) は 1 または 2 の整数
+- `applied=N` は当該 round で apply した指摘の件数 (fix commit 数ではなく
+  simplify / code-review の指摘のうち fix した件数の合算、単位や
+  カンマを付けずに整数のみ)
 - `status=` の 3 値:
   - `continue` — この round で修正が入り次 round へ再周回する
-    (round=1 の end でのみ出現しうる)
-  - `complete` — 指摘 0 で loop 正常終了 (どの round でも起こり得る)
+    (round=1 の end でのみ出現しうる、round=2 では出さない)
+  - `complete` — 指摘 0 で loop 正常終了 (round=1 で 0 指摘完了も含む)
   - `cap-reached` — round=2 で残指摘があるが 2 周上限のため fix せず
     step 5 (/pr) の fix-or-issue へ引き渡す
+- **round=2 の判定基準**: 「発散防止のため 2 周目では新規指摘を
+  fix しない」規約 (本 step 冒頭) に従い round=2 の `applied` は必ず
+  `0`。status は `complete` (残指摘 0) か `cap-reached` (残指摘あり)
+  の 2 択で、`continue` は取らない
+
+reviewer stub 契約を適用する eval では、上記に加えて stub 読込ログ
+(`phase=stub-loaded`) の出力義務がある。詳細は
+[`evals/README.md` の reviewer-stub-contract](evals/README.md#reviewer-stub-contract) 節を参照。
 
 ### 5. PR 作成
 
