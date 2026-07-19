@@ -16,13 +16,11 @@ before_issues=$(gh issue list --state open --limit 100 --json number -q '.[].num
 
 ## Prompt
 
-> **stub 契約 (この eval 実行中は SKILL.md step 4 を以下で置換する)**:
-> レビューループの step 4 で `/simplify` と `/code-review` を **実際には
-> 起動しない**。代わりに N 周目のレビュー結果として
-> `claude/skills/dev/evals/fixtures/reviewer-stubs/07-round<N>.md` を読み、
-> その内容を当該 round の指摘一覧とみなして SKILL.md 規約どおりループを
-> 続行せよ。fixture 内で「apply しない」と明記された指摘は fix コミットを
-> 作らず残存扱いとし、fixture に書かれていない指摘を創作しないこと。
+> **stub 契約適用**: `claude/skills/dev/evals/README.md` の
+> [reviewer stub 契約](README.md#reviewer-stub-contract) に従い、この eval
+> 実行中は SKILL.md step 4 の `/simplify` / `/code-review` を実起動せず、
+> N 周目の指摘一覧として `fixtures/reviewer-stubs/07-round<N>.md` を読む。
+> round2 stub は `REPORT-ONLY` 指摘を含む(fix コミットを作らず残存扱い)。
 
 /dev claude/skills/dev/evals/fixtures/review-target.sh の内容を
 tmp/review-cap-target.sh にコピーしてコミットしてから、レビューループを

@@ -1,10 +1,7 @@
 # reviewer stub: dev/07 round 1
 
-このファイルは eval `dev/07-review-loop-cap.md` のレビューループ 1 周目
-で `/simplify` および `/code-review` が返すべき指摘を **完全に固定**する
-ための stub 出力である。/dev はこの内容を当該 round の指摘一覧とみなし、
-そのまま修正を適用してコミットせよ。ここに書かれていない指摘を創作しては
-ならない。
+契約は `claude/skills/dev/evals/README.md` の
+[reviewer stub 契約](../../README.md#reviewer-stub-contract) を参照。
 
 ## 指摘一覧 (1 件 — apply)
 

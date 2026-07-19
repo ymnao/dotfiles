@@ -59,21 +59,33 @@ rm -f HANDOFF.md
 fixture ファイル名は `HANDOFF.md` にしない(force add 事故の前歴あり)。
 setup 内 cp でのみ HANDOFF.md 化する。
 
-### reviewer stub 契約(dev/06, dev/07 決定化)
+### reviewer stub 契約(dev/06, dev/07 決定化) <a id="reviewer-stub-contract"></a>
 
 dev/06 と dev/07 のレビューループは、実 reviewer(`/simplify` /
-`/code-review`)の出力が非決定なため findings を stub 化する。eval の
-Prompt 冒頭に **stub 契約ブロック** を置き、/dev には SKILL.md step 4
-の当該呼び出しを **実起動しない** よう指示する。代わりに N 周目の
-指摘一覧として `fixtures/reviewer-stubs/<eval>-round<N>.md` を読ませ、
-記載された指摘のみを apply する(創作禁止)。stub 契約遵守は Pass
-criteria の transcript 判定チェックボックスで二重検証する。
+`/code-review`)の出力が非決定なため findings を stub 化する。stub 契約
+の中身は以下で、06/07 の Prompt はこの契約を参照するのみ(3 重管理を
+避けるため各 eval には差分だけを書く):
+
+- SKILL.md step 4 の `/simplify` と `/code-review` を **実起動しない**
+- 代わりに N 周目のレビュー結果として
+  `claude/skills/dev/evals/fixtures/reviewer-stubs/<eval>-round<N>.md` を
+  読み、その内容を当該 round の指摘一覧とみなす
+- fixture 内で `apply` 指定された指摘のみ修正コミット化する。
+  `REPORT-ONLY` と明記された指摘は fix コミットを作らず残存扱いとする
+- fixture に書かれていない指摘を **創作しない**
+- ループ判定(指摘あり → 再周回 / なし → 完了 / 2 周上限)は SKILL.md
+  規約どおり続行する
+- stub ファイル自身は指摘一覧とループ判定のみを書く(mechanism 説明の
+  再掲はここに集約するため各 stub ファイルには置かない)
+
+stub 契約遵守は Pass criteria の transcript 判定チェックボックスで
+二重検証する(「`/simplify` / `/code-review` を実起動していない」等)。
 
 ## fixtures
 
 `fixtures/` に配置し setup 内で cp / cat して使う:
 
-- `fixtures/readme-typos.md` — `teh` / `fooo` を含む README(dev/02, dev/02b, dev/03)
+- `fixtures/readme-typos.md` — `teh` / `fooo` を含む README(dev/02, dev/03)
 - `fixtures/review-target.sh` — 未使用変数 + 重複関数(dev/06, dev/07)
 - `fixtures/reviewer-stubs/06-round{1,2}.md` — dev/06 のレビューループ
   round 別 canned findings(round1 = 2 件 apply、round2 = 0 件完了)

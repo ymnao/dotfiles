@@ -13,14 +13,11 @@ git checkout main && git pull
 
 ## Prompt
 
-> **stub 契約 (この eval 実行中は SKILL.md step 4 を以下で置換する)**:
-> レビューループの step 4 で `/simplify` と `/code-review` を **実際には
-> 起動しない**。代わりに N 周目のレビュー結果として
-> `claude/skills/dev/evals/fixtures/reviewer-stubs/06-round<N>.md` を読み、
-> その内容を当該 round の指摘一覧とみなして修正を適用し、ループ判定
-> (指摘あり → 再周回 / なし → 完了) は SKILL.md 規約どおり続行せよ。
-> fixture に書かれていない指摘を創作しないこと。tests (`make test` 等)
-> は round ごとに実行してよい。
+> **stub 契約適用**: `claude/skills/dev/evals/README.md` の
+> [reviewer stub 契約](README.md#reviewer-stub-contract) に従い、この eval
+> 実行中は SKILL.md step 4 の `/simplify` / `/code-review` を実起動せず、
+> N 周目の指摘一覧として `fixtures/reviewer-stubs/06-round<N>.md` を読む。
+> tests (`make test` 等) は round ごとに実行してよい。
 
 /dev claude/skills/dev/evals/fixtures/review-target.sh の内容を
 tmp/review-target.sh にコピーしてコミットしてから、レビューループを

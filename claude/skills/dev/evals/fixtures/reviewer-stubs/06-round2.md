@@ -1,8 +1,7 @@
 # reviewer stub: dev/06 round 2
 
-このファイルは eval `dev/06-review-loop-rerun.md` のレビューループ 2 周目
-で `/simplify` および `/code-review` が返すべき指摘を **完全に固定**する
-ための stub 出力である。
+契約は `claude/skills/dev/evals/README.md` の
+[reviewer stub 契約](../../README.md#reviewer-stub-contract) を参照。
 
 ## 指摘一覧 (0 件)
 
