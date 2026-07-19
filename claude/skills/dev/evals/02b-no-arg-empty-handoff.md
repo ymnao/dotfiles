@@ -9,7 +9,8 @@ HANDOFF.md はグローバル gitignored なのでコミットされない。
 
 ```bash
 git checkout main && git pull
-[ -f HANDOFF.md ] && mv HANDOFF.md HANDOFF.md.bak
+handoff_backup=$(mktemp)
+[ -f HANDOFF.md ] && mv HANDOFF.md "$handoff_backup"
 ```
 
 Case 別に HANDOFF.md を生成:
@@ -48,7 +49,7 @@ transcript 判定 (human runner):
 ## Cleanup
 ```bash
 rm -f HANDOFF.md
-[ -f HANDOFF.md.bak ] && mv HANDOFF.md.bak HANDOFF.md
+[ -s "$handoff_backup" ] && mv "$handoff_backup" HANDOFF.md || rm -f "$handoff_backup"
 ```
 
 (HANDOFF.md 継続経路の happy path は `02-no-arg-handoff.md` を参照。
