@@ -128,6 +128,16 @@ dev/06 と dev/07 のレビューループは、実 reviewer(`/simplify` /
   規約どおり続行する
 - stub ファイル自身は指摘一覧とループ判定のみを書く(mechanism 説明の
   再掲はここに集約するため各 stub ファイルには置かない)
+- stub を読み込んだ時点で、SKILL.md 構造化ログ (step 4) に加えて以下を
+  **行頭から一字一句この形式** で応答テキストに出力する
+  (Pass criteria の grep 検証用、前後に装飾を付けない):
+
+  ```
+  [dev/review-loop] round=N phase=stub-loaded stub=<path> count=<n>
+  ```
+
+  `<path>` は読み込んだ stub の相対パス、`<n>` は stub 内の指摘件数
+  (`REPORT-ONLY` を含む全件、apply/skip を問わず)
 
 stub 契約遵守は Pass criteria の transcript 判定チェックボックスで
 二重検証する(「`/simplify` / `/code-review` を実起動していない」等)。

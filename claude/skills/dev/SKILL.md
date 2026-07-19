@@ -108,6 +108,25 @@ fix-or-issue ポリシーに委ねる (発散防止)。
 codex-review は step 5 の /pr が risk tier に応じて実行するため
 ここでは呼ばない (重複実行の回避)。
 
+#### 構造化ログ (周回数と完了状態の機械検証用)
+
+各 round の開始時と終了時に、以下を **行頭から一字一句この形式** で
+応答テキストに出力する (grep で検証されるため前後に装飾を付けない):
+
+```
+[dev/review-loop] round=N phase=start
+[dev/review-loop] round=N phase=end applied=<指摘 apply 数> status=<complete|continue|cap-reached>
+```
+
+- `applied=` は当該 round で apply した指摘の件数 (fix commit 数ではなく
+  simplify / code-review の指摘のうち fix した件数の合算)
+- `status=` の 3 値:
+  - `continue` — この round で修正が入り次 round へ再周回する
+    (round=1 の end でのみ出現しうる)
+  - `complete` — 指摘 0 で loop 正常終了 (どの round でも起こり得る)
+  - `cap-reached` — round=2 で残指摘があるが 2 周上限のため fix せず
+    step 5 (/pr) の fix-or-issue へ引き渡す
+
 ### 5. PR 作成
 
 レビューループの最終 commit 直後にまず `git push -u origin <branch>` で
