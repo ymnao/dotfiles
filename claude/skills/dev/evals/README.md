@@ -40,6 +40,30 @@ dev/06 / dev/07 のように reviewer stub 契約 ([`reviewer-stub-contract`](#r
 ! grep -qE '^<command-name>(/?simplify|/?code-review|/?codex-review)</command-name>$' "$transcript"
 ```
 
+### レビューループ構造化ログの phase 順序・一意性 awk <a id="review-loop-phase-order"></a>
+
+`/dev` SKILL.md step 4 の構造化ログ (`[dev/review-loop] round=N phase=(start|stub-loaded|end)`)
+が、transcript に登場する各 round について **`start → stub-loaded → end`
+の順で正確に 1 回ずつ** 出現していることを検証する共通 awk。round=1 のみ
+の eval (dev/06b) と round=1+2 の eval (dev/06, dev/07) の両方で使える
+(transcript に現れた round 番号だけ検査する)。
+
+**この awk は「登場した round のみ検査する」semantics**: 例えば round=2
+が期待される eval で round=2 の 3 phase が 1 行も出なければ、この awk
+は素通しで PASS してしまう。「round=N が存在すること」の assertion は
+呼び出し側 eval の Pass criteria で個別 grep (`round=N phase=end ...`
+等) として別途担保すること:
+
+```bash
+awk '/^\[dev\/review-loop\] round=[0-9]+ phase=(start|stub-loaded|end)/ {
+  split($0, a, " "); r=substr(a[2],7); p=substr(a[3],7)
+  seq[r] = seq[r] " " p; cnt[r"-"p]++
+} END {
+  for (r in seq) if (seq[r] != " start stub-loaded end") { print "order fail r"r": "seq[r]; exit 1 }
+  for (k in cnt) if (cnt[k] != 1) { print "dup "k": "cnt[k]; exit 1 }
+}' "$transcript"
+```
+
 ### branch 変数
 
 貼付でシェル構文エラーを起こさないため、setup / cleanup で `<...>` bracket
@@ -180,9 +204,11 @@ stub 契約遵守は Pass criteria の transcript 判定チェックボックス
 `fixtures/` に配置し setup 内で cp / cat して使う:
 
 - `fixtures/readme-typos.md` — `teh` / `fooo` を含む README(dev/02, dev/03)
-- `fixtures/review-target.sh` — 未使用変数 + 重複関数(dev/06, dev/07)
+- `fixtures/review-target.sh` — 未使用変数 + 重複関数(dev/06, dev/06b, dev/07)
 - `fixtures/reviewer-stubs/06-round{1,2}.md` — dev/06 のレビューループ
   round 別 canned findings(round1 = 2 件 apply、round2 = 0 件完了)
+- `fixtures/reviewer-stubs/06b-round1.md` — dev/06b のレビューループ
+  canned findings(round1 = 0 件で 1 周 complete、round2 は出現しない)
 - `fixtures/reviewer-stubs/07-round{1,2}.md` — dev/07 のレビューループ
   round 別 canned findings(round1 = 1 件 apply、round2 = 1 件残存 REPORT-ONLY)
 
@@ -199,5 +225,6 @@ stub 契約遵守は Pass criteria の transcript 判定チェックボックス
 - 05b — plan 承認ゲート(hooks / security 境界)
 - 05c — plan 承認ゲート(3 ファイル超変更)
 - 06 — レビューループ 1 周目からの再回(reviewer stub 決定化済み)
+- 06b — レビューループ 1 周完了(round=1 で指摘 0、round=2 に入らず終了)
 - 07 — レビューループ 2 周上限(reviewer stub 決定化済み)
 - 08 — doc-only PR で walkthrough 抑制
