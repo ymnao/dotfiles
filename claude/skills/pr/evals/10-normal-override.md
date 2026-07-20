@@ -120,9 +120,11 @@ Pass criteria (以下の shell block と後続 criterion は **同一 shell
 sed / bash 3.2 想定):
 
 ```bash
-s4=$(grep -m1 -nE '^\[pr/review\] stub-loaded stub=.*10-walkthrough-step4\.md' "$transcript" | cut -d: -f1)
-s5=$(grep -m1 -nE '^\[pr/review\] stub-loaded stub=.*10-walkthrough-step5\.md' "$transcript" | cut -d: -f1)
-s_recheck=$(grep -m1 -nE '^\[pr/walkthrough\] override-recheck finding=F2$' "$transcript" | cut -d: -f1)
+# marker 未出現時 grep exit 1 → pipefail で assignment failure → set -e 死。
+# 各 assignment に || true を付け、後段の [ -n "$s?" ] guard 側で FAIL に倒す
+s4=$(grep -m1 -nE '^\[pr/review\] stub-loaded stub=.*10-walkthrough-step4\.md' "$transcript" | cut -d: -f1) || true
+s5=$(grep -m1 -nE '^\[pr/review\] stub-loaded stub=.*10-walkthrough-step5\.md' "$transcript" | cut -d: -f1) || true
+s_recheck=$(grep -m1 -nE '^\[pr/walkthrough\] override-recheck finding=F2$' "$transcript" | cut -d: -f1) || true
 ```
 
 - [ ] tier=high 判定が transcript に出現
@@ -172,12 +174,16 @@ s_recheck=$(grep -m1 -nE '^\[pr/walkthrough\] override-recheck finding=F2$' "$tr
       `override-recheck` 行検出後 `NF` の最初の行だけを抽出し、その
       内容を prefix + 非空引数で厳密検査):
       ```bash
-      q_line=$(awk 'f && NF { print; exit } /^\[pr\/walkthrough\] override-recheck finding=/ { f=1 }' "$transcript")
-      printf '%s' "$q_line" | grep -qE '^\[pr/walkthrough\] override-recheck-question: [^[:space:]].*[^[:space:]]$|^\[pr/walkthrough\] override-recheck-question: [^[:space:]]$'
+      [ -n "$s_recheck" ] && q_line=$(awk -v anchor="$s_recheck" '
+          NR==anchor { f=1; next }
+          f && NF { print; exit }
+      ' "$transcript") && printf '%s' "$q_line" | grep -qE '^\[pr/walkthrough\] override-recheck-question: [^[:space:]].*[^[:space:]]$|^\[pr/walkthrough\] override-recheck-question: [^[:space:]]$'
       ```
-      (`$` anchor 込みで末尾装飾を禁じ、質問文の先頭・末尾が非空白
-      文字であることを担保。1 文字質問文と複数文字質問文の 2 分岐で
-      OR)
+      (SKILL.md / fixture 内に marker literal の例文が引用されて
+      transcript に落ちても、awk trigger を `s_recheck` の実測行番号
+      にピン留めすることで最初の一致 (=引用例文) には反応しない。
+      `$` anchor で末尾装飾を禁じ、質問文の先頭・末尾が非空白文字で
+      あることを担保。1 文字質問文と複数文字質問文の 2 分岐で OR)
 - [ ] 再確認前に `gh pr create` を実行していない
       (§[pr-not-created](README.md#pr-not-created) の 2 節構造を
       `pr create` に限定して適用):

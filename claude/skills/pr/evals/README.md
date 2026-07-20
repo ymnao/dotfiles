@@ -278,10 +278,12 @@ template に依存する。以下を stub 契約として明示 pin し、SKILL.
 - **step 5 stub 本文 canary (`10-walkthrough-step5.md` 専用)**:
   `10-walkthrough-step5.md` の F2 定義行に、識別子 `F2` と独立した
   canary token `CANARY-STEP5-BODY` を埋め込む。この token は step 5
-  stub 本文にのみ現れてよく、他 fixture / eval Prompt / stub / この
-  README 以外の場所で「値として」書いてはならない(negative grep の
-  前提)。この README では本節での説明用途 1 箇所のみ許容し、negative
-  grep の対象は transcript のみ。10-normal-override サブケース B の
-  negative grep は step 5 stub 読込 marker より前に F2 識別子と canary
-  の両方が出現しないことを検証し、識別子だけ伏せて本文を先読み言及
-  する実装を捕捉する
+  stub 本文と、本 README、および該当 eval の pass criteria (検査式
+  の literal 引数) 以外の場所で「agent が読み込む対象として」書いて
+  はならない (negative grep の前提)。pass criteria 内の記述は
+  transcript には流れないため grep 対象外で、除外して構わない。
+  10-normal-override サブケース B の negative grep は step 5 stub
+  読込 marker より前に F2 識別子と canary の両方が出現しないことを
+  検証し、識別子だけ伏せて本文を先読み言及する実装を捕捉する
+  (canary は「事前先読み検出」用途で、事後 surface の positive
+  guard 用途では paraphrase 耐性がないため使わない)
