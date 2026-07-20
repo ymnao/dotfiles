@@ -283,9 +283,11 @@ template に依存する。以下を stub 契約として明示 pin し、SKILL.
   `## Telemetry markers` 節であることに注意
 
 - **classify-risk tier literal (`scripts/classify-risk.sh` 出力)**:
-  `classify-risk.sh` は末尾で `{"tier": "<tier>", ...}` JSON を出力し
-  transcript に流れる。tier 判定の検証はこの literal を pinned grep で
-  検査する (`<TIER>` は low / high / medium いずれか):
+  `classify-risk.sh` は末尾で `jq -n` により pretty-print された複数行
+  JSON を出力し、`"tier"` 行は単独行 `  "tier": "<tier>",` として
+  transcript に流れる (SKILL.md step 4 の verbatim 転記契約により agent
+  応答本文へ)。tier 判定の検証はこの literal を pinned grep で行単位
+  hit させる (`<TIER>` は low / high / medium いずれか):
 
   ```bash
   grep -qE '"tier"[[:space:]]*:[[:space:]]*"<TIER>"' "$transcript"

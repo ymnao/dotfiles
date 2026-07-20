@@ -52,7 +52,7 @@ env PATH="$stub_bin:$PATH" EVAL_LOG_DIR="$EVAL_LOG_DIR" \
 - [ ] stub 読込ログが出た:
       `grep -qE '^\[pr/review\] stub-loaded stub=.*06-.*\.md count=[0-9]+$' "$transcript"`
 - [ ] codex-review / code-reviewer / fable サブエージェント未起動
-      ([`README.md#reviewer-stub-contract`](README.md#reviewer-stub-contract) の 2 grep で検証)
+      ([`README.md#reviewer-stub-contract`](README.md#reviewer-stub-contract) の 3 grep で検証)
 
 サブケース A (`06-a-only.md`):
 - [ ] user checkpoint が **発火しない** (transcript に「分類表」提示は
