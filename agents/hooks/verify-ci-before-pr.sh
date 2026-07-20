@@ -110,7 +110,8 @@ fi
 if [[ -n "$defer_found" ]]; then
   cat >&2 <<EOF
 [verify-ci-before-pr] PR body に「$DEFER_MARKER」が含まれています ($defer_found)。
-fix-or-issue-or-dismiss ポリシー: 未 fix の finding は gh issue create で起票して URL を記載してください。
+fix-or-issue-or-dismiss ポリシー: 未 fix の finding は (b) gh issue create で起票して URL を記載するか、
+(c) 対応しない と判断して user 承認済みの「追跡しない (user 指示: <要約>)」書式に置き換えてください。
 WIP として進めたい場合は --draft を付ければスキップします。
 EOF
   exit 2
