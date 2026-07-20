@@ -7,7 +7,7 @@
 step 5 walkthrough 中に surface する findings:
 
 - **F2**: `package.json:2` — dependency 追加による typecheck 失敗の可能性
-  (walkthrough 中に agent が気付く新 finding)
+  (canary: CANARY-STEP5-BODY、walkthrough 中に agent が気付く新 finding)
   - **期待分類**: (a) fix 候補、または (b) 起票
 
 ## 期待挙動

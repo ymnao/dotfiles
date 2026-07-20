@@ -18,6 +18,7 @@
 - 08 — draft 判定表駆動 (4 行: (a) 残存 / (b) 起票済 + (c) / (c) only / (b) 起票失敗)
 - 09 — 統合 issue 経路 (gh stub、同根複数 → issue 1 件、body 残留検証)
 - 10 — normal override 新条件 (defer marker 抑止 + walkthrough 新 finding 再確認)
+- 11 — override-recheck marker の負回帰 (marker を出してはいけない 3 ケース)
 
 01-05 は実 gh を投げる従来型 eval。06-10 は **gh stub** と
 **reviewer stub 契約** を組み合わせた決定化 eval で、以下の共通スニペット
@@ -255,17 +256,32 @@ template に依存する。以下を stub 契約として明示 pin し、SKILL.
   - **`step 8 override`** — user 指示による draft override
   08-draft-matrix / 10-normal-override はこれら literal のいずれか適切な
   ものを grep する (行 1 は `step 4`、行 4 は `step 4 pending` 等)
-- **walkthrough override-recheck marker (SKILL.md step 8 bullet 末尾)**:
+- **walkthrough override-recheck / override-recheck-question marker (SKILL.md
+  `## Telemetry markers` 節)**:
   tier=high で pre-walkthrough override を受け取った状態で step 5
   walkthrough が新 finding を surface した際、agent は再確認質問の
-  **直前** に以下を行頭一字一句で出力する:
+  **直前** に以下 2 行を行頭一字一句で出力する:
 
   ```
   [pr/walkthrough] override-recheck finding=<id>
+  [pr/walkthrough] override-recheck-question: <質問文>
   ```
 
   `<id>` は再確認対象の新 finding 識別子 (stub fixture 内の `F2` 等)。
-  10-normal-override サブケース B はこの literal と `finding=` 値を
-  同一行で grep する。この marker は `[pr/review]` 系 (`stub-loaded`)
-  とは別 namespace で、出所は SKILL.md step 8 bullet 末尾の safety net
-  規定であることに注意
+  10-normal-override サブケース B はこの 2 marker を、`override-recheck`
+  行の直後の最初の non-blank 行が `override-recheck-question:` プレフィクス
+  で始まり質問文が非空であることまで含めて grep する (marker を出す
+  だけで質問せず停止する実装を検出するため)。両 marker は `[pr/review]`
+  系 (`stub-loaded`) とは別 namespace で、出所は SKILL.md
+  `## Telemetry markers` 節であることに注意
+
+- **step 5 stub 本文 canary (`10-walkthrough-step5.md` 専用)**:
+  `10-walkthrough-step5.md` の F2 定義行に、識別子 `F2` と独立した
+  canary token `CANARY-STEP5-BODY` を埋め込む。この token は step 5
+  stub 本文にのみ現れてよく、他 fixture / eval Prompt / stub / この
+  README 以外の場所で「値として」書いてはならない(negative grep の
+  前提)。この README では本節での説明用途 1 箇所のみ許容し、negative
+  grep の対象は transcript のみ。10-normal-override サブケース B の
+  negative grep は step 5 stub 読込 marker より前に F2 識別子と canary
+  の両方が出現しないことを検証し、識別子だけ伏せて本文を先読み言及
+  する実装を捕捉する
