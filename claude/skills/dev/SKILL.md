@@ -95,17 +95,21 @@ user に報告して指示を待つ。
 
 ### 4. レビューループ (最大 2 周)
 
-以下を順に実行する。**修正が入ったら再度 1 周目から回す (上限 2 周)**。
+以下を実行する。**修正が入ったら再度 1 周目から回す (上限 2 周)**。
 2 周目でも新規指摘が出た場合は残りを fix せず記録し、step 5 の /pr の
 fix-or-issue ポリシーに委ねる (発散防止)。
 
-1. `/simplify` — 指摘を apply (skip 判断は理由を記録)
-2. `code-reviewer` サブエージェント (Agent tool, `subagent_type:
-   "code-reviewer"`) を起動し、ReportFindings で返る CONFIRMED /
-   PLAUSIBLE をメインが fix (Agent は read-only、指摘のみ返す)。
-   fix しない判断をした finding は理由を記録 (step 5 で issue 起票対象になる)
-3. プロジェクトのテストスイート (`make test` 等) — fail したら直す
-4. コミット (レビュー修正分)
+1. `/simplify` と `code-reviewer` サブエージェントを **並列起動** して
+   指摘を集める (`code-reviewer` は read-only なので `/simplify` の
+   コード修正と衝突しない)。両方フォアグラウンドで完了を待つ
+   (Agent tool の `run_in_background: false`)
+   - `/simplify`: 指摘を apply (skip 判断は理由を記録)
+   - `code-reviewer` サブエージェント (Agent tool,
+     `subagent_type: "code-reviewer"`) が ReportFindings で返す
+     CONFIRMED / PLAUSIBLE をメインが fix。fix しない判断をした
+     finding は理由を記録 (step 5 で issue 起票対象になる)
+2. プロジェクトのテストスイート (`make test` 等) — fail したら直す
+3. コミット (レビュー修正分)
 
 codex-review は step 5 の /pr が risk tier に応じて実行するため
 ここでは呼ばない (重複実行の回避)。
@@ -164,10 +168,9 @@ merge 後の後続は `/next` skill が担う。
 
 ## 注意
 
-- このスキルは既存 skill (issue / simplify / pr) と code-reviewer サブ
-  エージェントの
-  orchestrator であり、各 skill の手順を上書きしない。矛盾がある場合は
-  個別 skill の記述が優先
+- このスキルは既存 skill (issue / simplify / pr) と code-reviewer
+  サブエージェントの orchestrator であり、各 skill の手順を上書き
+  しない。矛盾がある場合は個別 skill の記述が優先
 - レビューループの上限 2 周は発散防止の意図的な制限。上限到達で残った
   finding は /pr の fix-or-issue ポリシー (fix か issue 起票) で必ず
   行き先が付くため、黙って消えることはない
