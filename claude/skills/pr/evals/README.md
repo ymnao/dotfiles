@@ -106,6 +106,34 @@ dev/evals の [reviewer stub 契約](../../dev/evals/README.md#reviewer-stub-con
 
   `<path>` は読み込んだ stub の相対パス、`<n>` は finding 件数。
 
+**stage-gated 注入 (10-B 用)** <a id="stage-gated-injection"></a>:
+
+reviewer stub 契約は既定で「Prompt 提示時に stub 全体を一度だけ読み込む」
+semantics だが、10-B のように「step 5 walkthrough で **初めて** surface
+する新 finding」を再現する eval では、単一 stub を最初に読ませると
+agent が step 4 段階で新 finding も先読みしてしまい経路を検証できない。
+
+そのため 10-B は stub を **step 4 用** (pre-walkthrough) と **step 5 用**
+(walkthrough surface) の 2 ファイルに分離し、Prompt 側で
+
+> step 4 段階では `<step4-stub>` のみを読み込み stub-loaded marker を
+> 行頭出力する。step 5 walkthrough に到達した時点で `<step5-stub>` を
+> 追加で読み込み、同 marker (path 値を差し替えたもの) を行頭出力する。
+> step 5 到達より前に step5-stub を読み込んだり、その内容を言及したり
+> しない
+
+と明示指示する。Pass criteria 側は 2 つの stub-loaded marker が
+両方出現していること、および step 5 stub 読込より前の出力に step 5
+stub 内の finding 識別子が現れないこと (negative grep) で二重検証する。
+
+**限界**: stage-gated は agent の自己申告 (step 5 到達を自身で判定して
+2 本目を読む) に依存するため、敵対的耐性は 07 の `--resume` 2 段実行
+(SDK 側で turn 境界が確立する) より弱い。将来 `--resume` 化できる場合は
+そちらへ移行する。checkpoint 停止・再開の検証には従来通り
+[approve-and-resume](#approve-and-resume) を使う (使い分け: 検証対象が
+「stop → 承認 → resume」の制御フローなら `--resume`、単に「stage を
+超えたタイミングでの stub 追加読込」なら本節の指示ベース)。
+
 **実起動禁止の検証**: 06-10 の Pass criteria は codex-review / fable
 サブエージェントの実起動禁止を以下 grep で二重担保する:
 
@@ -227,3 +255,17 @@ template に依存する。以下を stub 契約として明示 pin し、SKILL.
   - **`step 8 override`** — user 指示による draft override
   08-draft-matrix / 10-normal-override はこれら literal のいずれか適切な
   ものを grep する (行 1 は `step 4`、行 4 は `step 4 pending` 等)
+- **walkthrough override-recheck marker (SKILL.md step 8 bullet 末尾)**:
+  tier=high で pre-walkthrough override を受け取った状態で step 5
+  walkthrough が新 finding を surface した際、agent は再確認質問の
+  **直前** に以下を行頭一字一句で出力する:
+
+  ```
+  [pr/walkthrough] override-recheck finding=<id>
+  ```
+
+  `<id>` は再確認対象の新 finding 識別子 (stub fixture 内の `F2` 等)。
+  10-normal-override サブケース B はこの literal と `finding=` 値を
+  同一行で grep する。この marker は `[pr/review]` 系 (`stub-loaded`)
+  とは別 namespace で、出所は SKILL.md step 8 bullet 末尾の safety net
+  規定であることに注意
