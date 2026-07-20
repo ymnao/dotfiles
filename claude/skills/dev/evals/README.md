@@ -77,6 +77,28 @@ awk '/^\[dev\/review-loop\] round=[0-9]+ phase=(start|stub-loaded|end)/ {
 }' "$transcript"
 ```
 
+### レビューループ構造化ログの head/dirty 不変チェック <a id="review-loop-head-dirty-invariant"></a>
+
+`/dev` SKILL.md「round=2 の head/dirty 不変」規約 (fix しない round の
+`phase=start` と `phase=end` で `head=` と `dirty=` がそれぞれ同一)
+を検証する共通パターン。呼び出し側 eval は「start 行 grep」「end 行
+grep」の 2 regex を渡し、以下のロジックで比較する:
+
+```bash
+start_line=$(grep -oE '<start 行 anchoring regex、末尾は head=[a-f0-9]+ dirty=[01]$>' "$transcript" | awk '{print $(NF-1)" "$NF}')
+end_line=$(grep -oE '<end 行 anchoring regex、末尾は head=[a-f0-9]+ dirty=[01]$>' "$transcript" | awk '{print $(NF-1)" "$NF}')
+[ -n "$start_line" ] && [ "$start_line" = "$end_line" ]
+```
+
+- `$(NF-1)" "$NF` で末尾 2 field (`head=... dirty=...`) を抽出する
+  ことで、start / end 行で field 数が異なっても (start は 5 field、
+  end は `applied=` `status=` が挟まって 7 field) index 書き分け不要
+- `dirty=0` を強制しないのは sandbox の chmod/rm 制限で解消不能な
+  pre-existing artifact (fixture stub の mode drop / 削除不能な
+  untracked 残存等) により dirty=1 スタートが原理的に起こり得るため。
+  head 同一 + dirty 同一で「round 中に新たな変更が入らないこと」を
+  機械検証する (Bash / apply_patch / sed 経由の混入も含めて検出可能)
+
 ### branch 変数
 
 貼付でシェル構文エラーを起こさないため、setup / cleanup で `<...>` bracket

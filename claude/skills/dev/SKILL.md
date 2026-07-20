@@ -144,13 +144,10 @@ codex-review は step 5 の /pr が risk tier に応じて実行するため
 - **round=2 の head/dirty 不変**: round=2 は「発散防止のため fix
   しない」規約に従い、`phase=start` と `phase=end` の `head=` と
   `dirty=` はそれぞれ同一でなければならない (両方 `0` または両方 `1`)。
-  `dirty=0` を強制しないのは、sandbox の chmod/rm 制限で解消不能な
-  pre-existing artifact (fixture stub の mode drop / 削除不能な
-  untracked 残存等) により dirty=1 スタートが原理的に起こり得るため。
-  head 同一 + dirty 同一で「round=2 中に新たな変更が入らないこと」を
-  機械検証する (Bash / apply_patch / sed 経由の混入も含めて一切の
-  変更禁止を検出可能。Edit / Write tool call マーカーだけでは
-  Bash 経由の変更を取りこぼす)
+  Edit / Write tool call マーカーでは Bash 経由の変更を取りこぼすため
+  head + dirty の同値比較で全経路 (Bash / apply_patch / sed 含む) の
+  変更混入を検出する。共通検証ロジック + `dirty=0` 強制しない rationale
+  は [evals/README.md#review-loop-head-dirty-invariant](evals/README.md#review-loop-head-dirty-invariant) 参照
 
 reviewer stub 契約を適用する eval では、上記に加えて stub 読込ログ
 (`phase=stub-loaded`) の出力義務がある。詳細は
