@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+# eval-only gh stub. Records every invocation to $EVAL_LOG_DIR/gh-calls.log
+# and returns canned success unless $GH_STUB_FAIL selects a specific
+# subcommand to fail. bash 3.2 compatible.
+
+set -euo pipefail
+
+if [ -z "${EVAL_LOG_DIR:-}" ]; then
+    echo "gh-stub: EVAL_LOG_DIR is not set (would silently write to cwd)" >&2
+    exit 2
+fi
+log_dir="$EVAL_LOG_DIR"
+mkdir -p "$log_dir"
+log_file="$log_dir/gh-calls.log"
+body_dir="$log_dir/bodies"
+mkdir -p "$body_dir"
+
+# Record the raw argv one-per-line under a call header so grep -c on
+# `^cmd=` counts the number of invocations.
+{
+    printf 'cmd=%s\n' "$*"
+    i=0
+    for a in "$@"; do
+        printf 'argv[%d]=%s\n' "$i" "$a"
+        i=$((i+1))
+    done
+} >> "$log_file"
+
+# Snapshot --body-file contents (before skill deletes them) so
+# integration issue bodies can be asserted after the run. Use a fixed-width
+# counter so lexical sort matches numerical order (10 > 2).
+prev=""
+for a in "$@"; do
+    if [ "$prev" = "--body-file" ] && [ -f "$a" ]; then
+        base=$(basename "$a")
+        seq_file="$log_dir/.body-seq"
+        n=$(cat "$seq_file" 2>/dev/null || echo 0)
+        n=$((n+1))
+        echo "$n" > "$seq_file"
+        cp "$a" "$(printf '%s/%04d-%s' "$body_dir" "$n" "$base")"
+    fi
+    prev="$a"
+done
+
+sub="${1:-}"
+sub2="${2:-}"
+
+# Match GH_STUB_FAIL against either "sub" alone or "sub sub2".
+fail_targets="${GH_STUB_FAIL:-}"
+fail_key="$sub"
+[ -n "$sub2" ] && fail_key="$sub $sub2"
+case ",$fail_targets," in
+    *,"$fail_key",*|*,"$sub",*)
+        echo "gh-stub: forced failure for '$fail_key'" >&2
+        exit 1
+        ;;
+esac
+
+case "$sub" in
+    repo)
+        case "$sub2" in
+            view)
+                # --json defaultBranchRef --jq '.defaultBranchRef.name' -> "main"
+                # --json owner --jq '.owner.login' -> "eval-user"
+                case "$*" in
+                    *defaultBranchRef*) echo main ;;
+                    *owner*) echo eval-user ;;
+                    *) echo '{}' ;;
+                esac
+                ;;
+            *) : ;;
+        esac
+        ;;
+    pr)
+        case "$sub2" in
+            list) echo '[]' ;;
+            create)
+                url="https://example.invalid/eval-user/eval-repo/pull/$$"
+                echo "$url"
+                echo "$url" >> "$log_dir/pr-urls.log"
+                ;;
+            view) echo '{"number":0}' ;;
+            *) : ;;
+        esac
+        ;;
+    issue)
+        case "$sub2" in
+            create)
+                issue_seq="$log_dir/.issue-seq"
+                n=$(cat "$issue_seq" 2>/dev/null || echo 0)
+                n=$((n+1))
+                echo "$n" > "$issue_seq"
+                url="https://example.invalid/eval-user/eval-repo/issues/$n"
+                echo "$url"
+                echo "$url" >> "$log_dir/issue-urls.log"
+                ;;
+            list) echo '[]' ;;
+            view) echo '{"number":0,"state":"OPEN","title":"stub"}' ;;
+            *) : ;;
+        esac
+        ;;
+    *) : ;;
+esac
+
+exit 0
