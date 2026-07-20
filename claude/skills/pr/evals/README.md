@@ -151,28 +151,61 @@ SKIP と記録する (停止検証パートは 1 段目で確立している)。
 
 ### PR 非作成の検証 <a id="pr-not-created"></a>
 
-stub が呼ばれる eval では `gh-calls.log` に `^cmd=pr create` が
+stub が呼ばれる eval では `gh-calls.log` に `^cmd=(pr|issue) create` が
 出現しないことで検証する (`gh pr list --state all` 前後比較は不要 —
-実 gh を叩いていないため)。
+実 gh を叩いていないため):
 
-### fixture 一覧
+```bash
+[ ! -f "$EVAL_LOG_DIR/gh-calls.log" ] || \
+    ! grep -qE '^cmd=(pr|issue) create' "$EVAL_LOG_DIR/gh-calls.log"
+```
 
-`fixtures/stubs/`:
-- `gh` — 実 gh を偽装する bash 3.2 互換スクリプト。呼び出し履歴と
-  body-file 内容を `$EVAL_LOG_DIR` に記録、`GH_STUB_FAIL` で失敗注入
+### 共通 Setup snippet (06-10) <a id="eval-setup"></a>
 
-`fixtures/reviewer-stubs/`:
-- `06-a-only.md` — サブケース A: (a) 直結のみ → checkpoint 発火せず
-- `06-b-single.md` — サブケース B: (b) 単独起票
-- `06-b-consolidated.md` — サブケース C: 同根 3 件 → 統合 issue 1 本
-- `06-b-not-consolidated.md` — サブケース D: 同根なし 2 件 → 2 本
-- `06-c-vs-b-default.md` — サブケース E: (c) 3 条件外は (b) default
-- `07-b-and-c.md` — user checkpoint 発火 (停止 + 副作用ゼロ + 再開)
-- `07-a-only.md` — user checkpoint 発火しない対照
-- `08-a-remaining.md` — draft 行 1: (a) 残存
-- `08-b-issued-plus-c.md` — draft 行 2: (b) 起票済 + (c) → normal
-- `08-c-only.md` — draft 行 3: (c) のみ → normal
-- `08-b-issue-failed.md` — draft 行 4: (b) 起票失敗 → draft
-- `09-consolidated.md` — 統合 issue 経路
-- `10-override-a-remaining.md` — normal override 新条件
-- `10-walkthrough-new-finding.md` — walkthrough 新 finding 出現時 override 再確認
+06-10 の Setup ブロックはこの snippet を貼るだけで足りる (branch 接尾辞
+と stub fixture 選択のみ eval ごとに差し替える):
+
+```bash
+set -o pipefail
+git checkout main
+branch="feature/eval-pr-${BRANCH_SUFFIX:-triage}-$(date +%s)"
+git checkout -b "$branch"
+printf 'export const sub = (a, b) => a - b\n' >> src/util.js
+git add src/util.js && git commit -m "feat: sub 関数を追加"
+before_head=$(git rev-parse HEAD)
+
+stub_bin=$(mktemp -d)
+cp $HOME/development/important/dotfiles/claude/skills/pr/evals/fixtures/stubs/gh "$stub_bin/gh"
+chmod +x "$stub_bin/gh"
+export EVAL_LOG_DIR=$(mktemp -d)
+export PATH="$stub_bin:$PATH"
+
+transcript=$(mktemp)
+trap 'rm -f "$transcript"; rm -rf "$stub_bin" "$EVAL_LOG_DIR"' EXIT INT TERM
+```
+
+追加 fixture (tier=high 評価のための `package.json` コミット等) は
+snippet の後に足す。tmpdir スナップショット (09 の body 残留検証) 等
+eval 固有の trap 拡張は該当 eval 側で `trap` を再定義する。
+
+### 共通 Cleanup snippet <a id="eval-cleanup"></a>
+
+```bash
+git checkout main
+[ "$branch" != "main" ] && git branch -D "$branch" 2>/dev/null || true
+# stub 出力は setup の trap で削除済み
+```
+
+### stub 契約 (body-file 命名 / draft 判定 marker) <a id="stub-contracts"></a>
+
+06-10 の一部 Pass criteria は SKILL.md 側の literal 文字列や mktemp
+template に依存する。以下を stub 契約として明示 pin し、SKILL.md の
+文言変更で silently fail しないようにする (SKILL.md 側変更時はこの
+節も同時に更新すること):
+
+- **一時 body-file の basename**: pr body は `pr-body-*` / issue body は
+  `pr-issue-body-*` の mktemp template を使う (SKILL.md step 4)。
+  10-normal-override の `bodies/*pr-body*` glob assert はこの命名に依存
+- **draft 判定 marker**: (a) 残存 / (b) 起票失敗の draft 化根拠として
+  evidence に `step 4 pending` の literal を記録する (SKILL.md 5-8)。
+  08-draft-matrix の Pass criteria はこの literal を grep する

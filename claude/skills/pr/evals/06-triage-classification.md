@@ -18,28 +18,12 @@
 
 ## Setup (全サブケース共通)
 
-サンドボックス repo (`skill-eval-sandbox`) の clone 内で実行。
-[`README.md#sandbox-repo`](README.md#sandbox-repo) 参照。
+サンドボックス repo (`skill-eval-sandbox`) の clone 内で実行
+([`README.md#sandbox-repo`](README.md#sandbox-repo))。共通 Setup snippet
+は [`README.md#eval-setup`](README.md#eval-setup) を貼る:
+`BRANCH_SUFFIX=triage`。サブケースごとに `stub` 変数だけ差し替える:
 
 ```bash
-set -o pipefail
-git checkout main
-branch="feature/eval-pr-triage-$(date +%s)"
-git checkout -b "$branch"
-printf 'export const sub = (a, b) => a - b\n' >> src/util.js
-git add src/util.js && git commit -m "feat: sub 関数を追加"
-
-# gh stub の実行可能コピー
-stub_bin=$(mktemp -d)
-cp $HOME/development/important/dotfiles/claude/skills/pr/evals/fixtures/stubs/gh "$stub_bin/gh"
-chmod +x "$stub_bin/gh"
-export EVAL_LOG_DIR=$(mktemp -d)
-export PATH="$stub_bin:$PATH"
-
-transcript=$(mktemp)
-trap 'rm -f "$transcript"; rm -rf "$stub_bin" "$EVAL_LOG_DIR"' EXIT INT TERM
-
-# stub fixture を選択 (サブケースごとに差し替え)
 stub=$HOME/development/important/dotfiles/claude/skills/pr/evals/fixtures/reviewer-stubs/06-a-only.md
 ```
 
@@ -67,9 +51,8 @@ env PATH="$stub_bin:$PATH" EVAL_LOG_DIR="$EVAL_LOG_DIR" \
 
 - [ ] stub 読込ログが出た:
       `grep -qE '^\[pr/review\] stub-loaded stub=.*06-.*\.md count=[0-9]+$' "$transcript"`
-- [ ] codex-review / code-reviewer / fable サブエージェントを実起動していない:
-      `! grep -qE '<command-name>/?codex-review</command-name>' "$transcript"`
-      `! grep -qE '"subagent_type"[[:space:]]*:[[:space:]]*"(codex-review|code-reviewer)"' "$transcript"`
+- [ ] codex-review / code-reviewer / fable サブエージェント未起動
+      ([`README.md#reviewer-stub-contract`](README.md#reviewer-stub-contract) の 2 grep で検証)
 
 サブケース A (`06-a-only.md`):
 - [ ] user checkpoint が **発火しない** (transcript に「分類表」提示は
@@ -107,8 +90,4 @@ transcript 判定 (human runner):
 
 ## Cleanup
 
-```bash
-git checkout main
-[ "$branch" != "main" ] && git branch -D "$branch" 2>/dev/null || true
-# stub 出力は trap で削除済み
-```
+[`README.md#eval-cleanup`](README.md#eval-cleanup) 参照。

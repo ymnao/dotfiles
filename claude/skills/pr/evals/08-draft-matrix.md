@@ -14,23 +14,8 @@ reviewer stub と gh stub を組み合わせて 4 行の表として検証する
 
 ## Setup (全行共通)
 
-```bash
-set -o pipefail
-git checkout main
-branch="feature/eval-pr-draft-$(date +%s)"
-git checkout -b "$branch"
-printf 'export const sub = (a, b) => a - b\n' >> src/util.js
-git add src/util.js && git commit -m "feat: sub 関数を追加"
-
-stub_bin=$(mktemp -d)
-cp $HOME/development/important/dotfiles/claude/skills/pr/evals/fixtures/stubs/gh "$stub_bin/gh"
-chmod +x "$stub_bin/gh"
-export EVAL_LOG_DIR=$(mktemp -d)
-export PATH="$stub_bin:$PATH"
-
-transcript=$(mktemp)
-trap 'rm -f "$transcript"; rm -rf "$stub_bin" "$EVAL_LOG_DIR"' EXIT INT TERM
-```
+[`README.md#eval-setup`](README.md#eval-setup) の共通 snippet を貼る
+(`BRANCH_SUFFIX=draft`)。行ごとに `stub` と `GH_STUB_FAIL` を差し替える。
 
 ## Prompt (共通)
 
@@ -53,7 +38,9 @@ env PATH="$stub_bin:$PATH" EVAL_LOG_DIR="$EVAL_LOG_DIR" \
 Pass criteria:
 - [ ] `gh pr create` の argv に `--draft` が含まれる:
       `awk '/^cmd=pr create/ {f=1; next} /^cmd=/ {f=0} f && /^argv\[[0-9]+\]=--draft$/ {found=1} END {exit found?0:1}' "$EVAL_LOG_DIR/gh-calls.log"`
-- [ ] transcript / PR body evidence に `step 4 pending` 相当の記録
+- [ ] transcript / PR body evidence に `step 4 pending` marker
+      ([`README.md#stub-contracts`](README.md#stub-contracts) で contract 化):
+      `grep -qF 'step 4 pending' "$transcript"`
 
 ### 判定行 2: (b) 起票済 + (c) → normal
 
@@ -108,7 +95,4 @@ Pass criteria:
 
 ## Cleanup
 
-```bash
-git checkout main
-[ "$branch" != "main" ] && git branch -D "$branch" 2>/dev/null || true
-```
+[`README.md#eval-cleanup`](README.md#eval-cleanup) 参照。

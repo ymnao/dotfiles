@@ -16,19 +16,10 @@ git checkout -b "$branch"
 
 ## サブケース A: 未 fix (a) 残存中の normal override 拒否
 
-Setup 追加:
+Setup: [`README.md#eval-setup`](README.md#eval-setup)
+(`BRANCH_SUFFIX=override-a`)。stub 選択:
+
 ```bash
-printf 'export const sub = (a, b) => a - b\n' >> src/util.js
-git add src/util.js && git commit -m "feat: sub 関数を追加"
-
-stub_bin=$(mktemp -d)
-cp $HOME/development/important/dotfiles/claude/skills/pr/evals/fixtures/stubs/gh "$stub_bin/gh"
-chmod +x "$stub_bin/gh"
-export EVAL_LOG_DIR=$(mktemp -d)
-export PATH="$stub_bin:$PATH"
-transcript=$(mktemp)
-trap 'rm -f "$transcript"; rm -rf "$stub_bin" "$EVAL_LOG_DIR"' EXIT INT TERM
-
 stub=$HOME/development/important/dotfiles/claude/skills/pr/evals/fixtures/reviewer-stubs/10-override-a-remaining.md
 ```
 
@@ -49,37 +40,43 @@ env PATH="$stub_bin:$PATH" EVAL_LOG_DIR="$EVAL_LOG_DIR" \
 ```
 
 Pass criteria:
-- [ ] transcript / PR body / gh-calls.log の pr create body-file 内容
-      **いずれにも** `defer(未起票)` marker が出現しない:
+- [ ] `defer(未起票)` marker が transcript にも body スナップショット
+      にも出現しない (file 名 pattern は
+      [`README.md#stub-contracts`](README.md#stub-contracts)):
       ```bash
-      ! grep -qF 'defer(未起票)' "$transcript"
-      body=$(ls "$EVAL_LOG_DIR/bodies/"*pr-body* 2>/dev/null | head -1)
-      [ -z "$body" ] || ! grep -qF 'defer(未起票)' "$body"
+      ! grep -qF 'defer(未起票)' "$transcript" && \
+          ! grep -qrF 'defer(未起票)' "$EVAL_LOG_DIR/bodies/" 2>/dev/null
       ```
-- [ ] override が受理された場合でも (a) 残存を解消する経路
-      ((b) 起票 or (c) dismiss) が transcript に現れる、
-      **または** normal 化を拒否して draft のまま作成される
-      (どちらでも SKILL.md:61 準拠):
-      ```bash
-      grep -qE '(追跡しない \(user 指示:|gh issue create|--draft)' "$transcript" \
-          || grep -qE '^argv\[[0-9]+\]=--draft$' "$EVAL_LOG_DIR/gh-calls.log"
-      ```
+- [ ] **strict assert**: (a) 残存下では以下 2 経路 (X or Y) のいずれかが
+      必ず観測される (「何かしら起きた」で通す弱い OR ではない):
+      - **X (拒否 → draft 継続)**: `gh pr create` の argv に `--draft` が
+        含まれる
+        ```bash
+        awk '/^cmd=pr create/ {f=1; next} /^cmd=/ {f=0} f && /^argv\[[0-9]+\]=--draft$/ {found=1} END {exit found?0:1}' "$EVAL_LOG_DIR/gh-calls.log"
+        ```
+      - **Y (未起票解消 → normal)**: (a) が (b) 起票または (c) dismiss で
+        解消され、その旨が transcript / body に明示される
+        ```bash
+        # (b) 起票: gh issue create が 1 回以上
+        [ "$(grep -c '^cmd=issue create' "$EVAL_LOG_DIR/gh-calls.log")" -ge 1 ] || \
+        # (c) dismiss: 「追跡しない (user 指示:」marker
+        grep -qF '追跡しない (user 指示:' "$transcript"
+        ```
+      本 stub は fix しない指示のため実運用では X (draft 継続) が期待挙動。
+      Y が観測された場合は agent が override 拒否ではなく解消経路を選んだ
+      ことを意味し、それ自体は SKILL.md:61 準拠 (どちらでも spec を
+      満たすが、両方非該当なら FAIL)
 - [ ] override 判断根拠が evidence / transcript に記録される
 
 ## サブケース B: tier=high walkthrough で新 finding surface → 再確認
 
-Setup 追加 (dependency 追加で tier=high 判定を発火させる):
+Setup: [`README.md#eval-setup`](README.md#eval-setup)
+(`BRANCH_SUFFIX=override-b`)。追加で tier=high 判定発火用の
+dependency コミットと stub 選択:
+
 ```bash
 printf '{"name":"eval-fixture","private":true}\n' > package.json
 git add package.json && git commit -m "chore: package.json を追加"
-
-stub_bin=$(mktemp -d)
-cp $HOME/development/important/dotfiles/claude/skills/pr/evals/fixtures/stubs/gh "$stub_bin/gh"
-chmod +x "$stub_bin/gh"
-export EVAL_LOG_DIR=$(mktemp -d)
-export PATH="$stub_bin:$PATH"
-transcript=$(mktemp)
-trap 'rm -f "$transcript"; rm -rf "$stub_bin" "$EVAL_LOG_DIR"' EXIT INT TERM
 
 stub=$HOME/development/important/dotfiles/claude/skills/pr/evals/fixtures/reviewer-stubs/10-walkthrough-new-finding.md
 ```
@@ -121,7 +118,4 @@ Pass criteria:
 
 ## Cleanup
 
-```bash
-git checkout main
-[ "$branch" != "main" ] && git branch -D "$branch" 2>/dev/null || true
-```
+[`README.md#eval-cleanup`](README.md#eval-cleanup) 参照。

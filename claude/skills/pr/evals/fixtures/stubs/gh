@@ -28,8 +28,11 @@ prev=""
 for a in "$@"; do
     if [ "$prev" = "--body-file" ] && [ -f "$a" ]; then
         base=$(basename "$a")
-        # avoid clobber across multiple calls in the same run
-        cp "$a" "$body_dir/$(date +%s)-$$-$base" 2>/dev/null || true
+        seq_file="$log_dir/.body-seq"
+        n=$(cat "$seq_file" 2>/dev/null || echo 0)
+        n=$((n+1))
+        echo "$n" > "$seq_file"
+        cp "$a" "$body_dir/$n-$base" 2>/dev/null || true
     fi
     prev="$a"
 done
@@ -37,10 +40,13 @@ done
 sub="${1:-}"
 sub2="${2:-}"
 
+# Match GH_STUB_FAIL against either "sub" alone or "sub sub2".
 fail_targets="${GH_STUB_FAIL:-}"
+fail_key="$sub"
+[ -n "$sub2" ] && fail_key="$sub $sub2"
 case ",$fail_targets," in
-    *,"${sub} ${sub2}",*|*,"${sub}",*)
-        echo "gh-stub: forced failure for '$sub $sub2'" >&2
+    *,"$fail_key",*|*,"$sub",*)
+        echo "gh-stub: forced failure for '$fail_key'" >&2
         exit 1
         ;;
 esac

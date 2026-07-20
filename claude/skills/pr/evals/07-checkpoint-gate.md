@@ -13,26 +13,9 @@
 
 ## Setup (全サブケース共通)
 
-サンドボックス repo の clone 内で実行。
-
-```bash
-set -o pipefail
-git checkout main
-branch="feature/eval-pr-checkpoint-$(date +%s)"
-git checkout -b "$branch"
-printf 'export const sub = (a, b) => a - b\n' >> src/util.js
-git add src/util.js && git commit -m "feat: sub 関数を追加"
-before_head=$(git rev-parse HEAD)
-
-stub_bin=$(mktemp -d)
-cp $HOME/development/important/dotfiles/claude/skills/pr/evals/fixtures/stubs/gh "$stub_bin/gh"
-chmod +x "$stub_bin/gh"
-export EVAL_LOG_DIR=$(mktemp -d)
-export PATH="$stub_bin:$PATH"
-
-transcript=$(mktemp)
-trap 'rm -f "$transcript"; rm -rf "$stub_bin" "$EVAL_LOG_DIR"' EXIT INT TERM
-```
+サンドボックス repo の clone 内で
+[`README.md#eval-setup`](README.md#eval-setup) の共通 snippet を貼る
+(`BRANCH_SUFFIX=checkpoint`)。`before_head` はその中で記録される。
 
 ## Prompt (共通)
 
@@ -58,9 +41,8 @@ Pass criteria:
       1 つ以上出現している
 - [ ] user checkpoint が発火し停止した (transcript 末尾に
       「承認」「OK」「進めて」等を待つ旨の記述がある)
-- [ ] **副作用ゼロ (最重要)**: `gh pr create` / `gh issue create` の
-      呼び出しが 0 回:
-      `[ ! -f "$EVAL_LOG_DIR/gh-calls.log" ] || ! grep -qE '^cmd=(pr|issue) create' "$EVAL_LOG_DIR/gh-calls.log"`
+- [ ] **副作用ゼロ (最重要)**: `gh pr create` / `gh issue create` 0 回
+      ([`README.md#pr-not-created`](README.md#pr-not-created))
 - [ ] HEAD が Setup 直後と同一 (fix commit も入っていない):
       `[ "$(git rev-parse HEAD)" = "$before_head" ]`
 - [ ] codex-review / code-reviewer / fable サブエージェント未起動
@@ -121,11 +103,8 @@ Pass criteria:
 - [ ] 2 段目の応答に分類表が **再度提示** される (行頭 `|` + `Finding`
       の header 行が 2 段目部分にも出現)
 - [ ] 承認前の副作用ゼロは引き続き維持
-      (`grep -c '^cmd=(pr|issue) create' "$EVAL_LOG_DIR/gh-calls.log"` が 0)
+      ([`README.md#pr-not-created`](README.md#pr-not-created))
 
 ## Cleanup
 
-```bash
-git checkout main
-[ "$branch" != "main" ] && git branch -D "$branch" 2>/dev/null || true
-```
+[`README.md#eval-cleanup`](README.md#eval-cleanup) 参照。
