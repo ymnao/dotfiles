@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# eval fixture: contains deliberate redundancies that /simplify or
-# /code-review --fix should flag. Used by dev/06 (review-loop-rerun) and
+# eval fixture: contains deliberate redundancies that /simplify or the
+# code-reviewer Agent should flag. Used by dev/06 (review-loop-rerun) and
 # dev/07 (review-loop-cap). Do not "fix" this file — evals depend on the
 # redundancies.
 # shellcheck disable=SC2034,SC2317
