@@ -7,6 +7,39 @@
 
 ## 共通スニペット(全 eval で使う規約)
 
+### transcript 変数 <a id="transcript-var"></a>
+
+Pass criteria で `$transcript` を参照する eval (dev/06, dev/07 等の
+review-loop ログ検証) では、runner は `claude --model ... -p "..."` の
+標準出力をファイルに保存し、そのパスを `transcript` に束縛して Pass
+criteria の各 grep コマンドに渡す:
+
+```bash
+set -o pipefail
+transcript=$(mktemp)
+trap 'rm -f "$transcript"' EXIT INT TERM
+claude --model claude-sonnet-5 -p "<Prompt の内容>" | tee "$transcript"
+# 以降 Pass criteria: grep ... "$transcript"
+```
+
+`pipefail` 未設定だと `claude` が失敗しても `tee` の成功で runner が
+続行し途中 transcript を評価してしまう。`trap` は割り込み時の
+mktemp ファイル残留を防ぐ (両方セットで初めて安全)。
+
+skill-creator の eval 実行機能を使う場合はそのセッション出力を同等の
+ファイルに落として `$transcript` として渡す。
+
+### レビューループの stub 契約遵守 grep <a id="review-loop-stub-not-invoked"></a>
+
+dev/06 / dev/07 のように reviewer stub 契約 ([`reviewer-stub-contract`](#reviewer-stub-contract))
+を適用する eval では、`/simplify` `/code-review` `codex-review` を
+実起動していないことを以下の共通 grep で検証する (単なる文中言及と
+区別するため `<command-name>` タグ形式に限定):
+
+```bash
+! grep -qE '^<command-name>(/?simplify|/?code-review|/?codex-review)</command-name>$' "$transcript"
+```
+
 ### branch 変数
 
 貼付でシェル構文エラーを起こさないため、setup / cleanup で `<...>` bracket
@@ -128,6 +161,16 @@ dev/06 と dev/07 のレビューループは、実 reviewer(`/simplify` /
   規約どおり続行する
 - stub ファイル自身は指摘一覧とループ判定のみを書く(mechanism 説明の
   再掲はここに集約するため各 stub ファイルには置かない)
+- stub を読み込んだ時点で、SKILL.md 構造化ログ (step 4) に加えて以下を
+  **行頭から一字一句この形式** で応答テキストに出力する
+  (Pass criteria の grep 検証用、前後に装飾を付けない):
+
+  ```
+  [dev/review-loop] round=N phase=stub-loaded stub=<path> count=<n>
+  ```
+
+  `<path>` は読み込んだ stub の相対パス、`<n>` は stub 内の指摘件数
+  (`REPORT-ONLY` を含む全件、apply/skip を問わず)
 
 stub 契約遵守は Pass criteria の transcript 判定チェックボックスで
 二重検証する(「`/simplify` / `/code-review` を実起動していない」等)。
