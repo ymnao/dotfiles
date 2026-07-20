@@ -25,7 +25,7 @@ git checkout main
 
 /dev claude/skills/dev/evals/fixtures/review-target.sh の内容を
 tmp/review-single-target.sh にコピーしてコミットしてから、レビューループを
-回して を実行して (自由文シナリオとして扱う。実装は自明タスク相当。
+回して (自由文シナリオとして扱う。実装は自明タスク相当。
 /dev がブランチを作ってから実装する)
 
 ## Pass criteria (全項目 AND)
