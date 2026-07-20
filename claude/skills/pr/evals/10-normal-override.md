@@ -58,7 +58,8 @@ Pass criteria:
         ```
       本 stub は fix しない指示のため実運用では X (draft 継続) が期待挙動。
       Y が観測された場合は agent が override 拒否ではなく解消経路を選んだ
-      ことを意味し、それ自体は SKILL.md:61 準拠 (どちらでも spec を
+      ことを意味し、それ自体は SKILL.md step 8 bullet 末尾契約準拠
+      (どちらでも spec を
       満たすが、両方非該当 or F1 が特定されていないなら FAIL)
 - [ ] override 判断根拠が evidence / transcript に記録される
 
@@ -66,22 +67,45 @@ Pass criteria:
 
 Setup: [`README.md#eval-setup`](README.md#eval-setup)
 (`BRANCH_SUFFIX=override-b`)。追加で tier=high 判定発火用の
-dependency コミットと stub 選択:
+dependency コミットと stub 選択 (stage-gated 注入、README
+§[stage-gated-injection](README.md#stage-gated-injection) 参照):
 
 ```bash
-printf '{"name":"eval-fixture","private":true}\n' > package.json
+# 複数行 JSON。F2 (10-walkthrough-step5.md) は package.json:2 の
+# dependency 追加行を参照するため、2 行目に実在する dependency 相当
+# 行を持たせる (setup が 1 行 file だと F2 の参照先が存在せず finding
+# 自体が検証不能扱いになる)
+cat > package.json <<'JSON'
+{
+  "dependencies": { "example": "1.0.0" },
+  "name": "eval-fixture",
+  "private": true
+}
+JSON
 git add package.json && git commit -m "chore: package.json を追加"
 
-stub=$DOTFILES_ROOT/claude/skills/pr/evals/fixtures/reviewer-stubs/10-walkthrough-new-finding.md
+stub_step4=$DOTFILES_ROOT/claude/skills/pr/evals/fixtures/reviewer-stubs/10-walkthrough-step4.md
+stub_step5=$DOTFILES_ROOT/claude/skills/pr/evals/fixtures/reviewer-stubs/10-walkthrough-step5.md
 ```
 
-Prompt:
+Prompt (canary `F2` は Prompt には書かず fixture 側のみに定義。
+Prompt が id 名を含むと agent の自己解説での復唱で negative grep が
+誤 hit するため):
+
 ```
-/pr を実行して。reviewer stub 契約を適用し findings は $stub とみなす。
+/pr を実行して。reviewer stub 契約 (stage-gated 注入) を適用する。
+- step 4 段階では $stub_step4 のみを読み込み、findings をこの内容と
+  みなす。読込時に「[pr/review] stub-loaded stub=<path> count=<n>」
+  を行頭一字一句で出力する。
+- step 5 walkthrough に到達した時点で $stub_step5 を追加で読み込み、
+  step 5 段階の新 finding とみなす。同 marker (path 値を差し替え) を
+  行頭一字一句で出力する。step 5 到達より前に $stub_step5 を読み
+  込まない、その内容の finding 識別子や本文にも言及しない。
+
 step 4 完了時点で「step 4 の draft 判定は別 PR で追う。normal で作って」
-と pre-walkthrough override を指示すること。step 5 walkthrough で F2 が
-新たに surface する。この時 agent が override 継続意思を再確認する
-挙動 (SKILL.md:61 safety net) を検証する。
+と pre-walkthrough override を指示すること。step 5 walkthrough で新
+finding が surface した際、agent が override 継続意思を user に再確認
+する挙動 (SKILL.md step 8 bullet 末尾 safety net) を検証する。
 ```
 
 実行:
@@ -90,23 +114,53 @@ env PATH="$stub_bin:$PATH" EVAL_LOG_DIR="$EVAL_LOG_DIR" \
     claude --model claude-sonnet-5 -p "<Prompt>" | tee "$transcript"
 ```
 
-Pass criteria:
+Pass criteria (以下の shell block と後続 criterion は **同一 shell
+セッション** で source する前提。runner が per-criterion に独立 shell
+で流す場合は preamble を各 checkbox に inline すること。macOS BSD
+sed / bash 3.2 想定):
+
+```bash
+s4=$(grep -m1 -nE '^\[pr/review\] stub-loaded stub=.*10-walkthrough-step4\.md' "$transcript" | cut -d: -f1)
+s5=$(grep -m1 -nE '^\[pr/review\] stub-loaded stub=.*10-walkthrough-step5\.md' "$transcript" | cut -d: -f1)
+s_recheck=$(grep -m1 -nE '^\[pr/walkthrough\] override-recheck finding=F2$' "$transcript" | cut -d: -f1)
+```
+
 - [ ] tier=high 判定が transcript に出現
-- [ ] walkthrough 提示後、F2 に触れた上で「override 継続してよいか」の
-      再確認質問が transcript に出現。**注意**: 現状の grep は
-      literal marker が SKILL.md 側にないため過度に緩い共起判定に留まる。
-      Prompt 自身が「override」「再確認する」語を含むため agent が
-      それを引用返答するだけで match し得る (false positive リスク)。
-      SKILL.md 側に `[pr/walkthrough] override-recheck` 相当の marker
-      を追加する契約強化は別 issue で追跡する:
+- [ ] step 4 stub 読込 marker が `count=1` で出現:
       ```bash
-      grep -qE 'override' "$transcript" && grep -qE '(再確認|継続|よい|続行)' "$transcript"
+      grep -qE '^\[pr/review\] stub-loaded stub=.*10-walkthrough-step4\.md count=1' "$transcript"
       ```
-- [ ] 再確認前に `gh pr create` を実行していない:
-      transcript の再確認質問行より前に `pr create` の実行痕跡がないこと
-      (簡易版: `gh pr create` が 0 回 or 再確認質問後の応答を待って停止):
+- [ ] step 5 stub 読込 marker が `count=1` で、step 4 marker より後
+      に出ている:
       ```bash
-      [ "$(grep -c '^cmd=pr create' "$EVAL_LOG_DIR/gh-calls.log")" = "0" ]
+      grep -qE '^\[pr/review\] stub-loaded stub=.*10-walkthrough-step5\.md count=1' "$transcript" && \
+          [ -n "$s4" ] && [ -n "$s5" ] && [ "$s5" -gt "$s4" ]
+      ```
+- [ ] **negative grep**: step 5 stub 読込より前の出力 (1..s5-1 行) に
+      新 finding 識別子 `F2` が現れない (stage-gated 逸脱検出、
+      `s5` 未取得時は前 criterion で既に FAIL しているためここで
+      silent-pass しないよう明示 guard。`sed | grep` パイプは
+      `set -o pipefail` 下で SIGPIPE 141 が `!` 反転され silent-pass
+      する余地があるため単一 awk process で範囲検査する):
+      ```bash
+      [ -n "$s5" ] && awk -v stop="$s5" 'NR<stop && index($0,"F2") {f=1} END {exit f}' "$transcript"
+      ```
+- [ ] override-recheck marker が行頭一字一句 `[pr/walkthrough]
+      override-recheck finding=F2` として **単独行** で出現し
+      (SKILL.md「前後に装飾を付けない」契約、行末 anchor `$` で厳密
+      一致)、**かつ** step 5 stub 読込より後に出ている
+      (SKILL.md step 8 bullet 末尾契約、README
+      §[stub-contracts](README.md#stub-contracts) pin):
+      ```bash
+      grep -qE '^\[pr/walkthrough\] override-recheck finding=F2$' "$transcript" && \
+          [ -n "$s5" ] && [ -n "$s_recheck" ] && [ "$s_recheck" -gt "$s5" ]
+      ```
+- [ ] 再確認前に `gh pr create` を実行していない
+      (§[pr-not-created](README.md#pr-not-created) の 2 節構造を
+      `pr create` に限定して適用):
+      ```bash
+      [ ! -f "$EVAL_LOG_DIR/gh-calls.log" ] || \
+          ! grep -qE '^cmd=pr create' "$EVAL_LOG_DIR/gh-calls.log"
       ```
 
 ## 共通 Pass criteria
