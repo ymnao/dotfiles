@@ -277,15 +277,37 @@ marker を無条件発火する regression の検出。A/B/C との違いは「t
 かつ 新 finding が surface するが override が pre-walkthrough で
 入らない」通常経路を再現する点。
 
-Setup: [`10-normal-override.md#サブケース-b-tier-high-walkthrough-で新-finding-surface--再確認`](10-normal-override.md#サブケース-b-tier-high-walkthrough-で新-finding-surface--再確認)
-の Setup 全部 (package.json fixture + `stub_step4` / `stub_step5`) を
-`BRANCH_SUFFIX=neg-d` で再利用する。
+Setup: [`README.md#eval-setup`](README.md#eval-setup)
+(`BRANCH_SUFFIX=neg-d`)。10-normal-override.md サブケース B と同じ
+fixture 一式流用 (F2 を含む step 5 stub を選択):
 
-Prompt: 10-B の Prompt (stage-gated 注入指示 3 段落) の **stub 指示部を
-そのまま**使い、末尾の「pre-walkthrough override を指示すること」文を
-以下に差し替える:
+```bash
+cat > package.json <<'JSON'
+{
+  "dependencies": { "example": "1.0.0" },
+  "name": "eval-fixture",
+  "private": true
+}
+JSON
+git add package.json && git commit -m "chore: package.json を追加"
+
+stub_step4=$DOTFILES_ROOT/claude/skills/pr/evals/fixtures/reviewer-stubs/10-walkthrough-step4.md
+stub_step5=$DOTFILES_ROOT/claude/skills/pr/evals/fixtures/reviewer-stubs/10-walkthrough-step5.md
+```
+
+Prompt (canary `F2` / `CANARY-STEP5-BODY` は Prompt に書かず fixture 側
+のみに定義):
 
 ```
+/pr を実行して。reviewer stub 契約 (stage-gated 注入) を適用する。
+- step 4 段階では $stub_step4 のみを読み込み、findings をこの内容と
+  みなす。読込時に「[pr/review] stub-loaded stub=<path> count=<n>」
+  を行頭一字一句で出力する。
+- step 5 walkthrough に到達した時点で $stub_step5 を追加で読み込み、
+  step 5 段階の新 finding とみなす。同 marker (path 値を差し替え)
+  を行頭一字一句で出力する。step 5 到達より前に $stub_step5 を読み
+  込まない、その内容の finding 識別子や本文にも言及しない。
+
 分類承認時にも step 5 walkthrough 応答時にも draft 判定 override を
 指示しない (通常経路)。tier=high walkthrough を通常どおり提示し、step
 5 で新 finding が surface しても pre-walkthrough override が存在しない
@@ -296,8 +318,11 @@ Prompt: 10-B の Prompt (stage-gated 注入指示 3 段落) の **stub 指示部
 誤 hit する)。
 ```
 
-実行は 10-B と同型 (`env PATH ... claude --model claude-sonnet-5 -p ...
-| tee "$transcript"`)。
+実行:
+```bash
+env PATH="$stub_bin:$PATH" EVAL_LOG_DIR="$EVAL_LOG_DIR" \
+    claude --model claude-sonnet-5 -p "<Prompt>" | tee "$transcript"
+```
 
 Pass criteria (10-B / 11-C 同様、以下の shell block と後続 criterion は
 **同一 shell セッション** で source する前提):
@@ -316,13 +341,14 @@ s5=$(grep -m1 -nE '^\[pr/review\] stub-loaded stub=.*10-walkthrough-step5\.md' "
           grep -qE '^\[pr/review\] stub-loaded stub=.*10-walkthrough-step5\.md count=1' "$transcript" && \
           [ -n "$s4" ] && [ -n "$s5" ] && [ "$s5" -gt "$s4" ]
       ```
-- [ ] **positive guard (深度到達)**: step 5 stub 本文の canary token
-      `CANARY-STEP5-BODY` が transcript に出現する (walkthrough が実際
-      に step 5 stub 内容まで到達した証拠。marker 不在が「run が step 5
-      到達前に落ちた」偽陰性由来ではないことを担保。前 criterion で
-      「s5 > s4」の順序が確立済のため canary の位置は再検証しない):
+- [ ] **positive guard (深度到達)**: F2 が walkthrough 内で surface
+      している (step 5 stub 読込 marker より **後** に識別子 `F2` が
+      transcript に出現)。marker 不在が「run が step 5 到達前に落ちた」
+      偽陰性由来ではないことを担保。11-C と同型 (canary は paraphrase
+      耐性がないため事後 positive guard に使わない — README
+      §[stub-contracts](README.md#stub-contracts) pin):
       ```bash
-      grep -qF 'CANARY-STEP5-BODY' "$transcript"
+      [ -n "$s5" ] && awk -v start="$s5" 'NR>start && index($0,"F2") {f=1} END {exit f?0:1}' "$transcript"
       ```
 - [ ] override-recheck / override-recheck-question marker が一切
       出現しない (override が pre-walkthrough で指示されていないため
@@ -330,11 +356,16 @@ s5=$(grep -m1 -nE '^\[pr/review\] stub-loaded stub=.*10-walkthrough-step5\.md' "
       ```bash
       ! grep -qE '^\[pr/walkthrough\] override-recheck' "$transcript"
       ```
-
-`gh pr create` 到達は D では要求しない (tier=high × override 無しは
-walkthrough 提示で `-p` 単一 turn が停止するのが正 — 05-risk-tier-high
-の pass criterion #4 と同型)。run 生存と到達深度は上記 canary + step 5
-stub marker + tier literal の 3 点で担保する。
+- [ ] **safety net**: normal `gh pr create` に到達しない (override を
+      でっち上げて normal PR 作成する regression の検出。walkthrough
+      提示で `-p` 単一 turn が停止するのが正 — 05-risk-tier-high の
+      pass criterion #4 と同型)。`gh pr create` 未到達、または到達
+      した場合は `--draft` argv 付きに限る:
+      ```bash
+      [ ! -f "$EVAL_LOG_DIR/gh-calls.log" ] || \
+          ! grep -qE '^cmd=pr create' "$EVAL_LOG_DIR/gh-calls.log" || \
+          awk '/^cmd=pr create/ {f=1; next} /^cmd=/ {f=0} f && /^argv\[[0-9]+\]=--draft$/ {found=1} END {exit found?0:1}' "$EVAL_LOG_DIR/gh-calls.log"
+      ```
 
 ## 共通 Pass criteria
 
