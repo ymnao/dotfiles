@@ -79,25 +79,37 @@ awk '/^\[dev\/review-loop\] round=[0-9]+ phase=(start|stub-loaded|end)/ {
 
 ### レビューループ構造化ログの head/dirty 不変チェック <a id="review-loop-head-dirty-invariant"></a>
 
-`/dev` SKILL.md「round=2 の head/dirty 不変」規約 (fix しない round の
+`/dev` SKILL.md 「レビュー round の head/dirty 不変」規約 (fix コミットを
+作らない round、すなわち round=2 全般 + round=1 で 0 件完了ケース、の
 `phase=start` と `phase=end` で `head=` と `dirty=` がそれぞれ同一)
-を検証する共通パターン。呼び出し側 eval は「start 行 grep」「end 行
-grep」の 2 regex を渡し、以下のロジックで比較する:
+を検証する共通パターン。呼び出し側 eval は `start_regex` / `end_regex`
+の 2 変数を bind した上で以下スニペットを実行する:
 
 ```bash
-start_line=$(grep -oE '<start 行 anchoring regex、末尾は head=[a-f0-9]+ dirty=[01]$>' "$transcript" | awk '{print $(NF-1)" "$NF}')
-end_line=$(grep -oE '<end 行 anchoring regex、末尾は head=[a-f0-9]+ dirty=[01]$>' "$transcript" | awk '{print $(NF-1)" "$NF}')
-[ -n "$start_line" ] && [ "$start_line" = "$end_line" ]
+# 呼び出し側で bind:
+#   start_regex='^\[dev/review-loop\] round=N phase=start ... head=[a-f0-9]+ dirty=[01]$'
+#   end_regex='^\[dev/review-loop\] round=N phase=end ... head=[a-f0-9]+ dirty=[01]$'
+start_key=$(grep -oE "$start_regex" "$transcript" | grep -oE 'head=[a-f0-9]+ dirty=[01]$')
+end_key=$(grep -oE "$end_regex" "$transcript" | grep -oE 'head=[a-f0-9]+ dirty=[01]$')
+[ -n "$start_key" ] && [ "$start_key" = "$end_key" ]
 ```
 
-- `$(NF-1)" "$NF` で末尾 2 field (`head=... dirty=...`) を抽出する
-  ことで、start / end 行で field 数が異なっても (start は 5 field、
-  end は `applied=` `status=` が挟まって 7 field) index 書き分け不要
+- `grep -oE 'head=[a-f0-9]+ dirty=[01]$'` で **key 名 (`head=`/`dirty=`)
+  に紐づいた末尾部分だけ**を抽出する。`awk '{print $(NF-1)" "$NF}'` に
+  比べて、将来 SKILL.md 構造化ログ template の末尾に新 field
+  (`elapsed=...` 等) が追加されても silent-regression しない (末尾 2
+  field 依存を回避)
 - `dirty=0` を強制しないのは sandbox の chmod/rm 制限で解消不能な
   pre-existing artifact (fixture stub の mode drop / 削除不能な
   untracked 残存等) により dirty=1 スタートが原理的に起こり得るため。
   head 同一 + dirty 同一で「round 中に新たな変更が入らないこと」を
   機械検証する (Bash / apply_patch / sed 経由の混入も含めて検出可能)
+- **緩和のトレードオフ**: `dirty` flag は「その時点で dirty か否か」の
+  二値で content diff 比較ではないため、`start dirty=1 → end dirty=1`
+  で pre-existing artifact 由来なら pass するが、round 中に **新規**
+  uncommitted change が加わって dirty=1 のままだった場合も同じく pass
+  する。完全検出には `git status --porcelain` の SHA を start/end で
+  比較する等の追加ロジックが必要 (現状は未実装、将来課題)
 
 ### branch 変数
 
