@@ -183,6 +183,8 @@ stub 契約遵守は Pass criteria の transcript 判定チェックボックス
 - `fixtures/review-target.sh` — 未使用変数 + 重複関数(dev/06, dev/07)
 - `fixtures/reviewer-stubs/06-round{1,2}.md` — dev/06 のレビューループ
   round 別 canned findings(round1 = 2 件 apply、round2 = 0 件完了)
+- `fixtures/reviewer-stubs/06b-round1.md` — dev/06b のレビューループ
+  canned findings(round1 = 0 件で 1 周 complete、round2 は出現しない)
 - `fixtures/reviewer-stubs/07-round{1,2}.md` — dev/07 のレビューループ
   round 別 canned findings(round1 = 1 件 apply、round2 = 1 件残存 REPORT-ONLY)
 
@@ -199,5 +201,6 @@ stub 契約遵守は Pass criteria の transcript 判定チェックボックス
 - 05b — plan 承認ゲート(hooks / security 境界)
 - 05c — plan 承認ゲート(3 ファイル超変更)
 - 06 — レビューループ 1 周目からの再回(reviewer stub 決定化済み)
+- 06b — レビューループ 1 周完了(round=1 で指摘 0、round=2 に入らず終了)
 - 07 — レビューループ 2 周上限(reviewer stub 決定化済み)
 - 08 — doc-only PR で walkthrough 抑制
