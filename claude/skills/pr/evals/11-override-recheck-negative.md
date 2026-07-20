@@ -14,7 +14,16 @@ SKILL.md `## Telemetry markers` 節の `override-recheck` /
 ```
 
 prefix `override-recheck` にすることで `override-recheck` 本体と
-`override-recheck-question` の両方の不在を 1 grep で保証する。
+`override-recheck-question` の両方の不在を 1 grep で保証する。この式は
+2 marker literal が `override-recheck` prefix を共有していることに
+依存する暗黙契約であり、将来 marker 名が独立 prefix (例:
+`recheck-question`) へリファクタされたら以下の disjunction 形に
+差し替える必要がある (README §[stub-contracts](README.md#stub-contracts)
+の literal pin と同時更新すること):
+
+```bash
+! grep -qE '^\[pr/walkthrough\] (override-recheck finding=|override-recheck-question:)' "$transcript"
+```
 
 ## サブケース A: tier=low + override (walkthrough 自体が発火しない)
 
@@ -24,28 +33,26 @@ marker を無条件に出す実装を検出する。tier=medium も同じ分岐 
 可能、コスト削減のため skip)。
 
 Setup: [`README.md#eval-setup`](README.md#eval-setup)
-(`BRANCH_SUFFIX=neg-a`) を貼ったうえで、tier=low を発火させるため
-`src/util.js` 追加コミットの代わりに docs のみ変更する。stub は不要
-(tier=low はレビューを回さない):
+(`BRANCH_SUFFIX=neg-a`) を貼ったうえで、共通 snippet 内の以下 **2 行
+(commit 前の src/util.js 追加ペア)** のみを次の 2 行に置換する。他行
+(`git checkout -b`、`before_head=$(git rev-parse HEAD)`、以降の
+stub/mktemp/trap block) は共通 snippet の順序どおり残す。tier=low を
+発火させるため src コード変更を docs 変更に差し替える意図:
 
+置換対象 (共通 snippet L214-L215 相当):
 ```bash
-set -o pipefail
-DOTFILES_ROOT="${DOTFILES_ROOT:-$(cd "$(git -C ~/development/important/dotfiles rev-parse --show-toplevel 2>/dev/null || echo "$HOME/development/important/dotfiles")" && pwd)}"
+printf 'export const sub = (a, b) => a - b\n' >> src/util.js
+git add src/util.js && git commit -m "feat: sub 関数を追加"
+```
 
-git checkout main
-branch="feature/eval-pr-neg-a-$(date +%s)"
-git checkout -b "$branch"
+置換後:
+```bash
 printf '\n## eval section\n' >> README.md
 git add README.md && git commit -m "docs: README に節を追加"
-
-stub_bin=$(mktemp -d)
-cp "$DOTFILES_ROOT/claude/skills/pr/evals/fixtures/stubs/gh" "$stub_bin/gh"
-export EVAL_LOG_DIR=$(mktemp -d)
-export PATH="$stub_bin:$PATH"
-
-transcript=$(mktemp)
-trap 'rm -f "$transcript"; rm -rf "$stub_bin" "$EVAL_LOG_DIR"' EXIT INT TERM
 ```
+
+gh stub は step 8 の `gh pr create` で呼ばれるため tier=low でも
+共通 snippet 通り差し込まれる (「stub 不要」ではない)。
 
 Prompt:
 ```
@@ -67,11 +74,12 @@ Pass criteria:
       ```bash
       ! grep -qE '^\[pr/walkthrough\] override-recheck' "$transcript"
       ```
-- [ ] walkthrough が発火していない (tier=high walkthrough 節に相当する
-      出力が transcript にない — 弱い guard として `[pr/review]
-      stub-loaded` が現れないこと):
+- [ ] walkthrough が発火していない (tier=low の場合レビュー自体が
+      走らない):
       ```bash
-      ! grep -qE '^\[pr/review\] stub-loaded' "$transcript"
+      ! grep -qE '^\[pr/review\] stub-loaded' "$transcript" && \
+          ! grep -qE '<command-name>/?codex-review</command-name>' "$transcript" && \
+          ! grep -qE '"subagent_type"[[:space:]]*:[[:space:]]*"(codex-review|code-reviewer)"' "$transcript"
       ```
 
 ## サブケース B: tier=high + pre-walkthrough override + step 5 で新 finding surface **なし**
@@ -80,16 +88,12 @@ Pass criteria:
 marker が出ないことを検証する。step 4 の F1 は既知の finding で、step
 5 walkthrough では追加 finding が surface しない stub を注入する。
 
-Setup: 10-normal-override.md サブケース B と同じ (tier=high 発火のため
-`package.json` を追加) + stub 選択:
+Setup: [`README.md#eval-setup`](README.md#eval-setup)
+(`BRANCH_SUFFIX=neg-b`)。10-normal-override.md サブケース B と同じく
+tier=high 発火のため共通 snippet の後に以下を追加する (F2 は含まない
+step 5 stub を選択):
 
 ```bash
-set -o pipefail
-DOTFILES_ROOT="${DOTFILES_ROOT:-$(cd "$(git -C ~/development/important/dotfiles rev-parse --show-toplevel 2>/dev/null || echo "$HOME/development/important/dotfiles")" && pwd)}"
-
-git checkout main
-branch="feature/eval-pr-neg-b-$(date +%s)"
-git checkout -b "$branch"
 cat > package.json <<'JSON'
 {
   "dependencies": { "example": "1.0.0" },
@@ -99,16 +103,8 @@ cat > package.json <<'JSON'
 JSON
 git add package.json && git commit -m "chore: package.json を追加"
 
-stub_bin=$(mktemp -d)
-cp "$DOTFILES_ROOT/claude/skills/pr/evals/fixtures/stubs/gh" "$stub_bin/gh"
-export EVAL_LOG_DIR=$(mktemp -d)
-export PATH="$stub_bin:$PATH"
-
 stub_step4=$DOTFILES_ROOT/claude/skills/pr/evals/fixtures/reviewer-stubs/10-walkthrough-step4.md
 stub_step5=$DOTFILES_ROOT/claude/skills/pr/evals/fixtures/reviewer-stubs/11-walkthrough-step5-nofinding.md
-
-transcript=$(mktemp)
-trap 'rm -f "$transcript"; rm -rf "$stub_bin" "$EVAL_LOG_DIR"' EXIT INT TERM
 ```
 
 Prompt:
@@ -160,15 +156,11 @@ user に surface された**後**で user が override を指示するため、p
 条件を満たさず marker は不要 (finding は既に user に見えているので
 再確認は冗長)。
 
-Setup: 10-normal-override.md サブケース B と同じ (fixture 一式流用):
+Setup: [`README.md#eval-setup`](README.md#eval-setup)
+(`BRANCH_SUFFIX=neg-c`)。10-normal-override.md サブケース B と同じ
+fixture 一式流用 (F2 を含む step 5 stub を選択):
 
 ```bash
-set -o pipefail
-DOTFILES_ROOT="${DOTFILES_ROOT:-$(cd "$(git -C ~/development/important/dotfiles rev-parse --show-toplevel 2>/dev/null || echo "$HOME/development/important/dotfiles")" && pwd)}"
-
-git checkout main
-branch="feature/eval-pr-neg-c-$(date +%s)"
-git checkout -b "$branch"
 cat > package.json <<'JSON'
 {
   "dependencies": { "example": "1.0.0" },
@@ -178,16 +170,8 @@ cat > package.json <<'JSON'
 JSON
 git add package.json && git commit -m "chore: package.json を追加"
 
-stub_bin=$(mktemp -d)
-cp "$DOTFILES_ROOT/claude/skills/pr/evals/fixtures/stubs/gh" "$stub_bin/gh"
-export EVAL_LOG_DIR=$(mktemp -d)
-export PATH="$stub_bin:$PATH"
-
 stub_step4=$DOTFILES_ROOT/claude/skills/pr/evals/fixtures/reviewer-stubs/10-walkthrough-step4.md
 stub_step5=$DOTFILES_ROOT/claude/skills/pr/evals/fixtures/reviewer-stubs/10-walkthrough-step5.md
-
-transcript=$(mktemp)
-trap 'rm -f "$transcript"; rm -rf "$stub_bin" "$EVAL_LOG_DIR"' EXIT INT TERM
 ```
 
 Prompt (canary `F2` は Prompt には書かない):
@@ -214,7 +198,10 @@ env PATH="$stub_bin:$PATH" EVAL_LOG_DIR="$EVAL_LOG_DIR" \
     claude --model claude-sonnet-5 -p "<Prompt>" | tee "$transcript"
 ```
 
-Pass criteria:
+Pass criteria (10-B 同様、以下の shell block と後続 criterion は
+**同一 shell セッション** で source する前提。runner が per-criterion
+に独立 shell で流す場合は preamble を各 checkbox に inline すること):
+
 ```bash
 s5=$(grep -m1 -nE '^\[pr/review\] stub-loaded stub=.*10-walkthrough-step5\.md' "$transcript" | cut -d: -f1)
 ```
@@ -227,11 +214,18 @@ s5=$(grep -m1 -nE '^\[pr/review\] stub-loaded stub=.*10-walkthrough-step5\.md' "
           grep -qE '^\[pr/review\] stub-loaded stub=.*10-walkthrough-step5\.md count=1' "$transcript"
       ```
 - [ ] **positive guard**: F2 は walkthrough 内で surface している
-      (step 5 stub 読込 marker より **後** に `F2` が transcript に
-      出現) — marker が出ないのが「walkthrough が動かなかったから」
-      という偽陰性を排除するため:
+      (step 5 stub 読込 marker より **後** に、識別子 `F2` **かつ**
+      本文 canary `CANARY-STEP5-BODY` が transcript に出現) — marker が
+      出ないのが「walkthrough が動かなかったから」という偽陰性を排除
+      するため。識別子だけだと `F2` は他 doc / stub で頻出する pattern
+      のため誤 hit する余地があり、canary 併用で「本 stub 由来の
+      surface」を強く担保する:
       ```bash
-      [ -n "$s5" ] && awk -v start="$s5" 'NR>start && index($0,"F2") {f=1} END {exit f?0:1}' "$transcript"
+      [ -n "$s5" ] && awk -v start="$s5" '
+          NR>start && index($0,"F2") {f2=1}
+          NR>start && index($0,"CANARY-STEP5-BODY") {c=1}
+          END {exit (f2 && c) ? 0 : 1}
+      ' "$transcript"
       ```
 - [ ] override-recheck / override-recheck-question marker が一切
       出現しない (override が step 5 後に到着したため pre 条件不成立):

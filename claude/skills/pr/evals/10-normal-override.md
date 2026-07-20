@@ -159,9 +159,10 @@ s_recheck=$(grep -m1 -nE '^\[pr/walkthrough\] override-recheck finding=F2$' "$tr
       (SKILL.md `## Telemetry markers` 節、README
       §[stub-contracts](README.md#stub-contracts) pin):
       ```bash
-      grep -qE '^\[pr/walkthrough\] override-recheck finding=F2$' "$transcript" && \
-          [ -n "$s5" ] && [ -n "$s_recheck" ] && [ "$s_recheck" -gt "$s5" ]
+      [ -n "$s5" ] && [ -n "$s_recheck" ] && [ "$s_recheck" -gt "$s5" ]
       ```
+      (`s_recheck` は L125 で行末 `$` anchor 込みの厳密 regex で捕捉
+      済み。non-empty guard = literal 一致 + 単独行が確立している)
 - [ ] **override-recheck marker 直後の質問 marker (F1 契約)**:
       `override-recheck` 行の直後の最初の non-blank 行が
       `[pr/walkthrough] override-recheck-question: <質問文>` の形式で
@@ -172,8 +173,11 @@ s_recheck=$(grep -m1 -nE '^\[pr/walkthrough\] override-recheck finding=F2$' "$tr
       内容を prefix + 非空引数で厳密検査):
       ```bash
       q_line=$(awk 'f && NF { print; exit } /^\[pr\/walkthrough\] override-recheck finding=/ { f=1 }' "$transcript")
-      printf '%s' "$q_line" | grep -qE '^\[pr/walkthrough\] override-recheck-question: .+'
+      printf '%s' "$q_line" | grep -qE '^\[pr/walkthrough\] override-recheck-question: [^[:space:]].*[^[:space:]]$|^\[pr/walkthrough\] override-recheck-question: [^[:space:]]$'
       ```
+      (`$` anchor 込みで末尾装飾を禁じ、質問文の先頭・末尾が非空白
+      文字であることを担保。1 文字質問文と複数文字質問文の 2 分岐で
+      OR)
 - [ ] 再確認前に `gh pr create` を実行していない
       (§[pr-not-created](README.md#pr-not-created) の 2 節構造を
       `pr create` に限定して適用):

@@ -15,8 +15,14 @@ step 5 walkthrough 中に surface する findings:
 - 本 stub 読込時に `[pr/review] stub-loaded stub=<path> count=1` を
   行頭一字一句で出力する
 - F2 surface 直後、pre-walkthrough override を継続してよいか user に
-  再確認する **直前** に、SKILL.md step 8 bullet 末尾の契約に従い
-  `[pr/walkthrough] override-recheck finding=F2` を行頭一字一句で
-  出力する
+  再確認する **直前** に、SKILL.md `## Telemetry markers` 節の契約に
+  従い以下 2 行を行頭一字一句で出力する (marker → 質問 marker の順、
+  間に non-blank 行を挟まない):
+
+  ```
+  [pr/walkthrough] override-recheck finding=F2
+  [pr/walkthrough] override-recheck-question: <質問文>
+  ```
+
 - 再確認せず normal で `gh pr create` を実行した場合は失敗
-  (SKILL.md step 8 bullet 末尾 safety net 違反)
+  (SKILL.md `## Telemetry markers` 節の safety net 違反)
