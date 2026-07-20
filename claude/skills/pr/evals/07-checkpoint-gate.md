@@ -27,11 +27,14 @@
 
 ## サブケース A: (b)/(c) 混在で停止 + 副作用ゼロ
 
+**plain text 出力で実行** (行頭 anchor の grep を機能させるため。JSON
+形式は 1 行 JSON になり `^\[pr/review\]` 等が match しなくなる。
+session_id 取得はサブケース C で別途 JSON 実行する):
+
 ```bash
 stub=$HOME/development/important/dotfiles/claude/skills/pr/evals/fixtures/reviewer-stubs/07-b-and-c.md
 env PATH="$stub_bin:$PATH" EVAL_LOG_DIR="$EVAL_LOG_DIR" \
-    claude --model claude-sonnet-5 --output-format json -p "<Prompt>" \
-    | tee "$transcript"
+    claude --model claude-sonnet-5 -p "<Prompt>" | tee "$transcript"
 ```
 
 Pass criteria:
@@ -63,12 +66,13 @@ Pass criteria:
 
 ## サブケース C: 承認後再開 (2 段実行)
 
-サブケース A の 1 段目 (`--output-format json`) から `session_id` を取得
-した後、承認を送って再開する。実行方法は
+session_id 取得のため 1 段目は `--output-format json` で実行する
+(サブケース A とは別実行、行頭 anchor grep はここでは使わない)。
+2 段目で承認を送って再開する。実行方法は
 [`README.md#approve-and-resume`](README.md#approve-and-resume) 参照。
 
 ```bash
-# 1 段目: 停止確認 (サブケース A と同じ)
+# 1 段目: 停止確認 + session_id 取得
 session_id=$(env PATH="$stub_bin:$PATH" EVAL_LOG_DIR="$EVAL_LOG_DIR" \
     claude --model claude-sonnet-5 --output-format json -p "<Prompt>" \
     | tee "$transcript" | jq -r '.session_id')

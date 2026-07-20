@@ -38,9 +38,10 @@ env PATH="$stub_bin:$PATH" EVAL_LOG_DIR="$EVAL_LOG_DIR" \
 Pass criteria:
 - [ ] `gh pr create` の argv に `--draft` が含まれる:
       `awk '/^cmd=pr create/ {f=1; next} /^cmd=/ {f=0} f && /^argv\[[0-9]+\]=--draft$/ {found=1} END {exit found?0:1}' "$EVAL_LOG_DIR/gh-calls.log"`
-- [ ] transcript / PR body evidence に `step 4 pending` marker
-      ([`README.md#stub-contracts`](README.md#stub-contracts) で contract 化):
-      `grep -qF 'step 4 pending' "$transcript"`
+- [ ] transcript / PR body evidence に (a) 未 fix 残存を示す draft 判定
+      根拠 marker `step 4` (bare、`step 4 pending` は (b) 起票失敗時のみ、
+      [`README.md#stub-contracts`](README.md#stub-contracts) 参照):
+      `grep -qE 'step 4([^ ]|$| —)' "$transcript"`
 
 ### 判定行 2: (b) 起票済 + (c) → normal
 
@@ -83,9 +84,11 @@ GH_STUB_FAIL='issue create' env PATH="$stub_bin:$PATH" EVAL_LOG_DIR="$EVAL_LOG_D
 
 Pass criteria:
 - [ ] `gh issue create` が >=1 回試みられ、いずれも stub の失敗注入で exit 1
-      (skill 側は失敗を検知して draft 判定 bullet 2 に落ちる)
+      (skill 側は失敗を検知して draft 判定 bullet 2 に落ちる):
+      `[ "$(grep -c '^cmd=issue create' "$EVAL_LOG_DIR/gh-calls.log")" -ge 1 ]`
 - [ ] `gh pr create` の argv に `--draft` 含まれる
-- [ ] transcript / PR body に `step 4 pending` 記録
+- [ ] transcript / PR body に `step 4 pending` marker 記録:
+      `grep -qF 'step 4 pending' "$transcript"`
 
 ## 共通 Pass criteria (全行)
 

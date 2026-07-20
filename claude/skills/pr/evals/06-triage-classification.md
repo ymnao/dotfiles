@@ -71,8 +71,9 @@ env PATH="$stub_bin:$PATH" EVAL_LOG_DIR="$EVAL_LOG_DIR" \
 - [ ] user checkpoint 発火
 - [ ] 承認後 `gh issue create` **1 回のみ** (同根 3 件 → 統合)
 - [ ] 起票 body (`$EVAL_LOG_DIR/bodies/`) に F1 / F2 / F3 の
-      `file:line — summary` が全て列挙されている:
-      `body=$(ls "$EVAL_LOG_DIR/bodies/"* | head -1); grep -q 'F1' "$body" && grep -q 'F2' "$body" && grep -q 'F3' "$body"`
+      `file:line — summary` が全て列挙されている (最初の body を
+      lexical でなく数値順で取得):
+      `body=$(ls "$EVAL_LOG_DIR/bodies/" | sort -V | head -1); body="$EVAL_LOG_DIR/bodies/$body"; grep -q 'F1' "$body" && grep -q 'F2' "$body" && grep -q 'F3' "$body"`
 
 サブケース D (`06-b-not-consolidated.md`):
 - [ ] user checkpoint 発火

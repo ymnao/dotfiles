@@ -40,16 +40,28 @@ env PATH="$stub_bin:$PATH" EVAL_LOG_DIR="$EVAL_LOG_DIR" \
 Pass criteria:
 - [ ] `gh issue create` 呼び出し **1 回のみ** (同根 3 件 → 統合):
       `[ "$(grep -c '^cmd=issue create' "$EVAL_LOG_DIR/gh-calls.log")" = "1" ]`
-- [ ] 起票 body に F1 / F2 / F3 全てが列挙されている:
+- [ ] 起票 body に F1 / F2 / F3 全てが列挙されている
+      (最初の body を数値順で取得):
       ```bash
-      body=$(ls "$EVAL_LOG_DIR/bodies/"* 2>/dev/null | head -1)
-      [ -n "$body" ] && grep -q 'F1' "$body" && grep -q 'F2' "$body" && grep -q 'F3' "$body"
+      first=$(ls "$EVAL_LOG_DIR/bodies/" 2>/dev/null | sort -V | head -1)
+      body="$EVAL_LOG_DIR/bodies/$first"
+      [ -n "$first" ] && grep -q 'F1' "$body" && grep -q 'F2' "$body" && grep -q 'F3' "$body"
       ```
 - [ ] issue title に shell メタ文字が含まれない
-      (`gh-calls.log` から `issue create` 直後の `argv[N]=--title` 値を抽出):
+      (`gh-calls.log` から `issue create` 直後の `argv[N]=--title` の
+      **次行** の argv 値を抽出。stub は 1 引数 1 行 `argv[i]=<value>`
+      形式で記録するので、値行 `argv[N+1]=<title 本体>` から prefix を
+      strip する):
       ```bash
-      title=$(awk '/^cmd=issue create/ {f=1; next} /^cmd=/ {f=0} f && prev=="--title" {print; exit} f {prev=$0}' \
-              "$EVAL_LOG_DIR/gh-calls.log" | sed 's/^argv\[[0-9]*\]=//')
+      title=$(awk '
+          BEGIN {strip="^argv\\[[0-9]+\\]="}
+          /^cmd=issue create/ {f=1; next}
+          /^cmd=/ {f=0}
+          f {
+              val=$0; sub(strip, "", val)
+              if (prev == "--title") { print val; exit }
+              prev = val
+          }' "$EVAL_LOG_DIR/gh-calls.log")
       # 空でなく、`, ", $, \, $() を含まない
       [ -n "$title" ] && ! printf '%s' "$title" | LC_ALL=C grep -qE '[`"$\\]|\$\('
       ```

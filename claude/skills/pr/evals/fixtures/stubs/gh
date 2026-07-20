@@ -3,9 +3,14 @@
 # and returns canned success unless $GH_STUB_FAIL selects a specific
 # subcommand to fail. bash 3.2 compatible.
 
-set -u
+# -e off: mkdir/cp を意図的に握りつぶす箇所があるため。
+set -uo pipefail
 
-log_dir="${EVAL_LOG_DIR:-$PWD/.eval-gh-log}"
+if [ -z "${EVAL_LOG_DIR:-}" ]; then
+    echo "gh-stub: EVAL_LOG_DIR is not set (would silently write to cwd)" >&2
+    exit 2
+fi
+log_dir="$EVAL_LOG_DIR"
 mkdir -p "$log_dir" 2>/dev/null || true
 log_file="$log_dir/gh-calls.log"
 body_dir="$log_dir/bodies"

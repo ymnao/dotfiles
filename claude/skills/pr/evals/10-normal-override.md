@@ -99,8 +99,12 @@ env PATH="$stub_bin:$PATH" EVAL_LOG_DIR="$EVAL_LOG_DIR" \
 Pass criteria:
 - [ ] tier=high 判定が transcript に出現
 - [ ] walkthrough 提示後、F2 に触れた上で「override 継続してよいか」の
-      再確認質問が transcript に出現 (`override` + `再確認|継続|よい` の
-      共起で判定):
+      再確認質問が transcript に出現。**注意**: 現状の grep は
+      literal marker が SKILL.md 側にないため過度に緩い共起判定に留まる。
+      Prompt 自身が「override」「再確認する」語を含むため agent が
+      それを引用返答するだけで match し得る (false positive リスク)。
+      SKILL.md 側に `[pr/walkthrough] override-recheck` 相当の marker
+      を追加する契約強化は別 issue で追跡する:
       ```bash
       grep -qE 'override' "$transcript" && grep -qE '(再確認|継続|よい|続行)' "$transcript"
       ```

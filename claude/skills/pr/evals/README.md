@@ -28,13 +28,12 @@
 ### gh stub の PATH 差し込み <a id="gh-stub-path"></a>
 
 06-10 は `fixtures/stubs/gh` を PATH 先頭に差し込み、実 gh を叩かずに
-呼び出し履歴だけ記録する。stub は sandbox 制約で `chmod +x` が済んで
-いない場合があるため、setup で mktemp した実行可能コピーを作る:
+呼び出し履歴だけ記録する。stub は git 上で mode 755 で登録済みなので、
+setup では mktemp した dir に cp するだけで実行可能:
 
 ```bash
 stub_bin=$(mktemp -d)
 cp claude/skills/pr/evals/fixtures/stubs/gh "$stub_bin/gh"
-chmod +x "$stub_bin/gh"
 export EVAL_LOG_DIR=$(mktemp -d)
 export PATH="$stub_bin:$PATH"
 ```
@@ -175,8 +174,7 @@ git add src/util.js && git commit -m "feat: sub 関数を追加"
 before_head=$(git rev-parse HEAD)
 
 stub_bin=$(mktemp -d)
-cp $HOME/development/important/dotfiles/claude/skills/pr/evals/fixtures/stubs/gh "$stub_bin/gh"
-chmod +x "$stub_bin/gh"
+cp "$HOME/development/important/dotfiles/claude/skills/pr/evals/fixtures/stubs/gh" "$stub_bin/gh"
 export EVAL_LOG_DIR=$(mktemp -d)
 export PATH="$stub_bin:$PATH"
 
@@ -203,9 +201,14 @@ template に依存する。以下を stub 契約として明示 pin し、SKILL.
 文言変更で silently fail しないようにする (SKILL.md 側変更時はこの
 節も同時に更新すること):
 
-- **一時 body-file の basename**: pr body は `pr-body-*` / issue body は
-  `pr-issue-body-*` の mktemp template を使う (SKILL.md step 4)。
-  10-normal-override の `bodies/*pr-body*` glob assert はこの命名に依存
-- **draft 判定 marker**: (a) 残存 / (b) 起票失敗の draft 化根拠として
-  evidence に `step 4 pending` の literal を記録する (SKILL.md 5-8)。
-  08-draft-matrix の Pass criteria はこの literal を grep する
+- **一時 body-file の basename**: issue body は `pr-issue-body-*` の
+  mktemp template を使う (SKILL.md step 4 に `(例: $TMPDIR/pr-issue-body-<n>.md)`
+  として明示。実装は example に従う)。09-consolidated-issue と
+  10-normal-override の body-file 残留検証はこの命名に依存
+- **draft 判定 marker (SKILL.md step 4 の Draft 判定 bullet 群)**:
+  - **`step 4`** — (a) 未 fix が残っている場合 (bullet 1)
+  - **`step 4 pending`** — (b) 起票失敗による draft 退避 (bullet 2 失敗経路)
+  - **`step 4 dismiss`** — (c) 対応しない を含む normal (bullet 3)
+  - **`step 8 override`** — user 指示による draft override
+  08-draft-matrix / 10-normal-override はこれら literal のいずれか適切な
+  ものを grep する (行 1 は `step 4`、行 4 は `step 4 pending` 等)
