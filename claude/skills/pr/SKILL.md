@@ -37,8 +37,9 @@ Run each `gh` command as a bare invocation and substitute prior output literally
        | # | Finding (file:line — summary) | 行き先 | 根拠 |
        |---|---|---|---|
        | 1 | path/to/f.sh:42 — quoting 抜け | (a) fix | 主旨直結 |
-       | 2 | path/to/g.sh:10 — eval 未整備 | (b) 統合 issue #N | 同根 (別 finding 3 と統合) |
-       | 3 | path/to/h.sh:5 — コメント幅 | (c) 対応しない | nit / 一般許容水準内 |
+       | 2 | path/to/g.sh:10 — eval 未整備 | (b) 統合 issue #N | 同根 (finding 3 と統合) |
+       | 3 | path/to/i.sh:88 — eval 未整備 | (b) 統合 issue #N | 同根 (finding 2 と統合) |
+       | 4 | path/to/h.sh:5 — コメント幅 | (c) 対応しない | nit / 一般許容水準内 |
        ```
      - user の応答が「OK」「進めて」等の明示承認なら分類確定 → 起票 → PR 作成へ。個別修正の指示があれば反映して再提示。この user 承認が (c) の「user 指示」記録および hook 通過書式「追跡しない (user 指示: <承認要約>)」の根拠になる
    - Draft 判定は **PR-level triage** で行う(codex-review の per-finding 分類 `REPORT-ONLY` / `UNRESOLVED` を pr の draft 判定に自動流用しない。用語の定義は `$HOME/.claude/skills/codex-review/SKILL.md` を参照)。**上から順に評価し、最初に一致した bullet を採用**する。bullet 内の処理で state が変わった場合(起票成功で URL が付いた等)は変更後の state で bullet 1 から**再評価する**。いずれの判定でも根拠と該当 finding を evidence に記録する:

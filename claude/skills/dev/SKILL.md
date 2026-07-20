@@ -105,8 +105,8 @@ fix-or-issue-or-dismiss ポリシーに委ねる (発散防止)。
 2. `code-reviewer` サブエージェントを Agent tool (`subagent_type:
    "code-reviewer"`, `run_in_background: false`) で起動する。返る
    `[Critical|Warning|Suggestion]` 指摘をメインが fix (Agent は
-   read-only)。fix しない判断をした finding は理由を記録 (step 5
-   で issue 起票対象になる)
+   read-only)。fix しない判断をした finding は理由を記録 (step 5 の
+   /pr の fix-or-issue-or-dismiss ポリシー対象になる)
 3. プロジェクトのテストスイート (`make test` 等) — fail したら直す
 4. コミット (レビュー修正分)
 
