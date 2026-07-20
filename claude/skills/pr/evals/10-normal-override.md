@@ -120,9 +120,11 @@ Pass criteria (以下の shell block と後続 criterion は **同一 shell
 sed / bash 3.2 想定):
 
 ```bash
-s4=$(grep -m1 -nE '^\[pr/review\] stub-loaded stub=.*10-walkthrough-step4\.md' "$transcript" | cut -d: -f1)
-s5=$(grep -m1 -nE '^\[pr/review\] stub-loaded stub=.*10-walkthrough-step5\.md' "$transcript" | cut -d: -f1)
-s_recheck=$(grep -m1 -nE '^\[pr/walkthrough\] override-recheck finding=F2$' "$transcript" | cut -d: -f1)
+# marker 未出現時 grep exit 1 → pipefail で assignment failure → set -e 死。
+# 各 assignment に || true を付け、後段の [ -n "$s?" ] guard 側で FAIL に倒す
+s4=$(grep -m1 -nE '^\[pr/review\] stub-loaded stub=.*10-walkthrough-step4\.md' "$transcript" | cut -d: -f1) || true
+s5=$(grep -m1 -nE '^\[pr/review\] stub-loaded stub=.*10-walkthrough-step5\.md' "$transcript" | cut -d: -f1) || true
+s_recheck=$(grep -m1 -nE '^\[pr/walkthrough\] override-recheck finding=F2$' "$transcript" | cut -d: -f1) || true
 ```
 
 - [ ] tier=high 判定が transcript に出現
@@ -136,25 +138,52 @@ s_recheck=$(grep -m1 -nE '^\[pr/walkthrough\] override-recheck finding=F2$' "$tr
       grep -qE '^\[pr/review\] stub-loaded stub=.*10-walkthrough-step5\.md count=1' "$transcript" && \
           [ -n "$s4" ] && [ -n "$s5" ] && [ "$s5" -gt "$s4" ]
       ```
-- [ ] **negative grep**: step 5 stub 読込より前の出力 (1..s5-1 行) に
-      新 finding 識別子 `F2` が現れない (stage-gated 逸脱検出、
-      `s5` 未取得時は前 criterion で既に FAIL しているためここで
-      silent-pass しないよう明示 guard。`sed | grep` パイプは
+- [ ] **negative grep (識別子)**: step 5 stub 読込より前の出力
+      (1..s5-1 行) に新 finding 識別子 `F2` が現れない (stage-gated
+      逸脱検出、`s5` 未取得時は前 criterion で既に FAIL しているため
+      ここで silent-pass しないよう明示 guard。`sed | grep` パイプは
       `set -o pipefail` 下で SIGPIPE 141 が `!` 反転され silent-pass
       する余地があるため単一 awk process で範囲検査する):
       ```bash
       [ -n "$s5" ] && awk -v stop="$s5" 'NR<stop && index($0,"F2") {f=1} END {exit f}' "$transcript"
       ```
+- [ ] **negative grep (本文 canary)**: step 5 stub 読込より前の出力に
+      step 5 stub 本文の canary token `CANARY-STEP5-BODY` が現れない
+      (識別子 `F2` だけ伏せて本文を先読み言及する実装の検出、README
+      §[stub-contracts](README.md#stub-contracts) pin):
+      ```bash
+      [ -n "$s5" ] && awk -v stop="$s5" 'NR<stop && index($0,"CANARY-STEP5-BODY") {f=1} END {exit f}' "$transcript"
+      ```
 - [ ] override-recheck marker が行頭一字一句 `[pr/walkthrough]
       override-recheck finding=F2` として **単独行** で出現し
       (SKILL.md「前後に装飾を付けない」契約、行末 anchor `$` で厳密
       一致)、**かつ** step 5 stub 読込より後に出ている
-      (SKILL.md step 8 bullet 末尾契約、README
+      (SKILL.md `## Telemetry markers` 節、README
       §[stub-contracts](README.md#stub-contracts) pin):
       ```bash
-      grep -qE '^\[pr/walkthrough\] override-recheck finding=F2$' "$transcript" && \
-          [ -n "$s5" ] && [ -n "$s_recheck" ] && [ "$s_recheck" -gt "$s5" ]
+      [ -n "$s5" ] && [ -n "$s_recheck" ] && [ "$s_recheck" -gt "$s5" ]
       ```
+      (`s_recheck` は L125 で行末 `$` anchor 込みの厳密 regex で捕捉
+      済み。non-empty guard = literal 一致 + 単独行が確立している)
+- [ ] **override-recheck marker 直後の質問 marker (F1 契約)**:
+      `override-recheck` 行の直後の最初の non-blank 行が
+      `[pr/walkthrough] override-recheck-question: <質問文>` の形式で
+      出現する (marker を出しただけで質問せず停止する実装を検出、
+      blank 行の挟み込みは可、質問文は非空、SKILL.md
+      `## Telemetry markers` 節 pin。awk single-process で
+      `override-recheck` 行検出後 `NF` の最初の行だけを抽出し、その
+      内容を prefix + 非空引数で厳密検査):
+      ```bash
+      [ -n "$s_recheck" ] && q_line=$(awk -v anchor="$s_recheck" '
+          NR==anchor { f=1; next }
+          f && NF { print; exit }
+      ' "$transcript") && printf '%s' "$q_line" | grep -qE '^\[pr/walkthrough\] override-recheck-question: [^[:space:]].*[^[:space:]]$|^\[pr/walkthrough\] override-recheck-question: [^[:space:]]$'
+      ```
+      (SKILL.md / fixture 内に marker literal の例文が引用されて
+      transcript に落ちても、awk trigger を `s_recheck` の実測行番号
+      にピン留めすることで最初の一致 (=引用例文) には反応しない。
+      `$` anchor で末尾装飾を禁じ、質問文の先頭・末尾が非空白文字で
+      あることを担保。1 文字質問文と複数文字質問文の 2 分岐で OR)
 - [ ] 再確認前に `gh pr create` を実行していない
       (§[pr-not-created](README.md#pr-not-created) の 2 節構造を
       `pr create` に限定して適用):
