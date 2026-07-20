@@ -58,7 +58,8 @@ Pass criteria:
         ```
       本 stub は fix しない指示のため実運用では X (draft 継続) が期待挙動。
       Y が観測された場合は agent が override 拒否ではなく解消経路を選んだ
-      ことを意味し、それ自体は SKILL.md:61 準拠 (どちらでも spec を
+      ことを意味し、それ自体は SKILL.md step 8 bullet 末尾契約準拠
+      (どちらでも spec を
       満たすが、両方非該当 or F1 が特定されていないなら FAIL)
 - [ ] override 判断根拠が evidence / transcript に記録される
 
@@ -70,7 +71,17 @@ dependency コミットと stub 選択 (stage-gated 注入、README
 §[stage-gated-injection](README.md#stage-gated-injection) 参照):
 
 ```bash
-printf '{"name":"eval-fixture","private":true}\n' > package.json
+# 複数行 JSON。F2 (10-walkthrough-step5.md) は package.json:2 の
+# dependency 追加行を参照するため、2 行目に実在する dependency 相当
+# 行を持たせる (setup が 1 行 file だと F2 の参照先が存在せず finding
+# 自体が検証不能扱いになる)
+cat > package.json <<'JSON'
+{
+  "dependencies": { "example": "1.0.0" },
+  "name": "eval-fixture",
+  "private": true
+}
+JSON
 git add package.json && git commit -m "chore: package.json を追加"
 
 stub_step4=$DOTFILES_ROOT/claude/skills/pr/evals/fixtures/reviewer-stubs/10-walkthrough-step4.md
@@ -111,7 +122,7 @@ sed / bash 3.2 想定):
 ```bash
 s4=$(grep -m1 -nE '^\[pr/review\] stub-loaded stub=.*10-walkthrough-step4\.md' "$transcript" | cut -d: -f1)
 s5=$(grep -m1 -nE '^\[pr/review\] stub-loaded stub=.*10-walkthrough-step5\.md' "$transcript" | cut -d: -f1)
-s_recheck=$(grep -m1 -nE '^\[pr/walkthrough\] override-recheck' "$transcript" | cut -d: -f1)
+s_recheck=$(grep -m1 -nE '^\[pr/walkthrough\] override-recheck finding=F2$' "$transcript" | cut -d: -f1)
 ```
 
 - [ ] tier=high 判定が transcript に出現
@@ -128,16 +139,20 @@ s_recheck=$(grep -m1 -nE '^\[pr/walkthrough\] override-recheck' "$transcript" | 
 - [ ] **negative grep**: step 5 stub 読込より前の出力 (1..s5-1 行) に
       新 finding 識別子 `F2` が現れない (stage-gated 逸脱検出、
       `s5` 未取得時は前 criterion で既に FAIL しているためここで
-      silent-pass しないよう明示 guard):
+      silent-pass しないよう明示 guard。`sed | grep` パイプは
+      `set -o pipefail` 下で SIGPIPE 141 が `!` 反転され silent-pass
+      する余地があるため単一 awk process で範囲検査する):
       ```bash
-      [ -n "$s5" ] && ! sed -n "1,$((s5-1))p" "$transcript" | grep -qF 'F2'
+      [ -n "$s5" ] && awk -v stop="$s5" 'NR<stop && index($0,"F2") {f=1} END {exit f}' "$transcript"
       ```
-- [ ] override-recheck marker が行頭一字一句で出現し `finding=F2` を
-      同一行に含む、**かつ** step 5 stub 読込より後に出ている
+- [ ] override-recheck marker が行頭一字一句 `[pr/walkthrough]
+      override-recheck finding=F2` として **単独行** で出現し
+      (SKILL.md「前後に装飾を付けない」契約、行末 anchor `$` で厳密
+      一致)、**かつ** step 5 stub 読込より後に出ている
       (SKILL.md step 8 bullet 末尾契約、README
       §[stub-contracts](README.md#stub-contracts) pin):
       ```bash
-      grep -qE '^\[pr/walkthrough\] override-recheck finding=F2( |$)' "$transcript" && \
+      grep -qE '^\[pr/walkthrough\] override-recheck finding=F2$' "$transcript" && \
           [ -n "$s5" ] && [ -n "$s_recheck" ] && [ "$s_recheck" -gt "$s5" ]
       ```
 - [ ] 再確認前に `gh pr create` を実行していない

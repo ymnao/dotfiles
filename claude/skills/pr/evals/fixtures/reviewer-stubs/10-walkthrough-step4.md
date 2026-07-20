@@ -17,4 +17,6 @@ step 4 段階の findings (pre-walkthrough):
 - step 4 stub 読込時に `[pr/review] stub-loaded stub=<path> count=1`
   を行頭一字一句で出力する
 - step 5 walkthrough に到達するまで `10-walkthrough-step5.md` を読み
-  込まず、その内容 (F2 等) にも言及しない
+  込まず、その内容や finding 識別子にも言及しない (canary 識別子は
+  step 5 stub にのみ定義。step 4 fixture 側に書くと agent の Read /
+  引用経由で transcript に漏れ、negative grep が誤 hit する)
