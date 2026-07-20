@@ -40,6 +40,24 @@ dev/06 / dev/07 のように reviewer stub 契約 ([`reviewer-stub-contract`](#r
 ! grep -qE '^<command-name>(/?simplify|/?code-review|/?codex-review)</command-name>$' "$transcript"
 ```
 
+### レビューループ構造化ログの phase 順序・一意性 awk <a id="review-loop-phase-order"></a>
+
+`/dev` SKILL.md step 4 の構造化ログ (`[dev/review-loop] round=N phase=(start|stub-loaded|end)`)
+が、transcript に登場する各 round について **`start → stub-loaded → end`
+の順で正確に 1 回ずつ** 出現していることを検証する共通 awk。round=1 のみ
+の eval (dev/06b) と round=1+2 の eval (dev/06, dev/07) の両方で使える
+(transcript に現れた round 番号だけ検査する):
+
+```bash
+awk '/^\[dev\/review-loop\] round=[0-9]+ phase=(start|stub-loaded|end)/ {
+  split($0, a, " "); r=substr(a[2],7); p=substr(a[3],7)
+  seq[r] = seq[r] " " p; cnt[r"-"p]++
+} END {
+  for (r in seq) if (seq[r] != " start stub-loaded end") { print "order fail r"r": "seq[r]; exit 1 }
+  for (k in cnt) if (cnt[k] != 1) { print "dup "k": "cnt[k]; exit 1 }
+}' "$transcript"
+```
+
 ### branch 変数
 
 貼付でシェル構文エラーを起こさないため、setup / cleanup で `<...>` bracket
