@@ -24,7 +24,7 @@
 `BRANCH_SUFFIX=triage`。サブケースごとに `stub` 変数だけ差し替える:
 
 ```bash
-stub=$HOME/development/important/dotfiles/claude/skills/pr/evals/fixtures/reviewer-stubs/06-a-only.md
+stub=$DOTFILES_ROOT/claude/skills/pr/evals/fixtures/reviewer-stubs/06-a-only.md
 ```
 
 ## Prompt (全サブケース共通)
@@ -70,10 +70,15 @@ env PATH="$stub_bin:$PATH" EVAL_LOG_DIR="$EVAL_LOG_DIR" \
 サブケース C (`06-b-consolidated.md`):
 - [ ] user checkpoint 発火
 - [ ] 承認後 `gh issue create` **1 回のみ** (同根 3 件 → 統合)
-- [ ] 起票 body (`$EVAL_LOG_DIR/bodies/`) に F1 / F2 / F3 の
-      `file:line — summary` が全て列挙されている (最初の body を
-      lexical でなく数値順で取得):
-      `body=$(ls "$EVAL_LOG_DIR/bodies/" | sort -V | head -1); body="$EVAL_LOG_DIR/bodies/$body"; grep -q 'F1' "$body" && grep -q 'F2' "$body" && grep -q 'F3' "$body"`
+- [ ] 起票 body (`$EVAL_LOG_DIR/bodies/`) に fixture の 3 finding の
+      `file:line` が全て列挙されている (stub 命名は 0-padded 連番 なので
+      lexical sort が数値順と一致、`sort -V` 不要):
+      ```bash
+      body="$EVAL_LOG_DIR/bodies/$(ls "$EVAL_LOG_DIR/bodies/" | head -1)"
+      grep -q 'claude/skills/foo/SKILL.md:12' "$body" \
+          && grep -q 'claude/skills/foo/SKILL.md:35' "$body" \
+          && grep -q 'claude/skills/foo/SKILL.md:47' "$body"
+      ```
 
 サブケース D (`06-b-not-consolidated.md`):
 - [ ] user checkpoint 発火

@@ -3,18 +3,17 @@
 # and returns canned success unless $GH_STUB_FAIL selects a specific
 # subcommand to fail. bash 3.2 compatible.
 
-# -e off: mkdir/cp を意図的に握りつぶす箇所があるため。
-set -uo pipefail
+set -euo pipefail
 
 if [ -z "${EVAL_LOG_DIR:-}" ]; then
     echo "gh-stub: EVAL_LOG_DIR is not set (would silently write to cwd)" >&2
     exit 2
 fi
 log_dir="$EVAL_LOG_DIR"
-mkdir -p "$log_dir" 2>/dev/null || true
+mkdir -p "$log_dir"
 log_file="$log_dir/gh-calls.log"
 body_dir="$log_dir/bodies"
-mkdir -p "$body_dir" 2>/dev/null || true
+mkdir -p "$body_dir"
 
 # Record the raw argv one-per-line under a call header so grep -c on
 # `^cmd=` counts the number of invocations.
@@ -28,7 +27,8 @@ mkdir -p "$body_dir" 2>/dev/null || true
 } >> "$log_file"
 
 # Snapshot --body-file contents (before skill deletes them) so
-# integration issue bodies can be asserted after the run.
+# integration issue bodies can be asserted after the run. Use a fixed-width
+# counter so lexical sort matches numerical order (10 > 2).
 prev=""
 for a in "$@"; do
     if [ "$prev" = "--body-file" ] && [ -f "$a" ]; then
@@ -37,7 +37,7 @@ for a in "$@"; do
         n=$(cat "$seq_file" 2>/dev/null || echo 0)
         n=$((n+1))
         echo "$n" > "$seq_file"
-        cp "$a" "$body_dir/$n-$base" 2>/dev/null || true
+        cp "$a" "$(printf '%s/%04d-%s' "$body_dir" "$n" "$base")"
     fi
     prev="$a"
 done
@@ -86,10 +86,10 @@ case "$sub" in
     issue)
         case "$sub2" in
             create)
-                seq_file="$log_dir/.issue-seq"
-                n=$(cat "$seq_file" 2>/dev/null || echo 0)
+                issue_seq="$log_dir/.issue-seq"
+                n=$(cat "$issue_seq" 2>/dev/null || echo 0)
                 n=$((n+1))
-                echo "$n" > "$seq_file"
+                echo "$n" > "$issue_seq"
                 url="https://example.invalid/eval-user/eval-repo/issues/$n"
                 echo "$url"
                 echo "$url" >> "$log_dir/issue-urls.log"

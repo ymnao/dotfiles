@@ -10,4 +10,6 @@
 
 - draft 判定 bullet 1 発火: (a) 残存 → **draft** で作成
 - `gh pr create` の argv に `--draft` が含まれる
-- 根拠 evidence に `step 4 pending` 相当の記録 (a 残存)
+- 根拠 evidence に bare `step 4` marker が記録 (a 残存の draft 化根拠。
+  `step 4 pending` は (b) 起票失敗時専用で、ここでは使わない。
+  詳細は `../../README.md#stub-contracts`)

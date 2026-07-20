@@ -30,7 +30,7 @@ stub 読込時は「[pr/review] stub-loaded stub=<path> count=<n>」を出力。
 ### 判定行 1: (a) 残存 → draft
 
 ```bash
-stub=$HOME/development/important/dotfiles/claude/skills/pr/evals/fixtures/reviewer-stubs/08-a-remaining.md
+stub=$DOTFILES_ROOT/claude/skills/pr/evals/fixtures/reviewer-stubs/08-a-remaining.md
 env PATH="$stub_bin:$PATH" EVAL_LOG_DIR="$EVAL_LOG_DIR" \
     claude --model claude-sonnet-5 -p "<Prompt>" | tee "$transcript"
 ```
@@ -40,13 +40,14 @@ Pass criteria:
       `awk '/^cmd=pr create/ {f=1; next} /^cmd=/ {f=0} f && /^argv\[[0-9]+\]=--draft$/ {found=1} END {exit found?0:1}' "$EVAL_LOG_DIR/gh-calls.log"`
 - [ ] transcript / PR body evidence に (a) 未 fix 残存を示す draft 判定
       根拠 marker `step 4` (bare、`step 4 pending` は (b) 起票失敗時のみ、
-      [`README.md#stub-contracts`](README.md#stub-contracts) 参照):
-      `grep -qE 'step 4([^ ]|$| —)' "$transcript"`
+      [`README.md#stub-contracts`](README.md#stub-contracts) 参照)。
+      境界パターンは em-dash / ASCII hyphen / 行末 / 空白いずれも許容:
+      `grep -qE 'step 4([[:space:]]*[—–-]|[[:space:]]*$|,|:)' "$transcript"`
 
 ### 判定行 2: (b) 起票済 + (c) → normal
 
 ```bash
-stub=$HOME/development/important/dotfiles/claude/skills/pr/evals/fixtures/reviewer-stubs/08-b-issued-plus-c.md
+stub=$DOTFILES_ROOT/claude/skills/pr/evals/fixtures/reviewer-stubs/08-b-issued-plus-c.md
 env PATH="$stub_bin:$PATH" EVAL_LOG_DIR="$EVAL_LOG_DIR" \
     claude --model claude-sonnet-5 -p "<Prompt>" | tee "$transcript"
 ```
@@ -57,13 +58,15 @@ Pass criteria:
 - [ ] `gh pr create` の argv に `--draft` が **含まれない**:
       `! awk '/^cmd=pr create/ {f=1; next} /^cmd=/ {f=0} f && /^argv\[[0-9]+\]=--draft$/ {found=1} END {exit found?0:1}' "$EVAL_LOG_DIR/gh-calls.log"`
 - [ ] transcript / PR body に「追跡しない (user 指示:」が出現 ((c) 記録)
+- [ ] draft 判定根拠 marker `step 4 dismiss` が記録:
+      `grep -qF 'step 4 dismiss' "$transcript"`
 - [ ] `defer(未起票)` marker は body に **出現しない**:
       `! grep -q 'defer(未起票)' "$transcript"`
 
 ### 判定行 3: (c) のみ → normal
 
 ```bash
-stub=$HOME/development/important/dotfiles/claude/skills/pr/evals/fixtures/reviewer-stubs/08-c-only.md
+stub=$DOTFILES_ROOT/claude/skills/pr/evals/fixtures/reviewer-stubs/08-c-only.md
 env PATH="$stub_bin:$PATH" EVAL_LOG_DIR="$EVAL_LOG_DIR" \
     claude --model claude-sonnet-5 -p "<Prompt>" | tee "$transcript"
 ```
@@ -72,12 +75,14 @@ Pass criteria:
 - [ ] `gh issue create` 0 回
 - [ ] `gh pr create` に `--draft` 含まれない
 - [ ] transcript に「追跡しない (user 指示:」出現
+- [ ] draft 判定根拠 marker `step 4 dismiss` が記録:
+      `grep -qF 'step 4 dismiss' "$transcript"`
 - [ ] `defer(未起票)` marker は body に出現しない
 
 ### 判定行 4: (b) 起票失敗 → draft (step 4 pending)
 
 ```bash
-stub=$HOME/development/important/dotfiles/claude/skills/pr/evals/fixtures/reviewer-stubs/08-b-issue-failed.md
+stub=$DOTFILES_ROOT/claude/skills/pr/evals/fixtures/reviewer-stubs/08-b-issue-failed.md
 GH_STUB_FAIL='issue create' env PATH="$stub_bin:$PATH" EVAL_LOG_DIR="$EVAL_LOG_DIR" \
     claude --model claude-sonnet-5 -p "<Prompt>" | tee "$transcript"
 ```

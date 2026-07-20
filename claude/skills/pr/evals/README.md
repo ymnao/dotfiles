@@ -62,15 +62,21 @@ grep で行う:
 # issue create の回数
 grep -c '^cmd=issue create' "$EVAL_LOG_DIR/gh-calls.log"
 
-# pr create に --draft が付いたか
-grep -B1 '^argv\[[0-9]*\]=--draft$' "$EVAL_LOG_DIR/gh-calls.log" \
-    | grep -q '^cmd=pr create'
+# pr create のブロックに --draft が含まれるか
+# (cmd= 行から次の cmd= までを状態管理する必要があるため awk。
+# `grep -B1` では --draft の直前 argv 行しか取れず cmd 行に届かない)
+awk '/^cmd=pr create/ {f=1; next} /^cmd=/ {f=0}
+     f && /^argv\[[0-9]+\]=--draft$/ {found=1}
+     END {exit found?0:1}' "$EVAL_LOG_DIR/gh-calls.log"
 ```
 
 stub は `--body-file <path>` の内容を `$EVAL_LOG_DIR/bodies/` に
-コピーする (skill 側の `rm` より先に走るため後から assert 可能)。
-統合 issue の body に個別 finding が列挙されているかは
-`grep 'F1:' "$EVAL_LOG_DIR/bodies/"*` の類で確認する。
+0-padded 連番プレフィックス (`0001-<basename>`) 付きでコピーする
+(skill 側の `rm` より先に走るため後から assert 可能、lexical sort が
+数値順と一致するため `sort -V` などの GNU 拡張不要)。統合 issue の
+body に個別 finding が列挙されているかは各 finding の `file:line` を
+直接 grep する (label `F1` 等は fixture 内 identifier で、実 body に
+持ち越される保証はない)。
 
 ### 選択的失敗注入 <a id="gh-stub-fail"></a>
 
@@ -155,6 +161,8 @@ stub が呼ばれる eval では `gh-calls.log` に `^cmd=(pr|issue) create` が
 実 gh を叩いていないため):
 
 ```bash
+# 2 節構造: gh 未呼び出しなら log ファイル自体が未生成なので、
+# ファイル無し = 副作用ゼロ (先の [ ! -f ]) として即 pass 扱いにする
 [ ! -f "$EVAL_LOG_DIR/gh-calls.log" ] || \
     ! grep -qE '^cmd=(pr|issue) create' "$EVAL_LOG_DIR/gh-calls.log"
 ```
@@ -166,6 +174,12 @@ stub が呼ばれる eval では `gh-calls.log` に `^cmd=(pr|issue) create` が
 
 ```bash
 set -o pipefail
+# サンドボックス repo 内で走らせている前提。dotfiles clone の場所は
+# git rev-parse で解決 (絶対パス固定を避ける)。DOTFILES_ROOT を明示的に
+# export しておけばそちらを優先する
+DOTFILES_ROOT="${DOTFILES_ROOT:-$(cd "$(git -C ~/development/important/dotfiles rev-parse --show-toplevel 2>/dev/null || echo "$HOME/development/important/dotfiles")" && pwd)}"
+stub_src="$DOTFILES_ROOT/claude/skills/pr/evals/fixtures/stubs/gh"
+
 git checkout main
 branch="feature/eval-pr-${BRANCH_SUFFIX:-triage}-$(date +%s)"
 git checkout -b "$branch"
@@ -174,7 +188,7 @@ git add src/util.js && git commit -m "feat: sub 関数を追加"
 before_head=$(git rev-parse HEAD)
 
 stub_bin=$(mktemp -d)
-cp "$HOME/development/important/dotfiles/claude/skills/pr/evals/fixtures/stubs/gh" "$stub_bin/gh"
+cp "$stub_src" "$stub_bin/gh"
 export EVAL_LOG_DIR=$(mktemp -d)
 export PATH="$stub_bin:$PATH"
 
@@ -205,10 +219,11 @@ template に依存する。以下を stub 契約として明示 pin し、SKILL.
   mktemp template を使う (SKILL.md step 4 に `(例: $TMPDIR/pr-issue-body-<n>.md)`
   として明示。実装は example に従う)。09-consolidated-issue と
   10-normal-override の body-file 残留検証はこの命名に依存
-- **draft 判定 marker (SKILL.md step 4 の Draft 判定 bullet 群)**:
+- **draft 判定 marker (SKILL.md step 4 の Draft 判定 bullet 群 + step 5/8)**:
   - **`step 4`** — (a) 未 fix が残っている場合 (bullet 1)
   - **`step 4 pending`** — (b) 起票失敗による draft 退避 (bullet 2 失敗経路)
   - **`step 4 dismiss`** — (c) 対応しない を含む normal (bullet 3)
+  - **`step 5`** — tier=high walkthrough で draft 決定 (本 PR eval 未整備)
   - **`step 8 override`** — user 指示による draft override
   08-draft-matrix / 10-normal-override はこれら literal のいずれか適切な
   ものを grep する (行 1 は `step 4`、行 4 は `step 4 pending` 等)

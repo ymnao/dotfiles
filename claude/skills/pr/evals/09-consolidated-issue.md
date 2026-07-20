@@ -15,7 +15,7 @@ tmpdir_snapshot_before=$(mktemp)
 find "$TMPDIR" -maxdepth 1 -name 'pr-issue-body-*' 2>/dev/null | sort > "$tmpdir_snapshot_before"
 trap 'rm -f "$transcript" "$tmpdir_snapshot_before"; rm -rf "$stub_bin" "$EVAL_LOG_DIR"' EXIT INT TERM
 
-stub=$HOME/development/important/dotfiles/claude/skills/pr/evals/fixtures/reviewer-stubs/09-consolidated.md
+stub=$DOTFILES_ROOT/claude/skills/pr/evals/fixtures/reviewer-stubs/09-consolidated.md
 ```
 
 body-file 命名 (`pr-issue-body-*`) は
@@ -40,12 +40,14 @@ env PATH="$stub_bin:$PATH" EVAL_LOG_DIR="$EVAL_LOG_DIR" \
 Pass criteria:
 - [ ] `gh issue create` 呼び出し **1 回のみ** (同根 3 件 → 統合):
       `[ "$(grep -c '^cmd=issue create' "$EVAL_LOG_DIR/gh-calls.log")" = "1" ]`
-- [ ] 起票 body に F1 / F2 / F3 全てが列挙されている
-      (最初の body を数値順で取得):
+- [ ] 起票 body に fixture の 3 finding の `file:line` が全て列挙
+      (stub 命名は 0-padded 連番 なので lexical sort が数値順と一致):
       ```bash
-      first=$(ls "$EVAL_LOG_DIR/bodies/" 2>/dev/null | sort -V | head -1)
+      first=$(ls "$EVAL_LOG_DIR/bodies/" 2>/dev/null | head -1)
       body="$EVAL_LOG_DIR/bodies/$first"
-      [ -n "$first" ] && grep -q 'F1' "$body" && grep -q 'F2' "$body" && grep -q 'F3' "$body"
+      [ -n "$first" ] && grep -q 'scripts/a.sh:12' "$body" \
+          && grep -q 'scripts/b.sh:34' "$body" \
+          && grep -q 'scripts/c.sh:56' "$body"
       ```
 - [ ] issue title に shell メタ文字が含まれない
       (`gh-calls.log` から `issue create` 直後の `argv[N]=--title` の
@@ -59,6 +61,9 @@ Pass criteria:
           /^cmd=/ {f=0}
           f {
               val=$0; sub(strip, "", val)
+              # --title=X (equals form)
+              if (index(val, "--title=") == 1) { sub(/^--title=/, "", val); print val; exit }
+              # --title X (separate form)
               if (prev == "--title") { print val; exit }
               prev = val
           }' "$EVAL_LOG_DIR/gh-calls.log")

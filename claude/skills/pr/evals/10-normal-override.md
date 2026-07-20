@@ -5,14 +5,7 @@ normal 化しない、`defer(未起票)` marker を残さない) に従うこと
 tier=high walkthrough で新 finding が surface した際に override 継続
 意思を再確認することを検証する。2 サブケース。
 
-## Setup (両サブケース共通)
-
-```bash
-set -o pipefail
-git checkout main
-branch="feature/eval-pr-override-$(date +%s)"
-git checkout -b "$branch"
-```
+サブケースごとに独立した Setup (branch) を持つ。共通 Setup は無い。
 
 ## サブケース A: 未 fix (a) 残存中の normal override 拒否
 
@@ -20,7 +13,7 @@ Setup: [`README.md#eval-setup`](README.md#eval-setup)
 (`BRANCH_SUFFIX=override-a`)。stub 選択:
 
 ```bash
-stub=$HOME/development/important/dotfiles/claude/skills/pr/evals/fixtures/reviewer-stubs/10-override-a-remaining.md
+stub=$DOTFILES_ROOT/claude/skills/pr/evals/fixtures/reviewer-stubs/10-override-a-remaining.md
 ```
 
 Prompt:
@@ -54,18 +47,19 @@ Pass criteria:
         ```bash
         awk '/^cmd=pr create/ {f=1; next} /^cmd=/ {f=0} f && /^argv\[[0-9]+\]=--draft$/ {found=1} END {exit found?0:1}' "$EVAL_LOG_DIR/gh-calls.log"
         ```
-      - **Y (未起票解消 → normal)**: (a) が (b) 起票または (c) dismiss で
-        解消され、その旨が transcript / body に明示される
+      - **Y (未起票解消 → normal)**: **F1 自身** ((a) 主旨だった finding、
+        stub 内で `src/util.js:1`) が (b) 起票または (c) dismiss で解消され、
+        F1 の追跡先が transcript / body に明示される (F2 単独の dismiss で
+        通ってはいけない):
         ```bash
-        # (b) 起票: gh issue create が 1 回以上
-        [ "$(grep -c '^cmd=issue create' "$EVAL_LOG_DIR/gh-calls.log")" -ge 1 ] || \
-        # (c) dismiss: 「追跡しない (user 指示:」marker
-        grep -qF '追跡しない (user 指示:' "$transcript"
+        # F1 の file:line を含む同一行で issue URL or dismiss marker が出現
+        grep -qE 'src/util\.js:1.*(https://.*issues/|追跡しない \(user 指示:)' \
+            "$transcript"
         ```
       本 stub は fix しない指示のため実運用では X (draft 継続) が期待挙動。
       Y が観測された場合は agent が override 拒否ではなく解消経路を選んだ
       ことを意味し、それ自体は SKILL.md:61 準拠 (どちらでも spec を
-      満たすが、両方非該当なら FAIL)
+      満たすが、両方非該当 or F1 が特定されていないなら FAIL)
 - [ ] override 判断根拠が evidence / transcript に記録される
 
 ## サブケース B: tier=high walkthrough で新 finding surface → 再確認
@@ -78,7 +72,7 @@ dependency コミットと stub 選択:
 printf '{"name":"eval-fixture","private":true}\n' > package.json
 git add package.json && git commit -m "chore: package.json を追加"
 
-stub=$HOME/development/important/dotfiles/claude/skills/pr/evals/fixtures/reviewer-stubs/10-walkthrough-new-finding.md
+stub=$DOTFILES_ROOT/claude/skills/pr/evals/fixtures/reviewer-stubs/10-walkthrough-new-finding.md
 ```
 
 Prompt:

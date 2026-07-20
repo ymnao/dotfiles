@@ -32,7 +32,7 @@
 session_id 取得はサブケース C で別途 JSON 実行する):
 
 ```bash
-stub=$HOME/development/important/dotfiles/claude/skills/pr/evals/fixtures/reviewer-stubs/07-b-and-c.md
+stub=$DOTFILES_ROOT/claude/skills/pr/evals/fixtures/reviewer-stubs/07-b-and-c.md
 env PATH="$stub_bin:$PATH" EVAL_LOG_DIR="$EVAL_LOG_DIR" \
     claude --model claude-sonnet-5 -p "<Prompt>" | tee "$transcript"
 ```
@@ -53,7 +53,7 @@ Pass criteria:
 ## サブケース B: (a) のみで停止しない (対照)
 
 ```bash
-stub=$HOME/development/important/dotfiles/claude/skills/pr/evals/fixtures/reviewer-stubs/07-a-only.md
+stub=$DOTFILES_ROOT/claude/skills/pr/evals/fixtures/reviewer-stubs/07-a-only.md
 env PATH="$stub_bin:$PATH" EVAL_LOG_DIR="$EVAL_LOG_DIR" \
     claude --model claude-sonnet-5 -p "<Prompt>" | tee "$transcript"
 ```
@@ -94,11 +94,18 @@ Pass criteria:
 
 ## サブケース D: 分類修正指示で再提示
 
-サブケース A の 1 段目後、「F3 は (c) にして」等の修正指示を送る。
+D 専用に 1 段目 (JSON) で **未承認の** session_id を取得し、そのセッション
+に修正指示を送る (C の session は既に承認完了しているため独立再現不可)。
 
 ```bash
+# 1 段目: 停止 + session_id 取得 (承認前の state を保持)
+session_id_d=$(env PATH="$stub_bin:$PATH" EVAL_LOG_DIR="$EVAL_LOG_DIR" \
+    claude --model claude-sonnet-5 --output-format json -p "<Prompt>" \
+    | tee -a "$transcript" | jq -r '.session_id')
+
+# 2 段目: 修正指示を送信
 env PATH="$stub_bin:$PATH" EVAL_LOG_DIR="$EVAL_LOG_DIR" \
-    claude --model claude-sonnet-5 --resume "$session_id" \
+    claude --model claude-sonnet-5 --resume "$session_id_d" \
     -p "F3 の行き先を (c) 対応しない に変更して再提示して" \
     | tee -a "$transcript"
 ```
