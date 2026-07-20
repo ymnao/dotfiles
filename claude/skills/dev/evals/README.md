@@ -41,9 +41,17 @@ dev/06 / dev/07 のように reviewer stub 契約 ([`reviewer-stub-contract`](#r
 ! grep -qE '^<command-name>(/?simplify|/?code-review|/?codex-review)</command-name>$' "$transcript"
 ```
 
-`code-reviewer` は Agent tool 経由のため `<command-name>` タグに現れない。
-Agent 起動の禁止は stub 契約 (「reviewer は stub のみ、Agent 実起動しない」)
-で担保する。
+`code-reviewer` は Agent tool 経由で起動されるため `<command-name>` タグには
+現れない。Agent 起動の禁止は以下の grep で機械検証する (transcript 中の
+Agent tool 呼び出し JSON には `subagent_type` 引数が含まれる):
+
+```bash
+! grep -qE '"subagent_type"[[:space:]]*:[[:space:]]*"code-reviewer"' "$transcript"
+```
+
+pattern が transcript 形式変更で追いつかなくなった場合の fallback として
+stub 契約 (「reviewer は stub のみ、Agent 実起動しない」) の transcript
+判定 checkbox でも二重担保する。
 
 ### レビューループ構造化ログの phase 順序・一意性 awk <a id="review-loop-phase-order"></a>
 
