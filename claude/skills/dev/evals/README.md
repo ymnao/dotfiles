@@ -46,7 +46,13 @@ dev/06 / dev/07 のように reviewer stub 契約 ([`reviewer-stub-contract`](#r
 が、transcript に登場する各 round について **`start → stub-loaded → end`
 の順で正確に 1 回ずつ** 出現していることを検証する共通 awk。round=1 のみ
 の eval (dev/06b) と round=1+2 の eval (dev/06, dev/07) の両方で使える
-(transcript に現れた round 番号だけ検査する):
+(transcript に現れた round 番号だけ検査する)。
+
+**この awk は「登場した round のみ検査する」semantics**: 例えば round=2
+が期待される eval で round=2 の 3 phase が 1 行も出なければ、この awk
+は素通しで PASS してしまう。「round=N が存在すること」の assertion は
+呼び出し側 eval の Pass criteria で個別 grep (`round=N phase=end ...`
+等) として別途担保すること:
 
 ```bash
 awk '/^\[dev\/review-loop\] round=[0-9]+ phase=(start|stub-loaded|end)/ {
@@ -198,7 +204,7 @@ stub 契約遵守は Pass criteria の transcript 判定チェックボックス
 `fixtures/` に配置し setup 内で cp / cat して使う:
 
 - `fixtures/readme-typos.md` — `teh` / `fooo` を含む README(dev/02, dev/03)
-- `fixtures/review-target.sh` — 未使用変数 + 重複関数(dev/06, dev/07)
+- `fixtures/review-target.sh` — 未使用変数 + 重複関数(dev/06, dev/06b, dev/07)
 - `fixtures/reviewer-stubs/06-round{1,2}.md` — dev/06 のレビューループ
   round 別 canned findings(round1 = 2 件 apply、round2 = 0 件完了)
 - `fixtures/reviewer-stubs/06b-round1.md` — dev/06b のレビューループ
