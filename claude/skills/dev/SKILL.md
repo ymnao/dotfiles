@@ -98,7 +98,7 @@ user に報告して指示を待つ。
 
 以下を順に実行する。**修正が入ったら再度 1 周目から回す (上限 2 周)**。
 2 周目でも新規指摘が出た場合は残りを fix せず記録し、step 5 の /pr の
-fix-or-issue ポリシーに委ねる (発散防止)。
+fix-or-issue-or-dismiss ポリシーに委ねる (発散防止)。
 
 1. `/simplify` — 指摘を apply (skip 判断は理由を記録)
 2. `code-reviewer` サブエージェントを Agent tool (`subagent_type:
@@ -135,7 +135,7 @@ codex-review は step 5 の /pr が risk tier に応じて実行するため
     (round=1 の end でのみ出現しうる、round=2 では出さない)
   - `complete` — 指摘 0 で loop 正常終了 (round=1 で 0 指摘完了も含む)
   - `cap-reached` — round=2 で残指摘があるが 2 周上限のため fix せず
-    step 5 (/pr) の fix-or-issue へ引き渡す
+    step 5 (/pr) の fix-or-issue-or-dismiss へ引き渡す
 - **round=2 の判定基準**: 「発散防止のため 2 周目では新規指摘を
   fix しない」規約 (本 step 冒頭) に従い round=2 の `applied` は必ず
   `0`。status は `complete` (残指摘 0) か `cap-reached` (残指摘あり)
@@ -170,7 +170,8 @@ merge 後の後続は `/next` skill が担う。
   code-reviewer サブエージェントの orchestrator であり、各 skill の
   手順を上書きしない。矛盾がある場合は個別 skill の記述が優先
 - レビューループの上限 2 周は発散防止の意図的な制限。上限到達で残った
-  finding は /pr の fix-or-issue ポリシー (fix か issue 起票) で必ず
-  行き先が付くため、黙って消えることはない
+  finding は /pr の fix-or-issue-or-dismiss ポリシー (fix / issue 起票 / 対応
+  しない の三択、user チェックポイントを挟む) で必ず行き先が付くため、
+  黙って消えることはない
 - PR 作成は明示指示待ちの原則 (memory) の例外: `/dev` の起動自体が
   PR 作成までの明示指示とみなす
