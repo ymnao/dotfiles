@@ -32,13 +32,26 @@ skill-creator の eval 実行機能を使う場合はそのセッション出力
 ### レビューループの stub 契約遵守 grep <a id="review-loop-stub-not-invoked"></a>
 
 dev/06 / dev/07 のように reviewer stub 契約 ([`reviewer-stub-contract`](#reviewer-stub-contract))
-を適用する eval では、`/simplify` `/code-review` `codex-review` を
-実起動していないことを以下の共通 grep で検証する (単なる文中言及と
-区別するため `<command-name>` タグ形式に限定):
+を適用する eval では、`/simplify` slash command (および万一の
+`/code-review` / `codex-review` 誤起動) を実起動していないことを以下の
+共通 grep で検証する (単なる文中言及と区別するため `<command-name>`
+タグ形式に限定):
 
 ```bash
 ! grep -qE '^<command-name>(/?simplify|/?code-review|/?codex-review)</command-name>$' "$transcript"
 ```
+
+`code-reviewer` は Agent tool 経由で起動されるため `<command-name>` タグには
+現れない。Agent 起動の禁止は以下の grep で機械検証する (transcript 中の
+Agent tool 呼び出し JSON には `subagent_type` 引数が含まれる):
+
+```bash
+! grep -qE '"subagent_type"[[:space:]]*:[[:space:]]*"code-reviewer"' "$transcript"
+```
+
+pattern が transcript 形式変更で追いつかなくなった場合の fallback として
+stub 契約 (「reviewer は stub のみ、Agent 実起動しない」) の transcript
+判定 checkbox でも二重担保する。
 
 ### レビューループ構造化ログの phase 順序・一意性 awk <a id="review-loop-phase-order"></a>
 
@@ -169,12 +182,14 @@ after_prs=$(gh pr list --state all --limit 1000 --json number -q '.[].number' | 
 
 ### reviewer stub 契約(dev/06, dev/07 決定化) <a id="reviewer-stub-contract"></a>
 
-dev/06 と dev/07 のレビューループは、実 reviewer(`/simplify` /
-`/code-review`)の出力が非決定なため findings を stub 化する。stub 契約
+dev/06 と dev/07 のレビューループは、実 reviewer(`/simplify` slash
+command と `code-reviewer` サブエージェント)の出力が非決定なため findings
+を stub 化する。stub 契約
 の中身は以下で、06/07 の Prompt はこの契約を参照するのみ(3 重管理を
 避けるため各 eval には差分だけを書く):
 
-- SKILL.md step 4 の `/simplify` と `/code-review` を **実起動しない**
+- SKILL.md step 4 の `/simplify` slash command と `code-reviewer` サブ
+  エージェントを **実起動しない**
 - 代わりに N 周目のレビュー結果として
   `claude/skills/dev/evals/fixtures/reviewer-stubs/<eval>-round<N>.md` を
   読み、その内容を当該 round の指摘一覧とみなす
@@ -197,7 +212,7 @@ dev/06 と dev/07 のレビューループは、実 reviewer(`/simplify` /
   (`REPORT-ONLY` を含む全件、apply/skip を問わず)
 
 stub 契約遵守は Pass criteria の transcript 判定チェックボックスで
-二重検証する(「`/simplify` / `/code-review` を実起動していない」等)。
+二重検証する(「`/simplify` / `code-reviewer` を実起動していない」等)。
 
 ## fixtures
 
