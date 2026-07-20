@@ -48,6 +48,8 @@ For each finding, Read the actual `file`:`line` (and enough surrounding code to 
 - CONFIRMED but below threshold → do NOT fix; record as REPORT-ONLY.
 - REFUTED → do NOT fix.
 
+**例外**: fix が本 PR のスコープを明確に超える場合 (別コンポーネントへの波及、主旨と無関係の構造変更、新 eval / 新 infra の追加が必要) は、CONFIRMED HIGH でも fix せず REPORT-ONLY として記録し、行き先判断は `$HOME/.claude/skills/pr/SKILL.md` の fix-or-issue-or-dismiss ポリシー (step 4) に委ねる。「面倒」「対象ファイルが多い」等のコスト回避理由では使わない(その場合は fix する)。
+
 Do not commit anything — leave fixes in the working tree for the user / `/pr`.
 
 ### 4. Confirm (only if fixes were applied)

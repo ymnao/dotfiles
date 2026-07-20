@@ -190,7 +190,7 @@ check "commit-missing"   2 "$(run_hook_in "$GH_REPO" missing 'gh pr create --tit
 # --draft=false は bypass しない (draft 判定の退行検出。CI 失敗なら block)
 check "draft-false-no-bypass" 2 "$(run_hook_in "$GH_REPO" failure 'gh pr create --draft=false --title t')"
 
-# --- fix-or-issue ポリシー (defer(未起票) 検査) --------------------------
+# --- fix-or-issue-or-dismiss ポリシー (defer(未起票) 検査) --------------
 # body-file に defer(未起票) が含まれる normal PR は block (CI 状態に無関係)。
 # fixture に success を渡すことで「defer 検査が退行して CI 経路に落ちたら
 # exit 0 になり FAIL する」構造にする (bypass 系テストと同じ退行検出設計)。
@@ -243,11 +243,11 @@ check "clean-short-F"       0 "$(run_hook_in "$GH_REPO" success "gh pr create --
 check "defer-draft-bypass" 0 "$(run_hook_in "$GH_REPO" failure "gh pr create --draft --title t --body-file $BASE/defer-body.md")"
 
 # defer block 時の stderr にポリシー説明が含まれる
-check_stderr "stderr-defer-policy" "fix-or-issue" success "gh pr create --title t --body-file $BASE/defer-body.md"
+check_stderr "stderr-defer-policy" "fix-or-issue-or-dismiss" success "gh pr create --title t --body-file $BASE/defer-body.md"
 
 # marker 同期検証: hook の DEFER_MARKER リテラルが pr skill (SKILL.md) にも
-# 同一表記で存在すること。どちらか一方だけ表記を変えると fix-or-issue
-# ポリシーが黙って無効化される drift を機械的に検出する。
+# 同一表記で存在すること。どちらか一方だけ表記を変えると
+# fix-or-issue-or-dismiss ポリシーが黙って無効化される drift を機械的に検出する。
 hook_marker=$(sed -nE 's/^DEFER_MARKER="(.*)"$/\1/p' "$HOOK" | head -1)
 if [ -n "$hook_marker" ] && grep -qF "$hook_marker" "$REPO_ROOT/claude/skills/pr/SKILL.md"; then
   pass=$((pass + 1))
