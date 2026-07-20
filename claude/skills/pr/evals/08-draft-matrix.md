@@ -1,0 +1,114 @@
+# eval: pr — draft 判定表駆動 (4 行)
+
+`/pr` step 4 の draft 判定 4 bullets が仕様どおりに動くことを、
+reviewer stub と gh stub を組み合わせて 4 行の表として検証する。
+
+判定行 (対応する stub と設定):
+
+| # | 条件 | stub fixture | GH_STUB_FAIL | 期待判定 |
+|---|---|---|---|---|
+| 1 | (a) 未 fix 残存 | `08-a-remaining.md` | (なし) | **draft** |
+| 2 | (b) 起票済 + (c) 混在 | `08-b-issued-plus-c.md` | (なし) | **normal** |
+| 3 | (c) のみ | `08-c-only.md` | (なし) | **normal** |
+| 4 | (b) 起票失敗 | `08-b-issue-failed.md` | `issue create` | **draft** (step 4 pending) |
+
+## Setup (全行共通)
+
+```bash
+set -o pipefail
+git checkout main
+branch="feature/eval-pr-draft-$(date +%s)"
+git checkout -b "$branch"
+printf 'export const sub = (a, b) => a - b\n' >> src/util.js
+git add src/util.js && git commit -m "feat: sub 関数を追加"
+
+stub_bin=$(mktemp -d)
+cp $HOME/development/important/dotfiles/claude/skills/pr/evals/fixtures/stubs/gh "$stub_bin/gh"
+chmod +x "$stub_bin/gh"
+export EVAL_LOG_DIR=$(mktemp -d)
+export PATH="$stub_bin:$PATH"
+
+transcript=$(mktemp)
+trap 'rm -f "$transcript"; rm -rf "$stub_bin" "$EVAL_LOG_DIR"' EXIT INT TERM
+```
+
+## Prompt (共通)
+
+```
+/pr を実行して。reviewer stub 契約を適用し findings は $stub とみなす
+(README.md#reviewer-stub-contract)。user checkpoint で停止した場合は
+分類表を提示した上で `OK` として承認扱いにして続行してよい (本 eval は
+draft/normal 判定側の検証が目的で、checkpoint 停止側は 07 で検証済)。
+stub 読込時は「[pr/review] stub-loaded stub=<path> count=<n>」を出力。
+```
+
+### 判定行 1: (a) 残存 → draft
+
+```bash
+stub=$HOME/development/important/dotfiles/claude/skills/pr/evals/fixtures/reviewer-stubs/08-a-remaining.md
+env PATH="$stub_bin:$PATH" EVAL_LOG_DIR="$EVAL_LOG_DIR" \
+    claude --model claude-sonnet-5 -p "<Prompt>" | tee "$transcript"
+```
+
+Pass criteria:
+- [ ] `gh pr create` の argv に `--draft` が含まれる:
+      `awk '/^cmd=pr create/ {f=1; next} /^cmd=/ {f=0} f && /^argv\[[0-9]+\]=--draft$/ {found=1} END {exit found?0:1}' "$EVAL_LOG_DIR/gh-calls.log"`
+- [ ] transcript / PR body evidence に `step 4 pending` 相当の記録
+
+### 判定行 2: (b) 起票済 + (c) → normal
+
+```bash
+stub=$HOME/development/important/dotfiles/claude/skills/pr/evals/fixtures/reviewer-stubs/08-b-issued-plus-c.md
+env PATH="$stub_bin:$PATH" EVAL_LOG_DIR="$EVAL_LOG_DIR" \
+    claude --model claude-sonnet-5 -p "<Prompt>" | tee "$transcript"
+```
+
+Pass criteria:
+- [ ] `gh issue create` 1 回 (F1 の (b) 起票):
+      `[ "$(grep -c '^cmd=issue create' "$EVAL_LOG_DIR/gh-calls.log")" = "1" ]`
+- [ ] `gh pr create` の argv に `--draft` が **含まれない**:
+      `! awk '/^cmd=pr create/ {f=1; next} /^cmd=/ {f=0} f && /^argv\[[0-9]+\]=--draft$/ {found=1} END {exit found?0:1}' "$EVAL_LOG_DIR/gh-calls.log"`
+- [ ] transcript / PR body に「追跡しない (user 指示:」が出現 ((c) 記録)
+- [ ] `defer(未起票)` marker は body に **出現しない**:
+      `! grep -q 'defer(未起票)' "$transcript"`
+
+### 判定行 3: (c) のみ → normal
+
+```bash
+stub=$HOME/development/important/dotfiles/claude/skills/pr/evals/fixtures/reviewer-stubs/08-c-only.md
+env PATH="$stub_bin:$PATH" EVAL_LOG_DIR="$EVAL_LOG_DIR" \
+    claude --model claude-sonnet-5 -p "<Prompt>" | tee "$transcript"
+```
+
+Pass criteria:
+- [ ] `gh issue create` 0 回
+- [ ] `gh pr create` に `--draft` 含まれない
+- [ ] transcript に「追跡しない (user 指示:」出現
+- [ ] `defer(未起票)` marker は body に出現しない
+
+### 判定行 4: (b) 起票失敗 → draft (step 4 pending)
+
+```bash
+stub=$HOME/development/important/dotfiles/claude/skills/pr/evals/fixtures/reviewer-stubs/08-b-issue-failed.md
+GH_STUB_FAIL='issue create' env PATH="$stub_bin:$PATH" EVAL_LOG_DIR="$EVAL_LOG_DIR" \
+    claude --model claude-sonnet-5 -p "<Prompt>" | tee "$transcript"
+```
+
+Pass criteria:
+- [ ] `gh issue create` が >=1 回試みられ、いずれも stub の失敗注入で exit 1
+      (skill 側は失敗を検知して draft 判定 bullet 2 に落ちる)
+- [ ] `gh pr create` の argv に `--draft` 含まれる
+- [ ] transcript / PR body に `step 4 pending` 記録
+
+## 共通 Pass criteria (全行)
+
+- [ ] stub 読込ログが出た:
+      `grep -q '^\[pr/review\] stub-loaded' "$transcript"`
+- [ ] codex-review / code-reviewer / fable サブエージェント未起動
+
+## Cleanup
+
+```bash
+git checkout main
+[ "$branch" != "main" ] && git branch -D "$branch" 2>/dev/null || true
+```

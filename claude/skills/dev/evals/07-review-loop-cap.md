@@ -73,6 +73,24 @@ transcript 判定 (human runner):
 - [ ] step 5 で /pr を呼び、残 finding が /pr の fix-or-issue-or-dismiss ポリシー
       (fix / issue 起票 / 対応しない の三択) に必ず引き渡された
 
+### cap 到達後 checkpoint 発火 checklist (issue #163 項 6)
+
+/pr に引き渡された残 finding が (b) or (c) を含むため /pr step 4 の
+user checkpoint が発火する。以下 3 点を human runner が確認する
+(gh 呼び出し履歴の機械検証は pr/evals/07-checkpoint-gate.md 側で担当。
+本 eval は「cap 到達 → checkpoint 発火」の橋渡し経路の確認に focus):
+
+- [ ] cap 到達後、/pr の分類表が transcript に提示された (行頭 `|` +
+      `Finding` の header 行が cap-reached ログ以降に出現)
+- [ ] 分類表提示から user 承認までの間に、`gh issue create` / `gh pr create`
+      が実行されていない (cap 引き渡し由来の finding に対する副作用ゼロ):
+      Setup で記録した `before_issues` と、承認前時点の
+      `gh issue list --state open --limit 100 --json number -q '.[].number' | sort -u`
+      が一致すること。PR は `gh pr list --state all` の前後 diff で判定
+      ([`README.md#pr-not-created-check`](README.md#pr-not-created-check))
+- [ ] user 承認後にのみ issue 起票 / PR 作成が進行した (承認応答を
+      入れずに終わった eval 実行では PR も issue も作られていない)
+
 ## Cleanup
 ```bash
 pr_number=$(gh pr view --json number -q .number 2>/dev/null)
