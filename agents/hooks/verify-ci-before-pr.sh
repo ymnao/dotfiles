@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # PreToolUse hook (Claude Code / Codex CLI 共通): `gh pr create` の実行前に
-# (1) HEAD コミットの CI が green か、(2) PR body に fix-or-issue ポリシー違反
+# (1) HEAD コミットの CI が green か、(2) PR body に fix-or-issue-or-dismiss ポリシー違反
 # (「defer(未起票)」marker) が残っていないか、の 2 点を検証する
 # 正本: agents/hooks/verify-ci-before-pr.sh
 # (claude/hooks/ と codex/hooks/ からは相対 symlink で参照される)
@@ -49,7 +49,7 @@ if printf '%s\n' "$gh_segment" | grep -qE '([[:space:]]|^)(--draft(=([Tt][Rr][Uu
   exit 0
 fi
 
-# fix-or-issue ポリシー検査 (pr skill 参照): PR body に「defer(未起票)」が
+# fix-or-issue-or-dismiss ポリシー検査 (pr skill 参照): PR body に「defer(未起票)」が
 # 残ったままの normal PR 作成をブロックする。finding は「fix 済み」か
 # 「issue URL 起票済み」のどちらかでなければならない (draft は上で bypass 済み)。
 # --body-file <path> / --body-file=<path> の両形式からファイルを解決し、
@@ -82,7 +82,7 @@ if [[ -n "$body_file" || $gh_segment == *--body-file* ]] \
   if [[ -z "$body_file" || "$body_file" == "-" || ! -f "$body_file" || ! -r "$body_file" ]]; then
     cat >&2 <<EOF
 [verify-ci-before-pr] --body-file の値を検査可能な実ファイルとして解決できません (got: '${body_file:-<未解決>}')。
-fix-or-issue ポリシー検査のため、変数展開や stdin (-) ではなくリテラルの実ファイルパスで渡してください。
+fix-or-issue-or-dismiss ポリシー検査のため、変数展開や stdin (-) ではなくリテラルの実ファイルパスで渡してください。
 WIP として進めたい場合は --draft を付ければスキップします。
 EOF
     exit 2
@@ -110,7 +110,7 @@ fi
 if [[ -n "$defer_found" ]]; then
   cat >&2 <<EOF
 [verify-ci-before-pr] PR body に「$DEFER_MARKER」が含まれています ($defer_found)。
-fix-or-issue ポリシー: 未 fix の finding は gh issue create で起票して URL を記載してください。
+fix-or-issue-or-dismiss ポリシー: 未 fix の finding は gh issue create で起票して URL を記載してください。
 WIP として進めたい場合は --draft を付ければスキップします。
 EOF
   exit 2

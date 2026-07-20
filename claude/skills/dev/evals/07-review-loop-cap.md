@@ -1,4 +1,4 @@
-# eval: dev — レビューループは 2 周が上限、残 finding は /pr の fix-or-issue へ委ねる (reviewer stub 決定化)
+# eval: dev — レビューループは 2 周が上限、残 finding は /pr の fix-or-issue-or-dismiss へ委ねる (reviewer stub 決定化)
 
 ## Setup
 `review-target.sh` fixture を修正対象の実ファイルとして扱う。findings は
@@ -70,8 +70,8 @@ transcript 判定 (human runner):
       (fixture の「apply しない」指示に従い、内容の妥当性を人間が確認)
 - [ ] cap (2 周上限) 到達後、残 finding を PR 本文 evidence または
       会話ログに明記した (黙って消えていない)
-- [ ] step 5 で /pr を呼び、残 finding が /pr の fix-or-issue ポリシー
-      (fix コミット or issue 起票) に必ず引き渡された
+- [ ] step 5 で /pr を呼び、残 finding が /pr の fix-or-issue-or-dismiss ポリシー
+      (fix / issue 起票 / 対応しない の三択) に必ず引き渡された
 
 ## Cleanup
 ```bash

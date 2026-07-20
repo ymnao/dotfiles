@@ -156,7 +156,7 @@ reviewer stub 契約を適用する eval では、上記に加えて stub 読込
 push し、CI 実行と後続の evidence 組み立て・issue 起票を並走させる
 (CI green 確認ゲート自体は維持)。
 その上で `/pr` skill を実行する (risk 分類 → tier 別 codex-review →
-fix-or-issue → evidence 付き PR 作成まで /pr の手順に従う)。
+fix-or-issue-or-dismiss → evidence 付き PR 作成まで /pr の手順に従う)。
 
 ### 6. 停止
 

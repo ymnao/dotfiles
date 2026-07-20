@@ -24,16 +24,13 @@ Run each `gh` command as a bare invocation and substitute prior output literally
    - **medium**: run the codex-review `security` perspective (follow the codex-review skill's detect→verify→apply→confirm steps for that one perspective). Also run the project's test suite if one exists.
    - **high**: run all 3 codex-review perspectives AND the project's test suite. Then do the explain-the-diff walkthrough (step 5).
    - **codex 不能時のフォールバック**(not installed / sandbox skip (exit 3) / rate-limit skip (exit 4) いずれも): 第二意見をゼロにせず、**別系統サブエージェント(Agent tool, `model: "fable"`)のフレッシュレビュー**で代替する。skip された観点のプロンプト(`codex/review-prompts/<P>.md`)と diff を渡し、findings は codex-review と同じ verify→apply 手順で処理する。evidence には「codex-review skipped (<理由>) → fable 代替: <結果>」と記録する。Do not silently skip.
-   - **Fix-or-issue-or-dismiss ポリシー (三択)**: レビューで確認された finding の行き先は次の 3 つ。「起票せず次セッションに暗黙持ち越し」は不可(verify-ci-before-pr hook も body 内の `defer(未起票)` を検出すると `gh pr create` をブロックする):
-     - **(a) 本 PR で fix**: 主旨に直結、または CONFIRMED HIGH で本 PR スコープ内
-     - **(b) issue 起票して追跡**: 主旨から離れる / スコープ超過だが追跡は必要。**同根 2 件以上は 1 本の統合 issue にまとめる**(根拠共通性を body に列挙)
+   - **Fix-or-issue-or-dismiss ポリシー (三択)**: レビューで確認された finding の行き先は次の 3 つ。スコープ距離 (主旨との近さ) で振り分ける。「起票せず次セッションに暗黙持ち越し」は不可(verify-ci-before-pr hook も body 内の `defer(未起票)` を検出すると `gh pr create` をブロックする。ただし hook が検証するのは marker 有無のみで、(c) 対応しない の許可条件や user 承認の実在は hook では検証されない — skill 遵守で担保する):
+     - **(a) 本 PR で fix**: スコープ距離「直結 (主旨と同機能・同ファイル)」、または CONFIRMED HIGH で本 PR スコープ内
+     - **(b) issue 起票して追跡**: スコープ距離「隣接 (主旨外だが関連)」以上。同一根本原因 (共通 helper 欠如 / eval 未整備 等) から派生する finding が **2 件以上**あれば 1 本の統合 issue にまとめる (body に個別 finding を列挙)。1 件のみなら単独起票。総量ベース閾値 (N 件超で自動統合) は使わない(同根性のない finding を無理に束ねると追跡不能)
      - **(c) 対応しない**: 次の 3 条件のいずれかに該当するときのみ許可。**該当しなければ (b) が default**。曖昧な「後でやる」で (c) にするのは不可
        1. nit / スタイル好みで既存コードベースの一般許容水準内
        2. 指摘は正しいが修正コスト > 便益が明白 (使い捨てスクリプト等)
-       3. 検証結果 false-positive 寄りと判断された (REFUTED に近い PLAUSIBLE)
-   - **統合基準**(finding の行き先を決めるとき使う):
-     - **スコープ距離**: 「直結 (同ファイル・主旨と同機能) → fix」「隣接 (主旨外だが関連) → 単独 issue」「遠い (別コンポーネント) → 統合候補として同根性を確認」
-     - **根本共通性**: 同一根本原因 (共通 helper 欠如 / eval 未整備 等) から派生する finding が **2 件以上**あれば統合 issue 1 本にまとめる。1 件のみなら単独起票。総量ベース閾値 (N 件超で統合) は使わない(同根性のない finding を無理に束ねると追跡不能になる)
+       3. codex-review verdict が CONFIRMED だが confidence が低め、または内容が false-positive 寄りと再判断された
    - **user チェックポイント (必須ゲート)**: (b) or (c) の候補が **1 件でもあれば**、下記の分類表を 1 turn 提示して user 承認を待つ。全 finding が (a) fix のみなら止まらない
      - 分類表フォーマット:
        ```
