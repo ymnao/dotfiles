@@ -79,10 +79,10 @@ awk '/^\[dev\/review-loop\] round=[0-9]+ phase=(start|stub-loaded|end)/ {
 
 ### レビューループ構造化ログの head/dirty 不変チェック <a id="review-loop-head-dirty-invariant"></a>
 
-`/dev` SKILL.md 「レビュー round の head/dirty 不変」規約 (fix コミットを
-作らない round、すなわち round=2 全般 + round=1 で 0 件完了ケース、の
-`phase=start` と `phase=end` で `head=` と `dirty=` がそれぞれ同一)
-を検証する共通パターン。呼び出し側 eval は `start_regex` / `end_regex`
+`/dev` SKILL.md 「**fix コミットを作らない round の head/dirty 不変**」
+規約 (round=2 全般 + round=1 で 0 件完了ケース、の `phase=start` と
+`phase=end` で `head=` と `dirty=` がそれぞれ同一) を検証する共通
+パターン。呼び出し側 eval は `start_regex` / `end_regex`
 の 2 変数を bind した上で以下スニペットを実行する:
 
 ```bash
@@ -108,8 +108,9 @@ end_key=$(grep -oE "$end_regex" "$transcript" | grep -oE 'head=[a-f0-9]+ dirty=[
   二値で content diff 比較ではないため、`start dirty=1 → end dirty=1`
   で pre-existing artifact 由来なら pass するが、round 中に **新規**
   uncommitted change が加わって dirty=1 のままだった場合も同じく pass
-  する。完全検出には `git status --porcelain` の SHA を start/end で
-  比較する等の追加ロジックが必要 (現状は未実装、将来課題)
+  する。完全検出には `git status --porcelain` 出力の checksum
+  (`sha1sum` 等) を start/end で比較する等の追加ロジックが必要
+  (現状は未実装、将来課題)
 
 ### branch 変数
 
