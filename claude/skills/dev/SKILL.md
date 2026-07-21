@@ -141,11 +141,14 @@ codex-review は step 5 の /pr が risk tier に応じて実行するため
   fix しない」規約 (本 step 冒頭) に従い round=2 の `applied` は必ず
   `0`。status は `complete` (残指摘 0) か `cap-reached` (残指摘あり)
   の 2 択で、`continue` は取らない
-- **round=2 の head/dirty 不変**: round=2 は「発散防止のため fix
-  しない」規約に従い、`phase=start` と `phase=end` の `head=` は
-  同一かつ `dirty=0` でなければならない (Bash / apply_patch / sed
-  経由の混入も含めて一切の変更禁止を機械検証可能にするため。
-  Edit / Write tool call マーカーだけでは Bash 経由の変更を取りこぼす)
+- **fix コミットを作らない round の head/dirty 不変**: 「発散防止のため
+  fix しない」規約に従う round (round=2 全般 + round=1 で 0 件完了ケース)
+  では、`phase=start` と `phase=end` の `head=` と `dirty=` がそれぞれ
+  同一でなければならない (両方 `0` または両方 `1`)。Edit / Write tool
+  call マーカーでは Bash 経由の変更を取りこぼすため head + dirty の
+  同値比較で全経路 (Bash / apply_patch / sed 含む) の変更混入を検出
+  する。共通検証ロジック + `dirty=0` 強制しない rationale とトレード
+  オフは [evals/README.md#review-loop-head-dirty-invariant](evals/README.md#review-loop-head-dirty-invariant) 参照
 
 reviewer stub 契約を適用する eval では、上記に加えて stub 読込ログ
 (`phase=stub-loaded`) の出力義務がある。詳細は
