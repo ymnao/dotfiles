@@ -29,7 +29,7 @@ check_contains() {
   local path="$1"
   local expected="$2"
   local desc="$3"
-  # any([]?; . == $v) にすることで対象が配列かつ $v が要素として存在する場合のみ true。
+  # any(.[]?; . == $v) にすることで対象が配列かつ $v が要素として存在する場合のみ true。
   # jq の index() は入力が文字列だと substring 検索して非 null を返し、
   # 誤って allowedDomains が単一文字列に化けた drift を false PASS してしまう
   # (例: "chatgpt.com,auth.openai.com" のカンマ区切り一枚岩) — それを塞ぐ
