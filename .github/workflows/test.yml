@@ -19,11 +19,35 @@ permissions:
   contents: read
 
 jobs:
+  # ロケール軸再発防止 (issue #181): make test を LC_ALL=C / en_US.UTF-8 /
+  # ja_JP.UTF-8 の 3 ロケールで並列に回す。BSD/GNU awk の strcoll() 依存や
+  # UTF-8 ロケール依存のバグ (past incident: agents-md-sync の日本語文字列
+  # 誤 equal) を CI で常時検出するため。
+  #
+  # bash 版数軸 (macOS runner / bash 3.2) は Linux runner の ~10 倍分数を
+  # 消費するため本 job には含めず、別 issue で単独評価する (issue #181 参照)。
+  # macOS 手元での `make test` / `make test-locale-matrix` が事実上の bash 3.2
+  # 検出網として維持される。
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        locale: [C, en_US.UTF-8, ja_JP.UTF-8]
+    env:
+      LC_ALL: ${{ matrix.locale }}
+      LANG: ${{ matrix.locale }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      # ubuntu-latest は C / en_US.UTF-8 は含むが ja_JP.UTF-8 は無い。
+      # locale-gen は既存ロケール指定でも数秒で no-op になるため無条件実行する。
+      # 生成失敗 (runner イメージ変更等) は fail-fast したいので || true しない。
+      - name: Ensure locale ${{ matrix.locale }} is available
+        run: |
+          sudo locale-gen "${{ matrix.locale }}"
+          sudo update-locale
 
       # 開発機は Brewfile 経由 (Homebrew) で shellcheck/jq を入れるが、CI は
       # ubuntu-latest 上で Linuxbrew を起動するオーバーヘッド (数分) を避けるため
@@ -33,6 +57,24 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y shellcheck jq
 
+      # bash 版数とロケールを毎 job のログに残す (issue #181 の再発防止観点)。
+      # 何かで CI が誤 pass したときの切り分けのため、環境情報は必ず記録する。
+      - name: Show bash version and locale
+        run: |
+          bash --version
+          locale
+
+      - name: make test
+        run: make test
+
+  # lint は matrix で 3 回走らせる意味がないため単独 job に分離する
+  # (locale 非依存の secretlint 実行)。
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 10
@@ -41,9 +83,6 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-
-      - name: make test
-        run: make test
 
       - name: make lint
         run: make lint
