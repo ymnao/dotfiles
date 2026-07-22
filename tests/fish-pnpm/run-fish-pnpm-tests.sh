@@ -24,7 +24,10 @@ fi
 # ユーザー環境の ~/.local/share/pnpm/bin 有無に依存させないよう mktemp した
 # WORKDIR を PNPM_HOME として注入する。pnpm.fish 側は `set -q PNPM_HOME` で
 # 既設定を尊重するので、ここで export した値が pnpm.fish 内でそのまま使われる
-WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/fish-pnpm-test.XXXXXX")"
+WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/fish-pnpm-test.XXXXXX")" || {
+  echo "ERROR: mktemp -d failed" >&2
+  exit 1
+}
 trap 'rm -rf "$WORKDIR"' EXIT
 mkdir -p "$WORKDIR/bin"
 export PNPM_HOME="$WORKDIR"
@@ -65,6 +68,18 @@ run_case "pnpm-home-set"       0 'echo $PNPM_HOME'                              
 run_case "pnpm-bin-registered" 0 'contains $PNPM_HOME/bin $fish_user_paths; and echo REGISTERED'      "REGISTERED"
 # fish_add_path は idempotent、二重 source しても fish_user_paths に重複しない
 run_case "pnpm-bin-idempotent" 0 'source "'"$TARGET"'"; count (string match -a -- $PNPM_HOME/bin $fish_user_paths)' "^1\$"
+
+# PNPM_HOME 未設定時のフォールバック値 ($HOME/.local/share/pnpm) を検証する。
+# 上で export した PNPM_HOME を env -u で削り、pnpm.fish の or 分岐を実行させる
+fallback_out=$(env -u PNPM_HOME fish --no-config -c "source '$TARGET'; echo \$PNPM_HOME" 2>&1)
+fallback_status=$?
+fallback_expected="$HOME/.local/share/pnpm"
+if [ "$fallback_status" -eq 0 ] && [ "$fallback_out" = "$fallback_expected" ]; then
+  pass=$((pass+1))
+else
+  echo "FAIL pnpm-home-fallback: exit=$fallback_status output=$fallback_out (expected $fallback_expected)"
+  fail=$((fail+1))
+fi
 
 echo "fish-pnpm tests: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

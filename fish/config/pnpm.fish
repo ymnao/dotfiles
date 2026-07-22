@@ -1,7 +1,9 @@
 # pnpm 環境設定 (XDG Base Directory 準拠)
 # pnpm add -g の書き出し先を明示。fish_add_path は idempotent なので重複追加されない
-# 既に PNPM_HOME が設定されていれば尊重する (テスト時の差し替えを許容)
-set -q PNPM_HOME; or set -gx PNPM_HOME $HOME/.local/share/pnpm
+# ユーザーが既に PNPM_HOME を設定していれば尊重する (公式 install script や
+# テストからの差し替えを想定)。空文字列 set は default 扱いにしたいので
+# test -n で除外する
+set -q PNPM_HOME; and test -n "$PNPM_HOME"; or set -gx PNPM_HOME $HOME/.local/share/pnpm
 fish_add_path -g $PNPM_HOME/bin
 
 # npm を封じて pnpm への一本化を促す (advisory)
