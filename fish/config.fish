@@ -40,6 +40,11 @@ end
 set fish_greeting
 
 # Added by LM Studio CLI (lms)
-set -gx PATH $PATH /Users/nakiym/.lmstudio/bin
+# ユーザーホーム非依存化: `~/.lmstudio/bin` があるときだけ追加する。
+# begin/end マーカー行の文言は LMStudio installer が再検出に使うため保持
+# (再インストール時の重複追記を防ぐ)。
+if test -d $HOME/.lmstudio/bin
+    fish_add_path -g $HOME/.lmstudio/bin
+end
 # End of LM Studio CLI section
 
