@@ -96,6 +96,7 @@ test: ## Verify shell scripts (shellcheck), JSON files (jq), and hooks
 	@bash tests/verify-ci/run-verify-ci-tests.sh
 	@bash tests/integrity/run-integrity-selftest.sh
 	@bash tests/integrity/verify-guard-codex-wiring.sh
+	@bash tests/integrity/verify-settings-codex-domains.sh
 	@bash tests/session-compact/run-session-compact-tests.sh
 	@bash tests/fish-pnpm/run-fish-pnpm-tests.sh
 	@bash tests/brewfile-drift/run-brewfile-drift-tests.sh
