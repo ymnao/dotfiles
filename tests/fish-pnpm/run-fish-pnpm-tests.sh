@@ -20,6 +20,15 @@ if [ ! -f "$TARGET" ]; then
   exit 1
 fi
 
+# fish 4.x の fish_add_path は存在しないディレクトリを黙ってスキップするため、
+# ユーザー環境の ~/.local/share/pnpm/bin 有無に依存させないよう mktemp した
+# WORKDIR を PNPM_HOME として注入する。pnpm.fish 側は `set -q PNPM_HOME` で
+# 既設定を尊重するので、ここで export した値が pnpm.fish 内でそのまま使われる
+WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/fish-pnpm-test.XXXXXX")"
+trap 'rm -rf "$WORKDIR"' EXIT
+mkdir -p "$WORKDIR/bin"
+export PNPM_HOME="$WORKDIR"
+
 pass=0
 fail=0
 
@@ -50,7 +59,7 @@ run_case "npx-bare"           1 "npx"                  "pnpm dlx"
 run_case "npx-with-args"      1 "npx cowsay hi"        "pnpm dlx"
 
 # PNPM_HOME / fish_add_path 環境設定
-run_case "pnpm-home-set"       0 'echo $PNPM_HOME'                                                    "/.local/share/pnpm"
+run_case "pnpm-home-set"       0 'echo $PNPM_HOME'                                                    "^$WORKDIR\$"
 # fish_add_path -g は $fish_user_paths を更新する。--no-config 環境では
 # $PATH への再計算が発火しないため、$fish_user_paths を直接検証する
 run_case "pnpm-bin-registered" 0 'contains $PNPM_HOME/bin $fish_user_paths; and echo REGISTERED'      "REGISTERED"
