@@ -75,7 +75,8 @@
         "objects.githubusercontent.com",
         "pypi.org",
         "files.pythonhosted.org",
-        "chatgpt.com"
+        "chatgpt.com",
+        "auth.openai.com"
       ]
     },
     "excludedCommands": [
