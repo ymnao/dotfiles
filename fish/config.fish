@@ -44,7 +44,7 @@ set fish_greeting
 # begin/end マーカー行の文言は LMStudio installer が再検出に使うため保持
 # (再インストール時の重複追記を防ぐ)。
 if test -d $HOME/.lmstudio/bin
-    fish_add_path -g $HOME/.lmstudio/bin
+    fish_add_path -ga $HOME/.lmstudio/bin
 end
 # End of LM Studio CLI section
 
