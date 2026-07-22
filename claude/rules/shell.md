@@ -15,5 +15,8 @@ paths:
 - 新規スクリプトは `set -euo pipefail` から始める。exit code を自分で
   扱うスクリプトは `set -uo pipefail` にして理由をコメントに書く
 - 変数展開は常に quote する(`"$var"`)。word splitting に依存しない
+- **日本語などの多バイト文字が直後に続く変数展開は必ず `${VAR}` とブレースで
+  囲む**。bash 3.2 + UTF-8 ロケールでは多バイト文字の一部バイトが変数名に
+  取り込まれ、未定義変数として誤パースされる(`set -u` だと即死)
 - 変更後は shellcheck(`-S warning`)を通す。警告はコードを直して解消し、
   disable コメントは追加しない
