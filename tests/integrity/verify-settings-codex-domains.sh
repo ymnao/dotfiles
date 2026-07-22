@@ -29,7 +29,11 @@ check_contains() {
   local path="$1"
   local expected="$2"
   local desc="$3"
-  if jq -e --arg v "$expected" "$path | index(\$v)" "$SETTINGS" >/dev/null; then
+  # any([]?; . == $v) にすることで対象が配列かつ $v が要素として存在する場合のみ true。
+  # jq の index() は入力が文字列だと substring 検索して非 null を返し、
+  # 誤って allowedDomains が単一文字列に化けた drift を false PASS してしまう
+  # (例: "chatgpt.com,auth.openai.com" のカンマ区切り一枚岩) — それを塞ぐ
+  if jq -e --arg v "$expected" "$path | any(.[]?; . == \$v)" "$SETTINGS" >/dev/null; then
     pass=$((pass + 1))
   else
     echo "FAIL: $desc"
@@ -41,9 +45,11 @@ check_contains '.sandbox.network.allowedDomains' 'chatgpt.com' \
   "claude/settings.json: .sandbox.network.allowedDomains に chatgpt.com が無い"
 check_contains '.sandbox.network.allowedDomains' 'auth.openai.com' \
   "claude/settings.json: .sandbox.network.allowedDomains に auth.openai.com が無い (token refresh で 401)"
-# tilde を quote 内に直書きすると shellcheck SC2088 (tilde 非展開) を踏むので
-# 2 段組みで literal を組み立てる ($HOME 展開はさせない — JSON 側は "~/.codex"
-# のリテラル文字列で保存されており sandbox runtime が解釈する)
+# tilde を quote 内に直書きすると shellcheck SC2088 を踏むので 2 段組みで
+# literal を組み立てる。single-quote (`'~/.codex'`) だけでなく double-quote
+# (`"~/.codex"`) でも同じ SC2088 が発火するため、素朴な「簡略化」で
+# `codex_literal="~/.codex"` にリファクタしないこと。$HOME 展開もさせない —
+# JSON 側は "~/.codex" のリテラル文字列で保存されており sandbox runtime が解釈する。
 codex_literal='~'
 codex_literal="${codex_literal}/.codex"
 check_contains '.sandbox.filesystem.allowWrite' "$codex_literal" \
