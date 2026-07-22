@@ -2,9 +2,10 @@
 set -euo pipefail
 
 # 検証したい不変条件はバイト列の同一性。BSD awk の == は文字列比較に
-# strcoll() を使い、en_US.UTF-8 等では日本語文字列の照合順序が未定義で
-# 誤 equal になる (「## 言語」== 「## セキュリティ規約」が真になり抽出が
-# 空振りする)。C ロケール固定で byte-wise 比較にし、grep/diff も環境非依存にする。
+# strcoll() を使い、en_US.UTF-8 等では日本語文字列に照合順序が定義されず
+# strcoll が 0 (等価) を返すため誤 equal になる (「## 言語」==
+# 「## セキュリティ規約」が真になり抽出が空振りする)。C ロケール固定で
+# byte-wise 比較にし、grep/diff も環境非依存にする。
 export LC_ALL=C
 
 # agents/AGENTS.md と codex/AGENTS.md は、共通部分を手動コピーで同期する運用
