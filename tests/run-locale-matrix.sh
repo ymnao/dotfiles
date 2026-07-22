@@ -33,14 +33,18 @@ LOCALES=(C en_US.UTF-8 ja_JP.UTF-8)
 # `[:upper:]/[:lower:]` は tr 実装によって ambient LC_CTYPE の影響を受け、
 # ロケール判定用の正規化として振る舞いがブレる。shellcheck SC2018/SC2019 の
 # info は本用途では意図的に無視する。
+# さらに tr の range 解釈自体も一部実装で ambient LC_COLLATE に依存するため、
+# `LC_ALL=C tr` で ASCII バイト範囲を明示的に固定する。
 available_locales_normalized=$(
-    locale -a 2>/dev/null | tr 'A-Z' 'a-z' | tr -d '-' || true
+    locale -a 2>/dev/null | LC_ALL=C tr 'A-Z' 'a-z' | LC_ALL=C tr -d '-' || true
 )
 
 locale_available() {
     local normalized
-    normalized=$(printf '%s' "$1" | tr 'A-Z' 'a-z' | tr -d '-')
-    printf '%s\n' "$available_locales_normalized" | grep -qx "$normalized"
+    normalized=$(printf '%s' "$1" | LC_ALL=C tr 'A-Z' 'a-z' | LC_ALL=C tr -d '-')
+    # grep -F で fixed-string マッチ。正規化後のロケール名 (en_us.utf8 等) に
+    # 含まれる `.` を正規表現の任意 1 文字として解釈させないため。
+    printf '%s\n' "$available_locales_normalized" | grep -Fqx -- "$normalized"
 }
 
 # ran/skipped/failed は indexed array で持つ (bash 3.2 で使用可能な範囲)。
@@ -75,6 +79,30 @@ printf 'failed:  %s\n' "${failed[*]:-<none>}"
 if [ ${#ran[@]} -eq 0 ]; then
     printf 'ERROR: no locale in "%s" was available on this host.\n' "${LOCALES[*]}" >&2
     exit 1
+fi
+
+# 過去障害 (A)(B) は UTF-8 ロケール環境で顕在化する。UTF-8 系ロケールが LOCALES
+# に含まれているのに host で 1 つも走らなかった場合、「無事故に見えて実は UTF-8
+# パスを 1 度も検査していない」状態になり誤った安心を与える (例: C しか無い
+# minimal な環境で C 単独 PASS した結果を信頼してしまう)。fail 扱いにする。
+# LOCALES から意図的に UTF-8 を外した場合はこの分岐に入らない。
+utf8_requested=0
+for loc in "${LOCALES[@]}"; do
+    case "$loc" in
+        *[Uu][Tt][Ff]*) utf8_requested=1; break ;;
+    esac
+done
+if [ "$utf8_requested" = 1 ]; then
+    utf8_ran=0
+    for loc in "${ran[@]}"; do
+        case "$loc" in
+            *[Uu][Tt][Ff]*) utf8_ran=1; break ;;
+        esac
+    done
+    if [ "$utf8_ran" = 0 ]; then
+        printf 'ERROR: no UTF-8 locale in "%s" was available on this host; UTF-8 系回帰検査 (issue #181) が素通りするため fail 扱い。\n' "${LOCALES[*]}" >&2
+        exit 1
+    fi
 fi
 
 if [ ${#failed[@]} -gt 0 ]; then
