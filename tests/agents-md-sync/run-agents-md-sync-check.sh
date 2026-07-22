@@ -90,9 +90,7 @@ agents_common="$(tail -n +2 "$AGENTS_MD")"
 # ($0 から行末空白を除いた形と marker を比較。step 2 と同じ寛容さで揃える)
 codex_common="$(awk -v marker="$SECURITY_MARKER" '
   { line = $0; sub(/[ \t]+$/, "", line) }
-  # 空文字連結は string context 強制の防御 (真因はロケール依存の strcoll
-  # 比較で、冒頭の export LC_ALL=C が本修正。連結は無害なので残す)
-  line "" == marker "" { exit }
+  line == marker { exit }
   NR >= 2 { print }
 ' "$CODEX_MD")"
 
