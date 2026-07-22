@@ -245,6 +245,12 @@ check "defer-draft-bypass" 0 "$(run_hook_in "$GH_REPO" failure "gh pr create --d
 # defer block 時の stderr にポリシー説明が含まれる
 check_stderr "stderr-defer-policy" "fix-or-issue-or-dismiss" success "gh pr create --title t --body-file $BASE/defer-body.md"
 
+# 同上を UTF-8 ロケール固定で。heredoc の ${DEFER_MARKER} が bare $DEFER_MARKER に
+# 退行すると bash 3.2 では多バイト文字「」」の一部バイトを変数名に取り込み
+# unbound variable でポリシー説明が消える (呼び出し元が LC_ALL=C だと発火しない
+# ため明示 pin)。bash 4+ の Linux CI では原理的に再現しない macOS 専用の防御 (#181)
+LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 check_stderr "stderr-defer-policy-utf8" "fix-or-issue-or-dismiss" success "gh pr create --title t --body-file $BASE/defer-body.md"
+
 # marker 同期検証: hook の DEFER_MARKER リテラルが pr skill (SKILL.md) にも
 # 同一表記で存在すること。どちらか一方だけ表記を変えると
 # fix-or-issue-or-dismiss ポリシーが黙って無効化される drift を機械的に検出する。
