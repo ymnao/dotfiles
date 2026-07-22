@@ -24,11 +24,15 @@ set -uo pipefail
 # 実行しないロケールが host に無い場合は WARN + skip し、全体の exit code は
 # 「実行された分に fail が 1 つでもあれば非 0」で決める。
 
-LOCALES="C en_US.UTF-8 ja_JP.UTF-8"
+LOCALES=(C en_US.UTF-8 ja_JP.UTF-8)
 
 # エイリアス (例: locale -a が "en_US.utf8" と返す環境) を吸収するため、
 # 事前に available_locales を「小文字化 + ハイフン除去」で正規化しておく。
 # 以降の locale_available は grep -qx で 1 回だけ突き合わせる (O(N) 1 パス)。
+# tr の class 指定は敢えて `A-Z / a-z` (ASCII 範囲リテラル) にする。
+# `[:upper:]/[:lower:]` は tr 実装によって ambient LC_CTYPE の影響を受け、
+# ロケール判定用の正規化として振る舞いがブレる。shellcheck SC2018/SC2019 の
+# info は本用途では意図的に無視する。
 available_locales_normalized=$(
     locale -a 2>/dev/null | tr 'A-Z' 'a-z' | tr -d '-' || true
 )
@@ -45,7 +49,7 @@ ran=()
 skipped=()
 failed=()
 
-for loc in $LOCALES; do
+for loc in "${LOCALES[@]}"; do
     printf '\n===== locale=%s bash=%s =====\n' "$loc" "$BASH_VERSION"
     if ! locale_available "$loc"; then
         printf 'WARN: locale "%s" not available on this host, skipping.\n' "$loc" >&2
@@ -69,7 +73,7 @@ printf 'skipped: %s\n' "${skipped[*]:-<none>}"
 printf 'failed:  %s\n' "${failed[*]:-<none>}"
 
 if [ ${#ran[@]} -eq 0 ]; then
-    printf 'ERROR: no locale in "%s" was available on this host.\n' "$LOCALES" >&2
+    printf 'ERROR: no locale in "%s" was available on this host.\n' "${LOCALES[*]}" >&2
     exit 1
 fi
 
