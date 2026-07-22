@@ -83,7 +83,9 @@ agents_common="$(tail -n +2 "$AGENTS_MD")"
 # ($0 から行末空白を除いた形と marker を比較。step 2 と同じ寛容さで揃える)
 codex_common="$(awk -v marker="$SECURITY_MARKER" '
   { line = $0; sub(/[ \t]+$/, "", line) }
-  line == marker { exit }
+  # 空文字連結で string context を強制 (strnum 誤判定で数値見え文字列
+  # 同士が 0 == 0 にマッチする awk 実装への portability 防御)
+  line "" == marker "" { exit }
   NR >= 2 { print }
 ' "$CODEX_MD")"
 
