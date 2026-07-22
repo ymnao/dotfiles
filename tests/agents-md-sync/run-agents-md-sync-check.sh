@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# 検証したい不変条件はバイト列の同一性。BSD awk の == は文字列比較に
+# strcoll() を使い、en_US.UTF-8 等では日本語文字列の照合順序が未定義で
+# 誤 equal になる (「## 言語」== 「## セキュリティ規約」が真になり抽出が
+# 空振りする)。C ロケール固定で byte-wise 比較にし、grep/diff も環境非依存にする。
+export LC_ALL=C
+
 # agents/AGENTS.md と codex/AGENTS.md は、共通部分を手動コピーで同期する運用
 # になっている (codex/AGENTS.md 側は共通部分にセキュリティ規約セクションを
 # 追加している)。手動コピーは drift (ズレ) が機械的に検出されないと気づかれず
@@ -83,8 +89,8 @@ agents_common="$(tail -n +2 "$AGENTS_MD")"
 # ($0 から行末空白を除いた形と marker を比較。step 2 と同じ寛容さで揃える)
 codex_common="$(awk -v marker="$SECURITY_MARKER" '
   { line = $0; sub(/[ \t]+$/, "", line) }
-  # 空文字連結で string context を強制 (strnum 誤判定で数値見え文字列
-  # 同士が 0 == 0 にマッチする awk 実装への portability 防御)
+  # 空文字連結は string context 強制の防御 (真因はロケール依存の strcoll
+  # 比較で、冒頭の export LC_ALL=C が本修正。連結は無害なので残す)
   line "" == marker "" { exit }
   NR >= 2 { print }
 ' "$CODEX_MD")"
