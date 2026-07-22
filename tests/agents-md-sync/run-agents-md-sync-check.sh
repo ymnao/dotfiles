@@ -83,7 +83,11 @@ agents_common="$(tail -n +2 "$AGENTS_MD")"
 # ($0 から行末空白を除いた形と marker を比較。step 2 と同じ寛容さで揃える)
 codex_common="$(awk -v marker="$SECURITY_MARKER" '
   { line = $0; sub(/[ \t]+$/, "", line) }
-  line == marker { exit }
+  # 文字列連結で string context を強制する portability 措置。現行の
+  # BSD awk (20200816) では再現していないが、strnum を数値扱いに誤判定
+  # する awk 実装 (数値見え文字列同士が 0 == 0 でマッチする類) への防御。
+  # POSIX 上は片側 "" で十分だが、Kernighan/Pike の慣用に合わせ両側書く。
+  line "" == marker "" { exit }
   NR >= 2 { print }
 ' "$CODEX_MD")"
 
