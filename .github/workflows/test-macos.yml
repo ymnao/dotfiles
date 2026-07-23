@@ -35,10 +35,12 @@ on:
     - cron: '17 21 * * 0'
   workflow_dispatch:
 
-# 既存 test.yml と group 名を分ける (test-macos-<ref>)。weekly と手動 dispatch が
-# 重なっても頻度が低いので両方走らせる (cancel-in-progress: false)。
+# workflow 名から group を派生させ、既存 test.yml (`${{ github.workflow }}-${{ github.ref }}`)
+# と同じパターンにする (workflow 名を変えたら group 名も自動追従)。既存 test.yml とは
+# workflow 名が異なるため衝突しない。weekly と手動 dispatch が重なっても頻度が
+# 低いので両方走らせる (cancel-in-progress: false)。
 concurrency:
-  group: test-macos-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
