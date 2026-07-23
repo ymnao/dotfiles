@@ -1,0 +1,130 @@
+# macOS runner での定期検証 CI。配置先: .github/workflows/test-macos.yml
+#
+# 目的 (issue #194): 既存 test.yml の Linux (ubuntu-latest / GNU awk / bash 5)
+# matrix では原理的に再現しない 2 クラスの過去バグを CI で常時ガードする。
+#   (A) BSD awk `==` の strcoll() 依存で LC_ALL=en_US.UTF-8 では日本語文字列が
+#       誤 equal になる (GNU awk では strcoll を用いず原理的に非再現)
+#   (B) bash 3.2 + UTF-8 heredoc 内 "$VAR」" (多バイト文字直後の変数展開) が
+#       unbound で即死 (bash 4+/5 では非再現、macOS default bash は 3.2 で固定)
+#
+# なぜ既存 test.yml と分離するか:
+#   - 既存 test.yml は `on: push` 前提で concurrency / コメント設計が組まれて
+#     おり、schedule/dispatch を同居させると全 job に if 条件が波及して可読性が
+#     壊れる。fail 通知も workflow 単位で件名が分かれるため「macOS が壊れた」
+#     と一目で分かる利点がある
+#
+# なぜ weekly なのか:
+#   - macos-latest runner は Linux 比 ~10 倍の分数コスト。push 毎に走らせると
+#     日次コストが跳ねるため週次に落とす (issue #194 選択肢 2 として合意)
+#   - トレードオフ: BSD awk / bash 3.2 の地雷を踏んだ変更が merge から最長
+#     7 日間検出されない。awk / hook / heredoc 周りの大きい変更をした際は
+#     workflow_dispatch で手動起動する運用でカバー
+#
+# schedule の既知の罠:
+#   - repo に 60 日間 activity が無いと schedule workflow は auto-disable される
+#     (dotfiles の活動頻度なら実質問題なし、記録のみ)
+#   - schedule 実行は default branch (main) の HEAD で走る。feature ブランチで
+#     ファイルを追加しただけでは schedule 発火しない (merge 必要)
+name: test (macOS)
+
+on:
+  # UTC 日曜 21:17 = JST 月曜 06:17。GitHub Actions は hh:00 / hh:30 が
+  # 全 repo で混雑して遅延・欠落しやすいので分に 17 の offset を入れる。
+  # 週初め朝 JST に fail が届くと平日の作業開始前に気づける。
+  schedule:
+    - cron: '17 21 * * 0'
+  workflow_dispatch:
+
+# workflow 名から group を派生させ、既存 test.yml (`${{ github.workflow }}-${{ github.ref }}`)
+# と同じパターンにする (workflow 名を変えたら group 名も自動追従)。既存 test.yml とは
+# workflow 名が異なるため衝突しない。weekly と手動 dispatch が重なっても頻度が
+# 低いので両方走らせる (cancel-in-progress: false)。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+# 目的 (B) の bash 3.2 を確実に踏むため step の shell を /bin/bash に固定する。
+# GitHub Actions は macos runner で既定 shell に `/usr/local/bin/bash` (Homebrew
+# の bash 5.x) を使うため、明示 pin しないと bash 3.2 固有クラス (heredoc
+# unbound 等) が CI ですり抜ける。
+defaults:
+  run:
+    shell: /bin/bash --noprofile --norc -euo pipefail {0}
+
+jobs:
+  test-macos:
+    runs-on: macos-latest
+    # macOS runner が hang すると 6 時間課金される保険 (Linux の 10 倍係数)。
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      # macOS runner は Homebrew 事前インストール済み。依存 2 個のみのため
+      # キャッシュ action は不採用。pre-install されていれば "already installed"
+      # で通る (エラーにならない)。
+      - name: Install shellcheck and jq (brew)
+        run: brew install shellcheck jq
+
+      # この job の存在意義 (BSD awk + bash 3.2 + en_US.UTF-8) をログで明示し、
+      # **前提が崩れたら fail させる**。表示だけだと macos runner の更新で
+      # 静かに前提が外れ、workflow が「green だが目的を検証していない」偽 pass
+      # 状態になる。BASH_VERSION は現在 shell の export、/bin/bash --version は
+      # pin 対象の絶対 path 両方で確認する (`bash --version` は PATH 経由で
+      # Homebrew bash 5.x に化けるため使わない)。
+      - name: Verify environment (bash 3.2 / BSD awk / en_US.UTF-8)
+        run: |
+          printf 'BASH_VERSION=%s\n' "$BASH_VERSION"
+          /bin/bash --version
+          command -v awk
+          type awk
+          shellcheck --version
+          jq --version
+          locale -a | grep -i -E 'en_US|ja_JP' || true
+
+          # (a) 実行 shell が bash 3.2 系であること。目的 (B) の bash 3.2 heredoc
+          # unbound は 4+/5 では非再現、3.x で走ってないと workflow の存在意義の
+          # 半分を失う。Apple が /bin/bash を更新したら fail して気づく設計。
+          case "$BASH_VERSION" in
+            3.2.*) ;;
+            *) echo "ERROR: expected BASH_VERSION=3.2.*, got: $BASH_VERSION" >&2; exit 1 ;;
+          esac
+
+          # (b) awk が BSD awk であること。GNU awk (gawk) は `--version` を
+          # サポートするが BSD awk は usage error で非 0 終了する。gawk が
+          # 先行 PATH に入っている場合、目的 (A) の strcoll 依存は原理的に
+          # 再現しないので fail させる。
+          if awk --version >/dev/null 2>&1; then
+            echo "ERROR: awk supports --version (likely GNU awk). Expected BSD awk." >&2
+            exit 1
+          fi
+
+          # (c) en_US.UTF-8 が host にあること。目的 (A) の BSD awk strcoll
+          # バグはこのロケールで発火した実績があり、driver は skip 挙動を
+          # 持つため「en_US.UTF-8 が無いまま他 UTF-8 だけ通って green」の
+          # 偽 pass を防ぐには workflow 側で事前アサートが必要。
+          if ! locale -a | tr '[:upper:]' '[:lower:]' | grep -Fqx en_us.utf-8; then
+            if ! locale -a | tr '[:upper:]' '[:lower:]' | grep -Fqx en_us.utf8; then
+              echo "ERROR: en_US.UTF-8 locale required for BSD awk regression" >&2
+              exit 1
+            fi
+          fi
+
+      # step-level LC_ALL は付けない: driver (tests/run-locale-matrix.sh) 自身が
+      # 3 ロケールを振るため、外から固定すると driver の意図と衝突する。
+      # driver は host に無いロケールを WARN + skip し、UTF-8 系が 1 つも走ら
+      # なかった場合は fail 扱いにする (誤安心防止 gate) ため、macOS runner の
+      # ロケール事情に前提を置かなくても壊れない。
+      #
+      # PATH の /bin 先行は `make` が起動する sub-shell 内 (`bash tests/...`)
+      # で bash 3.2 を確実に解決させるため。defaults.run.shell の pin は
+      # step 直下の shell にしか効かない (make が spawn するプロセスの PATH
+      # 解決は別)。
+      - name: make test-locale-matrix
+        run: |
+          export PATH="/bin:$PATH"
+          which bash
+          /bin/bash --version
+          make test-locale-matrix
