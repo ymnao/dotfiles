@@ -61,6 +61,8 @@ EOF
     chmod +x "${stub_dir}/locale"
 
     # make stub の呼び出し回数と exit code の制御ファイル。
+    # exit_codes は space 区切りを 1 行 1 exit code に展開したいため、
+    # 意図的に word split させる (SC2086 の info はここでは正しい挙動)。
     echo 0 > "${case_dir}/make_count"
     : > "${case_dir}/make_calls.log"
     if [ -z "${exit_codes}" ]; then
@@ -137,6 +139,35 @@ assert_not_contains() {
     fi
 }
 
+# make_calls.log のように「1 行 = 1 ロケール名」形式のファイルに対する
+# 行境界一致版。substring 一致だと将来 LOCALES に "C" を部分文字列として
+# 含む名前 (例: zh_CN.UTF-8) が入った時に偽陽性/偽陰性を起こすため分ける。
+assert_line_present() {
+    local label="$1" needle="$2" file="$3"
+    if grep -Fqx -- "${needle}" "${file}"; then
+        pass=$((pass + 1))
+    else
+        echo "FAIL ${label}: line=[${needle}] not found in ${file}"
+        echo "----- ${file} -----"
+        cat "${file}"
+        echo "----- end -----"
+        fail=$((fail + 1))
+    fi
+}
+
+assert_line_absent() {
+    local label="$1" needle="$2" file="$3"
+    if grep -Fqx -- "${needle}" "${file}"; then
+        echo "FAIL ${label}: line=[${needle}] unexpectedly found in ${file}"
+        echo "----- ${file} -----"
+        cat "${file}"
+        echo "----- end -----"
+        fail=$((fail + 1))
+    else
+        pass=$((pass + 1))
+    fi
+}
+
 make_call_count() {
     local case_name="$1"
     wc -l < "${WORKDIR}/${case_name}/make_calls.log" | tr -d ' '
@@ -153,14 +184,15 @@ setup_case "${name}" "C
 en_US.utf8
 ja_JP.utf8" "0 0 0"
 run_driver "${name}"
-assert_eq "${name} exit" "0" "$(cat "${WORKDIR}/${name}/exit")"
+dir="${WORKDIR}/${name}"
+assert_eq "${name} exit" "0" "$(cat "${dir}/exit")"
 assert_eq "${name} make call count" "3" "$(make_call_count "${name}")"
-assert_contains "${name} calls has C" "C" "${WORKDIR}/${name}/make_calls.log"
-assert_contains "${name} calls has en_US.UTF-8 (normalized-back)" \
-    "en_US.UTF-8" "${WORKDIR}/${name}/make_calls.log"
-assert_contains "${name} calls has ja_JP.UTF-8 (normalized-back)" \
-    "ja_JP.UTF-8" "${WORKDIR}/${name}/make_calls.log"
-assert_not_contains "${name} no WARN" "WARN:" "${WORKDIR}/${name}/stderr"
+assert_line_present "${name} calls has C" "C" "${dir}/make_calls.log"
+assert_line_present "${name} calls has en_US.UTF-8 (normalized-back)" \
+    "en_US.UTF-8" "${dir}/make_calls.log"
+assert_line_present "${name} calls has ja_JP.UTF-8 (normalized-back)" \
+    "ja_JP.UTF-8" "${dir}/make_calls.log"
+assert_not_contains "${name} no WARN" "WARN:" "${dir}/stderr"
 
 # ---------------------------------------------------------------------------
 # case 2: skip 分岐
@@ -171,14 +203,15 @@ name="02-skip-missing"
 setup_case "${name}" "en_US.UTF-8
 ja_JP.UTF-8" "0 0"
 run_driver "${name}"
-assert_eq "${name} exit" "0" "$(cat "${WORKDIR}/${name}/exit")"
+dir="${WORKDIR}/${name}"
+assert_eq "${name} exit" "0" "$(cat "${dir}/exit")"
 assert_eq "${name} make call count" "2" "$(make_call_count "${name}")"
-assert_not_contains "${name} C not invoked" \
-    "C" "${WORKDIR}/${name}/make_calls.log"
+assert_line_absent "${name} C not invoked" \
+    "C" "${dir}/make_calls.log"
 assert_contains "${name} WARN for C" \
-    'WARN: locale "C"' "${WORKDIR}/${name}/stderr"
+    'WARN: locale "C"' "${dir}/stderr"
 assert_contains "${name} summary skipped shows C" \
-    "skipped: C" "${WORKDIR}/${name}/stdout"
+    "skipped: C" "${dir}/stdout"
 
 # ---------------------------------------------------------------------------
 # case 3: 失敗集約
@@ -190,11 +223,12 @@ setup_case "${name}" "C
 en_US.UTF-8
 ja_JP.UTF-8" "0 1 0"
 run_driver "${name}"
-assert_eq "${name} exit" "1" "$(cat "${WORKDIR}/${name}/exit")"
+dir="${WORKDIR}/${name}"
+assert_eq "${name} exit" "1" "$(cat "${dir}/exit")"
 assert_eq "${name} make call count (continues after fail)" \
     "3" "$(make_call_count "${name}")"
 assert_contains "${name} summary failed shows en_US.UTF-8" \
-    "failed:  en_US.UTF-8" "${WORKDIR}/${name}/stdout"
+    "failed:  en_US.UTF-8" "${dir}/stdout"
 
 # ---------------------------------------------------------------------------
 # case 4: no-locale エラーパス
@@ -205,10 +239,11 @@ assert_contains "${name} summary failed shows en_US.UTF-8" \
 name="04-no-locale-error"
 setup_case "${name}" "" ""
 run_driver "${name}"
-assert_eq "${name} exit" "1" "$(cat "${WORKDIR}/${name}/exit")"
+dir="${WORKDIR}/${name}"
+assert_eq "${name} exit" "1" "$(cat "${dir}/exit")"
 assert_eq "${name} make never called" "0" "$(make_call_count "${name}")"
 assert_contains "${name} ERROR no locale" \
-    "ERROR: no locale in" "${WORKDIR}/${name}/stderr"
+    "ERROR: no locale in" "${dir}/stderr"
 
 # ---------------------------------------------------------------------------
 # case 5: UTF-8 gate (到達可能側)
@@ -219,12 +254,14 @@ assert_contains "${name} ERROR no locale" \
 name="05-utf8-gate"
 setup_case "${name}" "C" "0"
 run_driver "${name}"
-assert_eq "${name} exit" "1" "$(cat "${WORKDIR}/${name}/exit")"
+dir="${WORKDIR}/${name}"
+assert_eq "${name} exit" "1" "$(cat "${dir}/exit")"
 assert_eq "${name} make called for C only" "1" "$(make_call_count "${name}")"
+assert_line_present "${name} C was invoked" "C" "${dir}/make_calls.log"
 assert_not_contains "${name} no UTF-8 in calls" \
-    "UTF-8" "${WORKDIR}/${name}/make_calls.log"
+    "UTF-8" "${dir}/make_calls.log"
 assert_contains "${name} ERROR UTF-8 gate" \
-    "ERROR: no UTF-8 locale" "${WORKDIR}/${name}/stderr"
+    "ERROR: no UTF-8 locale" "${dir}/stderr"
 
 # ---------------------------------------------------------------------------
 
