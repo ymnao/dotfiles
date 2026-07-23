@@ -1,4 +1,4 @@
-.PHONY: help install link update clean brewfile brewfile-drift lint test test-hooks gate
+.PHONY: help install link update clean brewfile brewfile-drift lint test test-hooks test-locale-matrix gate
 
 # Default target
 .DEFAULT_GOAL := help
@@ -106,6 +106,11 @@ test: ## Verify shell scripts (shellcheck), JSON files (jq), and hooks
 
 test-hooks: ## Run hook regression tests
 	@bash tests/run-hook-tests.sh
+
+test-locale-matrix: ## Run `make test` under LC_ALL=C / en_US.UTF-8 / ja_JP.UTF-8 (issue #181)
+	@# ロケール軸再発防止 driver。詳細は tests/run-locale-matrix.sh の冒頭コメント参照。
+	@# host に無いロケールは skip される。bash 版数は現在の shell の bash をそのまま使う。
+	@bash tests/run-locale-matrix.sh
 
 gate: ## Fast verification gate (used by the Stop hook; full checks = make test)
 	@command -v jq >/dev/null || { echo "jq not installed. Run: brew install jq"; exit 1; }
