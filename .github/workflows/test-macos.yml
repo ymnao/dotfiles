@@ -46,6 +46,14 @@ concurrency:
 permissions:
   contents: read
 
+# 目的 (B) の bash 3.2 を確実に踏むため step の shell を /bin/bash に固定する。
+# GitHub Actions は macos runner で既定 shell に `/usr/local/bin/bash` (Homebrew
+# の bash 5.x) を使うため、明示 pin しないと bash 3.2 固有クラス (heredoc
+# unbound 等) が CI ですり抜ける。
+defaults:
+  run:
+    shell: /bin/bash -eo pipefail {0}
+
 jobs:
   test-macos:
     runs-on: macos-latest
@@ -61,11 +69,14 @@ jobs:
         run: brew install shellcheck jq
 
       # この job の存在意義そのもの (BSD awk + bash 3.2) をログで明示する。
-      # awk のバージョン表示は BSD/GNU で option が異なるため両方フォールバック。
+      # BSD awk は `--version` / `-W version` どちらも usage error になるため、
+      # 存在確認は `command -v` / `type` で位置と実装を示す。実行 shell が
+      # /bin/bash (3.2) であることは `bash --version` で毎回確認する。
       - name: Show bash / awk / locale
         run: |
           bash --version
-          awk --version 2>/dev/null || awk -W version 2>&1 | head -1 || true
+          command -v awk
+          type awk
           shellcheck --version
           jq --version
           locale -a | grep -i -E 'en_US|ja_JP' || true
@@ -75,5 +86,13 @@ jobs:
       # driver は host に無いロケールを WARN + skip し、UTF-8 系が 1 つも走ら
       # なかった場合は fail 扱いにする (誤安心防止 gate) ため、macOS runner の
       # ロケール事情に前提を置かなくても壊れない。
+      #
+      # PATH の /bin 先行は `make` が起動する sub-shell 内 (`bash tests/...`)
+      # で bash 3.2 を確実に解決させるため。defaults.run.shell の pin は
+      # step 直下の shell にしか効かない (make が spawn するプロセスの PATH
+      # 解決は別)。
       - name: make test-locale-matrix
-        run: make test-locale-matrix
+        run: |
+          export PATH="/bin:$PATH"
+          which bash && bash --version
+          make test-locale-matrix
