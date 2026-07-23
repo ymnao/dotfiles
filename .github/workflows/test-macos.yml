@@ -52,7 +52,7 @@ permissions:
 # unbound 等) が CI ですり抜ける。
 defaults:
   run:
-    shell: /bin/bash -eo pipefail {0}
+    shell: /bin/bash --noprofile --norc -euo pipefail {0}
 
 jobs:
   test-macos:
@@ -68,18 +68,49 @@ jobs:
       - name: Install shellcheck and jq (brew)
         run: brew install shellcheck jq
 
-      # この job の存在意義そのもの (BSD awk + bash 3.2) をログで明示する。
-      # BSD awk は `--version` / `-W version` どちらも usage error になるため、
-      # 存在確認は `command -v` / `type` で位置と実装を示す。実行 shell が
-      # /bin/bash (3.2) であることは `bash --version` で毎回確認する。
-      - name: Show bash / awk / locale
+      # この job の存在意義 (BSD awk + bash 3.2 + en_US.UTF-8) をログで明示し、
+      # **前提が崩れたら fail させる**。表示だけだと macos runner の更新で
+      # 静かに前提が外れ、workflow が「green だが目的を検証していない」偽 pass
+      # 状態になる。BASH_VERSION は現在 shell の export、/bin/bash --version は
+      # pin 対象の絶対 path 両方で確認する (`bash --version` は PATH 経由で
+      # Homebrew bash 5.x に化けるため使わない)。
+      - name: Verify environment (bash 3.2 / BSD awk / en_US.UTF-8)
         run: |
-          bash --version
+          printf 'BASH_VERSION=%s\n' "$BASH_VERSION"
+          /bin/bash --version
           command -v awk
           type awk
           shellcheck --version
           jq --version
           locale -a | grep -i -E 'en_US|ja_JP' || true
+
+          # (a) 実行 shell が bash 3.2 系であること。目的 (B) の bash 3.2 heredoc
+          # unbound は 4+/5 では非再現、3.x で走ってないと workflow の存在意義の
+          # 半分を失う。Apple が /bin/bash を更新したら fail して気づく設計。
+          case "$BASH_VERSION" in
+            3.2.*) ;;
+            *) echo "ERROR: expected BASH_VERSION=3.2.*, got: $BASH_VERSION" >&2; exit 1 ;;
+          esac
+
+          # (b) awk が BSD awk であること。GNU awk (gawk) は `--version` を
+          # サポートするが BSD awk は usage error で非 0 終了する。gawk が
+          # 先行 PATH に入っている場合、目的 (A) の strcoll 依存は原理的に
+          # 再現しないので fail させる。
+          if awk --version >/dev/null 2>&1; then
+            echo "ERROR: awk supports --version (likely GNU awk). Expected BSD awk." >&2
+            exit 1
+          fi
+
+          # (c) en_US.UTF-8 が host にあること。目的 (A) の BSD awk strcoll
+          # バグはこのロケールで発火した実績があり、driver は skip 挙動を
+          # 持つため「en_US.UTF-8 が無いまま他 UTF-8 だけ通って green」の
+          # 偽 pass を防ぐには workflow 側で事前アサートが必要。
+          if ! locale -a | tr '[:upper:]' '[:lower:]' | grep -Fqx en_us.utf-8; then
+            if ! locale -a | tr '[:upper:]' '[:lower:]' | grep -Fqx en_us.utf8; then
+              echo "ERROR: en_US.UTF-8 locale required for BSD awk regression" >&2
+              exit 1
+            fi
+          fi
 
       # step-level LC_ALL は付けない: driver (tests/run-locale-matrix.sh) 自身が
       # 3 ロケールを振るため、外から固定すると driver の意図と衝突する。
@@ -94,5 +125,6 @@ jobs:
       - name: make test-locale-matrix
         run: |
           export PATH="/bin:$PATH"
-          which bash && bash --version
+          which bash
+          /bin/bash --version
           make test-locale-matrix
