@@ -1,4 +1,4 @@
-.PHONY: help install link update clean brewfile brewfile-drift lint test test-hooks test-locale-matrix gate
+.PHONY: help install link update clean brewfile brewfile-drift lint lint-locale-pin test test-hooks test-locale-matrix gate
 
 # Default target
 .DEFAULT_GOAL := help
@@ -61,7 +61,7 @@ lint: ## Run secretlint to detect leaked secrets
 	@# する。git add -f で誤って追跡された場合は走査対象に戻る。
 	@git ls-files -z | xargs -0 pnpm exec secretlint --
 
-test: ## Verify shell scripts (shellcheck), JSON files (jq), and hooks
+test: lint-locale-pin ## Verify shell scripts (shellcheck), JSON files (jq), and hooks
 	@command -v shellcheck >/dev/null || { echo "shellcheck not installed. Run: brew install shellcheck"; exit 1; }
 	@command -v jq >/dev/null || { echo "jq not installed. Run: brew install jq"; exit 1; }
 	@echo "==> shellcheck (warning level and above)"
@@ -103,10 +103,14 @@ test: ## Verify shell scripts (shellcheck), JSON files (jq), and hooks
 	@bash tests/link/run-link-tests.sh
 	@bash tests/codex-review-skip/run-codex-skip-tests.sh
 	@bash tests/locale-matrix/run-locale-matrix-tests.sh
+	@bash tests/lint-locale-pin/run-lint-locale-pin-tests.sh
 	@echo "OK: all checks passed"
 
 test-hooks: ## Run hook regression tests
 	@bash tests/run-hook-tests.sh
+
+lint-locale-pin: ## Static linter for LC_ALL pin (issue #192, warning-only)
+	@bash scripts/lint-locale-pin.sh
 
 test-locale-matrix: ## Run `make test` under LC_ALL=C / en_US.UTF-8 / ja_JP.UTF-8 (issue #181)
 	@# ロケール軸再発防止 driver。詳細は tests/run-locale-matrix.sh の冒頭コメント参照。

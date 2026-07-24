@@ -30,6 +30,7 @@ dotfiles リポジトリ。各種開発ツールの設定ファイルを管理�
 - `make test` — 設定ファイルの検証（hook 回帰テスト含む）
 - `make test-hooks` — hook 回帰テストのみ実行
 - `make test-locale-matrix` — `make test` を LC_ALL=C / en_US.UTF-8 / ja_JP.UTF-8 の 3 ロケールで順次実行（issue #181、host に無いロケールは skip）
+- `make lint-locale-pin` — LC_ALL pin 忘れの静的リンター（issue #192、warning-only。`make test` からも実行）
 - `make gate` — Stop hook 用の高速ゲート
 
 AI 運用の方針（モデル使い分け・移行手順・ツール追加の審査基準）は [docs/ai-operations.md](docs/ai-operations.md) を参照
