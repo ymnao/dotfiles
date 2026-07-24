@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# run-integrity-check.sh 自体のシナリオテスト。
-# 偽の dotfiles と偽の HOME を組み立て、正常構成で PASS・改ざん各種で FAIL に
-# なることを検証する (検知器が壊れて常に OK を返す退行の防止)。
+# tests/integrity/ 配下の検知器 script 群の selftest。
+# 偽の dotfiles / 偽の HOME / 偽の settings.json を組み立て、正常構成で PASS・
+# 改ざん各種で FAIL になることを検証する (検知器が壊れて常に OK を返す退行の防止)。
+# 対象: run-integrity-check.sh, verify-settings-codex-domains.sh (issue #189)。
+# verify-guard-codex-wiring.sh の selftest は未実装 (別 issue で対応予定)。
 #
 # 依存: bash 3.2+ / jq / git
 
