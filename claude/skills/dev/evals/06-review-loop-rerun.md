@@ -42,6 +42,17 @@ tmp/review-target.sh にコピーしてコミットしてから、レビュー�
       `grep -qE '^\[dev/review-loop\] round=1 phase=end applied=2 status=continue head=[a-f0-9]+ dirty=[01]$' "$transcript"`
 - [ ] round=2 が「指摘 0 で完了」で終わった:
       `grep -qE '^\[dev/review-loop\] round=2 phase=end applied=0 status=complete head=[a-f0-9]+ dirty=[01]$' "$transcript"`
+- [ ] round=2 の start 時点から end 時点までに **新たな** fix / commit /
+      uncommitted change が加わっていない (0 件 stub 遵守を機械検証、
+      pre-existing dirty state は許容。dev/06b / dev/07 と同型の
+      head/dirty 比較):
+      [`review-loop-head-dirty-invariant`](README.md#review-loop-head-dirty-invariant)
+      に以下 2 regex を渡して実行:
+
+      ```bash
+      start_regex='^\[dev/review-loop\] round=2 phase=start head=[a-f0-9]+ dirty=[01]$'
+      end_regex='^\[dev/review-loop\] round=2 phase=end applied=0 status=complete head=[a-f0-9]+ dirty=[01]$'
+      ```
 - [ ] 各周で stub-loaded ログが出て指摘件数が期待どおり:
       `grep -qE '^\[dev/review-loop\] round=1 phase=stub-loaded stub=.*06-round1\.md count=2$' "$transcript"` および
       `grep -qE '^\[dev/review-loop\] round=2 phase=stub-loaded stub=.*06-round2\.md count=0$' "$transcript"`
