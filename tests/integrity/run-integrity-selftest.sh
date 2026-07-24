@@ -9,9 +9,14 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 CHECKER="${CHECKER_PATH:-$SCRIPT_DIR/run-integrity-check.sh}"
+SETTINGS_VERIFIER="${SETTINGS_VERIFIER_PATH:-$SCRIPT_DIR/verify-settings-codex-domains.sh}"
 
 if [ ! -f "$CHECKER" ]; then
   echo "ERROR: checker not found: $CHECKER" >&2
+  exit 1
+fi
+if [ ! -f "$SETTINGS_VERIFIER" ]; then
+  echo "ERROR: settings verifier not found: $SETTINGS_VERIFIER" >&2
   exit 1
 fi
 command -v jq >/dev/null 2>&1 || { echo "ERROR: jq is required" >&2; exit 1; }
@@ -123,6 +128,50 @@ check "unknown-mcp-project" 1 "$(run_checker "$H")"
 H="$BASE/home-mcp-ok"; make_good_home "$H"
 printf '{"projects":{"/x":{"allowedTools":[]}}}\n' >"$H/.claude.json"
 check "no-mcp-ok" 0 "$(run_checker "$H")"
+
+# ---- verify-settings-codex-domains.sh の selftest (issue #189) ----
+# 検知器が壊れて常に PASS を返す退行を防ぐ。base fixture は 3 項目を全て
+# 含み、tamper 版はそれぞれ 1 項目を欠落/破壊して FAIL 期待。
+run_settings_verifier() {
+  # $1=settings.json パス。exit code を echo
+  local rc=0
+  INTEGRITY_SETTINGS="$1" bash "$SETTINGS_VERIFIER" >/dev/null 2>&1 || rc=$?
+  printf '%s' "$rc"
+}
+
+make_good_settings() {
+  # $1=出力パス。verify-settings-codex-domains.sh の 3 項目を全て満たす最小 JSON
+  jq -n '{
+    sandbox: {
+      network: { allowedDomains: ["chatgpt.com", "auth.openai.com", "example.com"] },
+      filesystem: { allowWrite: ["~/.codex", "/tmp"] }
+    }
+  }' >"$1"
+}
+
+SF="$BASE/settings-ok.json"; make_good_settings "$SF"
+check "settings-baseline-ok" 0 "$(run_settings_verifier "$SF")"
+
+# fixture 1: allowedDomains から chatgpt.com を除外 → FAIL
+SF="$BASE/settings-no-chatgpt.json"; make_good_settings "$SF"
+jq '.sandbox.network.allowedDomains -= ["chatgpt.com"]' "$SF" >"$SF.tmp" && mv "$SF.tmp" "$SF"
+check "settings-missing-chatgpt" 1 "$(run_settings_verifier "$SF")"
+
+# fixture 2: allowedDomains から auth.openai.com を除外 → FAIL
+SF="$BASE/settings-no-authopenai.json"; make_good_settings "$SF"
+jq '.sandbox.network.allowedDomains -= ["auth.openai.com"]' "$SF" >"$SF.tmp" && mv "$SF.tmp" "$SF"
+check "settings-missing-auth-openai" 1 "$(run_settings_verifier "$SF")"
+
+# fixture 3: allowWrite から ~/.codex を除外 → FAIL
+SF="$BASE/settings-no-codex-write.json"; make_good_settings "$SF"
+jq '.sandbox.filesystem.allowWrite -= ["~/.codex"]' "$SF" >"$SF.tmp" && mv "$SF.tmp" "$SF"
+check "settings-missing-codex-write" 1 "$(run_settings_verifier "$SF")"
+
+# fixture 4: allowedDomains を配列でなく単一文字列に化かす → FAIL
+# (round 1 で fix した type-punning loophole の regression 防止)
+SF="$BASE/settings-domains-string.json"; make_good_settings "$SF"
+jq '.sandbox.network.allowedDomains = "chatgpt.com,auth.openai.com"' "$SF" >"$SF.tmp" && mv "$SF.tmp" "$SF"
+check "settings-domains-string-not-array" 1 "$(run_settings_verifier "$SF")"
 
 echo "----"
 echo "integrity selftest: $pass passed, $fail failed"
