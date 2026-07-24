@@ -19,7 +19,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd "$SCRIPT_DIR" && git rev-parse --show-toplevel)"
-SETTINGS="$REPO_ROOT/claude/settings.json"
+# INTEGRITY_SETTINGS で検査対象パスを差し替え可能 (selftest 用)。
+SETTINGS="${INTEGRITY_SETTINGS:-$REPO_ROOT/claude/settings.json}"
 
 pass=0
 fail=0
