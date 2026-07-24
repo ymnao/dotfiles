@@ -61,7 +61,7 @@ lint: ## Run secretlint to detect leaked secrets
 	@# する。git add -f で誤って追跡された場合は走査対象に戻る。
 	@git ls-files -z | xargs -0 pnpm exec secretlint --
 
-test: ## Verify shell scripts (shellcheck), JSON files (jq), and hooks
+test: lint-locale-pin ## Verify shell scripts (shellcheck), JSON files (jq), and hooks
 	@command -v shellcheck >/dev/null || { echo "shellcheck not installed. Run: brew install shellcheck"; exit 1; }
 	@command -v jq >/dev/null || { echo "jq not installed. Run: brew install jq"; exit 1; }
 	@echo "==> shellcheck (warning level and above)"
@@ -104,10 +104,6 @@ test: ## Verify shell scripts (shellcheck), JSON files (jq), and hooks
 	@bash tests/codex-review-skip/run-codex-skip-tests.sh
 	@bash tests/locale-matrix/run-locale-matrix-tests.sh
 	@bash tests/lint-locale-pin/run-lint-locale-pin-tests.sh
-	@# LC_ALL pin 忘れの静的リンター (issue #192)。warning-only (exit 0)、
-	@# stderr に検出行を出すのみ。matrix (issue #181) が拾えない silent-wrong
-	@# / matrix 外 locale のヒント検出用。
-	@bash scripts/lint-locale-pin.sh
 	@echo "OK: all checks passed"
 
 test-hooks: ## Run hook regression tests
