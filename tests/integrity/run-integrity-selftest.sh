@@ -4,7 +4,8 @@ set -uo pipefail
 # tests/integrity/ 配下の検知器 script 群の selftest。
 # 偽の dotfiles / 偽の HOME / 偽の settings.json を組み立て、正常構成で PASS・
 # 改ざん各種で FAIL になることを検証する (検知器が壊れて常に OK を返す退行の防止)。
-# 対象: run-integrity-check.sh, verify-settings-codex-domains.sh (issue #189)。
+# 対象: run-integrity-check.sh, verify-settings-codex-domains.sh
+# (issue #189 で 3 項目分、issue #190 で denyWrite 項目分を追加)。
 # verify-guard-codex-wiring.sh の selftest は未実装 (別 issue で対応予定)。
 #
 # 依存: bash 3.2+ / jq / git
@@ -132,7 +133,7 @@ printf '{"projects":{"/x":{"allowedTools":[]}}}\n' >"$H/.claude.json"
 check "no-mcp-ok" 0 "$(run_checker "$H")"
 
 # ---- verify-settings-codex-domains.sh の selftest (issue #189) ----
-# 検知器が壊れて常に PASS を返す退行を防ぐ。base fixture は 3 項目を全て
+# 検知器が壊れて常に PASS を返す退行を防ぐ。base fixture は 4 項目を全て
 # 含み、tamper 版はそれぞれ 1 項目を欠落/破壊して FAIL 期待。
 run_settings_verifier() {
   # $1=settings.json パス。exit code を echo
@@ -142,11 +143,14 @@ run_settings_verifier() {
 }
 
 make_good_settings() {
-  # $1=出力パス。verify-settings-codex-domains.sh の 3 項目を全て満たす最小 JSON
+  # $1=出力パス。verify-settings-codex-domains.sh の 4 項目を全て満たす最小 JSON
   jq -n '{
     sandbox: {
       network: { allowedDomains: ["chatgpt.com", "auth.openai.com", "example.com"] },
-      filesystem: { allowWrite: ["~/.codex", "/tmp"] }
+      filesystem: {
+        allowWrite: ["~/.codex", "/tmp"],
+        denyWrite: ["~/.zshrc", "~/.codex/config.toml"]
+      }
     }
   }' >"$1"
 }
@@ -174,6 +178,27 @@ check "settings-missing-codex-write" 1 "$(run_settings_verifier "$SF")"
 SF="$BASE/settings-domains-string.json"; make_good_settings "$SF"
 jq '.sandbox.network.allowedDomains = "chatgpt.com,auth.openai.com"' "$SF" >"$SF.tmp" && mv "$SF.tmp" "$SF"
 check "settings-domains-string-not-array" 1 "$(run_settings_verifier "$SF")"
+
+# fixture 5: denyWrite から ~/.codex/config.toml を除外 → FAIL
+# (issue #190: allowWrite の ~/.codex 全体に対して config.toml だけ deny する
+#  設計が消えると notify 経由の sandbox escape 経路が復活する)
+SF="$BASE/settings-no-config-deny.json"; make_good_settings "$SF"
+jq '.sandbox.filesystem.denyWrite -= ["~/.codex/config.toml"]' "$SF" >"$SF.tmp" && mv "$SF.tmp" "$SF"
+check "settings-missing-config-toml-deny" 1 "$(run_settings_verifier "$SF")"
+
+# fixture 6: denyWrite キー自体を消す → FAIL
+# (`-=` による要素除去とは別経路。denyWrite ブロックごと削除された drift で
+#  any(.[]?; ...) が null 入力で false を返すことを確認する)
+SF="$BASE/settings-no-deny-key.json"; make_good_settings "$SF"
+jq 'del(.sandbox.filesystem.denyWrite)' "$SF" >"$SF.tmp" && mv "$SF.tmp" "$SF"
+check "settings-denywrite-key-absent" 1 "$(run_settings_verifier "$SF")"
+
+# fixture 7: denyWrite を配列でなく単一文字列に化かす → FAIL
+# (fixture 4 と同じ type-punning loophole を deny 側でも塞ぐ。文字列だと
+#  jq index() が substring 一致して false PASS しうる)
+SF="$BASE/settings-deny-string.json"; make_good_settings "$SF"
+jq '.sandbox.filesystem.denyWrite = "~/.zshrc,~/.codex/config.toml"' "$SF" >"$SF.tmp" && mv "$SF.tmp" "$SF"
+check "settings-deny-string-not-array" 1 "$(run_settings_verifier "$SF")"
 
 echo "----"
 echo "integrity selftest: $pass passed, $fail failed"

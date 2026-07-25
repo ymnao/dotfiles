@@ -109,6 +109,15 @@
 {"name":"codex-find-delete","expect":"block","command":"find .codex -delete","reason":"find は -delete/-exec を持つため allowlist 外"}
 {"name":"codex-wrapper-read","expect":"block","command":"env grep foo .codex/y","reason":"ラッパー越しは追跡せず安全側で不許可"}
 {"name":"codex-dynamic-read","expect":"block","command":"grep $(pwd) .codex/y","reason":"動的展開があるものは不許可"}
+# --- issue #190: ホーム配下 ~/.codex/config.toml への書き込み (block) ---
+# 読み取りは tilde-codex-cat / home-codex-ls で allow のまま。書き込み文脈だけが
+# block される非対称性を pin する。これは sandbox の denyWrite (一次防御) に
+# 対する hook 側の二次防御なので、片方の退行で escape しないよう test で固定する。
+{"name":"home-codex-config-append","expect":"block","command":"printf x >> $HOME/.codex/config.toml","reason":"notify 差し替え経路: ホーム配下でも書き込みは不許可"}
+{"name":"tilde-codex-config-write","expect":"block","command":"echo notify > ~/.codex/config.toml","reason":"tilde 表記でも書き込みは不許可"}
+{"name":"home-codex-config-tee","expect":"block","command":"tee $HOME/.codex/config.toml","reason":"write コマンド経由でも不許可"}
+{"name":"home-codex-config-sed-inplace","expect":"block","command":"sed -i '' s/a/b/ ~/.codex/config.toml","reason":"sed -i の in-place 書き換えも不許可"}
+{"name":"tilde-codex-config-read-ls","expect":"allow","command":"ls -l ~/.codex/config.toml","reason":"読み取り専用は allow のまま (過剰ブロック防止のラチェット)"}
 # --- 2026-07-07 FP ラチェット (リダイレクト判定の除外1/除外2) ---
 {"name":"fp-devnull-redirect-var","expect":"allow","command":"src=\"${pair%%:*}\"; diff -q \"$src\" b >/dev/null 2>&1","reason":"実FP: 変数展開+デバイスリダイレクトのみ (出力破棄はファイル構築に使えない)"}
 {"name":"fp-devnull-redirect-subst","expect":"allow","command":"grep -c foo \"$f\" >/dev/null","reason":"実FP同型: 変数展開+/dev/null"}

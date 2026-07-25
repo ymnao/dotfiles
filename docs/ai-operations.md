@@ -144,3 +144,34 @@ MEMORY.md 先頭 200 行が自動ロードされる。
 | keybindings カスタマイズ | 現時点で困っている操作がない | 操作の不満が具体化したとき |
 | Stop hook 駆動の review 強制ループ(claude-review-loop 系) | /dev 内の有界レビューループ(上限 2 周)で足りる。無限ループ対策(`stop_hook_active` guard)が必要になり、停止タイミングの監視性も下がる | /dev 運用でレビュー飛ばしが実際に起きたとき |
 | Ralph loop 型の外側無人ループ(`while true; claude -p` 系) | merge ゲート・plan ゲートの人間監視を放棄することになる。2026-07-19 の検討で「パイプライン圧縮 + 人間ゲート再配置」(/dev + /next)を採用 | 完全無人で回してよい種類の反復タスク(大量 migration 等)が実際に発生したとき |
+
+## 10. `~/.codex/config.toml` の書き込み防御層
+
+codex CLI の `~/.codex/config.toml` は **sandbox 境界を越えて host 側で
+任意コマンドを実行させられる設定ファイル**。`notify` は turn 終了時に
+外部コマンドを起動し、`mcp_servers` / `hooks` / `shell_environment_policy` も
+同様にコマンド実行や環境汚染の素材になる。sandbox 内の agent が repo 由来の
+悪意ある入力(README / スクリプト / issue 本文の指示注入)に従ってこのファイルを
+書き換えると、次回 codex 起動時に host 側で実行される(issue #190)。
+
+`~/.codex` を allowWrite からは外せない — codex CLI が `sessions/` /
+`history.jsonl` / `log/` / `auth.json` / `models_cache.json` /
+`*.sqlite` (+ `-wal` / `-shm` サイドカー) に書き込むため。必要 subpath だけを
+列挙する方式は codex 側の実装詳細で増えるパスに追随できず壊れやすいので採らない。
+代わりに **攻撃面が集中している config.toml 1 ファイルを deny する**。
+
+| 層 | 実装 | 効くもの |
+|---|---|---|
+| 一次: sandbox | `claude/settings.json` の `.sandbox.filesystem.denyWrite` に `~/.codex/config.toml`(allowWrite の `~/.codex` に対する deny-within-allow) | Bash tool 経由の全書き込み経路(リダイレクト / write コマンド / `sed -i` / apply_patch) |
+| 二次: hook | `agents/hooks/block-dangerous-commands.sh` の「書き込み文脈 + `.codex` component」判定 | tilde / `$HOME` / 絶対パス表記のいずれでも書き込み文脈だけを block(読み取りは allow のまま) |
+| 正規の書き込み経路 | `scripts/codex-merge-config.sh` を **ユーザーが手動実行**(sandbox 外) | repo の `codex/config.toml` を正本として `~/.codex/config.toml` へマージ |
+
+- 一次防御の regression は `tests/integrity/verify-settings-codex-domains.sh`
+  (+ `run-integrity-selftest.sh` の tamper fixture)が assert する
+- 二次防御の regression は `tests/hooks/block-dangerous-commands.cases.jsonl` の
+  `home-codex-config-*` / `tilde-codex-config-*` ケースが pin する
+- **`scripts/codex-merge-config.sh` は sandbox 内の agent から実行すると
+  一次防御で失敗する**。これは仕様(sandbox 側に例外を切らない)。設定を
+  更新したいときはユーザーが手元の shell で実行する
+- 未対応(別 issue): codex CLI 側で notify を禁止する設定の有無は未調査。
+  `~/.codex/AGENTS.md` 経由の prompt injection は本層の対象外
