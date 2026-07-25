@@ -41,7 +41,8 @@ fi
 
 protected_name='.codex'
 # cwd 関連の正規化はパス毎ではなく 1 度だけ行う（macOS APFS 想定の case-insensitive 比較）
-cwd_lower=$(pwd -P | tr '[:upper:]' '[:lower:]')
+cwd_real=$(pwd -P)
+cwd_lower=$(printf '%s' "$cwd_real" | tr '[:upper:]' '[:lower:]')
 # ホーム配下の codex 設定本体。$HOME 未設定環境では空にして判定を無効化する
 # (空 prefix が全パスに一致する誤爆を防ぐ)。
 home_lower=""
@@ -62,32 +63,38 @@ normalize_path() {
   path="${path#\'}"
   path="${path%\'}"
 
-  local path_lower
-  path_lower=$(printf '%s' "$path" | tr '[:upper:]' '[:lower:]')
-
   # 先頭 ~/ と $HOME / ${HOME} を展開する。file 編集 tool の path は通常絶対パスだが、
   # Bash token 経路と apply_patch ヘッダーでは tilde / $HOME 表記が現れうる。
-  if [[ -n "$home_lower" ]]; then
-    case "$path_lower" in
-      '~'|'~/'*) path_lower="${home_lower}${path_lower#\~}" ;;
-      '$home'|'$home/'*) path_lower="${home_lower}${path_lower#\$home}" ;;
-      '${home}'|'${home}/'*) path_lower="${home_lower}${path_lower#\$\{home\}}" ;;
+  # 小文字化は最後にまとめて行う (case-sensitive filesystem 上で symlink 解決が
+  # 失敗しないよう、解決までは元の表記を保つ)。
+  if [[ -n "${HOME:-}" ]]; then
+    case "$path" in
+      '~'|'~/'*) path="${HOME}${path#\~}" ;;
+      '$HOME'|'$HOME/'*) path="${HOME}${path#\$HOME}" ;;
+      '${HOME}'|'${HOME}/'*) path="${HOME}${path#\$\{HOME\}}" ;;
+      '$home'|'$home/'*) path="${HOME}${path#\$home}" ;;
+      '${home}'|'${home}/'*) path="${HOME}${path#\$\{home\}}" ;;
     esac
   fi
 
   # 相対パスは cwd 前置して絶対化
-  if [[ "$path_lower" != /* ]]; then
-    path_lower="${cwd_lower}/${path_lower#./}"
+  if [[ "$path" != /* ]]; then
+    path="${cwd_real}/${path#./}"
   fi
 
   # / . / と / .. / を畳み込み、// を圧縮
-  path_lower=$(printf '%s' "$path_lower" | sed -E -e 's#/\./#/#g' -e ':a' -e 's#/[^/]+/\.\.(/|$)#/#g' -e 'ta' -e 's#//+#/#g')
+  path=$(printf '%s' "$path" | sed -E -e 's#/\./#/#g' -e ':a' -e 's#/[^/]+/\.\.(/|$)#/#g' -e 'ta' -e 's#//+#/#g')
 
-  # 存在する祖先ディレクトリまで遡って pwd -P で symlink を解決 (存在しない suffix は結合)
-  case "$path_lower" in
-    *[Cc][Oo][Dd][Ee][Xx]*)
+  # 存在する祖先ディレクトリまで遡って pwd -P で symlink を解決 (存在しない suffix は結合)。
+  # 解決の発火条件に「末尾が config.toml」を含めるのが重要 — 名前に codex を含まない
+  # symlink (例: `ln -s ~/.codex mylink` → `mylink/config.toml`) で home config 判定を
+  # 回避できてしまうため。回避経路は実測で確認済み (codex-review security 指摘)。
+  local _gate_probe
+  _gate_probe=$(printf '%s' "$path" | tr '[:upper:]' '[:lower:]')
+  case "$_gate_probe" in
+    *codex*|*/config.toml)
       local _try_dir _rest _resolved
-      _try_dir=$path_lower
+      _try_dir=$path
       _rest=
       while [[ -n "$_try_dir" && "$_try_dir" != "/" && ! -d "$_try_dir" ]]; do
         _rest="/${_try_dir##*/}${_rest}"
@@ -97,13 +104,13 @@ normalize_path() {
       if [[ -d "$_try_dir" ]]; then
         _resolved=$(cd "$_try_dir" 2>/dev/null && pwd -P) || _resolved=""
         if [[ -n "$_resolved" ]]; then
-          path_lower=$(printf '%s' "${_resolved}${_rest}" | tr '[:upper:]' '[:lower:]')
+          path="${_resolved}${_rest}"
         fi
       fi
       ;;
   esac
 
-  printf '%s' "$path_lower"
+  printf '%s' "$path" | tr '[:upper:]' '[:lower:]'
 }
 
 # パスを解決し「cwd 配下の .codex/」を指しているかを判定する。

@@ -67,6 +67,12 @@
 {"name":"allow: home .codex/subdir/config.toml (直下でない)","expect":"allow","tool_input":{"file_path":"{{HOME}}/.codex/skills/config.toml"}}
 {"name":"allow: Bash で home config.toml を読む (block-dangerous-commands の担当)","expect":"allow","command":"cat ~/.codex/config.toml"}
 {"name":"allow: Bash で home config.toml へ書き込み (guard は素通し、sandbox+block-dangerous が担当)","expect":"allow","command":"echo x > ~/.codex/config.toml"}
+# symlink 経由の回避 ({{SYMHOME}} は runner が「~/.codex を指す symlink」の path に置換する)。
+# 名前に codex を含まない symlink では normalize_path の解決が発火せず block を
+# すり抜けていた (codex-review security 指摘、実測で bypass 確認済み)。
+# 解決の発火条件に「末尾が config.toml」を足して塞いだので、その回帰を pin する。
+{"name":"block: codex を含まない symlink 経由の config.toml","expect":"block","tool_input":{"file_path":"{{SYMHOME}}/config.toml"}}
+{"name":"allow: 同 symlink 経由の sessions 配下 (config.toml 以外は allow)","expect":"allow","tool_input":{"file_path":"{{SYMHOME}}/sessions/x.jsonl"}}
 
 # --- raw モード (malformed input fail-safe 検証) ---
 # raw:block: 壊れた JSON (jq が失敗) → fail-safe ブロック|block

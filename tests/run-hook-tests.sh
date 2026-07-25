@@ -10,6 +10,7 @@ set -euo pipefail
 #   {"name":"...","expect":"allow|block","tool_input":{...},"reason":"..."}  # Edit/Write/apply_patch 系
 #   両方指定された場合は tool_input 側を優先する。
 #   tool_input / command 内の文字列に `{{HOME}}` が含まれる場合、$HOME に置換する。
+#   `{{SYMHOME}}` は「$HOME/.codex を指す (名前に codex を含まない) symlink」に置換する。
 #   tool_input / command 内の文字列に `{{CWD}}` が含まれる場合、hook 実行時の
 #   一時 cwd 実パスに置換される (cwd 内絶対パステスト用)。
 #
@@ -86,14 +87,29 @@ run_hook() {
   printf '%s' "$rc"
 }
 
-# {{CWD}} を実 cwd 実パスに、{{HOME}} を $HOME 実パスに置換する。
+# {{SYMHOME}} 用の symlink を用意する。名前に codex を含まない symlink が
+# $HOME/.codex を指す状況を作り、guard-codex-dir.sh の symlink 解決漏れ
+# (codex-review security 指摘の bypass) の回帰を検出できるようにする。
+SYMHOME="$WORKDIR/homelink"
+if [ -n "${HOME:-}" ]; then
+  ln -sfn "$HOME/.$(printf 'co')$(printf 'dex')" "$SYMHOME" 2>/dev/null || SYMHOME=""
+else
+  SYMHOME=""
+fi
+
+# {{CWD}} を実 cwd 実パスに、{{HOME}} を $HOME 実パスに、{{SYMHOME}} を上記
+# symlink パスに置換する。
 # {{HOME}} は guard-codex-dir.sh の ~/.codex/config.toml 判定 (issue #190) を
 # 「実際に tool が渡す絶対パス形」で検証するために必要 — tilde / $HOME 表記だけでは
 # normalize_path の展開分岐しか通らず、絶対パス経路が未検証になる。
+# sed ではなく bash の文字列置換を使う: $HOME に & / \ / | が含まれる環境で
+# sed の置換文字列が壊れるのを避ける (codex-review shell-senior 指摘)。
 substitute_cwd() {
   local s="$1"
-  # sed で置換 (WORKDIR は英数字のみなので safe)。$HOME に | が含まれる環境は想定しない
-  printf '%s' "$s" | sed -e "s|{{CWD}}|$WORKDIR|g" -e "s|{{HOME}}|$HOME|g"
+  s=${s//\{\{CWD\}\}/$WORKDIR}
+  s=${s//\{\{HOME\}\}/$HOME}
+  s=${s//\{\{SYMHOME\}\}/$SYMHOME}
+  printf '%s' "$s"
 }
 
 for cf in "$@"; do
