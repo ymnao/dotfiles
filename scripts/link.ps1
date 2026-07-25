@@ -351,9 +351,22 @@ if (Test-Path $codexSource) {
     # が dotfiles リポジトリを汚染する)
     $codexConfigSource = Join-Path $codexSource "config.toml"
     $codexConfigDest = Join-Path $codexDir "config.toml"
+    # マージ失敗で link 処理全体を止めない (link.sh 側と対称)。~/.codex/config.toml は
+    # sandbox の denyWrite 対象 (issue #190) なので agent 実行時は必ず失敗する。
+    # 中断すると以降の hooks.json / hooks / skills のリンクが張られず部分適用になる。
     if (Test-Path $codexConfigSource) {
-        & (Join-Path $scriptDir "codex-merge-config.ps1") `
-            -Source $codexConfigSource -Destination $codexConfigDest
+        # throw (terminating error) は catch で、非ゼロ終了は $LASTEXITCODE で拾う。
+        # .ps1 の非ゼロ終了は例外を投げないため try/catch だけでは検出できない。
+        try {
+            $global:LASTEXITCODE = 0
+            & (Join-Path $scriptDir "codex-merge-config.ps1") `
+                -Source $codexConfigSource -Destination $codexConfigDest
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warn "Skipped ~/.codex/config.toml merge (exit $LASTEXITCODE, write denied?). Run scripts/codex-merge-config.ps1 outside the sandbox to apply it."
+            }
+        } catch {
+            Write-Warn "Skipped ~/.codex/config.toml merge (write denied?): $_"
+        }
     }
 
     $codexHooksJsonSource = Join-Path $codexSource "hooks.json"

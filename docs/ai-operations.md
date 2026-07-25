@@ -144,3 +144,64 @@ MEMORY.md 先頭 200 行が自動ロードされる。
 | keybindings カスタマイズ | 現時点で困っている操作がない | 操作の不満が具体化したとき |
 | Stop hook 駆動の review 強制ループ(claude-review-loop 系) | /dev 内の有界レビューループ(上限 2 周)で足りる。無限ループ対策(`stop_hook_active` guard)が必要になり、停止タイミングの監視性も下がる | /dev 運用でレビュー飛ばしが実際に起きたとき |
 | Ralph loop 型の外側無人ループ(`while true; claude -p` 系) | merge ゲート・plan ゲートの人間監視を放棄することになる。2026-07-19 の検討で「パイプライン圧縮 + 人間ゲート再配置」(/dev + /next)を採用 | 完全無人で回してよい種類の反復タスク(大量 migration 等)が実際に発生したとき |
+
+## 10. `~/.codex/config.toml` の書き込み防御層
+
+codex CLI の `~/.codex/config.toml` は **sandbox 境界を越えて host 側で
+任意コマンドを実行させられる設定ファイル**。`notify` は turn 終了時に
+外部コマンドを起動し、`mcp_servers` / `hooks` / `shell_environment_policy` も
+同様にコマンド実行や環境汚染の素材になる。sandbox 内の agent が repo 由来の
+悪意ある入力(README / スクリプト / issue 本文の指示注入)に従ってこのファイルを
+書き換えると、次回 codex 起動時に host 側で実行される(issue #190)。
+
+`~/.codex` を allowWrite からは外せない — codex CLI が `sessions/` /
+`history.jsonl` / `log/` / `auth.json` / `models_cache.json` /
+`*.sqlite` (+ `-wal` / `-shm` サイドカー) に書き込むため。必要 subpath だけを
+列挙する方式は codex 側の実装詳細で増えるパスに追随できず壊れやすいので採らない。
+代わりに **攻撃面が集中している config.toml 1 ファイルを deny する**。
+
+| 層 | 実装 | 効くもの | 効かないもの |
+|---|---|---|---|
+| 一次: sandbox | `claude/settings.json` の `.sandbox.filesystem.denyWrite` に `~/.codex/config.toml`(allowWrite の `~/.codex` に対する deny-within-allow) | **Bash tool 経由**の全書き込み経路(リダイレクト / write コマンド / `sed -i` / `mv`)。`cd ~/.codex && printf x > config.toml` のように hook を回避する形も止まる | **Edit / Write / MultiEdit / apply_patch の file 編集 tool には適用されない**(実測: deny 対象の `claude/settings.json` は Bash append は拒否されるが Edit tool では書き換えられた) |
+| 二次: hook (Bash) | `agents/hooks/block-dangerous-commands.sh` の「書き込み文脈 + `.codex` component」判定 | tilde / `$HOME` / 絶対パス表記のいずれでも、path token に `.codex` component が現れる書き込みを block(読み取りは allow のまま) | `cd ~/.codex && printf x > config.toml` のように **書き込み segment 側に `.codex` component が現れない形**(一次防御が担当) |
+| 二次: hook (file 編集) | `agents/hooks/guard-codex-dir.sh` の `is_protected_home_codex_config` 判定 | Edit / Write / MultiEdit / NotebookEdit / apply_patch が `~/.codex/config.toml` を指す場合(tilde / `$HOME` / `${HOME}` / 絶対パス / `..` 経由 / 大文字表記を正規化して比較) | `~/.codex/` 配下の他ファイル(`sessions/` / `auth.json` 等は codex CLI が正当に書くため意図的に allow) |
+| 正規の書き込み経路 | `scripts/codex-merge-config.sh` を **ユーザーが手動実行**(sandbox 外) | repo の `codex/config.toml` を正本として `~/.codex/config.toml` へマージ | — |
+
+一次と二次が担当する経路は**意図的に非対称**。Bash 経路は sandbox が包括的に止め、
+file 編集 tool 経路は sandbox が効かないので hook が止める。片方だけでは穴が残る。
+
+- 一次防御の regression は `tests/integrity/verify-settings-codex-domains.sh`
+  (+ `run-integrity-selftest.sh` の tamper fixture)が assert する
+- 二次防御 (Bash) の regression は `tests/hooks/block-dangerous-commands.cases.jsonl`
+  の `home-codex-config-*` / `tilde-codex-config-*` ケースが pin する
+- 二次防御 (file 編集) の regression は `tests/hooks/guard-codex-dir.cases.jsonl` の
+  `{{HOME}}/.codex/config.toml` 系ケースが pin する(allow 側のラチェットも含む)
+
+### codex CLI 自身の config.toml 書き込みと deny の相互作用
+
+**codex CLI は config.toml を動的に書く**。`[projects.*]`(repo の
+trust_level 記録)/ `[plugins.*]` / `[notice.*]` / `[tui.*]` /
+`[hooks.state]`(hooks.json の trusted_hash 承認)がその対象で、
+`scripts/codex-merge-config.sh` はこれらを「dest 側で保護するセクション」として
+扱っている。つまり deny 下ではこれらの記録が失敗しうる。
+
+- 発生条件: **未 trust の repo で初回実行**・codex 更新後の notice/tui 記録・
+  `codex/hooks.json` 変更後の再承認。日常の codex-review (trust 済み repo・
+  hooks.json 不変) では発生しない
+- 症状: codex 側の warning、または trust 確認の再表示。sandbox 内の
+  codex-review が失敗した場合は `run-review.sh` の exit 3 (SKIP) 経路になる
+- 復旧: **ユーザーが sandbox 外で codex を 1 回起動**して記録を書かせる
+- `make link` / `make install` を agent が実行した場合、config.toml のマージだけが
+  warn でスキップされ他の symlink 処理は継続する(`scripts/link.sh` /
+  `link.ps1` で明示的に warn-continue にしている)
+
+### scope 外(別 issue)
+
+- `~/.codex/hooks.json` / `~/.codex/hooks/` / `~/.codex/skills/` も host 側で
+  コマンドを起動する定義を持つが、これらは **repo への symlink**
+  (`scripts/link.sh` が張る)であり実体は git 追跡下にある。改変は PR review で
+  見える + `tests/integrity/run-integrity-check.sh` が symlink 置換を検出する。
+  config.toml だけが「git 追跡外の実ファイル」= 書き換えが review で見えないため
+  sandbox/hook 層で止める必要がある、という非対称性が本節の設計根拠
+- codex CLI 側で notify を禁止する設定の有無は未調査
+- `~/.codex/AGENTS.md` 経由の prompt injection は本層の対象外
