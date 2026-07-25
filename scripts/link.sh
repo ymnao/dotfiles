@@ -146,10 +146,18 @@ if [[ -d "$DOTFILES_DIR/codex" ]]; then
     # Codex CLI は [projects.*] / [plugins.*] / [hooks.state] 等を ~/.codex/config.toml に
     # 動的に書き込むため、symlink にすると dotfiles リポジトリが汚染される。
     # マージスクリプトで base を上書きしつつ Codex 管理セクションを保持する。
+    # マージ失敗で link 処理全体を止めない (set -e に殺されないよう || で受ける)。
+    # ~/.codex/config.toml は sandbox の denyWrite 対象 (issue #190) なので、
+    # agent の sandbox 内から make link を実行すると必ずここで失敗する。中断すると
+    # 以降の hooks.json / hooks / skills の symlink が張られず、部分適用のまま
+    # 「成功したつもり」になるため、warn に留めて残りを継続する。
+    # config.toml の反映が必要なときはユーザーが sandbox 外で実行する。
     if [[ -f "$DOTFILES_DIR/codex/config.toml" ]]; then
-        bash "$SCRIPT_DIR/codex-merge-config.sh" \
+        if ! bash "$SCRIPT_DIR/codex-merge-config.sh" \
             "$DOTFILES_DIR/codex/config.toml" \
-            "$HOME/.codex/config.toml"
+            "$HOME/.codex/config.toml"; then
+            warn "Skipped ~/.codex/config.toml merge (write denied?). Run 'bash scripts/codex-merge-config.sh codex/config.toml ~/.codex/config.toml' outside the sandbox to apply it."
+        fi
     fi
 
     if [[ -f "$DOTFILES_DIR/codex/hooks.json" ]]; then

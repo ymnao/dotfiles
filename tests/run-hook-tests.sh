@@ -9,6 +9,7 @@ set -euo pipefail
 #   {"name":"...","expect":"allow|block","command":"...","reason":"..."}     # Bash 系 (tool_input.command)
 #   {"name":"...","expect":"allow|block","tool_input":{...},"reason":"..."}  # Edit/Write/apply_patch 系
 #   両方指定された場合は tool_input 側を優先する。
+#   tool_input / command 内の文字列に `{{HOME}}` が含まれる場合、$HOME に置換する。
 #   tool_input / command 内の文字列に `{{CWD}}` が含まれる場合、hook 実行時の
 #   一時 cwd 実パスに置換される (cwd 内絶対パステスト用)。
 #
@@ -85,11 +86,14 @@ run_hook() {
   printf '%s' "$rc"
 }
 
-# {{CWD}} を実 cwd 実パスに置換する
+# {{CWD}} を実 cwd 実パスに、{{HOME}} を $HOME 実パスに置換する。
+# {{HOME}} は guard-codex-dir.sh の ~/.codex/config.toml 判定 (issue #190) を
+# 「実際に tool が渡す絶対パス形」で検証するために必要 — tilde / $HOME 表記だけでは
+# normalize_path の展開分岐しか通らず、絶対パス経路が未検証になる。
 substitute_cwd() {
   local s="$1"
-  # sed で置換 (WORKDIR は英数字のみなので safe)
-  printf '%s' "$s" | sed "s|{{CWD}}|$WORKDIR|g"
+  # sed で置換 (WORKDIR は英数字のみなので safe)。$HOME に | が含まれる環境は想定しない
+  printf '%s' "$s" | sed -e "s|{{CWD}}|$WORKDIR|g" -e "s|{{HOME}}|$HOME|g"
 }
 
 for cf in "$@"; do

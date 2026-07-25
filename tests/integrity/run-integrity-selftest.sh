@@ -194,8 +194,10 @@ jq 'del(.sandbox.filesystem.denyWrite)' "$SF" >"$SF.tmp" && mv "$SF.tmp" "$SF"
 check "settings-denywrite-key-absent" 1 "$(run_settings_verifier "$SF")"
 
 # fixture 7: denyWrite を配列でなく単一文字列に化かす → FAIL
-# (fixture 4 と同じ type-punning loophole を deny 側でも塞ぐ。文字列だと
-#  jq index() が substring 一致して false PASS しうる)
+# (fixture 4 と同じ type-punning drift を deny 側でも押さえる。現行の check_contains は
+#  any(.[]?; . == $v) なので文字列入力では `.[]?` が empty になり false へ倒れる。
+#  かつて index() 実装だった頃は substring 一致で false PASS しえたため、実装を
+#  index() 系に戻す「簡略化」への回帰検出も兼ねる)
 SF="$BASE/settings-deny-string.json"; make_good_settings "$SF"
 jq '.sandbox.filesystem.denyWrite = "~/.zshrc,~/.codex/config.toml"' "$SF" >"$SF.tmp" && mv "$SF.tmp" "$SF"
 check "settings-deny-string-not-array" 1 "$(run_settings_verifier "$SF")"

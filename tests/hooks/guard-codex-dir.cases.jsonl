@@ -49,6 +49,25 @@
 {"name":"allow: apply_patch 本文中の .codex 言及 (ヘッダー以外)","expect":"allow","tool_input":{"patch":"*** Begin Patch\n*** Update File: README.md\n@@\n-old\n+we mention .codex/ in prose\n*** End Patch\n"}}
 {"name":"allow: 相対 ../other/.codex (cwd 外)","expect":"allow","tool_input":{"file_path":"../other-project/.codex/foo"}}
 
+# --- issue #190: $HOME/.codex/config.toml への file 編集 tool 経由の書き込み ---
+# sandbox の denyWrite は Bash にしか効かず Edit / Write / apply_patch には
+# 適用されないため、hook 側で塞ぐ。ディレクトリ全体ではなく config.toml のみ対象
+# (codex CLI は sessions/ / auth.json 等に正当に書き込む)。
+{"name":"block: home 絶対 {{HOME}}/.codex/config.toml (Write)","expect":"block","tool_input":{"file_path":"{{HOME}}/.codex/config.toml"}}
+{"name":"block: home tilde ~/.codex/config.toml (Edit)","expect":"block","tool_input":{"file_path":"~/.codex/config.toml"}}
+{"name":"block: home $HOME 表記の config.toml","expect":"block","tool_input":{"file_path":"$HOME/.codex/config.toml"}}
+{"name":"block: home ${HOME} 表記の config.toml","expect":"block","tool_input":{"file_path":"${HOME}/.codex/config.toml"}}
+{"name":"block: home 絶対 /../ 経由の config.toml","expect":"block","tool_input":{"file_path":"{{HOME}}/.codex/sessions/../config.toml"}}
+{"name":"block: home 大文字 .Codex/Config.toml","expect":"block","tool_input":{"file_path":"{{HOME}}/.Codex/Config.toml"}}
+{"name":"block: apply_patch で home config.toml を更新","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Update File: {{HOME}}/.codex/config.toml\n@@\n-model = \"a\"\n+notify = [\"evil\"]\n*** End Patch\n"}}
+# 以下は allow — codex CLI が正当に書き込む path と、読み取り経路を潰さないためのラチェット
+{"name":"allow: home .codex/sessions 配下","expect":"allow","tool_input":{"file_path":"{{HOME}}/.codex/sessions/2026/07/x.jsonl"}}
+{"name":"allow: home .codex/auth.json","expect":"allow","tool_input":{"file_path":"{{HOME}}/.codex/auth.json"}}
+{"name":"allow: home .codex 配下の別 toml","expect":"allow","tool_input":{"file_path":"{{HOME}}/.codex/other.toml"}}
+{"name":"allow: home .codex/subdir/config.toml (直下でない)","expect":"allow","tool_input":{"file_path":"{{HOME}}/.codex/skills/config.toml"}}
+{"name":"allow: Bash で home config.toml を読む (block-dangerous-commands の担当)","expect":"allow","command":"cat ~/.codex/config.toml"}
+{"name":"allow: Bash で home config.toml へ書き込み (guard は素通し、sandbox+block-dangerous が担当)","expect":"allow","command":"echo x > ~/.codex/config.toml"}
+
 # --- raw モード (malformed input fail-safe 検証) ---
 # raw:block: 壊れた JSON (jq が失敗) → fail-safe ブロック|block
 {"tool_input":{"file_path":".codex/config.toml"
