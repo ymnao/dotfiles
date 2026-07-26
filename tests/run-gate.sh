@@ -101,7 +101,8 @@ bash tests/link-backup/run-link-backup-tests.sh
 # host 実行される hook 定義の未コミット改変を警告する (warn-only、gate の合否には
 # 影響させない)。issue #207 — codex の trusted_hash はスクリプト本体を検査しない
 # ため、未コミットの hook 改変がそのまま host 実行される窓を検知で受ける。
-[ -f agents/hooks/hooks-integrity-warn.sh ] && bash agents/hooks/hooks-integrity-warn.sh
+# repo root は冒頭で解決済みなので渡す (hook 側の再導出 subshell + git fork を省く)
+[ -f agents/hooks/hooks-integrity-warn.sh ] && HOOKS_INTEGRITY_REPO="$REPO_ROOT" bash agents/hooks/hooks-integrity-warn.sh
 [ -f tests/session-compact/run-session-compact-tests.sh ] && bash tests/session-compact/run-session-compact-tests.sh
 
 # 3) hook 関連ファイルが変更されているときだけ重いコーパスを実行

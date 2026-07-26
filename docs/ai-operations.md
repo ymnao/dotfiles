@@ -242,13 +242,40 @@ config.toml(git 追跡外の実ファイル)との非対称性はここにある
 
 | 層 | 実装 | 効くもの | 効かないもの |
 |---|---|---|---|
-| 検知 (session) | `agents/hooks/hooks-integrity-warn.sh` を `claude/settings.json` の SessionStart (`startup\|resume`) に配線 | `agents/hooks/` `claude/hooks/` `codex/hooks/` `codex/hooks.json` `claude/settings.json` の未コミット改変を警告 | 警告のみで遮断はしない(dotfiles 開発中は dirty が正常状態のため意図的に warn-only) |
-| 検知 (turn) | 同 hook を `tests/run-gate.sh` からも呼ぶ(`make gate` = Stop hook ゲート) | ターン終了ごとの検知。gate の合否には影響させない | 同上 |
+| 検知 (session) | `agents/hooks/hooks-integrity-warn.sh` を `claude/settings.json` の SessionStart (`startup\|resume\|clear`) に配線 | セッション開始時に、監視対象の未コミット改変を警告として context に注入する。**実運用で人と model の目に入る唯一の経路** | 警告のみで遮断はしない(dotfiles 開発中は dirty が正常状態のため意図的に warn-only) |
+| 検知 (手動) | 同 hook を `make test` と `tests/run-gate.sh`(`make gate`)からも呼ぶ | **手で `make test` / `make gate` を叩いたとき**の表示 | **Stop hook 経由では表示されない** — `stop-verify-gate.sh` は gate の出力を変数に captureし、gate が通れば捨て、落ちても `tail -20` しか出さないため。ターンごとの自動検知にはなっていない |
 | 構造検査 | `tests/integrity/run-integrity-check.sh` | symlink が期待どおりの実体を指しているか(置換・実体化の検出)。ズレは異常なので exit 1 | ファイル**内容**の改変 |
-| review | git 追跡 + PR review | commit された改変 | 未コミットの改変(上 2 層が担当) |
+| review | git 追跡 + PR review | push されて PR に載った改変 | 未コミットの改変(検知層が担当)と、**push されないローカル commit**(下記) |
+
+監視対象は「host 側で起動されるコマンドを**直接**定義しているファイル」に限る
+(`agents/hooks/` `claude/hooks/` `codex/hooks/` `codex/hooks.json`
+`claude/settings.json` `claude/statusline.sh` `.claude/stop-gate.conf`)。
+`.claude/stop-gate.conf` 経由で間接的に host 実行される `tests/` / `Makefile` /
+`scripts/` まで広げると、この repo のほぼ全変更で警告が出て signal が消えるため
+含めない。網羅性は `tests/hooks-integrity/run-hooks-integrity-tests.sh` が
+配線 (`settings.json` / `hooks.json` の command) から抽出して assert する。
 
 **残余リスク(塞げていないもの)**:
 
+- **検知層は Claude Code のライフサイクルにしか配線されていない**。SessionStart も
+  `make gate`(Stop hook)も Claude Code 側のイベントで、`codex/hooks.json` には
+  SessionStart セクションが無く、codex の Stop hook は `notify-stop.sh` を呼ぶだけで
+  `run-gate.sh` には繋がっていない。つまり **Claude Code を経由せず codex CLI 単体で
+  作業して `codex/hooks/*.sh` を未コミットで改変した場合、`make gate` / `make test`
+  を手で回さない限りこの警告は一度も出ない**。本節の脅威モデルの中心が codex 側で
+  ある以上これは主要な穴であり、codex 側配線は別 issue で扱う(配線には
+  `codex/hooks/` への symlink 追加と codex TUI での再承認が要る)
+- **ローカル commit すると検知が消える**。検査は `git status --porcelain`
+  (HEAD との差分)なので、改変を commit した時点で clean になる。push されない
+  ローカル commit は PR review にも載らないため、「commit されていれば review で
+  見える」が成立するのは **push された場合だけ**。この窓を塞ぐ層は現状無い
+- **検知層の配線先そのものが監視対象の内側にある**。`claude/settings.json` の
+  SessionStart entry を消す編集と hook 本体の改変を同時に行うと、次回起動時には
+  新しい settings.json が読まれるため警告は出ない(自己隠蔽)。settings.json は
+  監視対象なので **改変した回の警告は出る**が、それを人が見落とせばそこで途切れる
+- **`.gitignore` にマッチする新規ファイルは `-uall` でも見えない**。`.gitignore`
+  自体も監視対象外なので、「`.gitignore` に追記 → 無視されるファイル名で設置」の
+  2 手で検知を避けられる(それ単体では実行に繋がらないが、fail-open の穴の一つ)
 - `block-dangerous-commands.sh` の `_check_glob_seg` は segment 単位で
   「引数の path component が `.codex` にマッチするか」を見るため、
   `cd ~/.codex/hooks && printf ... > block-dangerous-commands.sh` のように
