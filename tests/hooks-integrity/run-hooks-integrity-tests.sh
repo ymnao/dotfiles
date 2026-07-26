@@ -11,6 +11,9 @@
 # 一時 git repo を $TMPDIR に作って検知ロジックを回す。検査対象 repo は
 # HOOKS_INTEGRITY_REPO で差し替える (hook 側が用意している上書き口)。
 
+# -e を追加すると、期待値が非 0 のケース (grep -q の不一致、fail-open 経路の確認)
+# でランナー自身が死ぬため使わない。失敗は check / check_cmd / check_empty で
+# 明示的に集計する (tests/verify-ci/run-verify-ci-tests.sh と同じ方針)。
 set -uo pipefail
 
 # 期待文字列 (日本語) をバイト一致で比較するためロケールを固定する。
@@ -65,8 +68,17 @@ check_empty() {
 }
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/hooks-integrity-test.XXXXXX") || exit 1
-cleanup() { rm -rf "$WORK"; }
-trap cleanup EXIT
+
+# ケース 12 は実 dotfiles repo を dirty にして検知を確認する。中断で残留すると
+# SessionStart 警告に出続けて signal を潰すため、PID 付きの名前にして
+# (並列実行で他プロセスの probe を消さない) trap の cleanup 対象に入れる。
+PROBE="$REPO_ROOT/agents/hooks/.hooks-integrity-probe.$$"
+
+cleanup() {
+  rm -rf "$WORK"
+  rm -f "$PROBE"
+}
+trap cleanup EXIT INT TERM
 
 FIXTURE="$WORK/repo"
 mkdir -p "$FIXTURE/agents/hooks" "$FIXTURE/claude/hooks" "$FIXTURE/codex/hooks"
@@ -104,7 +116,7 @@ check_empty "$out" "対象外変更 (README.md) を警告しないこと"
 printf 'echo tampered\n' >> "$FIXTURE/agents/hooks/sample.sh"
 out=$(run_hook "$FIXTURE"); rc=$?
 check "$rc" "改変検知時も exit 0 を返すこと (warn-only、got $rc)"
-printf '%s' "$out" | grep -q '\[hooks-integrity\]'
+grep -q '\[hooks-integrity\]' <<<"$out"
 check "$?" "改変時に警告ラベルを出すこと"
 git -C "$FIXTURE" checkout -q -- agents/hooks/sample.sh
 
@@ -116,7 +128,7 @@ assert_detects() {
   if [ "$kind" = "tracked" ]; then label="改変"; else label="追加"; fi
   printf 'tampered\n' >> "$FIXTURE/$rel"
   detected=$(run_hook "$FIXTURE")
-  printf '%s' "$detected" | grep -q -- "$rel"
+  grep -q -- "$rel" <<<"$detected"
   check "$?" "${rel} の${label}を検知すること"
   if [ "$kind" = "tracked" ]; then
     git -C "$FIXTURE" checkout -q -- "$rel"
@@ -134,7 +146,7 @@ assert_detects "claude/settings.json" tracked
 rm -f "$FIXTURE/claude/hooks/sample.sh"
 printf 'echo replaced\n' > "$FIXTURE/claude/hooks/sample.sh"
 out=$(run_hook "$FIXTURE")
-printf '%s' "$out" | grep -q 'claude/hooks/sample.sh'
+grep -q 'claude/hooks/sample.sh' <<<"$out"
 check "$?" "symlink の実体ファイル置換 (typechange) を検知すること"
 git -C "$FIXTURE" checkout -q -- claude/hooks/sample.sh
 
@@ -218,16 +230,15 @@ check "$rc" "別 cwd + symlink 経由の起動で exit 0 (got $rc)"
 # この作業ツリー自身が dirty かどうかで期待値が変わるため、dotfiles repo を
 # 見に行けていること (= repo 内パスを出す or clean で無出力) だけを検査する。
 if [ -n "$derived" ]; then
-  printf '%s' "$derived" | grep -qE '(agents|claude|codex)/'
+  grep -qE '(agents|claude|codex)/' <<<"$derived"
   check "$?" "導出した repo の監視対象パスを報告すること (got: $derived)"
 else
   # clean のときは自前導出が失敗しても無出力になり区別がつかないので、
   # 監視対象を強制的に dirty にして再確認する。
-  probe="$REPO_ROOT/agents/hooks/.hooks-integrity-probe"
-  printf 'probe\n' > "$probe"
+  printf 'probe\n' > "$PROBE"
   derived=$(cd "$WORK" && env -u HOOKS_INTEGRITY_REPO bash "$REPO_ROOT/claude/hooks/hooks-integrity-warn.sh" 2>&1)
-  rm -f "$probe"
-  printf '%s' "$derived" | grep -q 'hooks-integrity-probe'
+  rm -f "$PROBE"
+  grep -q 'hooks-integrity-probe' <<<"$derived"
   check "$?" "clean な作業ツリーでも自前導出が dotfiles repo を指すこと"
 fi
 
