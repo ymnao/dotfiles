@@ -104,6 +104,7 @@ test: lint-locale-pin ## Verify shell scripts (shellcheck), JSON files (jq), and
 	@bash tests/integrity/verify-settings-codex-domains.sh
 	@bash tests/session-compact/run-session-compact-tests.sh
 	@bash tests/fish-pnpm/run-fish-pnpm-tests.sh
+	@bash tests/fish-version-managers/run-fish-version-managers-tests.sh
 	@bash tests/brewfile-drift/run-brewfile-drift-tests.sh
 	@bash tests/link/run-link-tests.sh
 	@bash tests/codex-review-skip/run-codex-skip-tests.sh
