@@ -14,13 +14,19 @@
 #      このケースは構文エラーの混入も同時に拾う。
 #   2. 配線 (stub): PATH に stub を仕込み、init 経由で shell function が
 #      定義されること + **stub が受け取った引数が `init - fish` であること**を
-#      検証する。ホストへの rbenv/pyenv インストールに依存しないため CI でも
-#      実効性がある。引数 assert により `-` 落ち (rbenv では shell 初期化
-#      ファイルを書き換えに行く破壊的 typo) を検出できる。
+#      検証する。ホストへの rbenv/pyenv インストールに依存しない。引数 assert に
+#      より `-` 落ち (rbenv では shell 初期化ファイルを書き換えに行く破壊的
+#      typo) を検出できる。
 #   3. 実物 (任意): ホストに本物が実在する場合のみ、実際の init が
 #      function を定義することを確認する。未実在ならこのケースだけ skip。
 #
+# さらに rbenv 固有で RBENV_ROOT の決定ロジックを 4 ケース検証する
+# (下部の rbenv_root_case を参照)。
+#
 # 依存: fish (未インストールなら全体を skip)
+# 注意: .github/workflows/ は fish を install していないため、現状この
+# スイートは CI では全体 skip される。stub 化で rbenv/pyenv 非依存には
+# なったが、CI で実際に走らせるには workflow 側に fish の追加が要る。
 #
 # `set -e` は使わない: run_case が fish の exit code を自分で見て
 # pass/fail を集計するため、非 0 で即終了されると集計できない。
@@ -136,6 +142,53 @@ for tool in rbenv pyenv; do
     echo "SKIP $tool: ホストに未インストールのため実物テストを skip"
   fi
 done
+
+# --- rbenv 固有: RBENV_ROOT の決定ロジック ---------------------------------
+# rbenv.fish は「versions の実体がどちらにあるか」で RBENV_ROOT を決める。
+# stub 経路なので本物の rbenv は不要。fixture を使い 4 分岐を assert する。
+# これが無いと RBENV_ROOT の設定行を丸ごと削っても他ケースは green のままになる。
+mkdir -p "$WORKDIR/fx/keg/opt/rbenv/versions/3.4.2"
+mkdir -p "$WORKDIR/fx/home-empty/.rbenv/versions"
+mkdir -p "$WORKDIR/fx/home-own/.rbenv/versions/3.3.0"
+
+rbenv_target="$REPO_ROOT/fish/config/rbenv.fish"
+
+# fixture HOME / HOMEBREW_PREFIX / 既存 RBENV_ROOT を注入し、source 後の
+# RBENV_ROOT を期待値と比較する。空文字列の期待は「設定されなかった」を意味する。
+rbenv_root_case() {
+  local name="$1" fx_home="$2" brew_prefix="$3" preset_root="$4" expected="$5"
+  local actual
+  actual=$(HOME="$fx_home" XDG_CONFIG_HOME="$fx_home/.config" \
+    HOMEBREW_PREFIX="$brew_prefix" RBENV_ROOT="$preset_root" \
+    fish --no-config -c \
+    "set -gx PATH '$WORKDIR/bin'; source '$rbenv_target'; echo \$RBENV_ROOT" 2>/dev/null)
+  if [ "$actual" = "$expected" ]; then
+    pass=$((pass + 1))
+  else
+    echo "FAIL $name: RBENV_ROOT='$actual' (expected '$expected')"
+    fail=$((fail + 1))
+  fi
+}
+
+make_stub rbenv
+
+# keg に versions があり default root が空 → keg に向ける
+rbenv_root_case "rbenv root: keg に実体があれば keg を使う" \
+  "$WORKDIR/fx/home-empty" "$WORKDIR/fx/keg" "" "$WORKDIR/fx/keg/opt/rbenv"
+
+# default root に versions がある (標準配置のマシン) → 触らない
+rbenv_root_case "rbenv root: default root に実体があれば触らない" \
+  "$WORKDIR/fx/home-own" "$WORKDIR/fx/keg" "" ""
+
+# brew 無し (HOMEBREW_PREFIX 空) → 触らない。ここで空文字列を渡すのは
+# Intel mac / Linuxbrew / brew 未導入で HOMEBREW_PREFIX が export されない
+# ケースの再現
+rbenv_root_case "rbenv root: HOMEBREW_PREFIX が無ければ触らない" \
+  "$WORKDIR/fx/home-empty" "" "" ""
+
+# 既に RBENV_ROOT が設定されていれば尊重する (config.local.fish 等の上書き)
+rbenv_root_case "rbenv root: 既存の RBENV_ROOT を尊重する" \
+  "$WORKDIR/fx/home-empty" "$WORKDIR/fx/keg" "/custom/rbenv" "/custom/rbenv"
 
 echo "fish-version-managers tests: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
