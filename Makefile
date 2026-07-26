@@ -94,6 +94,7 @@ test: lint-locale-pin ## Verify shell scripts (shellcheck), JSON files (jq), and
 	@bash tests/hooks-glob/run-glob-determinism-tests.sh
 	@bash tests/link-backup/run-link-backup-tests.sh
 	@bash tests/verify-ci/run-verify-ci-tests.sh
+	@bash tests/hooks-integrity/run-hooks-integrity-tests.sh
 	@bash tests/integrity/run-integrity-selftest.sh
 	@bash tests/integrity/verify-guard-codex-wiring.sh
 	@bash tests/integrity/verify-settings-codex-domains.sh
