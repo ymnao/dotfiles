@@ -45,7 +45,7 @@ jobs:
       matrix:
         locale: [C, en_US.UTF-8, ja_JP.UTF-8]
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # ubuntu-latest は C / en_US.UTF-8 を含むが ja_JP.UTF-8 は無いため生成する。
       # C は組み込みで locale-gen の対象外なので条件でスキップし、runner イメージ
@@ -91,7 +91,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
