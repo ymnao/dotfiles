@@ -6,8 +6,7 @@
 # completions の source が含まれるため、fish 起動ごとにサブプロセスが 2 つ走る
 # (rbenv 側に completions の分は無い)。削るなら `pyenv init - --no-rehash fish`
 # だが、shims の鮮度 (pip 等が入れた実行ファイルを即反映) を優先して採らない。
-# rbenv と違い RBENV_ROOT 相当の調整は不要 (PYENV_ROOT の default ~/.pyenv に
-# 実体があるため)。
+# PYENV_ROOT は設定しない (rbenv.fish と同じく default root を使う)。
 # uv (uv.fish) とは役割が重複しうるが、UV_PYTHON_PREFERENCE=only-managed により
 # uv は pyenv の shims を参照しないため干渉しない
 if type -q pyenv
