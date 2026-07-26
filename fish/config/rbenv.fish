@@ -8,29 +8,22 @@
 # `init` の直後の `-` は必須。`-` を落とすと rbenv は「シェル初期化ファイルを
 # 書き換える」モードになり、~/.config/fish は repo の fish/ への symlink なので
 # tracked file が書き換わる。
+#
+# RBENV_ROOT は設定せず default root (~/.rbenv) に任せる。
+# **前提: RBENV_ROOT を外部 (~/.zshrc 等) で export しないこと。** keg
+# ($(brew --prefix rbenv)) を root にすると ruby の実体が keg 内に入り
+# `brew upgrade rbenv` で丸ごと消える (issue #219)。ここで RBENV_ROOT を
+# 補正しないのは、その配置を追認する装置を残さないため。
+# default root に ruby が無いマシンでは rbenv が **エラーを出さずに** system
+# ruby へフォールバックする。復旧手順は 3 つ揃って初めて完了する:
+#   1. `rbenv install <version>` — default root に本体を入れる。keg からの
+#      コピーでは直らない: bin/ruby と全 .bundle の Mach-O ロードパスが
+#      $(brew --prefix rbenv)/versions/... を絶対参照しており、upgrade 後は
+#      その versions/ ごと消えて dyld が解決できなくなる (shebang の sed
+#      書き換えでは届かない)
+#   2. `rbenv global <version>` — $RBENV_ROOT/version は keg 側にあったので
+#      一緒に失われる。これが無いと 1 の後も system ruby のまま
+#   3. gem の再導入 — gem も keg 配下の versions/ と一緒に消える
 if type -q rbenv
-    # RBENV_ROOT の決定。既に設定されていれば尊重する (config.local.fish や
-    # 親プロセスからの指定を潰さない。pnpm.fish の PNPM_HOME と同じ方針)。
-    if not set -q RBENV_ROOT; or test -z "$RBENV_ROOT"
-        # このマシンでは ruby の実体が Homebrew の keg 配下
-        # ($HOMEBREW_PREFIX/opt/rbenv/versions) にあり、default root
-        # (~/.rbenv/versions) は空。default root のままだと fish だけ system ruby に
-        # フォールバックし、RBENV_ROOT を keg に向けている zsh (~/.zshrc、repo 管理外)
-        # と ruby のバージョンが食い違う。
-        #
-        # 判定は「brew で rbenv を入れているか」ではなく「versions の実体がどちらに
-        # あるか」で行う。ruby を標準の ~/.rbenv/versions に置く別マシンでは
-        # keg 配下が空なのでこの分岐に入らず、default root がそのまま使われる。
-        # (set への glob は一致 0 件でもエラーにならず空リストになる)
-        set -l own_versions $HOME/.rbenv/versions/*
-        set -l keg_versions $HOMEBREW_PREFIX/opt/rbenv/versions/*
-        if test (count $own_versions) -eq 0; and test (count $keg_versions) -gt 0
-            # HOMEBREW_PREFIX は config.fish の `brew shellenv fish` が export する。
-            # ただし config.fish は /opt/homebrew 決め打ちなので、Intel mac や
-            # Linuxbrew では export されない。その場合 keg_versions が空になり
-            # ここには入らないため、default root のまま (PR 前と同じ挙動) になる。
-            set -gx RBENV_ROOT $HOMEBREW_PREFIX/opt/rbenv
-        end
-    end
     rbenv init - fish | source
 end

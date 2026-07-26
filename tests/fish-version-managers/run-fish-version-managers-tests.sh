@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # fish/config/rbenv.fish・pyenv.fish の回帰テスト。
 #
-# 検証項目 (ツールごとに 3 ケース):
+# 検証項目 (ツールごとに 3 ケース / 集計は 4 カウント — ケース 2 が function
+# 定義と argv の 2 本を別々に加算するため)。ツール 2 つで 8、下記の rbenv 固有
+# 2 ケースを足して合計 10 が全 pass 時の件数:
 #   1. ガード: ツールが PATH に無い環境で source しても
 #      - exit 0 で通る
 #      - shell function が定義されない (`type -q` ガードが効いている)
@@ -20,7 +22,7 @@
 #   3. 実物 (任意): ホストに本物が実在する場合のみ、実際の init が
 #      function を定義することを確認する。未実在ならこのケースだけ skip。
 #
-# さらに rbenv 固有で RBENV_ROOT の決定ロジックを 4 ケース検証する
+# さらに rbenv 固有で「RBENV_ROOT を一切変更しないこと」を 2 ケース検証する
 # (下部の rbenv_root_case を参照)。
 #
 # 依存: fish (未インストールなら全体を skip)
@@ -143,52 +145,68 @@ for tool in rbenv pyenv; do
   fi
 done
 
-# --- rbenv 固有: RBENV_ROOT の決定ロジック ---------------------------------
-# rbenv.fish は「versions の実体がどちらにあるか」で RBENV_ROOT を決める。
-# stub 経路なので本物の rbenv は不要。fixture を使い 4 分岐を assert する。
-# これが無いと RBENV_ROOT の設定行を丸ごと削っても他ケースは green のままになる。
+# --- rbenv 固有: RBENV_ROOT に触れないこと ---------------------------------
+# 以前の rbenv.fish は「keg 配下に versions の実体があれば RBENV_ROOT を keg に
+# 向ける」分岐を持っていたが、keg は `brew upgrade rbenv` で丸ごと消えるため
+# 配置そのものが誤りだった (issue #219)。分岐を削除した今、検証すべき不変条件は
+# 「rbenv.fish は RBENV_ROOT を一切変更しない」。旧分岐が最も発火しやすかった
+# 条件 (keg に実体あり / default root は空) を fixture で再現して assert する。
+# これが無いと分岐が再導入されても他ケースは green のままになる。
+# この 2 つの fixture は **現行の rbenv.fish からは参照されない** (versions を
+# glob する行ごと削除済み)。「未使用だから」と消さないこと: 旧分岐が再導入
+# された mutant を発火させるために必要で、これが無いと mutant が「keg に実体が
+# 無い」と判定して素通りし、テストが再導入を検出できなくなる。
 mkdir -p "$WORKDIR/fx/keg/opt/rbenv/versions/3.4.2"
 mkdir -p "$WORKDIR/fx/home-empty/.rbenv/versions"
-mkdir -p "$WORKDIR/fx/home-own/.rbenv/versions/3.3.0"
 
 rbenv_target="$REPO_ROOT/fish/config/rbenv.fish"
 
-# fixture HOME / HOMEBREW_PREFIX / 既存 RBENV_ROOT を注入し、source 後の
-# RBENV_ROOT を期待値と比較する。空文字列の期待は「設定されなかった」を意味する。
+# ループ内でも同名 stub を作っているが、このブロックはループの外なので
+# 順序に依存しないよう自前で用意する (冪等な上書き)。
+make_stub rbenv
+
+# source 後の RBENV_ROOT を `SOURCED:<値>` 形式で回収して期待値と比較する。
+# `SOURCED:` prefix は marker であって飾りではない: fish は source の失敗
+# (パスの typo / ファイル移動) でも exit 0 のまま後続を実行するため、値だけを
+# 見ると「一度も source されていない」ケースが「未設定」と区別できず vacuous
+# pass になる。marker は stub が定義する rbenv function の有無を条件にして
+# いるので、source が通っていなければ出力ごと消えて FAIL する。
+# 第 2 引数が空なら `env -u` で RBENV_ROOT を **unset** にする (`RBENV_ROOT=""`
+# だと fish からは「空文字で set 済み」に見え、`set -q` だけをガードにした
+# 分岐の再導入を検出できない)。
 rbenv_root_case() {
-  local name="$1" fx_home="$2" brew_prefix="$3" preset_root="$4" expected="$5"
-  local actual
-  actual=$(HOME="$fx_home" XDG_CONFIG_HOME="$fx_home/.config" \
-    HOMEBREW_PREFIX="$brew_prefix" RBENV_ROOT="$preset_root" \
-    fish --no-config -c \
-    "set -gx PATH '$WORKDIR/bin'; source '$rbenv_target'; echo \$RBENV_ROOT" 2>/dev/null)
-  if [ "$actual" = "$expected" ]; then
+  local name="$1" preset_root="$2" expected="$3"
+  local snippet actual
+  snippet="set -gx PATH '$WORKDIR/bin'
+    source '$rbenv_target'
+    functions -q rbenv; and echo \"SOURCED:\$RBENV_ROOT\""
+  if [ -n "$preset_root" ]; then
+    actual=$(HOME="$WORKDIR/fx/home-empty" \
+      XDG_CONFIG_HOME="$WORKDIR/fx/home-empty/.config" \
+      HOMEBREW_PREFIX="$WORKDIR/fx/keg" RBENV_ROOT="$preset_root" \
+      fish --no-config -c "$snippet" 2>/dev/null)
+  else
+    actual=$(env -u RBENV_ROOT HOME="$WORKDIR/fx/home-empty" \
+      XDG_CONFIG_HOME="$WORKDIR/fx/home-empty/.config" \
+      HOMEBREW_PREFIX="$WORKDIR/fx/keg" \
+      fish --no-config -c "$snippet" 2>/dev/null)
+  fi
+  if [ "$actual" = "SOURCED:$expected" ]; then
     pass=$((pass + 1))
   else
-    echo "FAIL $name: RBENV_ROOT='$actual' (expected '$expected')"
+    echo "FAIL $name: '$actual' (expected 'SOURCED:$expected')"
     fail=$((fail + 1))
   fi
 }
 
-make_stub rbenv
+# keg に実体があり default root が空でも RBENV_ROOT を設定しない
+rbenv_root_case "rbenv root: keg に実体があっても RBENV_ROOT を設定しない" "" ""
 
-# keg に versions があり default root が空 → keg に向ける
-rbenv_root_case "rbenv root: keg に実体があれば keg を使う" \
-  "$WORKDIR/fx/home-empty" "$WORKDIR/fx/keg" "" "$WORKDIR/fx/keg/opt/rbenv"
-
-# default root に versions がある (標準配置のマシン) → 触らない
-rbenv_root_case "rbenv root: default root に実体があれば触らない" \
-  "$WORKDIR/fx/home-own" "$WORKDIR/fx/keg" "" ""
-
-# brew 無し (HOMEBREW_PREFIX 空) → 触らない。ここで空文字列を渡すのは
-# Intel mac / Linuxbrew / brew 未導入で HOMEBREW_PREFIX が export されない
-# ケースの再現
-rbenv_root_case "rbenv root: HOMEBREW_PREFIX が無ければ触らない" \
-  "$WORKDIR/fx/home-empty" "" "" ""
-
-# 既に RBENV_ROOT が設定されていれば尊重する (config.local.fish 等の上書き)
-rbenv_root_case "rbenv root: 既存の RBENV_ROOT を尊重する" \
-  "$WORKDIR/fx/home-empty" "$WORKDIR/fx/keg" "/custom/rbenv" "/custom/rbenv"
+# 外部で設定された RBENV_ROOT はそのまま通す (config.local.fish は
+# config.fish で config/*.fish より先に source されるため実在する経路)。
+# 期待値が非空なので、marker と併せて harness 破損の検出も兼ねる。
+rbenv_root_case "rbenv root: 外部の RBENV_ROOT を潰さない" \
+  "/custom/rbenv" "/custom/rbenv"
 
 echo "fish-version-managers tests: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
