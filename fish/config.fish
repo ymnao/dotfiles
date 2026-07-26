@@ -48,3 +48,6 @@ if test -d $HOME/.lmstudio/bin
 end
 # End of LM Studio CLI section
 
+
+# Added by `rbenv init` on Sun Jul 26 12:54:48 JST 2026
+status --is-interactive; and rbenv init - --no-rehash fish | source
