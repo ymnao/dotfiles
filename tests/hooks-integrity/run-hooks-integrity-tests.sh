@@ -28,6 +28,11 @@ export LC_ALL=C
 export GIT_CONFIG_GLOBAL=/dev/null
 export GIT_CONFIG_SYSTEM=/dev/null
 
+# git hook 等から起動された場合、これらを継承すると fixture の git 操作が
+# 呼び出し元 repo の index / object DB を触ってしまう。隔離を確実にする。
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
+  GIT_COMMON_DIR GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd "$SCRIPT_DIR" && git rev-parse --show-toplevel)" || exit 1
 [ -n "$REPO_ROOT" ] || { echo "FAIL: repo root を解決できません"; exit 1; }
@@ -84,7 +89,9 @@ printf 'echo base\n' > "$FIXTURE/agents/hooks/sample.sh"
 printf '{}\n' > "$FIXTURE/codex/hooks.json"
 printf '{}\n' > "$FIXTURE/claude/settings.json"
 printf 'echo statusline\n' > "$FIXTURE/claude/statusline.sh"
+printf 'model = "x"\n' > "$FIXTURE/codex/config.toml"
 printf 'make gate\n' > "$FIXTURE/.claude/stop-gate.conf"
+printf '{}\n' > "$FIXTURE/.claude/settings.json"
 printf 'readme\n' > "$FIXTURE/README.md"
 # 本番と同じく claude/hooks/ は agents/hooks/ への相対 symlink にしておく
 # (symlink が実体ファイルに置換される typechange も検知対象に入るため)。
@@ -155,7 +162,9 @@ assert_detects "codex/hooks/injected.sh" untracked
 assert_detects "codex/hooks.json" tracked
 assert_detects "claude/settings.json" tracked
 assert_detects "claude/statusline.sh" tracked
+assert_detects "codex/config.toml" tracked
 assert_detects ".claude/stop-gate.conf" tracked
+assert_detects ".claude/settings.json" tracked
 assert_detects "agents/hooks/sample.sh" deleted
 assert_detects "codex/hooks.json" staged
 
@@ -194,6 +203,15 @@ out=$(run_hook "$WORK/missing"); rc=$?
 check "$rc" "存在しない repo パスで exit 0 (got $rc)"
 check_empty "$out" "存在しない repo パスで出力が空であること"
 
+# --- 8b. HOOKS_INTEGRITY_REPO 無しで自己パスからも repo を特定できない場合 ---
+# 上の fail-open ケースは全て env で repo を渡しているため、rev-parse が失敗する
+# 分岐 (hook が git repo 外に置かれている) を通っていない。
+mkdir -p "$WORK/orphan"
+cp "$HOOK" "$WORK/orphan/hooks-integrity-warn.sh"
+out=$(cd "$WORK" && env -u HOOKS_INTEGRITY_REPO bash "$WORK/orphan/hooks-integrity-warn.sh" 2>&1); rc=$?
+check "$rc" "repo 外に置かれた hook が exit 0 (fail-open、got $rc)"
+check_empty "$out" "repo を特定できないとき出力が空であること"
+
 # --- 9. git が PATH に無い環境でも fail-open ---
 mkdir -p "$WORK/emptybin"
 printf 'tampered\n' >> "$FIXTURE/agents/hooks/sample.sh"
@@ -231,18 +249,30 @@ matcher=$(jq -r '
   | .matcher
 ' "$REPO_ROOT/claude/settings.json")
 check_cmd "SessionStart に hooks-integrity-warn.sh の entry が 1 つあること" [ -n "$matcher" ]
+# matcher は正規表現なので、部分文字列ではなく「実イベント名に一致するか」で判定する
+# (`startup-broken|...` のような実イベントに当たらない値を通さないため)。
+matches_re() {
+  # $1=検査する文字列, $2=正規表現
+  [[ "$1" =~ $2 ]]
+}
+not_matches_re() {
+  ! matches_re "$1" "$2"
+}
 for ev in startup resume clear; do
-  # matcher は正規表現。イベント名がそのまま含まれているかで判定する。
-  grep -q "$ev" <<<"$matcher"
-  check "$?" "SessionStart matcher が ${ev} を含むこと (got: ${matcher})"
+  check_cmd "SessionStart matcher が ${ev} に一致すること (got: ${matcher})" \
+    matches_re "$ev" "$matcher"
 done
-entry_timeout=$(jq -r '
+# 非対象イベントまで拾う緩い matcher (例: 空文字 / `.*`) になっていないこと
+check_cmd "SessionStart matcher が無関係なイベントに一致しないこと (got: ${matcher})" \
+  not_matches_re "no-such-event" "$matcher"
+# command は完全一致で pin する (パス誤記や余計なコマンドの混入を通さない)
+entry=$(jq -r '
   .hooks.SessionStart[].hooks[]
   | select(.command | test("hooks-integrity-warn\\.sh"))
-  | "\(.type):\(.timeout)"
+  | "\(.type)|\(.timeout)|\(.command)"
 ' "$REPO_ROOT/claude/settings.json")
-check_cmd "SessionStart entry が type=command / timeout=10 であること (got ${entry_timeout})" \
-  [ "$entry_timeout" = "command:10" ]
+check_cmd "SessionStart entry が type/timeout/command とも期待どおりであること (got ${entry})" \
+  [ "$entry" = 'command|10|bash "$HOME/.claude/hooks/hooks-integrity-warn.sh"' ]
 
 # --- 13. 配線: run-gate.sh / Makefile の「コメントでない実行行」から呼ばれている ---
 # 単なる grep だと直前の説明コメントに hook 名が残るだけで pass してしまうため、

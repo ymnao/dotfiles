@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# SessionStart hook (Claude Code, matcher: startup|resume): host 側で実行される
+# SessionStart hook (Claude Code, matcher: startup|resume|clear): host 側で実行される
 # hook 定義に未コミットの変更があれば警告する (warn-only)。
 # 正本: agents/hooks/hooks-integrity-warn.sh (claude/hooks/ からは相対 symlink)
 #
@@ -46,7 +46,10 @@ export LC_ALL=C
 # 監視対象は「host 側で起動されるコマンドを **直接** 定義しているファイル」に限る:
 #   agents/hooks/ (正本) / claude/hooks/ / codex/hooks/ (symlink + codex 固有実体)
 #   codex/hooks.json / claude/settings.json (hook と statusLine の command 定義)
+#   codex/config.toml (notify — turn 終了ごとに host バイナリを起動する)
 #   .claude/stop-gate.conf (Stop hook が bash -c に渡す検証コマンド)
+#   .claude/settings.json (この repo の permissions / sandbox。何を承認なしに
+#     実行できるか・どこに書けるかを決めるので同じ脅威モデルに属する)
 #   claude/statusline.sh (settings.json の statusLine から毎回起動される)
 #
 # 意図的に含めないもの:
@@ -65,8 +68,10 @@ WATCHED_PATHS=(
   claude/hooks
   codex/hooks
   codex/hooks.json
+  codex/config.toml
   claude/settings.json
   claude/statusline.sh
+  .claude/settings.json
   .claude/stop-gate.conf
 )
 
@@ -78,10 +83,10 @@ fi
 command -v git >/dev/null 2>&1 || exit 0
 
 # HOOKS_INTEGRITY_REPO は呼び出し側が repo root を既に知っている場合の近道
-# (tests/run-gate.sh / テスト)。値の妥当性は検証しない — この env を仕込める
-# 主体は既に host でコードを実行できており、検証を足しても防御にならない一方、
-# 検証失敗時の fallback は「別 repo を黙って見に行く」という分かりにくい
-# 誤動作を生む (実装中に実際に踏んだ)。
+# (tests/run-gate.sh / テスト)。値の妥当性は検証しない — 検証失敗時の fallback が
+# 「別 repo を黙って見に行く」という分かりにくい誤動作を生んだため (実装中に実際に
+# 踏んだ)。この env を誰が仕込めるか (harness の env 注入経路の有無) は未検証なので、
+# 「攻撃者には設定できない」という前提は置かない。warn-only 層なので許容する。
 repo="${HOOKS_INTEGRITY_REPO:-}"
 if [ -z "$repo" ]; then
   # symlink 経由 (~/.claude/hooks/ → dotfiles/claude/hooks/) で起動されるため、

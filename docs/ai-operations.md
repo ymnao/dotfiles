@@ -145,7 +145,7 @@ MEMORY.md 先頭 200 行が自動ロードされる。
 | Stop hook 駆動の review 強制ループ(claude-review-loop 系) | /dev 内の有界レビューループ(上限 2 周)で足りる。無限ループ対策(`stop_hook_active` guard)が必要になり、停止タイミングの監視性も下がる | /dev 運用でレビュー飛ばしが実際に起きたとき |
 | Ralph loop 型の外側無人ループ(`while true; claude -p` 系) | merge ゲート・plan ゲートの人間監視を放棄することになる。2026-07-19 の検討で「パイプライン圧縮 + 人間ゲート再配置」(/dev + /next)を採用 | 完全無人で回してよい種類の反復タスク(大量 migration 等)が実際に発生したとき |
 
-## 10. `~/.codex/config.toml` の書き込み防御層
+## 10. codex / Claude Code の host 実行面の防御層
 
 codex CLI の `~/.codex/config.toml` は **sandbox 境界を越えて host 側で
 任意コマンドを実行させられる設定ファイル**。`notify` は turn 終了時に
@@ -235,21 +235,26 @@ Untrusted となり承認するまで実行されない)。
 
 `~/.codex/hooks.json` / `~/.codex/hooks/` / `~/.codex/skills/` は
 `scripts/link.sh` が張る **repo への symlink** で、実体は git 追跡下にある。
-config.toml(git 追跡外の実ファイル)との非対称性はここにある。したがって
+host 側の実ファイル `~/.codex/config.toml`(これが git 追跡外。repo 側の
+`codex/config.toml` は追跡下で、merge 経由で host に反映される)との
+非対称性はここにある。したがって
 **commit 済みの改変は PR review + `tests/integrity/run-integrity-check.sh`
 (symlink 置換の検出)で見える**。残るリスクは「**commit されていない改変**」で、
 この repo の cwd は sandbox の allowWrite なので、正当な hook 開発と区別できない。
 
 | 層 | 実装 | 効くもの | 効かないもの |
 |---|---|---|---|
-| 検知 (session) | `agents/hooks/hooks-integrity-warn.sh` を `claude/settings.json` の SessionStart (`startup\|resume\|clear`) に配線 | セッション開始時に、監視対象の未コミット改変を警告として context に注入する。**実運用で人と model の目に入る唯一の経路** | 警告のみで遮断はしない(dotfiles 開発中は dirty が正常状態のため意図的に warn-only) |
-| 検知 (手動) | 同 hook を `make test` と `tests/run-gate.sh`(`make gate`)からも呼ぶ | **手で `make test` / `make gate` を叩いたとき**の表示 | **Stop hook 経由では表示されない** — `stop-verify-gate.sh` は gate の出力を変数に captureし、gate が通れば捨て、落ちても `tail -20` しか出さないため。ターンごとの自動検知にはなっていない |
+| 検知 (session) | `agents/hooks/hooks-integrity-warn.sh` を `claude/settings.json` の SessionStart (`startup\|resume\|clear`) に配線 | セッション開始時に、監視対象の未コミット改変を警告として context に注入する。**自動で発火する唯一の経路**(model の context に入り、人は transcript で確認できる) | 警告のみで遮断はしない(dotfiles 開発中は dirty が正常状態のため意図的に warn-only) |
+| 検知 (手動) | 同 hook を `make test` と `tests/run-gate.sh`(`make gate`)からも呼ぶ | **手で `make test` / `make gate` を叩いたとき**の表示 | **Stop hook 経由では表示されない** — `stop-verify-gate.sh` は gate の出力を変数に capture し、gate が通れば捨て、落ちても `tail -20` しか出さないため。ターンごとの自動検知にはなっていない |
 | 構造検査 | `tests/integrity/run-integrity-check.sh` | symlink が期待どおりの実体を指しているか(置換・実体化の検出)。ズレは異常なので exit 1 | ファイル**内容**の改変 |
 | review | git 追跡 + PR review | push されて PR に載った改変 | 未コミットの改変(検知層が担当)と、**push されないローカル commit**(下記) |
 
 監視対象は「host 側で起動されるコマンドを**直接**定義しているファイル」に限る
 (`agents/hooks/` `claude/hooks/` `codex/hooks/` `codex/hooks.json`
-`claude/settings.json` `claude/statusline.sh` `.claude/stop-gate.conf`)。
+`codex/config.toml` `claude/settings.json` `claude/statusline.sh`
+`.claude/settings.json` `.claude/stop-gate.conf`)。`.claude/settings.json` は
+コマンドを直接は書かないが、**何を承認なしに実行できるか / どこに書けるか**を
+決めるので同じ脅威モデルに属する。
 `.claude/stop-gate.conf` 経由で間接的に host 実行される `tests/` / `Makefile` /
 `scripts/` まで広げると、この repo のほぼ全変更で警告が出て signal が消えるため
 含めない。網羅性は `tests/hooks-integrity/run-hooks-integrity-tests.sh` が
@@ -273,6 +278,10 @@ config.toml(git 追跡外の実ファイル)との非対称性はここにある
   SessionStart entry を消す編集と hook 本体の改変を同時に行うと、次回起動時には
   新しい settings.json が読まれるため警告は出ない(自己隠蔽)。settings.json は
   監視対象なので **改変した回の警告は出る**が、それを人が見落とせばそこで途切れる
+- **無関係なプロジェクトのセッションでも警告が出る**。配線先は
+  `~/.claude/settings.json`(グローバル)で、hook は cwd を無視して dotfiles repo を
+  見る。dotfiles を dirty のまま別プロジェクトで作業している間はずっと同じ警告が
+  context に入り、warn-only の signal が摩耗する
 - **`.gitignore` にマッチする新規ファイルは `-uall` でも見えない**。`.gitignore`
   自体も監視対象外なので、「`.gitignore` に追記 → 無視されるファイル名で設置」の
   2 手で検知を避けられる(それ単体では実行に繋がらないが、fail-open の穴の一つ)
