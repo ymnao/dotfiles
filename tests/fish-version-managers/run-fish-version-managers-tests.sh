@@ -42,6 +42,15 @@ WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/fish-version-managers.XXXXXX")" || {
 trap 'rm -rf "$WORKDIR"' EXIT
 mkdir -p "$WORKDIR/bin"
 
+# fish を起動するときは HOME / XDG_CONFIG_HOME を WORKDIR 配下に逃がす。
+# ケース 3 は PATH に本物の rbenv / pyenv が乗った状態で対象ファイルを source
+# するため、万一 `rbenv init` から `-` が落ちる回帰が入ると rbenv は
+# 「シェル初期化ファイルを書き換える」モードで走る。~/.config/fish は repo の
+# fish/ への symlink なので、隔離しないとテスト実行が tracked file を破壊する
+# (実際にこの PR の開発中に発生した)。書き込み先が XDG_CONFIG_HOME 配下に
+# 限定されることは実測で確認済み。
+mkdir -p "$WORKDIR/home/.config/fish"
+
 pass=0
 fail=0
 
@@ -50,7 +59,8 @@ fail=0
 run_case() {
   local name="$1" expect_silent="$2" snippet="$3"
   local combined status
-  combined=$(fish --no-config -c "$snippet" 2>&1)
+  combined=$(HOME="$WORKDIR/home" XDG_CONFIG_HOME="$WORKDIR/home/.config" \
+    fish --no-config -c "$snippet" 2>&1)
   status=$?
   if [ "$status" -ne 0 ]; then
     echo "FAIL $name: exit=$status (expected 0)"
