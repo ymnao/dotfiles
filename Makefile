@@ -94,6 +94,11 @@ test: lint-locale-pin ## Verify shell scripts (shellcheck), JSON files (jq), and
 	@bash tests/hooks-glob/run-glob-determinism-tests.sh
 	@bash tests/link-backup/run-link-backup-tests.sh
 	@bash tests/verify-ci/run-verify-ci-tests.sh
+	@bash tests/hooks-integrity/run-hooks-integrity-tests.sh
+	@# 実 repo に対しても 1 回走らせる (warn-only)。Stop hook 経由では
+	@# stop-verify-gate.sh が gate の出力を握り潰すため、警告が人の目に入る
+	@# 経路として make test / make gate の手動実行を確保しておく。
+	@bash agents/hooks/hooks-integrity-warn.sh
 	@bash tests/integrity/run-integrity-selftest.sh
 	@bash tests/integrity/verify-guard-codex-wiring.sh
 	@bash tests/integrity/verify-settings-codex-domains.sh

@@ -178,6 +178,16 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/hooks-integrity-warn.sh\"",
+            "timeout": 10
+          }
+        ]
       }
     ]
   },

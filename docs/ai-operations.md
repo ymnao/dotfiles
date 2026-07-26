@@ -145,7 +145,7 @@ MEMORY.md 先頭 200 行が自動ロードされる。
 | Stop hook 駆動の review 強制ループ(claude-review-loop 系) | /dev 内の有界レビューループ(上限 2 周)で足りる。無限ループ対策(`stop_hook_active` guard)が必要になり、停止タイミングの監視性も下がる | /dev 運用でレビュー飛ばしが実際に起きたとき |
 | Ralph loop 型の外側無人ループ(`while true; claude -p` 系) | merge ゲート・plan ゲートの人間監視を放棄することになる。2026-07-19 の検討で「パイプライン圧縮 + 人間ゲート再配置」(/dev + /next)を採用 | 完全無人で回してよい種類の反復タスク(大量 migration 等)が実際に発生したとき |
 
-## 10. `~/.codex/config.toml` の書き込み防御層
+## 10. codex / Claude Code の host 実行面の防御層
 
 codex CLI の `~/.codex/config.toml` は **sandbox 境界を越えて host 側で
 任意コマンドを実行させられる設定ファイル**。`notify` は turn 終了時に
@@ -195,13 +195,114 @@ trust_level 記録)/ `[plugins.*]` / `[notice.*]` / `[tui.*]` /
   warn でスキップされ他の symlink 処理は継続する(`scripts/link.sh` /
   `link.ps1` で明示的に warn-continue にしている)
 
+### codex の hook 承認 (`trusted_hash`) の適用範囲 — 実測結果
+
+`~/.codex/config.toml` の `[hooks.state."<hooks.json path>:<event>:<group>:<index>"].trusted_hash`
+は、**hook の設定 identity だけをハッシュしており、参照先スクリプト本体の内容は
+一切含まない**。codex CLI **0.145.0** で実測して確認した(issue #207)。
+
+根拠は 2 系統:
+
+1. 上流実装(`openai/codex`)。`codex-rs/hooks/src/engine/discovery.rs` の
+   `command_hook_hash()` は `{event_name, matcher, hooks: [normalized_handler]}`
+   を組み立てて `version_for_toml()` に渡すだけで、`normalized_handler` は
+   command 文字列 / timeout / async / statusMessage / additionalContextLimit
+   から成る設定値。同関数のドキュメントコメントが目的を明示している —
+   *"Hash a normalized, config-derived identity instead of source text so
+   equivalent hooks from config TOML and hooks.json converge on the same trust
+   identity."*。`version_for_toml()`(`codex-rs/config/src/fingerprint.rs`)は
+   その値を canonical JSON(オブジェクト key を再帰ソート)にして sha256 する
+2. 再現実測。上記を再実装して、この機体の `~/.codex/config.toml` に記録済みの
+   `trusted_hash` 6 件のうち **5 件をバイト一致で再現**した(残る 1 件は Stop
+   event の default timeout が未特定なだけ)。再現できた payload の例:
+
+   ```
+   {"event_name":"pre_tool_use","hooks":[{"async":false,"command":"bash \"$HOME/.codex/hooks/block-dangerous-commands.sh\"","statusMessage":"コマンド安全性チェック中...","timeout":10,"type":"command"}],"matcher":"^Bash$"}
+   → sha256:926d8278e318187e63816360f984fd354cad9dec305d9e7f4154a02377b3f39d
+   ```
+
+**帰結**: `~/.codex/hooks/*.sh` の中身を差し替えても codex は再承認を求めず、
+次回起動時に無警告で host 側で実行する。**codex 側の hook 承認機構は
+スクリプト改変に対する backstop にならない**。逆に、`hooks.json` の
+command 文字列・matcher・timeout・statusMessage を変えると hash が変わり
+再承認が要る(実際 `codex/hooks.json` に hook を追加した直後は、その entry が
+Untrusted となり承認するまで実行されない)。
+
+この結論は codex の実装詳細に依存するため、**codex を upgrade したら再実測する**
+(本節にバージョンを明記してあるのがその trigger)。
+
+### hooks 系ファイルの防御層
+
+`~/.codex/hooks.json` / `~/.codex/hooks/` / `~/.codex/skills/` は
+`scripts/link.sh` が張る **repo への symlink** で、実体は git 追跡下にある。
+host 側の実ファイル `~/.codex/config.toml`(これが git 追跡外。repo 側の
+`codex/config.toml` は追跡下で、merge 経由で host に反映される)との
+非対称性はここにある。したがって
+**commit 済みの改変は PR review + `tests/integrity/run-integrity-check.sh`
+(symlink 置換の検出)で見える**。残るリスクは「**commit されていない改変**」で、
+この repo の cwd は sandbox の allowWrite なので、正当な hook 開発と区別できない。
+
+| 層 | 実装 | 効くもの | 効かないもの |
+|---|---|---|---|
+| 検知 (session) | `agents/hooks/hooks-integrity-warn.sh` を `claude/settings.json` の SessionStart (`startup\|resume\|clear`) に配線 | セッション開始時に、監視対象の未コミット改変を警告として context に注入する。**自動で発火する唯一の経路**(model の context に入り、人は transcript で確認できる) | 警告のみで遮断はしない(dotfiles 開発中は dirty が正常状態のため意図的に warn-only) |
+| 検知 (手動) | 同 hook を `make test` と `tests/run-gate.sh`(`make gate`)からも呼ぶ | **手で `make test` / `make gate` を叩いたとき**の表示 | **Stop hook 経由では表示されない** — `stop-verify-gate.sh` は gate の出力を変数に capture し、gate が通れば捨て、落ちても `tail -20` しか出さないため。ターンごとの自動検知にはなっていない |
+| 構造検査 | `tests/integrity/run-integrity-check.sh` | symlink が期待どおりの実体を指しているか(置換・実体化の検出)。ズレは異常なので exit 1 | ファイル**内容**の改変 |
+| review | git 追跡 + PR review | push されて PR に載った改変 | 未コミットの改変(検知層が担当)と、**push されないローカル commit**(下記) |
+
+監視対象は「host 側で起動されるコマンドを**直接**定義しているファイル」に限る
+(`agents/hooks/` `claude/hooks/` `codex/hooks/` `codex/hooks.json`
+`codex/config.toml` `claude/settings.json` `claude/statusline.sh`
+`.claude/settings.json` `.claude/stop-gate.conf`)。`.claude/settings.json` は
+コマンドを直接は書かないが、**何を承認なしに実行できるか / どこに書けるか**を
+決めるので同じ脅威モデルに属する。
+`.claude/stop-gate.conf` 経由で間接的に host 実行される `tests/` / `Makefile` /
+`scripts/` まで広げると、この repo のほぼ全変更で警告が出て signal が消えるため
+含めない。網羅性は `tests/hooks-integrity/run-hooks-integrity-tests.sh` が
+配線 (`settings.json` / `hooks.json` の command) から抽出して assert する。
+
+**残余リスク(塞げていないもの)**:
+
+- **検知層は Claude Code のライフサイクルにしか配線されていない**。SessionStart も
+  `make gate`(Stop hook)も Claude Code 側のイベントで、`codex/hooks.json` には
+  SessionStart セクションが無く、codex の Stop hook は `notify-stop.sh` を呼ぶだけで
+  `run-gate.sh` には繋がっていない。つまり **Claude Code を経由せず codex CLI 単体で
+  作業して `codex/hooks/*.sh` を未コミットで改変した場合、`make gate` / `make test`
+  を手で回さない限りこの警告は一度も出ない**。本節の脅威モデルの中心が codex 側で
+  ある以上これは主要な穴であり、codex 側配線は別 issue で扱う(配線には
+  `codex/hooks/` への symlink 追加と codex TUI での再承認が要る)
+- **ローカル commit すると検知が消える**。検査は `git status --porcelain`
+  (HEAD との差分)なので、改変を commit した時点で clean になる。push されない
+  ローカル commit は PR review にも載らないため、「commit されていれば review で
+  見える」が成立するのは **push された場合だけ**。この窓を塞ぐ層は現状無い
+- **検知層の配線先そのものが監視対象の内側にある**。`claude/settings.json` の
+  SessionStart entry を消す編集と hook 本体の改変を同時に行うと、次回起動時には
+  新しい settings.json が読まれるため警告は出ない(自己隠蔽)。settings.json は
+  監視対象なので **改変した回の警告は出る**が、それを人が見落とせばそこで途切れる
+- **無関係なプロジェクトのセッションでも警告が出る**。配線先は
+  `~/.claude/settings.json`(グローバル)で、hook は cwd を無視して dotfiles repo を
+  見る。dotfiles を dirty のまま別プロジェクトで作業している間はずっと同じ警告が
+  context に入り、warn-only の signal が摩耗する
+- **`.gitignore` にマッチする新規ファイルは `-uall` でも見えない**。`.gitignore`
+  自体も監視対象外なので、「`.gitignore` に追記 → 無視されるファイル名で設置」の
+  2 手で検知を避けられる(それ単体では実行に繋がらないが、fail-open の穴の一つ)
+- `block-dangerous-commands.sh` の `_check_glob_seg` は segment 単位で
+  「引数の path component が `.codex` にマッチするか」を見るため、
+  `cd ~/.codex/hooks && printf ... > block-dangerous-commands.sh` のように
+  **書き込み segment 側に `.codex` component が現れない形は素通しする**。
+  config.toml は sandbox の denyWrite が backstop になるが、hooks 系には
+  backstop が無い。`cd` 追跡を足しても `bash -c` や変数間接参照など回避経路が
+  残り、Bash コマンド文字列の静的検査は原理的に迂回可能なので、ここは
+  遮断ではなく上表の検知層で受ける設計にしている
+- repo 内の `codex/hooks/*.sh` を直接編集する経路は sandbox で allow されている。
+  この repo の目的がそれらの編集そのものなので block できない
+- **repo の hook 実装は host 側で実行される = 実質 trusted zone** である。
+  この repo に書き込める主体は、次回の Claude Code / codex 起動時に host 上で
+  任意コードを実行できると考えること
+
 ### scope 外(別 issue)
 
-- `~/.codex/hooks.json` / `~/.codex/hooks/` / `~/.codex/skills/` も host 側で
-  コマンドを起動する定義を持つが、これらは **repo への symlink**
-  (`scripts/link.sh` が張る)であり実体は git 追跡下にある。改変は PR review で
-  見える + `tests/integrity/run-integrity-check.sh` が symlink 置換を検出する。
-  config.toml だけが「git 追跡外の実ファイル」= 書き換えが review で見えないため
-  sandbox/hook 層で止める必要がある、という非対称性が本節の設計根拠
 - codex CLI 側で notify を禁止する設定の有無は未調査
 - `~/.codex/AGENTS.md` 経由の prompt injection は本層の対象外
+- `~/.codex/skills/` は検知層の監視対象に含めていない。skill は model への
+  指示テキストであって host が直接実行するものではなく、脅威モデルが異なる
+  (prompt injection 側の問題として扱う)
