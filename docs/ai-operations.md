@@ -195,13 +195,78 @@ trust_level 記録)/ `[plugins.*]` / `[notice.*]` / `[tui.*]` /
   warn でスキップされ他の symlink 処理は継続する(`scripts/link.sh` /
   `link.ps1` で明示的に warn-continue にしている)
 
+### codex の hook 承認 (`trusted_hash`) の適用範囲 — 実測結果
+
+`~/.codex/config.toml` の `[hooks.state."<hooks.json path>:<event>:<group>:<index>"].trusted_hash`
+は、**hook の設定 identity だけをハッシュしており、参照先スクリプト本体の内容は
+一切含まない**。codex CLI **0.145.0** で実測して確認した(issue #207)。
+
+根拠は 2 系統:
+
+1. 上流実装(`openai/codex`)。`codex-rs/hooks/src/engine/discovery.rs` の
+   `command_hook_hash()` は `{event_name, matcher, hooks: [normalized_handler]}`
+   を組み立てて `version_for_toml()` に渡すだけで、`normalized_handler` は
+   command 文字列 / timeout / async / statusMessage / additionalContextLimit
+   から成る設定値。同関数のドキュメントコメントが目的を明示している —
+   *"Hash a normalized, config-derived identity instead of source text so
+   equivalent hooks from config TOML and hooks.json converge on the same trust
+   identity."*。`version_for_toml()`(`codex-rs/config/src/fingerprint.rs`)は
+   その値を canonical JSON(オブジェクト key を再帰ソート)にして sha256 する
+2. 再現実測。上記を再実装して、この機体の `~/.codex/config.toml` に記録済みの
+   `trusted_hash` 6 件のうち **5 件をバイト一致で再現**した(残る 1 件は Stop
+   event の default timeout が未特定なだけ)。再現できた payload の例:
+
+   ```
+   {"event_name":"pre_tool_use","hooks":[{"async":false,"command":"bash \"$HOME/.codex/hooks/block-dangerous-commands.sh\"","statusMessage":"コマンド安全性チェック中...","timeout":10,"type":"command"}],"matcher":"^Bash$"}
+   → sha256:926d8278e318187e63816360f984fd354cad9dec305d9e7f4154a02377b3f39d
+   ```
+
+**帰結**: `~/.codex/hooks/*.sh` の中身を差し替えても codex は再承認を求めず、
+次回起動時に無警告で host 側で実行する。**codex 側の hook 承認機構は
+スクリプト改変に対する backstop にならない**。逆に、`hooks.json` の
+command 文字列・matcher・timeout・statusMessage を変えると hash が変わり
+再承認が要る(実際 `codex/hooks.json` に hook を追加した直後は、その entry が
+Untrusted となり承認するまで実行されない)。
+
+この結論は codex の実装詳細に依存するため、**codex を upgrade したら再実測する**
+(本節にバージョンを明記してあるのがその trigger)。
+
+### hooks 系ファイルの防御層
+
+`~/.codex/hooks.json` / `~/.codex/hooks/` / `~/.codex/skills/` は
+`scripts/link.sh` が張る **repo への symlink** で、実体は git 追跡下にある。
+config.toml(git 追跡外の実ファイル)との非対称性はここにある。したがって
+**commit 済みの改変は PR review + `tests/integrity/run-integrity-check.sh`
+(symlink 置換の検出)で見える**。残るリスクは「**commit されていない改変**」で、
+この repo の cwd は sandbox の allowWrite なので、正当な hook 開発と区別できない。
+
+| 層 | 実装 | 効くもの | 効かないもの |
+|---|---|---|---|
+| 検知 (session) | `agents/hooks/hooks-integrity-warn.sh` を `claude/settings.json` の SessionStart (`startup\|resume`) に配線 | `agents/hooks/` `claude/hooks/` `codex/hooks/` `codex/hooks.json` `claude/settings.json` の未コミット改変を警告 | 警告のみで遮断はしない(dotfiles 開発中は dirty が正常状態のため意図的に warn-only) |
+| 検知 (turn) | 同 hook を `tests/run-gate.sh` からも呼ぶ(`make gate` = Stop hook ゲート) | ターン終了ごとの検知。gate の合否には影響させない | 同上 |
+| 構造検査 | `tests/integrity/run-integrity-check.sh` | symlink が期待どおりの実体を指しているか(置換・実体化の検出)。ズレは異常なので exit 1 | ファイル**内容**の改変 |
+| review | git 追跡 + PR review | commit された改変 | 未コミットの改変(上 2 層が担当) |
+
+**残余リスク(塞げていないもの)**:
+
+- `block-dangerous-commands.sh` の `_check_glob_seg` は segment 単位で
+  「引数の path component が `.codex` にマッチするか」を見るため、
+  `cd ~/.codex/hooks && printf ... > block-dangerous-commands.sh` のように
+  **書き込み segment 側に `.codex` component が現れない形は素通しする**。
+  config.toml は sandbox の denyWrite が backstop になるが、hooks 系には
+  backstop が無い。`cd` 追跡を足しても `bash -c` や変数間接参照など回避経路が
+  残り、Bash コマンド文字列の静的検査は原理的に迂回可能なので、ここは
+  遮断ではなく上表の検知層で受ける設計にしている
+- repo 内の `codex/hooks/*.sh` を直接編集する経路は sandbox で allow されている。
+  この repo の目的がそれらの編集そのものなので block できない
+- **repo の hook 実装は host 側で実行される = 実質 trusted zone** である。
+  この repo に書き込める主体は、次回の Claude Code / codex 起動時に host 上で
+  任意コードを実行できると考えること
+
 ### scope 外(別 issue)
 
-- `~/.codex/hooks.json` / `~/.codex/hooks/` / `~/.codex/skills/` も host 側で
-  コマンドを起動する定義を持つが、これらは **repo への symlink**
-  (`scripts/link.sh` が張る)であり実体は git 追跡下にある。改変は PR review で
-  見える + `tests/integrity/run-integrity-check.sh` が symlink 置換を検出する。
-  config.toml だけが「git 追跡外の実ファイル」= 書き換えが review で見えないため
-  sandbox/hook 層で止める必要がある、という非対称性が本節の設計根拠
 - codex CLI 側で notify を禁止する設定の有無は未調査
 - `~/.codex/AGENTS.md` 経由の prompt injection は本層の対象外
+- `~/.codex/skills/` は検知層の監視対象に含めていない。skill は model への
+  指示テキストであって host が直接実行するものではなく、脅威モデルが異なる
+  (prompt injection 側の問題として扱う)
