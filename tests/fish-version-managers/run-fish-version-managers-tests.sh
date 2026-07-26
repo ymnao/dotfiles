@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # fish/config/rbenv.fish・pyenv.fish の回帰テスト。
 #
-# 検証項目 (ツールごとに 3 ケース):
+# 検証項目 (ツールごとに 3 ケース / 集計は 4 カウント — ケース 2 が function
+# 定義と argv の 2 本を別々に加算するため)。ツール 2 つで 8、下記の rbenv 固有
+# 2 ケースを足して合計 10 が全 pass 時の件数:
 #   1. ガード: ツールが PATH に無い環境で source しても
 #      - exit 0 で通る
 #      - shell function が定義されない (`type -q` ガードが効いている)
@@ -150,6 +152,10 @@ done
 # 「rbenv.fish は RBENV_ROOT を一切変更しない」。旧分岐が最も発火しやすかった
 # 条件 (keg に実体あり / default root は空) を fixture で再現して assert する。
 # これが無いと分岐が再導入されても他ケースは green のままになる。
+# この 2 つの fixture は **現行の rbenv.fish からは参照されない** (versions を
+# glob する行ごと削除済み)。「未使用だから」と消さないこと: 旧分岐が再導入
+# された mutant を発火させるために必要で、これが無いと mutant が「keg に実体が
+# 無い」と判定して素通りし、テストが再導入を検出できなくなる。
 mkdir -p "$WORKDIR/fx/keg/opt/rbenv/versions/3.4.2"
 mkdir -p "$WORKDIR/fx/home-empty/.rbenv/versions"
 

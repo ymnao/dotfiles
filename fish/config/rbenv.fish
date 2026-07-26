@@ -14,8 +14,16 @@
 # ($(brew --prefix rbenv)) を root にすると ruby の実体が keg 内に入り
 # `brew upgrade rbenv` で丸ごと消える (issue #219)。ここで RBENV_ROOT を
 # 補正しないのは、その配置を追認する装置を残さないため。
-# default root に ruby が無いマシンでは rbenv が system ruby にフォールバック
-# するので、`rbenv install` で default root に入れる。
+# default root に ruby が無いマシンでは rbenv が **エラーを出さずに** system
+# ruby へフォールバックする。復旧手順は 3 つ揃って初めて完了する:
+#   1. `rbenv install <version>` — default root に本体を入れる。keg からの
+#      コピーでは直らない: bin/ruby と全 .bundle の Mach-O ロードパスが
+#      $(brew --prefix rbenv)/versions/... を絶対参照しており、upgrade 後は
+#      その versions/ ごと消えて dyld が解決できなくなる (shebang の sed
+#      書き換えでは届かない)
+#   2. `rbenv global <version>` — $RBENV_ROOT/version は keg 側にあったので
+#      一緒に失われる。これが無いと 1 の後も system ruby のまま
+#   3. gem の再導入 — gem も keg 配下の versions/ と一緒に消える
 if type -q rbenv
     rbenv init - fish | source
 end
