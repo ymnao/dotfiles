@@ -38,6 +38,11 @@ brew "uv"
 brew "nodebrew"
 # nodebrew は version 切替ツール。常用 Node 本体は brew "node" で導入する
 # (secretlint 13 や devDependencies が Node 22+ を要求するため)。
+# ただし `nodebrew use` 済みの環境では fish/config/nodebrew.fish が
+# ~/.nodebrew/current/bin を Homebrew より前に置くため、実際に起動する node は
+# nodebrew 側になる (zsh も同じ)。どちらが使われているかは `command -v node`
+# で確認できる。`make lint` は PATH 先頭の node で動くので、nodebrew 側を
+# Node 22 未満に切り替えると secretlint が動かなくなる点に注意。
 brew "node"
 brew "pnpm"
 brew "rbenv"
