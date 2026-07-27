@@ -1,5 +1,14 @@
 #!/usr/bin/env bash
-# fish/config/rbenv.fish・pyenv.fish の回帰テスト。
+# fish/config/rbenv.fish・pyenv.fish・nodebrew.fish の回帰テスト。
+#
+# 検証対象は形が 2 つに分かれる:
+#   - **init 型** (rbenv / pyenv): `<tool> init - fish | source` で shell
+#     function を定義する。下の「ツールごとの検証項目」がこれ
+#   - **PATH 追加型** (nodebrew): init 相当が無く `fish_add_path` だけ。
+#     function を定義しないので init 型の検証項目 (function 定義 /
+#     `init - fish` 引数 / `functions -q` を source 済みガードに使う root
+#     不変条件) はどれも成立しない。TOOLS へ足すと全ケースが vacuous pass に
+#     なるため、ループを共有せず別セクションに分けてある (下部参照)
 #
 # ツールごとの検証項目 (rbenv / pyenv で同一。件数の合計はハードコードせず
 # 末尾の `N passed, N failed` 行で確認する — ケース追加のたびに数値が drift
@@ -302,6 +311,122 @@ for ((i = 0; i < ${#TOOLS[@]}; i++)); do
   fi
 done
 
+# ---------------------------------------------------------------------------
+# PATH 追加型: nodebrew (issue #218)
+#
+# 検証するのは「`-g` で fish_user_paths に入ること」。fish は
+# fish_user_paths を PATH 全体の前に再構成するため、config.fish で先に走る
+# `brew shellenv` が入れた /opt/homebrew/bin より前に出る。これが
+# `nodebrew use` の切替が効く条件そのもの。`--path` 直操作や `set -a PATH`
+# へ書き換える mutant はこの assert で落ちる。
+# 逆に `-a` (append) への書き換えは**落ちない**し、落とす必要も無い:
+# append で変わるのは fish_user_paths の中の順序だけで、Homebrew との
+# 前後関係は変わらない (実測済み)。
+#
+# ケース 1・4 (不在 / 壊れた symlink) が検証するのは fish_add_path の
+# 「存在しないディレクトリを無視する」挙動への依存。nodebrew.fish は
+# `test -d` ガードを持たず、この挙動に乗って未インストール時の無害性を
+# 得ているため、fish 側が変わったらここで落ちる必要がある。
+# ケース 1・4 は単独では vacuous pass しうる (source が届いていなくても
+# 「追加されない」は成立する) が、同じ $nodebrew_target を使うケース 2 が
+# 落ちること + 下の存在チェックで塞いでいる。
+#
+# `--no-config` のままなのは init 型ケースと harness を共有するため。
+# ただし `--no-config` では fish_user_paths を PATH へ反映する handler が
+# 入らないので、**PATH ではなく fish_user_paths を見る**。PATH 上の実順序は
+# 下の任意ケース (実 config の login shell) で確認する。
+nodebrew_target="$REPO_ROOT/fish/config/nodebrew.fish"
+if [ ! -f "$nodebrew_target" ]; then
+  echo "ERROR: $nodebrew_target が見つからない" >&2
+  exit 1
+fi
+
+# fixture: 未インストール / インストール済み / 壊れた current symlink の 3 種。
+# 隔離 HOME には設定ディレクトリも作る (不在だと fish の版によっては warning が
+# stderr に出て expect_silent=1 のケースだけ落ちる)。
+mkdir -p "$WORKDIR/nb/absent/.config/fish"
+mkdir -p "$WORKDIR/nb/present/.nodebrew/current/bin" "$WORKDIR/nb/present/.config/fish"
+mkdir -p "$WORKDIR/nb/broken/.nodebrew" "$WORKDIR/nb/broken/.config/fish"
+ln -sfn "$WORKDIR/nb/broken/.nodebrew/node/v0.0.0" "$WORKDIR/nb/broken/.nodebrew/current"
+
+# 1. 未インストール: 何も追加せず無言で通る
+run_case "nodebrew: ~/.nodebrew が無ければ何も追加しない" 1 \
+  "$(printf '%s\n' \
+    "source '$nodebrew_target'" \
+    'if set -q fish_user_paths[1]' \
+    '    echo "fish_user_paths=$fish_user_paths"' \
+    '    exit 1' \
+    'end' \
+    'exit 0')" \
+  "HOME=$WORKDIR/nb/absent" "XDG_CONFIG_HOME=$WORKDIR/nb/absent/.config"
+
+# 2. 配線: current/bin があれば fish_user_paths に入る
+run_case "nodebrew: current/bin を fish_user_paths に追加する" 1 \
+  "$(printf '%s\n' \
+    "source '$nodebrew_target'" \
+    'if contains -- "$HOME/.nodebrew/current/bin" $fish_user_paths' \
+    '    exit 0' \
+    'end' \
+    'echo "fish_user_paths=$fish_user_paths"' \
+    'exit 1')" \
+  "HOME=$WORKDIR/nb/present" "XDG_CONFIG_HOME=$WORKDIR/nb/present/.config"
+
+# 3. idempotent: 2 回 source しても 1 本しか増えない
+#    (config.local.fish 等から二重に読まれても PATH が伸び続けない)
+run_case "nodebrew: 2 回 source しても重複追加されない" 1 \
+  "$(printf '%s\n' \
+    "source '$nodebrew_target'" \
+    "source '$nodebrew_target'" \
+    'set -l n (count $fish_user_paths)' \
+    'if test $n -eq 1' \
+    '    exit 0' \
+    'end' \
+    'echo "count=$n fish_user_paths=$fish_user_paths"' \
+    'exit 1')" \
+  "HOME=$WORKDIR/nb/present" "XDG_CONFIG_HOME=$WORKDIR/nb/present/.config"
+
+# 4. 壊れた current symlink: nodebrew を入れただけで `nodebrew use` 未実行の
+#    状態。`test -d` は symlink を辿るので追加されない
+run_case "nodebrew: current が壊れた symlink なら何も追加しない" 1 \
+  "$(printf '%s\n' \
+    "source '$nodebrew_target'" \
+    'if set -q fish_user_paths[1]' \
+    '    echo "fish_user_paths=$fish_user_paths"' \
+    '    exit 1' \
+    'end' \
+    'exit 0')" \
+  "HOME=$WORKDIR/nb/broken" "XDG_CONFIG_HOME=$WORKDIR/nb/broken/.config"
+
+# 5. (任意) 実 config での順序: login shell を起こし、PATH 上で
+#    ~/.nodebrew/current/bin が /opt/homebrew/bin より前に来ることを確認する。
+#    issue #218 の受け入れ条件そのものだが、Homebrew の有無に依存するので
+#    任意扱い (optional_ran に数えて floor から差し引く)。
+#    fish/ は symlink ではなく **コピー**して渡す: 隔離 HOME の
+#    XDG_CONFIG_HOME を repo の fish/ に向けると、rbenv init の `-` 落ち
+#    回帰が入ったときに tracked file が書き換わる (上部コメント参照)。
+if [ -d /opt/homebrew/bin ]; then
+  mkdir -p "$WORKDIR/e2e/home/.nodebrew/current/bin" "$WORKDIR/e2e/home/.config"
+  cp -R "$REPO_ROOT/fish" "$WORKDIR/e2e/home/.config/fish"
+  printf '%s\n' 'for p in $PATH' 'echo $p' 'end' > "$WORKDIR/e2e/show.fish"
+  e2e_out=$(env "${UNSET_ARGS[@]}" \
+    HOME="$WORKDIR/e2e/home" XDG_CONFIG_HOME="$WORKDIR/e2e/home/.config" \
+    fish -l "$WORKDIR/e2e/show.fish" 2>/dev/null)
+  # grep -n -x -F で完全一致行の行番号を取る (部分一致だと
+  # /opt/homebrew/bin と /opt/homebrew/sbin を取り違える)
+  nb_line=$(printf '%s\n' "$e2e_out" \
+    | grep -n -x -F "$WORKDIR/e2e/home/.nodebrew/current/bin" | head -1 | cut -d: -f1)
+  hb_line=$(printf '%s\n' "$e2e_out" | grep -n -x -F "/opt/homebrew/bin" | head -1 | cut -d: -f1)
+  if [ -n "$nb_line" ] && [ -n "$hb_line" ] && [ "$nb_line" -lt "$hb_line" ]; then
+    order_result=ordered
+  else
+    order_result="nodebrew=${nb_line:-none} homebrew=${hb_line:-none}"
+  fi
+  assert_eq "nodebrew: 実 config で /opt/homebrew/bin より前に来る" ordered "$order_result"
+  optional_ran=$((optional_ran + 1))
+else
+  echo "SKIP nodebrew: /opt/homebrew/bin が無いため実 config の順序テストを skip"
+fi
+
 echo "fish-version-managers tests: $pass passed, $fail failed"
 
 # ケースが黙って実行されなくなっても fail は 0 のままなので、必須ケースが
@@ -312,15 +437,20 @@ echo "fish-version-managers tests: $pass passed, $fail failed"
 #     ホストでは任意ケースの pass が必須ケースの欠落を埋めて素通りする
 #   - 期待ツール集合は TOOLS から導出せず独立に持つ。floor が守る対象そのもの
 #     から導出すると、TOOLS からツールを落としたとき floor も一緒に下がる
-# 必須はツールあたり 5 件: ガード / stub function / argv assert / root 不変条件 2 件。
+# 必須は init 型 1 ツールあたり 5 件: ガード / stub function / argv assert /
+# root 不変条件 2 件。
 MANDATORY_PER_TOOL=5
 EXPECTED_TOOLS="rbenv pyenv"
 if [ "${TOOLS[*]}" != "$EXPECTED_TOOLS" ]; then
   echo "FAIL: 検証対象ツールが変わっている (TOOLS='${TOOLS[*]}' expected '$EXPECTED_TOOLS')" >&2
   exit 1
 fi
+# PATH 追加型 (nodebrew) の必須 4 件: 不在 / 配線 / idempotent / 壊れた symlink。
+# ループを持たない直列コードなので、対象から導出しうる値が無く独立リテラルの
+# ままで済む (ケースを消せばこの floor がそのまま検出する)。
+MANDATORY_PATH_CASES=4
 mandatory_ran=$(( pass + fail - optional_ran ))
-required_ran=$(( ${#TOOLS[@]} * MANDATORY_PER_TOOL ))
+required_ran=$(( ${#TOOLS[@]} * MANDATORY_PER_TOOL + MANDATORY_PATH_CASES ))
 if [ "$mandatory_ran" -lt "$required_ran" ]; then
   echo "FAIL: 必須ケースが実行されていない ($mandatory_ran < $required_ran)" >&2
   exit 1
