@@ -99,6 +99,19 @@ run_case() {
   pass=$((pass + 1))
 }
 
+# fish を起動しない値比較 1 件を集計する。pass/fail カウンタと FAIL 書式を
+# run_case と共有するために関数化してある (書式が 2 通り並存すると、片方だけ
+# 直る drift が起きる — issue #221)。
+assert_equals() {
+  local name="$1" actual="$2" expected="$3"
+  if [ "$actual" = "$expected" ]; then
+    pass=$((pass + 1))
+    return
+  fi
+  echo "FAIL $name: '$actual' (expected '$expected')"
+  fail=$((fail + 1))
+}
+
 # 呼ばれた引数を argv ファイルに記録し、fish 用 init スクリプトを stdout に出す stub。
 # 本物と同じく `function <tool>` を定義する出力を返すので、config 側の
 # `<tool> init - fish | source` がそのまま通る。
@@ -170,19 +183,15 @@ for tool in rbenv pyenv; do
   run_case "$tool: stub 経由で shell function が定義される" 1 \
     "set -gx PATH '$WORKDIR/bin'; source '$target'; if functions -q $tool; exit 0; end; exit 1"
 
-  # stub が受け取った引数を assert する (`-` 落ち等の回帰検出)
+  # stub が受け取った引数を assert する (`-` 落ち等の回帰検出)。
+  # argv ファイルが無い = stub が一度も呼ばれていないので、その旨を実値として
+  # 流し込み FAIL 経路を assert_equals に一本化する。
   if [ -f "$WORKDIR/$tool.argv" ]; then
     actual_argv=$(cat "$WORKDIR/$tool.argv")
-    if [ "$actual_argv" = "init - fish" ]; then
-      pass=$((pass + 1))
-    else
-      echo "FAIL $tool: init 引数が想定外: '$actual_argv' (expected 'init - fish')"
-      fail=$((fail + 1))
-    fi
   else
-    echo "FAIL $tool: stub が呼ばれた形跡がない"
-    fail=$((fail + 1))
+    actual_argv="(stub が呼ばれた形跡なし)"
   fi
+  assert_equals "$tool: stub が受け取った init 引数" "$actual_argv" "init - fish"
 
   # 3. root 不変条件: <TOOL>_ROOT を一切変更しないこと。
   #    fixture は **現行の rbenv.fish / pyenv.fish からは参照されない**
