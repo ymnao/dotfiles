@@ -2,6 +2,13 @@
 
 dotfiles リポジトリ。各種開発ツールの設定ファイルを管理し、シンボリックリンクで配置する。
 
+## 目的 (このリポジトリが存在する理由)
+
+**毎日使う shell / エディタ / CLI 環境の摩擦を減らし、新しいマシンで同じ環境を再現できる状態を保つこと。**
+
+skill / hook / テスト / CI は、この目的を安全に達成するための**手段**であって目的ではない。
+作業の行き先を判断するときはこの 1 文に照らす（`/pr` の起票ゲートが参照する）。
+
 ## 構造の要点
 
 - 各ディレクトリ（fish/, nvim/, wezterm/ 等）が1ツールの設定に対応
@@ -16,7 +23,7 @@ dotfiles リポジトリ。各種開発ツールの設定ファイルを管理�
 - `claude/statusline.sh` → `~/.claude/statusline.sh` にシンボリックリンク（Claude Code の statusline スクリプト）
 - `starship/starship.toml` → `~/.config/starship.toml` にシンボリックリンク（Starship プロンプト設定、fish から init される）
 - `.claude/stop-gate.conf` はリポジトリごとの Stop hook 検証ゲート設定（`claude/hooks/stop-verify-gate.sh` が参照するオプトインファイル）
-- `.claude/backlog.conf` はリポジトリごとの backlog 上限設定（`/dev` の backlog gate と `/next` の健康状態報告が参照するオプトインファイル。`BACKLOG_CAP` / `INWARD_STREAK_MAX`）
+- `.claude/backlog.conf` はリポジトリごとの配分・backlog 観測設定（`/dev` と `/next` が参照するオプトインファイル。`INWARD_RATIO_MAX` が本体の指標、`BACKLOG_CAP` は煙探知機）
 - `tests/` — hook・スクリプトの回帰テスト群（make test で全実行）
 - `claude/templates/` — 新規プロジェクト用の CLAUDE.md テンプレート（5 種）
 

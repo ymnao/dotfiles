@@ -53,13 +53,25 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
    (`gh issue list --state open --limit 10`) から次の候補を優先順で並べて
    **停止する**。次サイクルは user が `/clear` → `/dev` で開始する
    (ai-operations §4「無関係タスク間で /clear」の定石に従い、同一セッション
-   での連続実行はしない)。あわせて **backlog の健康状態**を 2 行で報告する
+   での連続実行はしない)。あわせて **健康状態**を 3 行で報告する
    (`.claude/backlog.conf` がある repo のみ。無ければ省略):
-   - `open <数> / cap <BACKLOG_CAP>`、今サイクルの delta (起票 − close)
+   - **内向き比率**: 直近 20 件の merged PR のうち、内向き (`claude/`
+     `codex/` `tests/` `docs/` `.github/` のみを触るもの) の割合を
+     `gh pr list --state merged --limit 20 --json number,files` の実測から
+     算出する。`INWARD_RATIO_MAX` を超えていたら、次サイクルの候補は外向きを
+     既定にして提示する。**これが本体の指標** — repo の目的側が進んでいるかを
+     直接見ている
+   - `open <数> / cap <BACKLOG_CAP>` と今サイクルの delta (起票 − close)。
+     cap 超過は「起票ゲートが機能していない」サインとして報告するだけで、
+     棚卸しの強制はしない
    - **30 日以上更新の無い issue** の一覧 (`gh issue list --state open
      --search "updated:<YYYY-MM-DD" --limit 20`)。**自動 close はしない** —
      close / 統合 / 残す を提案して user に選ばせる。自動 close は大規模 repo で
      摩擦を生むことが知られており (kubernetes/kubernetes#103151)、判断は人が持つ
+
+   なお、**この節の計測自体を作り込まない**。集計スクリプトや eval を足したく
+   なったら、それは「改善機械を改善する機械」であり本末転倒のサイン。gh の
+   出力を目視で数える以上のことはしない
 
 ## 注意
 
