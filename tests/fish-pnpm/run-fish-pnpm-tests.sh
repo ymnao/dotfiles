@@ -33,6 +33,10 @@ fi
 # pnpm-bin-registered / pnpm-bin-idempotent だけが落ちる。
 # 「TMPDIR に末尾スラッシュが付くかどうか」でしか差が出ないので、実行環境に
 # よって flaky に見えた。
+# 同じ正規化が tests/fish-version-managers/ と tests/link/ にもある (原因は
+# 同一、正規化する側のツールだけが違う)。共有ヘルパにしていないのは repo に
+# テスト間共有ライブラリの前例が無く、各スイートを自己完結に保つ様式のため。
+# 4 件目が出たら tests/lib/ への抽出を検討する。
 TMP_BASE="${TMPDIR:-/tmp}"
 while [ "$TMP_BASE" != "${TMP_BASE%/}" ]; do
   TMP_BASE="${TMP_BASE%/}"
