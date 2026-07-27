@@ -42,7 +42,9 @@ brew "nodebrew"
 # ~/.nodebrew/current/bin を Homebrew より前に置くため、実際に起動する node は
 # nodebrew 側になる (zsh も同じ)。どちらが使われているかは `command -v node`
 # で確認できる。`make lint` は PATH 先頭の node で動くので、nodebrew 側を
-# Node 22 未満に切り替えると secretlint が動かなくなる点に注意。
+# 古い版に切り替えると壊れる点に注意。効いている下限は secretlint 13 の
+# engines (>=22.0.0) ではなく pnpm 11 の方で、v22.13 未満は pnpm が exit 1
+# する (現在の nodebrew は v22.14.0 なので余裕は 0.1 マイナー)。
 brew "node"
 brew "pnpm"
 brew "rbenv"

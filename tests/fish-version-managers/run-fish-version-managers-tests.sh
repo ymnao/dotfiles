@@ -420,7 +420,10 @@ run_case "nodebrew: current が壊れた symlink なら何も追加しない" 1 
   "HOME=$WORKDIR/nb/broken" "XDG_CONFIG_HOME=$WORKDIR/nb/broken/.config"
 
 # 5. 実 config を login shell で起こす。1 回の起動から 2 つを見る:
-#    (a) 必須 — universal 変数 (fish_variables) を作らないこと。`-g` 落ちの
+#    (a-1) 必須 — 実 config が nodebrew.fish まで到達したこと (positive
+#        control)。これが無いと (a-2) が「config が読まれなくても pass」に
+#        なる
+#    (a-2) 必須 — universal 変数 (fish_variables) を作らないこと。`-g` 落ちの
 #        検出点はここしか無い (`--no-config` のケース 1-3 では universal が
 #        無効化されるため構造的に検出できない)。実害は「repo 管理外の永続
 #        状態が残り、nodebrew.fish を消しても PATH に残り続ける」
@@ -441,12 +444,34 @@ mkdir -p "$WORKDIR/e2e/home/.nodebrew/node/$nb_present_version/bin" \
 ln -sfn "$WORKDIR/e2e/home/.nodebrew/node/$nb_present_version" \
   "$WORKDIR/e2e/home/.nodebrew/current"
 cp -R "$REPO_ROOT/fish" "$WORKDIR/e2e/home/.config/fish"
+# repo 管理外の個人設定を fixture から落とす。link.sh は fish/ ごと
+# ~/.config/fish へ symlink するので config.local.fish の実体は repo の fish/
+# 直下に置かれ (.gitignore の `*.local.*` で追跡外)、cp -R だと付いてくる。
+# 残すと、個人設定が universal 変数を 1 つ作っただけで下の (a) が
+# そのマシンだけ FAIL する。config/ 側も glob (`config/*.fish`) に拾われる。
+rm -f "$WORKDIR/e2e/home/.config/fish/config.local.fish"
+rm -f "$WORKDIR"/e2e/home/.config/fish/config/*.local.fish
 printf '%s\n' 'for p in $PATH' 'echo $p' 'end' > "$WORKDIR/e2e/show.fish"
 e2e_out=$(env "${UNSET_ARGS[@]}" \
   HOME="$WORKDIR/e2e/home" XDG_CONFIG_HOME="$WORKDIR/e2e/home/.config" \
-  fish -l "$WORKDIR/e2e/show.fish" 2>/dev/null)
+  fish -l "$WORKDIR/e2e/show.fish" 2>"$WORKDIR/e2e/stderr.txt")
 
-# (a) 必須: universal 変数が永続化されていないこと。
+# (a-1) 必須 (positive control): 実 config が本当に nodebrew.fish まで
+#     到達したこと。これが無いと下の (a-2) が vacuous pass する — config が
+#     一切読まれなくても「fish_variables が無い」は成立してしまう。
+#     (a-2) の相方が Homebrew 依存の任意ケースしか無い状態を塞ぐ。
+#     FAIL 時は起動時 stderr も出す (source 失敗・構文エラーの切り分け用。
+#     stderr が空であることは要求しない — rbenv/pyenv の init が host 条件で
+#     出力するため。上部の「実物」ケースと同じ判断)。
+if printf '%s\n' "$e2e_out" \
+  | grep -q -x -F "$WORKDIR/e2e/home/.nodebrew/current/bin"; then
+  e2e_loaded=loaded
+else
+  e2e_loaded="not-loaded (stderr: $(cat "$WORKDIR/e2e/stderr.txt"))"
+fi
+assert_eq "nodebrew: 実 config の起動で PATH に載る" loaded "$e2e_loaded"
+
+# (a-2) 必須: universal 変数が永続化されていないこと。
 #     `-g` を落とすと fish_add_path は universal を既定にするため
 #     $XDG_CONFIG_HOME/fish/fish_variables が生成される (実測で確認済み)。
 if [ -e "$WORKDIR/e2e/home/.config/fish/fish_variables" ]; then
@@ -475,10 +500,10 @@ else
   echo "SKIP nodebrew: /opt/homebrew/bin が無いため実 config の順序テストを skip"
 fi
 
-# PATH 追加型セクションの必須 5 件: 不在 / 配線 / idempotent / 壊れた symlink /
-# universal 非永続化。期待値は独立リテラルで持ち、ケース数から導出しない
-# (claude/rules/shell.md の floor 規約)。
-MANDATORY_PATH_CASES=5
+# PATH 追加型セクションの必須 6 件: 不在 / 配線 / idempotent / 壊れた symlink /
+# 実 config で PATH に載る / universal 非永続化。期待値は独立リテラルで持ち、
+# ケース数から導出しない (claude/rules/shell.md の floor 規約)。
+MANDATORY_PATH_CASES=6
 nb_ran=$(( pass + fail - nb_start - nb_optional ))
 if [ "$nb_ran" -lt "$MANDATORY_PATH_CASES" ]; then
   echo "FAIL: nodebrew の必須ケースが実行されていない ($nb_ran < $MANDATORY_PATH_CASES)" >&2
