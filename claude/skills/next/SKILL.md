@@ -36,7 +36,16 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
    報告して停止)
 4. **学びの昇格チェック**: このセッションで CLAUDE.md / skill / memory に
    昇格すべき学び (同じ指摘を 2 回受けた・skill の手順が実態とズレていた等)
-   がないか振り返り、あれば提案する (勝手に書き換えない)
+   がないか振り返り、あれば提案する (勝手に書き換えない)。
+   - **ここで拾うのは merge 後に判明した分**。作業中に判明した昇格は
+     `/dev` の step 5a で PR 本体に載せ済みのはず (載っていない = 5a の
+     漏れなので、その旨も報告する)
+   - **user の承認を得て反映を終えてから step 5 へ進む** (承認待ちのまま
+     handoff を書くと HANDOFF.md が「承認待ち」で確定してしまい、直後に
+     承認されても記述が stale になる)。repo に置くものは merge 済み main
+     から作業ブランチを切って commit し、memory はその場で反映する
+   - 反映結果 (どこに何を書いたか / ブランチ名) を step 5 の handoff に
+     引き継ぐ
 5. **handoff**: `/handoff` skill を実行して HANDOFF.md を更新する。
    HANDOFF.md に「次セッション持ち越しメモ」等の恒久メモ節がある場合は
    消さずに引き継ぐ
@@ -44,7 +53,25 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
    (`gh issue list --state open --limit 10`) から次の候補を優先順で並べて
    **停止する**。次サイクルは user が `/clear` → `/dev` で開始する
    (ai-operations §4「無関係タスク間で /clear」の定石に従い、同一セッション
-   での連続実行はしない)
+   での連続実行はしない)。あわせて **健康状態**を 3 行で報告する
+   (`.claude/backlog.conf` がある repo のみ。無ければ省略):
+   - **内向き比率**: 直近 20 件の merged PR のうち、内向き (`claude/`
+     `codex/` `tests/` `docs/` `.github/` のみを触るもの) の割合を
+     `gh pr list --state merged --limit 20 --json number,files` の実測から
+     算出する。`INWARD_RATIO_MAX` を超えていたら、次サイクルの候補は外向きを
+     既定にして提示する。**これが本体の指標** — repo の目的側が進んでいるかを
+     直接見ている
+   - `open <数> / cap <BACKLOG_CAP>` と今サイクルの delta (起票 − close)。
+     cap 超過は「起票ゲートが機能していない」サインとして報告するだけで、
+     棚卸しの強制はしない
+   - **30 日以上更新の無い issue** の一覧 (`gh issue list --state open
+     --search "updated:<YYYY-MM-DD" --limit 20`)。**自動 close はしない** —
+     close / 統合 / 残す を提案して user に選ばせる。自動 close は大規模 repo で
+     摩擦を生むことが知られており (kubernetes/kubernetes#103151)、判断は人が持つ
+
+   なお、**この節の計測自体を作り込まない**。集計スクリプトや eval を足したく
+   なったら、それは「改善機械を改善する機械」であり本末転倒のサイン。gh の
+   出力を目視で数える以上のことはしない
 
 ## 注意
 
