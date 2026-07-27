@@ -55,3 +55,20 @@ paths:
   (スコープと append 性の 2 変数) が FAIL したことから「`-g` が PATH 順序を
   決めている」と結論づけたが、`--path` 単体でも順序は変わらず、実際に順序を
   決めていたのは config.fish の実行順だった(`-g` の役割は universal 化の回避)
+- **一時ディレクトリのパスを「外部ツールが返す値」と文字列比較するテストでは、
+  `${TMPDIR:-/tmp}` を連結する前に末尾スラッシュを落とす**。macOS の TMPDIR は
+  末尾がスラッシュ(`getconf DARWIN_USER_TEMP_DIR` → `/var/folders/.../T/`)
+  なので、そのまま連結すると WORKDIR に `//` が入る。一方で比較の相手側は
+  `//` を潰した値を返すことが多く(fish の `fish_add_path` は
+  `builtin realpath -s`、`scripts/link.sh` は `cd` + `pwd`)、生パスとの比較
+  だけが一致しなくなる。TMPDIR に末尾スラッシュが付く環境でのみ落ちるため
+  **flaky に見えるが実際は決定的**で、原因に辿り着くのが高い。
+  剥がした後も `//` が残る場合(`TMPDIR=/a//b`)は、一部ケースが無言で落ちる
+  代わりに原因つきで即死させるガードを置く。
+  適用条件は「**比較する**」場合に限る — 一時ディレクトリを作って使うだけで
+  正規化前後のパスを突き合わせないテストは対象外(repo 内の `${TMPDIR:-/tmp}`
+  利用約 18 箇所のうち、実測で末尾スラッシュ有無に結果が依存したのは下記
+  3 箇所だけだった)。
+  実例: issue #225 / `tests/fish-pnpm/`・`tests/fish-version-managers/`・
+  `tests/link/`(前 2 者は fish の `$fish_user_paths` と、後者は `readlink` が
+  返す symlink target と比較していた)
