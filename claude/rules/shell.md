@@ -49,3 +49,9 @@ paths:
   実例: `tests/fish-version-managers/run-fish-version-managers-tests.sh` の
   `EXPECTED_TOOLS` / `MANDATORY_PER_TOOL` / `optional_ran`(PR #224。当初は
   `${#TOOLS[@]} * 5` と対象から導出しており、上記 3 経路すべてで素通りしていた)
+- **mutation check は 1 回に 1 変数だけ変える**。複数変えた mutant が FAIL しても
+  どの変数が検出されたのか特定できず、誤った因果をコメントに残す。
+  実例: issue #218 の対応で `fish_add_path -g` を `--path -a` に変えた mutant
+  (スコープと append 性の 2 変数) が FAIL したことから「`-g` が PATH 順序を
+  決めている」と結論づけたが、`--path` 単体でも順序は変わらず、実際に順序を
+  決めていたのは config.fish の実行順だった(`-g` の役割は universal 化の回避)
