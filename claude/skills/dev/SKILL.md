@@ -29,6 +29,33 @@ simplify / codex-review / pr の個別指示と code-reviewer サブエージェ
 main にいる場合は `feature/` `fix/` `refactor/` `docs/` + 英語小文字ハイフン
 のブランチを作成する。
 
+#### 1a. backlog gate (opt-in・repo ごと)
+
+リポジトリルートに `.claude/backlog.conf` があれば読む (無ければこの節は
+まるごと skip。`.claude/stop-gate.conf` と同じ opt-in 方式)。書式は
+`KEY=VALUE` の 1 行ずつ、`#` 始まりはコメント:
+
+```
+BACKLOG_CAP=20        # open issue の上限。超過したら棚卸しを挟む
+INWARD_STREAK_MAX=2   # 内向きサイクルの連続上限 (省略可)
+```
+
+`BACKLOG_CAP` があれば `gh issue list --state open --limit 100 --jq 'length'`
+で実数を取り、**超過していたら着手前に停止して棚卸しを提案する** (close 候補 /
+統合候補 / 残す、の分類表を出して user 承認を得る。**勝手に close しない**)。
+user が「今は棚卸ししない」と言えばそのまま着手してよい。
+
+#### 1b. サイクル種別の宣言
+
+着手前に、このサイクルが **内向き (開発基盤: skill / eval / hook / test / CI /
+設定) か 外向き (利用者に届く価値: この repo なら日常的に使う shell・ツール
+設定、プロダクト repo なら機能・不具合)** かを 1 行で宣言する。
+
+`INWARD_STREAK_MAX` が設定されていて、HANDOFF.md の直近サイクル記録から
+**内向きが連続で上限に達している**場合は、外向きタスクの候補を併せて提示して
+user に選ばせる (強制はしない)。基盤改善が自己増殖して、そもそも repo が
+存在する理由の側が進まなくなるのを防ぐための可視化。
+
 ### 2. Plan チェックポイント (非自明タスクのみ停止)
 
 タスクが以下のいずれかに該当する場合、**実装前に** plan (変更ファイル・

@@ -53,7 +53,13 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
    (`gh issue list --state open --limit 10`) から次の候補を優先順で並べて
    **停止する**。次サイクルは user が `/clear` → `/dev` で開始する
    (ai-operations §4「無関係タスク間で /clear」の定石に従い、同一セッション
-   での連続実行はしない)
+   での連続実行はしない)。あわせて **backlog の健康状態**を 2 行で報告する
+   (`.claude/backlog.conf` がある repo のみ。無ければ省略):
+   - `open <数> / cap <BACKLOG_CAP>`、今サイクルの delta (起票 − close)
+   - **30 日以上更新の無い issue** の一覧 (`gh issue list --state open
+     --search "updated:<YYYY-MM-DD" --limit 20`)。**自動 close はしない** —
+     close / 統合 / 残す を提案して user に選ばせる。自動 close は大規模 repo で
+     摩擦を生むことが知られており (kubernetes/kubernetes#103151)、判断は人が持つ
 
 ## 注意
 

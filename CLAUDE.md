@@ -16,6 +16,7 @@ dotfiles リポジトリ。各種開発ツールの設定ファイルを管理�
 - `claude/statusline.sh` → `~/.claude/statusline.sh` にシンボリックリンク（Claude Code の statusline スクリプト）
 - `starship/starship.toml` → `~/.config/starship.toml` にシンボリックリンク（Starship プロンプト設定、fish から init される）
 - `.claude/stop-gate.conf` はリポジトリごとの Stop hook 検証ゲート設定（`claude/hooks/stop-verify-gate.sh` が参照するオプトインファイル）
+- `.claude/backlog.conf` はリポジトリごとの backlog 上限設定（`/dev` の backlog gate と `/next` の健康状態報告が参照するオプトインファイル。`BACKLOG_CAP` / `INWARD_STREAK_MAX`）
 - `tests/` — hook・スクリプトの回帰テスト群（make test で全実行）
 - `claude/templates/` — 新規プロジェクト用の CLAUDE.md テンプレート（5 種）
 
