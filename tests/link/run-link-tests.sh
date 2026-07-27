@@ -25,9 +25,28 @@ if [ ! -f "$TARGET" ]; then
   exit 1
 fi
 
-WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/link-tests.XXXXXX")"
+# TMPDIR は連結前に末尾の `/` を落とす (issue #225)。macOS の TMPDIR は
+# 末尾がスラッシュ (`getconf DARWIN_USER_TEMP_DIR` → `/var/folders/.../T/`)
+# なので、そのまま連結すると WORKDIR に `//` が入る。link.sh は
+# DOTFILES_DIR を `cd` + `pwd` 経由で得る (= `//` が潰れる) ため、`readlink`
+# が返す symlink target と、この配列から組んだ生パスの文字列比較が
+# c5 / c6 だけ一致しなくなる。同じ正規化が tests/fish-pnpm/ と
+# tests/fish-version-managers/ にもある。
+TMP_BASE="${TMPDIR:-/tmp}"
+while [ "$TMP_BASE" != "${TMP_BASE%/}" ]; do
+  TMP_BASE="${TMP_BASE%/}"
+done
+WORKDIR="$(mktemp -d "$TMP_BASE/link-tests.XXXXXX")"
 cleanup() { [ -n "${WORKDIR:-}" ] && rm -rf "$WORKDIR"; }
 trap cleanup EXIT
+# 末尾以外の `//` (TMPDIR=/a//b 等) はここでは潰していない。残っていると
+# 上記と同じ経路で一部ケースだけが謎に落ちるので、原因の分かる形で即死させる。
+case "$WORKDIR" in
+  *//*)
+    echo "ERROR: WORKDIR に // が残っている ($WORKDIR)。TMPDIR を正規化して再実行すること" >&2
+    exit 1
+    ;;
+esac
 
 pass=0
 fail=0
