@@ -53,11 +53,31 @@ if ! command -v fish >/dev/null 2>&1; then
   exit 0
 fi
 
-WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/fish-version-managers.XXXXXX")" || {
+# TMPDIR は連結前に末尾の `/` を落とす (issue #225)。macOS の TMPDIR は
+# 末尾がスラッシュ (`getconf DARWIN_USER_TEMP_DIR` → `/var/folders/.../T/`)
+# なので、そのまま連結すると WORKDIR に `//` が入る。fish 側の
+# `fish_add_path` は `builtin realpath -s` で正規化した値を PATH /
+# $fish_user_paths に入れる (`//` → `/`) ため、bash 側の生パスと文字列比較
+# する nodebrew ケース 5 (実 config の positive control とその順序チェック)
+# だけが落ちる。同じ正規化が tests/fish-pnpm/run-fish-pnpm-tests.sh にもある。
+TMP_BASE="${TMPDIR:-/tmp}"
+while [ "$TMP_BASE" != "${TMP_BASE%/}" ]; do
+  TMP_BASE="${TMP_BASE%/}"
+done
+WORKDIR="$(mktemp -d "$TMP_BASE/fish-version-managers.XXXXXX")" || {
   echo "ERROR: mktemp -d failed" >&2
   exit 1
 }
 trap 'rm -rf "$WORKDIR"' EXIT
+# 末尾以外の `//` (TMPDIR=/a//b 等) はここでは潰していない。残っていると
+# 上記と同じ経路で一部ケースだけが謎に落ちるので、原因の分かる形で即死させる。
+# trap の後に置くのは、ここで exit しても作った WORKDIR を残さないため。
+case "$WORKDIR" in
+  *//*)
+    echo "ERROR: WORKDIR に // が残っている ($WORKDIR)。TMPDIR を正規化して再実行すること" >&2
+    exit 1
+    ;;
+esac
 mkdir -p "$WORKDIR/bin"
 
 # fish を起動するときは HOME / XDG_CONFIG_HOME を WORKDIR 配下に逃がす。

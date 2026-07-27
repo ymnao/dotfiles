@@ -24,11 +24,37 @@ fi
 # ユーザー環境の ~/.local/share/pnpm/bin 有無に依存させないよう mktemp した
 # WORKDIR を PNPM_HOME として注入する。pnpm.fish 側は `set -q PNPM_HOME` で
 # 既設定を尊重するので、ここで export した値が pnpm.fish 内でそのまま使われる
-WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/fish-pnpm-test.XXXXXX")" || {
+#
+# TMPDIR は連結前に末尾の `/` を落とす (issue #225)。macOS の TMPDIR は
+# 末尾がスラッシュ (`getconf DARWIN_USER_TEMP_DIR` → `/var/folders/.../T/`)
+# なので、そのまま連結すると WORKDIR に `//` が入る。fish 側の
+# `fish_add_path` は `builtin realpath -s` で正規化した値を $fish_user_paths
+# に入れる (`//` → `/`) ため、bash 側の生パスと文字列比較する
+# pnpm-bin-registered / pnpm-bin-idempotent だけが落ちる。
+# 「TMPDIR に末尾スラッシュが付くかどうか」でしか差が出ないので、実行環境に
+# よって flaky に見えた。
+# 同じ正規化が tests/fish-version-managers/ と tests/link/ にもある (原因は
+# 同一、正規化する側のツールだけが違う)。共有ヘルパにしていないのは repo に
+# テスト間共有ライブラリの前例が無く、各スイートを自己完結に保つ様式のため。
+# 4 件目が出たら tests/lib/ への抽出を検討する。
+TMP_BASE="${TMPDIR:-/tmp}"
+while [ "$TMP_BASE" != "${TMP_BASE%/}" ]; do
+  TMP_BASE="${TMP_BASE%/}"
+done
+WORKDIR="$(mktemp -d "$TMP_BASE/fish-pnpm-test.XXXXXX")" || {
   echo "ERROR: mktemp -d failed" >&2
   exit 1
 }
 trap 'rm -rf "$WORKDIR"' EXIT
+# 末尾以外の `//` (TMPDIR=/a//b 等) はここでは潰していない。残っていると
+# 上記と同じ経路で 2 ケースだけが謎に落ちるので、原因の分かる形で即死させる。
+# trap の後に置くのは、ここで exit しても作った WORKDIR を残さないため。
+case "$WORKDIR" in
+  *//*)
+    echo "ERROR: WORKDIR に // が残っている ($WORKDIR)。TMPDIR を正規化して再実行すること" >&2
+    exit 1
+    ;;
+esac
 mkdir -p "$WORKDIR/bin"
 export PNPM_HOME="$WORKDIR"
 
