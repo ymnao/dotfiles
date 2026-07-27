@@ -3,7 +3,9 @@
 #
 # ツールごとの検証項目 (rbenv / pyenv で同一。件数の合計はハードコードせず
 # 末尾の `N passed, N failed` 行で確認する — ケース追加のたびに数値が drift
-# するため):
+# するため。ただし末尾に「必須ケースが実行されたか」の floor があり、そこは
+# ツールあたりの必須ケース数を持っている。必須ケースを増減したら
+# MANDATORY_PER_TOOL も更新すること):
 #   1. ガード: ツールが PATH に無い環境で source しても
 #      - exit 0 で通る
 #      - shell function が定義されない (`type -q` ガードが効いている)
@@ -60,14 +62,36 @@ mkdir -p "$WORKDIR/home/.config/fish"
 
 pass=0
 fail=0
+# 任意ケース (実物の init) が何件走ったか。末尾の floor から差し引くために
+# 数える — floor が pass 合計を見ると、実物が入っているホストでは任意ケースの
+# pass が必須ケースの欠落を埋めて素通りする。
+optional_ran=0
 
-# 全ケースで unset に強制する root 変数の**単一の正本**。ツールを足すときは
-# 下の tool→変数名マッピングとこの配列の両方に足す (どちらか片方だと下の
-# ループが ERROR で止まるので、静かに隔離が漏れることはない)。
-ISOLATED_ROOT_VARS=(RBENV_ROOT PYENV_ROOT)
-
-# 検証対象のツール。末尾の必須ケース数の floor もこの数から導く。
+# 検証対象のツールと、その root 変数。**同じ添字が対応する並行配列**で持つ。
+# 変数名を tool 名から機械的に導出しないのは、導出が外れたとき root 不変条件
+# ケースが FAIL せず vacuous pass するため — 存在しない変数名になると
+# 「未設定を期待 → 誰も設定しないので pass」「外部値を期待 → env で入れた値を
+# 読み返すので pass」となり、config を一切見ないまま green になる
+# (ASDF_DATA_DIR / NVM_DIR のように `<TOOL>_ROOT` 規則から外れるツールで実際に
+# 起きる)。ROOT_VARS はそのまま全ケースの `env -u` 対象にもなるので、
+# 「隔離リスト」と「検証対象」が食い違う経路自体が存在しない。
 TOOLS=(rbenv pyenv)
+ROOT_VARS=(RBENV_ROOT PYENV_ROOT)
+
+# 並行配列の対応が崩れると (長さ違い / 並びの取り違え) 上記の vacuous pass に
+# 戻るため、2 つの assert で塞ぐ。規則から外れるツールを足すときは
+# ROOT_VAR_EXCEPTIONS にその tool 名を空白区切りで書く。
+ROOT_VAR_EXCEPTIONS=""
+if [ "${#TOOLS[@]}" -ne "${#ROOT_VARS[@]}" ]; then
+  echo "ERROR: TOOLS と ROOT_VARS の長さが違う (対応が崩れている)" >&2
+  exit 1
+fi
+
+# `env -u` に渡す引数。全ケースで不変なので一度だけ組み立てる。
+UNSET_ARGS=()
+for root_var in "${ROOT_VARS[@]}"; do
+  UNSET_ARGS+=(-u "$root_var")
+done
 
 # snippet は成否を exit code で表現する (期待値は常に 0)。
 # expect_silent=1 のとき stdout/stderr が完全に空であることも要求する。
@@ -75,7 +99,7 @@ TOOLS=(rbenv pyenv)
 # 後ろに置くので、同じ変数を渡せば後勝ちで上書きできる (BSD env で実測。GNU も
 # 同順で putenv する実装だが、このホストでは未検証)。
 #
-# ISOLATED_ROOT_VARS の `-u` を全ケース共通の既定にしてあるのは:
+# ROOT_VARS の `-u` を全ケース共通の既定にしてあるのは:
 #   - テスト実行者のシェルに ROOT が export されていても全ケースを隔離するため
 #   - `ROOT=""` を渡す方式では代用できない。fish からは「空文字で set 済み」に
 #     見えるため、`set -q ROOT` だけをガードにした分岐の再導入 (root 不変条件の
@@ -85,14 +109,10 @@ TOOLS=(rbenv pyenv)
 run_case() {
   local name="$1" expect_silent="$2" snippet="$3"
   shift 3
-  local combined status var
-  local unset_args=()
-  for var in "${ISOLATED_ROOT_VARS[@]}"; do
-    unset_args+=(-u "$var")
-  done
+  local combined status
   # `${1+"$@"}` は bash 3.2 + `set -u` で引数 0 個の `"$@"` が unbound 扱いに
   # なる問題の回避 (bash 4.4 で挙動が修正された)。
-  combined=$(env "${unset_args[@]}" \
+  combined=$(env "${UNSET_ARGS[@]}" \
     HOME="$WORKDIR/home" XDG_CONFIG_HOME="$WORKDIR/home/.config" \
     ${1+"$@"} \
     fish --no-config -c "$snippet" 2>&1)
@@ -112,8 +132,8 @@ run_case() {
   pass=$((pass + 1))
 }
 
-# fish を起動しない値比較 1 件を集計する。pass/fail カウンタと FAIL 書式を
-# run_case と共有するために関数化してある (書式が 2 通り並存すると、片方だけ
+# fish を起動しない値比較 1 件を集計する。pass/fail カウンタと FAIL 判定経路を
+# run_case と共有するために関数化してある (集計が 2 通り並存すると、片方だけ
 # 直る drift が起きる — issue #221)。名前・引数順・書式は repo の既存実装
 # (tests/link-backup/ tests/locale-matrix/ の assert_eq) に合わせて want を先に
 # 取る。引数順の取り違えは FAIL にならず発見が遅れるため揃える価値がある。
@@ -188,33 +208,28 @@ root_snippet() {
   fi
 }
 
-for tool in "${TOOLS[@]}"; do
+for ((i = 0; i < ${#TOOLS[@]}; i++)); do
+  tool="${TOOLS[$i]}"
+  root_var="${ROOT_VARS[$i]}"
   target="$REPO_ROOT/fish/config/$tool.fish"
   if [ ! -f "$target" ]; then
     echo "ERROR: $target が見つからない" >&2
     exit 1
   fi
-  # tool 名から `<TOOL>_ROOT` を機械的に導出せず明示マッピングにするのは、
-  # 導出が外れたとき root 不変条件ケースが **FAIL せず vacuous pass する**ため。
-  # 存在しない変数名になると「未設定を期待 → 誰も設定しないので pass」
-  # 「外部値を期待 → env で入れた値を読み返すので pass」となり、config を
-  # 一切見ないまま green になる。`asdf` (ASDF_DATA_DIR) や `nvm` (NVM_DIR) の
-  # ように `<TOOL>_ROOT` 規則から外れるツールで実際に起きる。
-  case "$tool" in
-    rbenv) root_var=RBENV_ROOT ;;
-    pyenv) root_var=PYENV_ROOT ;;
+  # 並行配列の並びを取り違えると (rbenv に PYENV_ROOT を対応付ける等)、
+  # 対象 config を一切見ないまま 2 ケースとも pass する。規則どおりのツールは
+  # `<TOOL>_ROOT` との一致を assert して塞ぐ。`asdf` (ASDF_DATA_DIR) のように
+  # 規則から外れるツールは ROOT_VAR_EXCEPTIONS に明示して免除する。
+  # `${var^^}` は bash 4 以降なので tr を使う (LC_ALL=C pin でロケール非依存)。
+  case " $ROOT_VAR_EXCEPTIONS " in
+    *" $tool "*) ;;
     *)
-      echo "ERROR: $tool の root 変数名が未定義 (このマッピングに追加すること)" >&2
-      exit 1
-      ;;
-  esac
-  # 隔離 (run_case の `env -u`) から漏れた変数は、実行者のシェルの export が
-  # そのまま漏れ込んで検出力を失う。正本の配列に載っているかをここで assert する。
-  case " ${ISOLATED_ROOT_VARS[*]} " in
-    *" $root_var "*) ;;
-    *)
-      echo "ERROR: $root_var が ISOLATED_ROOT_VARS に無い (隔離が効かない)" >&2
-      exit 1
+      expected_root_var="$(printf '%s' "$tool" | LC_ALL=C tr '[:lower:]' '[:upper:]')_ROOT"
+      if [ "$root_var" != "$expected_root_var" ]; then
+        echo "ERROR: $tool の root 変数が $root_var ($expected_root_var を期待。" \
+          "規則から外れるなら ROOT_VAR_EXCEPTIONS に追加すること)" >&2
+        exit 1
+      fi
       ;;
   esac
 
@@ -235,7 +250,7 @@ for tool in "${TOOLS[@]}"; do
 
   # stub が受け取った引数を assert する (`-` 落ち等の回帰検出)。
   # argv ファイルが無い = stub が一度も呼ばれていないので、その旨を実値として
-  # 流し込み FAIL 経路を assert_equals に一本化する。
+  # 流し込み FAIL 経路を assert_eq に一本化する。
   if [ -f "$WORKDIR/$tool.argv" ]; then
     actual_argv=$(cat "$WORKDIR/$tool.argv")
   else
@@ -251,6 +266,9 @@ for tool in "${TOOLS[@]}"; do
   #    検出できなくなる。
   mkdir -p "$WORKDIR/fx/keg/opt/$tool/versions/3.4.2"
   mkdir -p "$WORKDIR/fx/home-empty/.$tool/versions"
+  # 他ケースの隔離 HOME と同じく設定ディレクトリも作っておく (不在だと fish の
+  # 版によっては warning が stderr に出て expect_silent=1 のこのケースだけ落ちる)
+  mkdir -p "$WORKDIR/fx/home-empty/.config/fish"
   # 2 ケースで共有する fixture 環境。片方だけパスを直す drift を防ぐため
   # 1 箇所にまとめる。
   root_env=(
@@ -278,6 +296,7 @@ for tool in "${TOOLS[@]}"; do
   if command -v "$tool" >/dev/null 2>&1; then
     run_case "$tool: 実物の init で shell function が定義される" 0 \
       "source '$target'; if functions -q $tool; exit 0; end; exit 1"
+    optional_ran=$((optional_ran + 1))
   else
     echo "SKIP $tool: ホストに未インストールのため実物テストを skip"
   fi
@@ -285,13 +304,25 @@ done
 
 echo "fish-version-managers tests: $pass passed, $fail failed"
 
-# ケースが黙って実行されなくなっても fail は 0 のままなので、必須ケース数の
-# 下限だけ張る (合計ではなく floor なので、実物ケースの有無や将来の追加で
-# drift しない)。必須はツールあたり 5 件: ガード / stub function / argv assert /
-# root 不変条件 2 件。
-required_pass=$(( ${#TOOLS[@]} * 5 ))
-if [ "$pass" -lt "$required_pass" ]; then
-  echo "FAIL: 必須ケースが実行されていない ($pass < $required_pass)" >&2
+# ケースが黙って実行されなくなっても fail は 0 のままなので、必須ケースが
+# 実行された件数に floor を張る。3 点に注意して組んでいる:
+#   - 数えるのは pass ではなく **実行数** (pass + fail)。pass を見ると
+#     「実行されたが FAIL した」まで「実行されていない」と誤って報告する
+#   - 任意ケース (実物の init) の分は差し引く。含めると、実物が入っている
+#     ホストでは任意ケースの pass が必須ケースの欠落を埋めて素通りする
+#   - 期待ツール集合は TOOLS から導出せず独立に持つ。floor が守る対象そのもの
+#     から導出すると、TOOLS からツールを落としたとき floor も一緒に下がる
+# 必須はツールあたり 5 件: ガード / stub function / argv assert / root 不変条件 2 件。
+MANDATORY_PER_TOOL=5
+EXPECTED_TOOLS="rbenv pyenv"
+if [ "${TOOLS[*]}" != "$EXPECTED_TOOLS" ]; then
+  echo "FAIL: 検証対象ツールが変わっている (TOOLS='${TOOLS[*]}' expected '$EXPECTED_TOOLS')" >&2
+  exit 1
+fi
+mandatory_ran=$(( pass + fail - optional_ran ))
+required_ran=$(( ${#TOOLS[@]} * MANDATORY_PER_TOOL ))
+if [ "$mandatory_ran" -lt "$required_ran" ]; then
+  echo "FAIL: 必須ケースが実行されていない ($mandatory_ran < $required_ran)" >&2
   exit 1
 fi
 
