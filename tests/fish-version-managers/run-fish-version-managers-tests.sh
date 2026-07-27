@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # fish/config/rbenv.fish・pyenv.fish の回帰テスト。
 #
-# 検証項目 (ツールごとに 3 ケース / 集計は 4 カウント — ケース 2 が function
-# 定義と argv の 2 本を別々に加算するため)。ツール 2 つで 8、下記の rbenv 固有
-# 2 ケースを足して合計 10 が全 pass 時の件数:
+# ツールごとの検証項目 (rbenv / pyenv で同一。件数の合計はハードコードせず
+# 末尾の `N passed, N failed` 行で確認する — ケース追加のたびに数値が drift
+# するため。ただし末尾に「必須ケースが実行されたか」の floor があり、そこは
+# ツールあたりの必須ケース数を持っている。必須ケースを増減したら
+# MANDATORY_PER_TOOL も更新すること):
 #   1. ガード: ツールが PATH に無い環境で source しても
 #      - exit 0 で通る
 #      - shell function が定義されない (`type -q` ガードが効いている)
@@ -16,14 +18,13 @@
 #      このケースは構文エラーの混入も同時に拾う。
 #   2. 配線 (stub): PATH に stub を仕込み、init 経由で shell function が
 #      定義されること + **stub が受け取った引数が `init - fish` であること**を
-#      検証する。ホストへの rbenv/pyenv インストールに依存しない。引数 assert に
-#      より `-` 落ち (rbenv では shell 初期化ファイルを書き換えに行く破壊的
-#      typo) を検出できる。
-#   3. 実物 (任意): ホストに本物が実在する場合のみ、実際の init が
+#      検証する (集計は 2 カウント)。ホストへの rbenv/pyenv インストールに
+#      依存しない。引数 assert により `-` 落ち (rbenv では shell 初期化
+#      ファイルを書き換えに行く破壊的 typo) を検出できる。
+#   3. root 不変条件 (2 ケース): `RBENV_ROOT` / `PYENV_ROOT` を一切変更しない
+#      こと。詳細は下部 root_snippet のコメントを参照。
+#   4. 実物 (任意): ホストに本物が実在する場合のみ、実際の init が
 #      function を定義することを確認する。未実在ならこのケースだけ skip。
-#
-# さらに rbenv 固有で「RBENV_ROOT を一切変更しないこと」を 2 ケース検証する
-# (下部の rbenv_root_case を参照)。
 #
 # 依存: fish (未インストールなら全体を skip)
 # 注意: .github/workflows/ は fish を install していないため、現状この
@@ -51,23 +52,69 @@ trap 'rm -rf "$WORKDIR"' EXIT
 mkdir -p "$WORKDIR/bin"
 
 # fish を起動するときは HOME / XDG_CONFIG_HOME を WORKDIR 配下に逃がす。
-# ケース 3 は PATH に本物の rbenv / pyenv が乗った状態で対象ファイルを source
+# 実物ケースは PATH に本物の rbenv / pyenv が乗った状態で対象ファイルを source
 # するため、万一 `rbenv init` から `-` が落ちる回帰が入ると rbenv は
 # 「シェル初期化ファイルを書き換える」モードで走る。~/.config/fish は repo の
 # fish/ への symlink なので、隔離しないとテスト実行が tracked file を破壊する
-# (実際にこの PR の開発中に発生した)。書き込み先が XDG_CONFIG_HOME 配下に
+# (実際に PR #222 の開発中に発生した)。書き込み先が XDG_CONFIG_HOME 配下に
 # 限定されることは実測で確認済み。
 mkdir -p "$WORKDIR/home/.config/fish"
 
 pass=0
 fail=0
+# 任意ケース (実物の init) が何件走ったか。末尾の floor から差し引くために
+# 数える — floor が pass 合計を見ると、実物が入っているホストでは任意ケースの
+# pass が必須ケースの欠落を埋めて素通りする。
+optional_ran=0
+
+# 検証対象のツールと、その root 変数。**同じ添字が対応する並行配列**で持つ。
+# 変数名を tool 名から機械的に導出しないのは、導出が外れたとき root 不変条件
+# ケースが FAIL せず vacuous pass するため — 存在しない変数名になると
+# 「未設定を期待 → 誰も設定しないので pass」「外部値を期待 → env で入れた値を
+# 読み返すので pass」となり、config を一切見ないまま green になる
+# (ASDF_DATA_DIR / NVM_DIR のように `<TOOL>_ROOT` 規則から外れるツールで実際に
+# 起きる)。ROOT_VARS はそのまま全ケースの `env -u` 対象にもなるので、
+# 「隔離リスト」と「検証対象」が食い違う経路自体が存在しない。
+TOOLS=(rbenv pyenv)
+ROOT_VARS=(RBENV_ROOT PYENV_ROOT)
+
+# 並行配列の対応が崩れると (長さ違い / 並びの取り違え) 上記の vacuous pass に
+# 戻るため、2 つの assert で塞ぐ。規則から外れるツールを足すときは
+# ROOT_VAR_EXCEPTIONS にその tool 名を空白区切りで書く。
+ROOT_VAR_EXCEPTIONS=""
+if [ "${#TOOLS[@]}" -ne "${#ROOT_VARS[@]}" ]; then
+  echo "ERROR: TOOLS と ROOT_VARS の長さが違う (対応が崩れている)" >&2
+  exit 1
+fi
+
+# `env -u` に渡す引数。全ケースで不変なので一度だけ組み立てる。
+UNSET_ARGS=()
+for root_var in "${ROOT_VARS[@]}"; do
+  UNSET_ARGS+=(-u "$root_var")
+done
 
 # snippet は成否を exit code で表現する (期待値は常に 0)。
 # expect_silent=1 のとき stdout/stderr が完全に空であることも要求する。
+# 第 4 引数以降は `env` へそのまま渡す追加の環境変数代入 (省略可)。既定値の
+# 後ろに置くので、同じ変数を渡せば後勝ちで上書きできる (BSD env で実測。GNU も
+# 同順で putenv する実装だが、このホストでは未検証)。
+#
+# ROOT_VARS の `-u` を全ケース共通の既定にしてあるのは:
+#   - テスト実行者のシェルに ROOT が export されていても全ケースを隔離するため
+#   - `ROOT=""` を渡す方式では代用できない。fish からは「空文字で set 済み」に
+#     見えるため、`set -q ROOT` だけをガードにした分岐の再導入 (root 不変条件の
+#     mutant b) を検出できなくなる
+#   - BSD env は代入オペランドより後に `-u` を置けないため、位置を固定できる
+#     既定側でしか指定できない (後から `ROOT=...` で上書きするのは可)
 run_case() {
   local name="$1" expect_silent="$2" snippet="$3"
+  shift 3
   local combined status
-  combined=$(HOME="$WORKDIR/home" XDG_CONFIG_HOME="$WORKDIR/home/.config" \
+  # `${1+"$@"}` は bash 3.2 + `set -u` で引数 0 個の `"$@"` が unbound 扱いに
+  # なる問題の回避 (bash 4.4 で挙動が修正された)。
+  combined=$(env "${UNSET_ARGS[@]}" \
+    HOME="$WORKDIR/home" XDG_CONFIG_HOME="$WORKDIR/home/.config" \
+    ${1+"$@"} \
     fish --no-config -c "$snippet" 2>&1)
   status=$?
   if [ "$status" -ne 0 ]; then
@@ -85,6 +132,21 @@ run_case() {
   pass=$((pass + 1))
 }
 
+# fish を起動しない値比較 1 件を集計する。pass/fail カウンタと FAIL 判定経路を
+# run_case と共有するために関数化してある (集計が 2 通り並存すると、片方だけ
+# 直る drift が起きる — issue #221)。名前・引数順・書式は repo の既存実装
+# (tests/link-backup/ tests/locale-matrix/ の assert_eq) に合わせて want を先に
+# 取る。引数順の取り違えは FAIL にならず発見が遅れるため揃える価値がある。
+assert_eq() {
+  local name="$1" want="$2" got="$3"
+  if [ "$got" = "$want" ]; then
+    pass=$((pass + 1))
+    return
+  fi
+  echo "FAIL $name: want=[$want] got=[$got]"
+  fail=$((fail + 1))
+}
+
 # 呼ばれた引数を argv ファイルに記録し、fish 用 init スクリプトを stdout に出す stub。
 # 本物と同じく `function <tool>` を定義する出力を返すので、config 側の
 # `<tool> init - fish | source` がそのまま通る。
@@ -98,12 +160,78 @@ STUB
   chmod +x "$WORKDIR/bin/$tool"
 }
 
-for tool in rbenv pyenv; do
+# root 不変条件ケースの fish snippet を組み立てる。
+#
+# 以前の rbenv.fish は「keg 配下に versions の実体があれば RBENV_ROOT を keg に
+# 向ける」分岐を持っていたが、keg は `brew upgrade rbenv` で丸ごと消えるため
+# 配置そのものが誤りだった (issue #219)。分岐を削除した今、検証すべき不変条件は
+# 「<tool>.fish は <TOOL>_ROOT を一切変更しない」。pyenv.fish はこの分岐を
+# 持ったことは一度も無いが、同じ前提をコメントで宣言しているため同一形状の
+# ケースを張る (rbenv が踏んだ #219 と同型の再発防止)。旧分岐が最も発火し
+# やすかった条件 (keg に実体あり / default root は空) を fixture で再現して
+# assert する。これが無いと分岐が再導入されても他ケースは green のままになる。
+#
+# 期待値が空のケースは値比較ではなく `set -q` で **set されていないこと**を
+# 要求する。fish では unset と空文字 set が quoted 展開で区別できないため、
+# 値比較だと `set -gx <VAR> ""` する mutant を取りこぼす。
+#
+# `functions -q` ガードは飾りではない: fish は source の失敗 (パスの typo /
+# ファイル移動) でも exit 0 のまま後続を実行するため、値だけを見ると「一度も
+# source されていない」ケースが「未設定」と区別できず vacuous pass になる。
+# ガードは stub が定義する function の有無を条件にしているので、source が
+# 通っていなければ `NOT SOURCED` を出して FAIL する。
+# 不一致時に実値を echo してから exit 1 するのは、run_case が FAIL 時に
+# combined を stderr へ出すため — 原因の切り分けに手動再現が要らなくなる。
+root_snippet() {
+  local tool="$1" target="$2" root_var="$3" expected="$4"
+  printf '%s\n' \
+    "set -gx PATH '$WORKDIR/bin'" \
+    "source '$target'" \
+    "if not functions -q $tool" \
+    "    echo 'NOT SOURCED'" \
+    "    exit 1" \
+    "end"
+  if [ -z "$expected" ]; then
+    printf '%s\n' \
+      "if set -q $root_var" \
+      "    echo \"$root_var is set: '\$$root_var'\"" \
+      "    exit 1" \
+      "end" \
+      "exit 0"
+  else
+    printf '%s\n' \
+      "if test \"\$$root_var\" = '$expected'" \
+      "    exit 0" \
+      "end" \
+      "echo \"$root_var=\$$root_var\"" \
+      "exit 1"
+  fi
+}
+
+for ((i = 0; i < ${#TOOLS[@]}; i++)); do
+  tool="${TOOLS[$i]}"
+  root_var="${ROOT_VARS[$i]}"
   target="$REPO_ROOT/fish/config/$tool.fish"
   if [ ! -f "$target" ]; then
     echo "ERROR: $target が見つからない" >&2
     exit 1
   fi
+  # 並行配列の並びを取り違えると (rbenv に PYENV_ROOT を対応付ける等)、
+  # 対象 config を一切見ないまま 2 ケースとも pass する。規則どおりのツールは
+  # `<TOOL>_ROOT` との一致を assert して塞ぐ。`asdf` (ASDF_DATA_DIR) のように
+  # 規則から外れるツールは ROOT_VAR_EXCEPTIONS に明示して免除する。
+  # `${var^^}` は bash 4 以降なので tr を使う (LC_ALL=C pin でロケール非依存)。
+  case " $ROOT_VAR_EXCEPTIONS " in
+    *" $tool "*) ;;
+    *)
+      expected_root_var="$(printf '%s' "$tool" | LC_ALL=C tr '[:lower:]' '[:upper:]')_ROOT"
+      if [ "$root_var" != "$expected_root_var" ]; then
+        echo "ERROR: $tool の root 変数が $root_var ($expected_root_var を期待。" \
+          "規則から外れるなら ROOT_VAR_EXCEPTIONS に追加すること)" >&2
+        exit 1
+      fi
+      ;;
+  esac
 
   # 1. ガード: PATH を空 dir だけにすると `type -q` が偽になる。
   #    exit 0 / function 未定義 / 無出力 の 3 点を同時に検証する。
@@ -120,93 +248,82 @@ for tool in rbenv pyenv; do
   run_case "$tool: stub 経由で shell function が定義される" 1 \
     "set -gx PATH '$WORKDIR/bin'; source '$target'; if functions -q $tool; exit 0; end; exit 1"
 
-  # stub が受け取った引数を assert する (`-` 落ち等の回帰検出)
+  # stub が受け取った引数を assert する (`-` 落ち等の回帰検出)。
+  # argv ファイルが無い = stub が一度も呼ばれていないので、その旨を実値として
+  # 流し込み FAIL 経路を assert_eq に一本化する。
   if [ -f "$WORKDIR/$tool.argv" ]; then
     actual_argv=$(cat "$WORKDIR/$tool.argv")
-    if [ "$actual_argv" = "init - fish" ]; then
-      pass=$((pass + 1))
-    else
-      echo "FAIL $tool: init 引数が想定外: '$actual_argv' (expected 'init - fish')"
-      fail=$((fail + 1))
-    fi
   else
-    echo "FAIL $tool: stub が呼ばれた形跡がない"
-    fail=$((fail + 1))
+    actual_argv="(stub が呼ばれた形跡なし)"
   fi
+  assert_eq "$tool: stub が受け取った init 引数" "init - fish" "$actual_argv"
 
-  # 3. 実物がホストにある場合のみ: 実際の init で function が定義される
+  # 3. root 不変条件: <TOOL>_ROOT を一切変更しないこと。
+  #    fixture は **現行の rbenv.fish / pyenv.fish からは参照されない**
+  #    (versions を glob する行ごと削除済み)。「未使用だから」と消さないこと:
+  #    旧分岐が再導入された mutant を発火させるために必要で、これが無いと
+  #    mutant が「keg に実体が無い」と判定して素通りし、テストが再導入を
+  #    検出できなくなる。
+  mkdir -p "$WORKDIR/fx/keg/opt/$tool/versions/3.4.2"
+  mkdir -p "$WORKDIR/fx/home-empty/.$tool/versions"
+  # 他ケースの隔離 HOME と同じく設定ディレクトリも作っておく (不在だと fish の
+  # 版によっては warning が stderr に出て expect_silent=1 のこのケースだけ落ちる)
+  mkdir -p "$WORKDIR/fx/home-empty/.config/fish"
+  # 2 ケースで共有する fixture 環境。片方だけパスを直す drift を防ぐため
+  # 1 箇所にまとめる。
+  root_env=(
+    HOME="$WORKDIR/fx/home-empty"
+    XDG_CONFIG_HOME="$WORKDIR/fx/home-empty/.config"
+    HOMEBREW_PREFIX="$WORKDIR/fx/keg"
+  )
+
+  # keg に実体があり default root が空でも ROOT を設定しない。
+  # ROOT は run_case の既定 `env -u` で真に unset になっている。
+  run_case "$tool root: keg に実体があっても $root_var を設定しない" 1 \
+    "$(root_snippet "$tool" "$target" "$root_var" "")" \
+    "${root_env[@]}"
+
+  # 外部で設定された ROOT はそのまま通す (config.local.fish は config.fish で
+  # config/*.fish より先に source されるため実在する経路)。
+  # 期待値が非空なので harness 破損の検出も兼ねる。
+  run_case "$tool root: 外部の $root_var を潰さない" 1 \
+    "$(root_snippet "$tool" "$target" "$root_var" "/custom/$tool")" \
+    "${root_env[@]}" "$root_var=/custom/$tool"
+
+  # 4. 実物がホストにある場合のみ: 実際の init で function が定義される
   #    (出力の有無は見ない。pyenv の rehash は shims が書けない環境で
   #     stderr に出るため、host 条件に依存させない)
   if command -v "$tool" >/dev/null 2>&1; then
     run_case "$tool: 実物の init で shell function が定義される" 0 \
       "source '$target'; if functions -q $tool; exit 0; end; exit 1"
+    optional_ran=$((optional_ran + 1))
   else
     echo "SKIP $tool: ホストに未インストールのため実物テストを skip"
   fi
 done
 
-# --- rbenv 固有: RBENV_ROOT に触れないこと ---------------------------------
-# 以前の rbenv.fish は「keg 配下に versions の実体があれば RBENV_ROOT を keg に
-# 向ける」分岐を持っていたが、keg は `brew upgrade rbenv` で丸ごと消えるため
-# 配置そのものが誤りだった (issue #219)。分岐を削除した今、検証すべき不変条件は
-# 「rbenv.fish は RBENV_ROOT を一切変更しない」。旧分岐が最も発火しやすかった
-# 条件 (keg に実体あり / default root は空) を fixture で再現して assert する。
-# これが無いと分岐が再導入されても他ケースは green のままになる。
-# この 2 つの fixture は **現行の rbenv.fish からは参照されない** (versions を
-# glob する行ごと削除済み)。「未使用だから」と消さないこと: 旧分岐が再導入
-# された mutant を発火させるために必要で、これが無いと mutant が「keg に実体が
-# 無い」と判定して素通りし、テストが再導入を検出できなくなる。
-mkdir -p "$WORKDIR/fx/keg/opt/rbenv/versions/3.4.2"
-mkdir -p "$WORKDIR/fx/home-empty/.rbenv/versions"
-
-rbenv_target="$REPO_ROOT/fish/config/rbenv.fish"
-
-# ループ内でも同名 stub を作っているが、このブロックはループの外なので
-# 順序に依存しないよう自前で用意する (冪等な上書き)。
-make_stub rbenv
-
-# source 後の RBENV_ROOT を `SOURCED:<値>` 形式で回収して期待値と比較する。
-# `SOURCED:` prefix は marker であって飾りではない: fish は source の失敗
-# (パスの typo / ファイル移動) でも exit 0 のまま後続を実行するため、値だけを
-# 見ると「一度も source されていない」ケースが「未設定」と区別できず vacuous
-# pass になる。marker は stub が定義する rbenv function の有無を条件にして
-# いるので、source が通っていなければ出力ごと消えて FAIL する。
-# 第 2 引数が空なら `env -u` で RBENV_ROOT を **unset** にする (`RBENV_ROOT=""`
-# だと fish からは「空文字で set 済み」に見え、`set -q` だけをガードにした
-# 分岐の再導入を検出できない)。
-rbenv_root_case() {
-  local name="$1" preset_root="$2" expected="$3"
-  local snippet actual
-  snippet="set -gx PATH '$WORKDIR/bin'
-    source '$rbenv_target'
-    functions -q rbenv; and echo \"SOURCED:\$RBENV_ROOT\""
-  if [ -n "$preset_root" ]; then
-    actual=$(HOME="$WORKDIR/fx/home-empty" \
-      XDG_CONFIG_HOME="$WORKDIR/fx/home-empty/.config" \
-      HOMEBREW_PREFIX="$WORKDIR/fx/keg" RBENV_ROOT="$preset_root" \
-      fish --no-config -c "$snippet" 2>/dev/null)
-  else
-    actual=$(env -u RBENV_ROOT HOME="$WORKDIR/fx/home-empty" \
-      XDG_CONFIG_HOME="$WORKDIR/fx/home-empty/.config" \
-      HOMEBREW_PREFIX="$WORKDIR/fx/keg" \
-      fish --no-config -c "$snippet" 2>/dev/null)
-  fi
-  if [ "$actual" = "SOURCED:$expected" ]; then
-    pass=$((pass + 1))
-  else
-    echo "FAIL $name: '$actual' (expected 'SOURCED:$expected')"
-    fail=$((fail + 1))
-  fi
-}
-
-# keg に実体があり default root が空でも RBENV_ROOT を設定しない
-rbenv_root_case "rbenv root: keg に実体があっても RBENV_ROOT を設定しない" "" ""
-
-# 外部で設定された RBENV_ROOT はそのまま通す (config.local.fish は
-# config.fish で config/*.fish より先に source されるため実在する経路)。
-# 期待値が非空なので、marker と併せて harness 破損の検出も兼ねる。
-rbenv_root_case "rbenv root: 外部の RBENV_ROOT を潰さない" \
-  "/custom/rbenv" "/custom/rbenv"
-
 echo "fish-version-managers tests: $pass passed, $fail failed"
+
+# ケースが黙って実行されなくなっても fail は 0 のままなので、必須ケースが
+# 実行された件数に floor を張る。3 点に注意して組んでいる:
+#   - 数えるのは pass ではなく **実行数** (pass + fail)。pass を見ると
+#     「実行されたが FAIL した」まで「実行されていない」と誤って報告する
+#   - 任意ケース (実物の init) の分は差し引く。含めると、実物が入っている
+#     ホストでは任意ケースの pass が必須ケースの欠落を埋めて素通りする
+#   - 期待ツール集合は TOOLS から導出せず独立に持つ。floor が守る対象そのもの
+#     から導出すると、TOOLS からツールを落としたとき floor も一緒に下がる
+# 必須はツールあたり 5 件: ガード / stub function / argv assert / root 不変条件 2 件。
+MANDATORY_PER_TOOL=5
+EXPECTED_TOOLS="rbenv pyenv"
+if [ "${TOOLS[*]}" != "$EXPECTED_TOOLS" ]; then
+  echo "FAIL: 検証対象ツールが変わっている (TOOLS='${TOOLS[*]}' expected '$EXPECTED_TOOLS')" >&2
+  exit 1
+fi
+mandatory_ran=$(( pass + fail - optional_ran ))
+required_ran=$(( ${#TOOLS[@]} * MANDATORY_PER_TOOL ))
+if [ "$mandatory_ran" -lt "$required_ran" ]; then
+  echo "FAIL: 必須ケースが実行されていない ($mandatory_ran < $required_ran)" >&2
+  exit 1
+fi
+
 [ "$fail" -eq 0 ]
