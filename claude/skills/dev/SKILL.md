@@ -156,6 +156,33 @@ reviewer stub 契約を適用する eval では、上記に加えて stub 読込
 
 ### 5. PR 作成
 
+#### 5a. 学びの昇格チェック (PR 作成前・同一 PR に載せる)
+
+レビューループで判明した学びのうち、**repo に置くもの (CLAUDE.md /
+`claude/rules/` / skill) は原則この PR に含める**。理由は 3 つ:
+
+- 昇格の根拠 (どの finding が何を示したか) がその PR の diff とレビュー
+  記録に揃っており、別 PR にすると根拠だけ別の場所に散る
+- merge 後に回すと、次サイクルの `/clear` を跨いで文脈が失われる
+- 「規約を足したのに、それを踏んだ当の変更は既に merge 済み」という
+  順序逆転を避けられる
+
+昇格候補があれば **user に提示して承認を得てから** 実装 → コミットし、
+同じブランチに載せる (勝手に書き換えない)。承認が得られなければ載せない。
+
+**分割する例外** (この PR に載せず、別 PR / issue に切る):
+
+- 昇格対象が settings / hooks / security 境界に触れ、この PR の risk tier や
+  レビュー範囲を押し上げる場合
+- 昇格内容に設計上の議論が必要で、この PR の merge を待たせてしまう場合
+- 対象が memory (`~/.claude/projects/.../memory/`) の場合 — repo 外なので
+  PR に載らない。承認後その場で反映する
+
+merge 後に初めて判明した学び (merge 手順 / CI / 運用で分かったもの) は
+`/next` の step 4 で拾う。
+
+#### 5b. push と PR 作成
+
 レビューループの最終 commit 直後にまず `git push -u origin <branch>` で
 push し、CI 実行と後続の evidence 組み立て・issue 起票を並走させる
 (CI green 確認ゲート自体は維持)。
