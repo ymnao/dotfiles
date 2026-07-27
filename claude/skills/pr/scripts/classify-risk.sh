@@ -42,7 +42,9 @@ files=$(git diff "$REF...HEAD" --name-only)
 # `README*.md` / `docs/` / `LICENSE*` / `.txt` / `evals/*.md` fixture。
 # SKILL.md / AGENTS.md / CLAUDE.md / claude/skills/**/*.md などは
 # エージェントが指示として解釈するため content check の対象に残す
-# (security ゲート bypass 防止 / eval fixture 誤検知回避の両立)
+# (security ゲート bypass 防止 / eval fixture 誤検知回避の両立)。
+# 散文の誤検知は「ここから *.md を除外する」ではなく RULES 側のパターンを
+# 実行構文に寄せて直すこと (issue #227)
 NOT_EXECUTABLE_DOC_PATTERN='(^|/)README[^/]*\.md$|^docs/|(^|/)LICENSE[^/]*$|\.txt$|(^|/)evals?/[^/]*\.md$'
 
 # code_files を pathspec 安全に取得するため -z (NUL 区切り) を使う。
@@ -105,7 +107,23 @@ check_path "dependency"   'package\.json$|package-lock\.json$|pnpm-lock\.yaml$|y
 check_path "agent-config" 'settings[^/]*\.json$|(^|/)hooks/|hooks\.json$|AGENTS\.md$|CLAUDE\.md$|\.mcp\.json$'
 check_path "env-files"    '(^|/)\.env|\.npmrc$|config\.toml$'
 check_path "infra"        'Dockerfile|docker-compose|\.tf$|\.tfvars$'
-check_content "exec-pattern"        'eval |child_process|subprocess|os\.system|exec\(|dangerouslySetInnerHTML'
+# exec-pattern の `eval` は「直後が展開・引用の開始文字」の場合だけ検出する。
+# 文字クラスの中身は `"` `$` バッククォート `'` の 4 文字 (`'` を含めるため
+# シェル側で '"'"' 連結している)。
+# - 直後を問わない形 (末尾スペースだけの `eval`) にすると SKILL.md 等の日本語
+#   散文 (「skill / eval / hook」「集計スクリプトや eval を足したく」) に
+#   誤マッチし、実行系を変えない PR が tier=high に落ちる
+#   (issue #227。実測でマッチ 58 ファイル → 3 ファイル、新規検出の増加は 0 件)
+# - 位置 (行頭・`;` の直後等) で絞る案は採らない。added_code の各行は diff の
+#   `+` が前置されており、`run: eval "$x"` のような前置つきの実行指示形を
+#   取りこぼすため
+# - `eval set -- "$@"` 形 (直後が裸の単語) は既知・意図的な取りこぼし。動的展開を
+#   含まない定型句であり、特例を足すと今度は `eval set` を含む散文に誤マッチする。
+#   取りこぼしに気づいても直後を問わない形には戻さないこと
+# - なお上の `run: eval "$x"` の例はこのパターン自身にマッチするため、この
+#   ファイルを触る PR は tier=high になる。実行構文の具体例を残す方を優先した
+#   意図的な結果で、自ファイル除外は入れない (除外は bypass 経路になる)
+check_content "exec-pattern"        'eval[[:space:]]+["$`'"'"']|child_process|subprocess|os\.system|exec\(|dangerouslySetInnerHTML'
 check_content "pipe-to-shell"       '(curl|wget)[^|;]*\|[[:space:]]*(ba|z|da)?sh'
 check_content "permission-widening" 'chmod (777|666)|--dangerously|--no-verify'
 check_deleted "test-removal" '(^|/)(tests?|__tests__|spec)/|\.(test|spec)\.[a-z]+$|_test\.(go|py|rb|ts|tsx|js|jsx)$|\.cases\.jsonl$'
