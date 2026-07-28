@@ -30,6 +30,11 @@ export LC_ALL=C
 # 限界: スタブは curl / tar の応答を固定するため、実 GitHub Releases の
 # レイアウト変更や tar.xz の実展開結果は検出できない (そこは CI の実行が
 # 検証する)。ここが守るのは分岐とガードの構造であって取得内容ではない。
+# もう 1 つ: 期待 SHA は検査対象から抽出する (二重管理を避けるため) ので、
+# **pin されている digest 値そのものの正しさは検証しない**。値を差し替えても
+# 抽出値が一緒に動くためスイートは green のままになる。このスイートが
+# green であることを「pin が正しい」と読まないこと — pin の正しさを担保
+# するのは bump 手順側の実測 (install-shellcheck.sh 冒頭の手順) である。
 #
 # 依存: bash 3.2+ / git。curl・tar・shellcheck は不要 (スタブを使う)。
 
@@ -131,6 +136,10 @@ if [ -z "$out" ]; then
   echo "curl stub: missing -o" >&2
   exit 92
 fi
+if [ ! -d "${out%/*}" ]; then
+  echo "curl stub: -o の親がディレクトリでない: $out" >&2
+  exit 93
+fi
 printf '%s\n' "${out%/*}" >> "$STUB_CURL_LOG"
 if [ -n "${STUB_CURL_FAIL:-}" ]; then
   exit 22
@@ -138,22 +147,50 @@ fi
 printf 'fake-archive\n' > "$out"
 EOF
 
-# sha256sum / shasum: 実ファイルを読まず STUB_SHA_VALUE を返す。
+# sha256sum / shasum: hash 値は STUB_SHA_VALUE で固定するが、**渡された
+# ファイルが curl の落とした archive 本体であることは検査する**。ここを
+# 見ないと「検査対象が archive 以外を hash していてもスイートは green」に
+# なり、checksum 検証の無効化を検出するというこのスイートの目的が
+# 構造的に果たせない (実測: 存在しないパス / 無関係なファイルに
+# 差し替えた mutant がどちらも 32/32 pass した)。
+# 中身の照合は curl スタブが書く固定文字列との一致で行う。read は sh の
+# builtin なので、最小 PATH に grep 等を足さずに済む。
 # 検査対象は `| cut -d' ' -f1` で先頭フィールドを取るので出力形式を合わせる。
 cat >"$BASE/stubs/sha256sum" <<'EOF'
 #!/bin/sh
-printf '%s  %s\n' "$STUB_SHA_VALUE" "${1:-}"
+f="${1:-}"
+if [ ! -f "$f" ]; then
+  echo "sha256sum stub: 実在しないファイルを hash しようとした: $f" >&2
+  exit 93
+fi
+read -r first < "$f"
+if [ "$first" != "fake-archive" ]; then
+  echo "sha256sum stub: download した archive 以外を hash している: $f" >&2
+  exit 93
+fi
+printf '%s  %s\n' "$STUB_SHA_VALUE" "$f"
 EOF
 
 # shasum は `-a 256` 付きで呼ばれる契約。引数が変わったら落とす
 # (フォールバック側だけアルゴリズム指定が落ちる退行の検出)。
+# 対象ファイルの検査は sha256sum スタブと同じ理由で行う。
 cat >"$BASE/stubs/shasum" <<'EOF'
 #!/bin/sh
 if [ "${1:-}" != "-a" ] || [ "${2:-}" != "256" ]; then
   echo "shasum stub: expected '-a 256', got: $*" >&2
   exit 91
 fi
-printf '%s  %s\n' "$STUB_SHA_VALUE" "${3:-}"
+f="${3:-}"
+if [ ! -f "$f" ]; then
+  echo "shasum stub: 実在しないファイルを hash しようとした: $f" >&2
+  exit 93
+fi
+read -r first < "$f"
+if [ "$first" != "fake-archive" ]; then
+  echo "shasum stub: download した archive 以外を hash している: $f" >&2
+  exit 93
+fi
+printf '%s  %s\n' "$STUB_SHA_VALUE" "$f"
 EOF
 
 # 呼ばれてはいけない経路に置く罠。sha256sum が在る環境で shasum 側へ
@@ -232,11 +269,18 @@ new_case() {
 }
 
 # ケース bin にスタブを配置する。$1=ケースディレクトリ, 以降=`名前:実体` 対。
+# cp の失敗を握り潰さないこと自体がこのスイートの検出力の前提になっている:
+# 例えば case 2 の `shasum:sha-trap` は sha256sum 優先分岐の退行を捕まえる
+# **唯一の仕掛け**なので、実体名の typo で cp が落ちたまま進むと、検出器
+# だけが静かに消えて 32/32 green が続く (実測で確認した vacuous pass 経路)。
 place_stubs() {
   local dir="$1" spec
   shift
   for spec in "$@"; do
-    cp "$BASE/stubs/${spec#*:}" "$dir/bin/${spec%%:*}"
+    if ! cp "$BASE/stubs/${spec#*:}" "$dir/bin/${spec%%:*}"; then
+      echo "ERROR: スタブ配置に失敗した: $spec (実体名を確認すること)" >&2
+      exit 1
+    fi
   done
 }
 
@@ -297,6 +341,16 @@ installed_state() {
   fi
 }
 
+# Linux/x86_64 ケースで共通の stub 制御。**STUB_SHA_VALUE は含めない** —
+# ケースごとに変わる唯一の値なので、呼び出し側に残して差分 (case 5 の
+# WRONG_SHA) が読める位置に置く。env の同名変数後勝ちに依存させない意図もある。
+LINUX_ENV=(
+  STUB_OS=Linux
+  STUB_ARCH=x86_64
+  "STUB_EXPECT_URL=$(expect_url linux.x86_64)"
+  "STUB_VERSION=$VERSION"
+)
+
 # =========================================================================
 # case 1: 未対応 platform は download に進まず exit 1
 # =========================================================================
@@ -320,11 +374,8 @@ place_stubs "$c2" uname:uname curl:curl sha256sum:sha256sum shasum:sha-trap tar:
 printf '/pre/existing/path\n' >"$c2/github_path"
 printf 'PRE_EXISTING=1\n' >"$c2/github_env"
 rc=0
-run_script "$c2" \
-  STUB_OS=Linux STUB_ARCH=x86_64 \
-  STUB_EXPECT_URL="$(expect_url linux.x86_64)" \
+run_script "$c2" "${LINUX_ENV[@]}" \
   STUB_SHA_VALUE="$SHA_LINUX" \
-  STUB_VERSION="$VERSION" \
   GITHUB_PATH="$c2/github_path" \
   GITHUB_ENV="$c2/github_env" || rc=$?
 check "happy-linux-exit" 0 "$rc"
@@ -348,11 +399,7 @@ check "happy-linux-workdir-cleaned" "gone" "$(workdir_state "$c2")"
 c3="$(new_case no-github-vars)"
 place_stubs "$c3" uname:uname curl:curl sha256sum:sha256sum tar:tar
 rc=0
-run_script "$c3" \
-  STUB_OS=Linux STUB_ARCH=x86_64 \
-  STUB_EXPECT_URL="$(expect_url linux.x86_64)" \
-  STUB_SHA_VALUE="$SHA_LINUX" \
-  STUB_VERSION="$VERSION" || rc=$?
+run_script "$c3" "${LINUX_ENV[@]}" STUB_SHA_VALUE="$SHA_LINUX" || rc=$?
 check "no-github-vars-exit" 0 "$rc"
 check_contains "no-github-vars-path-note" "$c3/stdout" "NOTE: GITHUB_PATH is unset"
 check_contains "no-github-vars-env-note" "$c3/stdout" "NOTE: GITHUB_ENV is unset"
@@ -365,11 +412,7 @@ check_contains "no-github-vars-env-note" "$c3/stdout" "NOTE: GITHUB_ENV is unset
 c4="$(new_case shasum-fallback)"
 place_stubs "$c4" uname:uname curl:curl shasum:shasum tar:tar
 rc=0
-run_script "$c4" \
-  STUB_OS=Linux STUB_ARCH=x86_64 \
-  STUB_EXPECT_URL="$(expect_url linux.x86_64)" \
-  STUB_SHA_VALUE="$SHA_LINUX" \
-  STUB_VERSION="$VERSION" || rc=$?
+run_script "$c4" "${LINUX_ENV[@]}" STUB_SHA_VALUE="$SHA_LINUX" || rc=$?
 check "shasum-fallback-exit" 0 "$rc"
 check "shasum-fallback-installed" "executable" "$(installed_state "$c4")"
 
@@ -381,11 +424,7 @@ check "shasum-fallback-installed" "executable" "$(installed_state "$c4")"
 c5="$(new_case checksum-mismatch)"
 place_stubs "$c5" uname:uname curl:curl sha256sum:sha256sum tar:tar
 rc=0
-run_script "$c5" \
-  STUB_OS=Linux STUB_ARCH=x86_64 \
-  STUB_EXPECT_URL="$(expect_url linux.x86_64)" \
-  STUB_SHA_VALUE="$WRONG_SHA" \
-  STUB_VERSION="$VERSION" || rc=$?
+run_script "$c5" "${LINUX_ENV[@]}" STUB_SHA_VALUE="$WRONG_SHA" || rc=$?
 check "checksum-mismatch-exit" 1 "$rc"
 check_contains "checksum-mismatch-stderr" "$c5/stderr" "checksum mismatch"
 # expected / actual の**値そのもの**を出すことが診断の実用性の核。
@@ -400,12 +439,7 @@ check "checksum-mismatch-workdir-cleaned" "gone" "$(workdir_state "$c5")"
 c6="$(new_case curl-failure)"
 place_stubs "$c6" uname:uname curl:curl sha256sum:sha256sum tar:tar
 rc=0
-run_script "$c6" \
-  STUB_OS=Linux STUB_ARCH=x86_64 \
-  STUB_EXPECT_URL="$(expect_url linux.x86_64)" \
-  STUB_SHA_VALUE="$SHA_LINUX" \
-  STUB_VERSION="$VERSION" \
-  STUB_CURL_FAIL=1 || rc=$?
+run_script "$c6" "${LINUX_ENV[@]}" STUB_SHA_VALUE="$SHA_LINUX" STUB_CURL_FAIL=1 || rc=$?
 check "curl-failure-exit" 22 "$rc"
 check "curl-failure-not-installed" "absent" "$(installed_state "$c6")"
 check "curl-failure-workdir-cleaned" "gone" "$(workdir_state "$c6")"
@@ -416,11 +450,7 @@ check "curl-failure-workdir-cleaned" "gone" "$(workdir_state "$c6")"
 c7="$(new_case tar-failure)"
 place_stubs "$c7" uname:uname curl:curl sha256sum:sha256sum tar:tar-fail
 rc=0
-run_script "$c7" \
-  STUB_OS=Linux STUB_ARCH=x86_64 \
-  STUB_EXPECT_URL="$(expect_url linux.x86_64)" \
-  STUB_SHA_VALUE="$SHA_LINUX" \
-  STUB_VERSION="$VERSION" || rc=$?
+run_script "$c7" "${LINUX_ENV[@]}" STUB_SHA_VALUE="$SHA_LINUX" || rc=$?
 check "tar-failure-exit" 1 "$rc"
 check "tar-failure-not-installed" "absent" "$(installed_state "$c7")"
 check "tar-failure-workdir-cleaned" "gone" "$(workdir_state "$c7")"
@@ -433,16 +463,19 @@ check "tar-failure-workdir-cleaned" "gone" "$(workdir_state "$c7")"
 c8="$(new_case install-failure)"
 place_stubs "$c8" uname:uname curl:curl sha256sum:sha256sum tar:tar install:install-fail
 printf '/pre/existing/path\n' >"$c8/github_path"
+printf 'PRE_EXISTING=1\n' >"$c8/github_env"
 rc=0
-run_script "$c8" \
-  STUB_OS=Linux STUB_ARCH=x86_64 \
-  STUB_EXPECT_URL="$(expect_url linux.x86_64)" \
+run_script "$c8" "${LINUX_ENV[@]}" \
   STUB_SHA_VALUE="$SHA_LINUX" \
-  STUB_VERSION="$VERSION" \
-  GITHUB_PATH="$c8/github_path" || rc=$?
+  GITHUB_PATH="$c8/github_path" \
+  GITHUB_ENV="$c8/github_env" || rc=$?
 check "install-failure-exit" 1 "$rc"
 check "install-failure-not-installed" "absent" "$(installed_state "$c8")"
 check "install-failure-no-path-append" "/pre/existing/path|" "$(flatten "$c8/github_path")"
+# SHELLCHECK_BIN / SHELLCHECK_VERSION も同型。workflow 側はこの 2 変数を
+# `:?` で必須扱いにしているので、install 失敗時に export だけ済んでいると
+# 「pin を掴んだつもりで実は掴んでいない」偽 pass の材料になる。
+check "install-failure-no-env-append" "PRE_EXISTING=1|" "$(flatten "$c8/github_env")"
 check "install-failure-workdir-cleaned" "gone" "$(workdir_state "$c8")"
 
 # =========================================================================
@@ -468,7 +501,7 @@ check "happy-darwin-installed" "executable" "$(installed_state "$c9")"
 # 数えるのは pass 数ではなく実行数 (pass + fail): pass を見ると
 # 「実行されたが FAIL した」を「実行されていない」と誤報告する。
 # ホスト条件で skip されるケースは無いので差し引きは不要。
-EXPECTED_ASSERTS=32
+EXPECTED_ASSERTS=33
 ran=$((pass + fail))
 if [ "$ran" -ne "$EXPECTED_ASSERTS" ]; then
   echo "FAIL assert-floor: 実行数が期待と違う (expected=$EXPECTED_ASSERTS ran=$ran)"
