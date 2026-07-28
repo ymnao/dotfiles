@@ -35,6 +35,11 @@ export LC_ALL=C
 # 抽出値が一緒に動くためスイートは green のままになる。このスイートが
 # green であることを「pin が正しい」と読まないこと — pin の正しさを担保
 # するのは bump 手順側の実測 (install-shellcheck.sh 冒頭の手順) である。
+# もう 1 つ: 検査対象は `command -v bash` で解決した bash で走らせるため、
+# Homebrew の bash 5 が入った開発機では **bash 3.2 経路を踏めない**
+# (install-shellcheck.sh 自身は bash 3.2 互換の制約を負っている)。
+# CI の macOS runner には Homebrew bash が無く 3.2 で走るので穴は手元だけに
+# 閉じるが、「手元 green = 3.2 でも green」とは読まないこと。
 #
 # 依存: bash 3.2+ / git。curl・tar・shellcheck は不要 (スタブを使う)。
 
@@ -152,7 +157,7 @@ EOF
 # 見ないと「検査対象が archive 以外を hash していてもスイートは green」に
 # なり、checksum 検証の無効化を検出するというこのスイートの目的が
 # 構造的に果たせない (実測: 存在しないパス / 無関係なファイルに
-# 差し替えた mutant がどちらも 32/32 pass した)。
+# 差し替えた mutant がどちらも全 pass した)。
 # 中身の照合は curl スタブが書く固定文字列との一致で行う。read は sh の
 # builtin なので、最小 PATH に grep 等を足さずに済む。
 # 検査対象は `| cut -d' ' -f1` で先頭フィールドを取るので出力形式を合わせる。
@@ -272,7 +277,7 @@ new_case() {
 # cp の失敗を握り潰さないこと自体がこのスイートの検出力の前提になっている:
 # 例えば case 2 の `shasum:sha-trap` は sha256sum 優先分岐の退行を捕まえる
 # **唯一の仕掛け**なので、実体名の typo で cp が落ちたまま進むと、検出器
-# だけが静かに消えて 32/32 green が続く (実測で確認した vacuous pass 経路)。
+# だけが静かに消えて全 pass が続く (実測で確認した vacuous pass 経路)。
 place_stubs() {
   local dir="$1" spec
   shift
@@ -482,8 +487,12 @@ check "install-failure-workdir-cleaned" "gone" "$(workdir_state "$c8")"
 # case 9: Darwin/arm64 は darwin.aarch64 の asset と Darwin 用 SHA を使う
 # =========================================================================
 # curl スタブが URL を完全一致で assert し、sha スタブが Darwin 用の値を
-# 返すため、platform 表の取り違え (asset 名 / SHA の対応ずれ) は
-# exit code に現れる。
+# 返すため、asset 名の取り違えと、**SHA 変数の参照ミス** (Darwin 分岐が
+# $SHA256_LINUX_X86_64 を見てしまう類) は exit code に現れる。
+# 検出できないのは **SHA リテラル同士の入れ替え** (2 つの定数の値だけを
+# 入れ替える) で、これは extract_const が変数名で期待値を抜く構造上
+# 期待値も一緒に動くため原理的に見えない (実測: 入れ替え mutant は全 pass)。
+# そこは冒頭「限界」に書いたとおり bump 手順の実測が担保する。
 c9="$(new_case happy-darwin)"
 place_stubs "$c9" uname:uname curl:curl shasum:shasum tar:tar
 rc=0
