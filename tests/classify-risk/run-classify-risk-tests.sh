@@ -260,8 +260,13 @@ scenario md-eval-table-row low <<EOF
 claude/skills/foo/SKILL.md${T}| eval | 評価する | \`\$x\` |
 EOF
 
-# CMDPOS の位置集合に丸括弧を入れない回帰。日本語の「(eval が ...」は散文で
-# 頻出するので、位置集合に ( を足すとこのケースが high に転ぶ
+# SUBSHELL 経路: ( の直後の eval で、次のトークンが ASCII で始まる形
+scenario sh-eval-subshell high <<EOF
+scripts/sub.sh${T}(eval arr[\$i]=\$UNTRUSTED)
+EOF
+
+# SUBSHELL の「次トークンが ASCII で始まる」条件の回帰。日本語の「(eval が ...」は
+# 散文で頻出するので、条件を外すとこのケースが high に転ぶ
 scenario sh-eval-paren-prose medium <<EOF
 scripts/doc.sh${T}# この JSON は (eval が literal "tier" を読むため) verbatim に転記する
 EOF
