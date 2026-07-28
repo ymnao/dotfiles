@@ -195,6 +195,11 @@ scenario sh-eval-assign-prefix high <<EOF
 scripts/assign.sh${T}eval name=\$UNTRUSTED
 EOF
 
+# 接頭辞終端 [=_] の 2 分岐のうち `_` 側 (= 側は sh-eval-assign-prefix)
+scenario skill-md-eval-underscore-prefix high <<EOF
+claude/skills/foo/SKILL.md${T}run: eval prefix_\$CMD
+EOF
+
 # 文字クラス ["\$\`'] の 4 分岐をそれぞれ単独ケースで固定する。
 # 1 ケースにまとめると tier が high に潰れて他分岐の取りこぼしを覆い隠すため
 # 分けている (クラスを ["] に狭める誤修正がテストを素通りしたのを受けて追加)
@@ -252,6 +257,22 @@ EOF
 
 scenario sh-eval-after-do high <<EOF
 scripts/do.sh${T}for f in a; do eval x[\$i]=\$f; done
+EOF
+
+scenario sh-eval-after-semicolon high <<EOF
+scripts/semi.sh${T}setup; eval arr[\$i]=\$X
+EOF
+
+scenario sh-eval-after-amp high <<EOF
+scripts/amp.sh${T}setup & eval arr[\$i]=\$X
+EOF
+
+scenario sh-eval-after-else high <<EOF
+scripts/else.sh${T}if x; then y; else eval arr[\$i]=\$X; fi
+EOF
+
+scenario sh-eval-after-elif high <<EOF
+scripts/elif.sh${T}if x; then y; elif eval arr[\$i]=\$X; then z; fi
 EOF
 
 # 位置集合に単独の | を入れない回帰。Markdown のテーブル行は散文で頻出するので、
