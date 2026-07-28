@@ -102,7 +102,7 @@ check_deleted() {
 
 # ---- RULES (ここだけ編集すればルールを増減できる) ----
 check_path "auth-code"    '(^|/)(auth|login|session|oauth|token|secret|password|crypt|credential)[^/]*(/|$)'
-check_path "ci-config"    '^\.github/workflows/|Jenkinsfile|\.gitlab-ci|^\.circleci/'
+check_path "ci-config"    '^\.github/workflows/|^\.github/scripts/|Jenkinsfile|\.gitlab-ci|^\.circleci/'
 check_path "dependency"   'package\.json$|package-lock\.json$|pnpm-lock\.yaml$|yarn\.lock$|bun\.lockb?$|pyproject\.toml$|uv\.lock$|poetry\.lock$|requirements[^/]*\.txt$|go\.(mod|sum)$|Cargo\.(toml|lock)$|Gemfile(\.lock)?$|Brewfile$'
 check_path "agent-config" 'settings[^/]*\.json$|(^|/)hooks/|hooks\.json$|AGENTS\.md$|CLAUDE\.md$|\.mcp\.json$'
 check_path "env-files"    '(^|/)\.env|\.npmrc$|config\.toml$'

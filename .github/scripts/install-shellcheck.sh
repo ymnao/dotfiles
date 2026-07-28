@@ -39,14 +39,22 @@
 #      2026-07-28 時点 (dev 0.11.0 / この pin 0.11.0) の状態であって不変では
 #      ない。Homebrew が先に上がれば CI が緩い側に転ぶので、bump を溜めない。
 #   Dependabot は GitHub Releases の直取得を追跡しないため bump は手動運用。
-#   放置された場合でも「固定された古い版」であり、置き換え前 (実質 0.9.0 固定)
-#   より状況は悪化しない。
+#   放置したときの比較は経路で違う: Linux は置き換え前が runner イメージ同梱の
+#   0.9.0 固定だったので悪化しない。**macOS は置き換え前が brew 最新追従だった
+#   ので、放置すればそちらより古くなる**。macOS 側は weekly 実行で目に付き
+#   にくい分、bump を溜めない理由がここにもある。
 #
-# 制約: **bash 3.2 互換**で書く (連想配列を使わない)。これは macOS 標準 bash に
-# 合わせる repo 全体の規約 (claude/rules/shell.md) による。なお test-macos.yml の
-# `defaults.run.shell` による bash 3.2 pin は **このスクリプトには効かない** —
-# workflow は `bash <path>` で起動し、実行系は shebang / 明示 bash 側で決まる
-# (同 workflow が「shell pin は step 直下にしか効かない」と自ら注記している)。
+# 制約: **bash 3.2 互換**で書く (連想配列を使わない)。根拠は macOS 標準 bash に
+# 合わせる repo 全体の規約 (claude/rules/shell.md)。
+# 実行系の対応関係を正確に書いておく:
+#   - workflow は `bash <path>` で起動するので **shebang は参照されない**。
+#     どの bash で走るかは PATH 上の `bash` の解決結果で決まる
+#   - macOS runner (macos-15-arm64 / macos-26-arm64) のイメージに含まれる bash は
+#     `Bash 3.2.57(1)-release` のみで、Homebrew の bash 5.x は入っていない
+#     (2026-07-28 に actions/runner-images の README を取得して確認)。
+#     つまり macOS 側ではこのスクリプトは実際に bash 3.2 で走る
+#   - test-macos.yml の `defaults.run.shell` による pin は step 直下の shell に
+#     しか効かないので、そこは根拠にならない (同 workflow が自ら注記している)
 # `scripts/lib/log.sh` は source しない — CI 専用で repo 内の他スクリプトから
 # 独立させ、checkout レイアウトへの依存を作らないため。
 set -euo pipefail
@@ -93,8 +101,10 @@ trap 'rm -rf "$workdir"' EXIT
 
 printf '==> downloading %s\n' "$url"
 # --retry は一時的な瞬断のみを吸収する目的で、恒常障害を粘る意図は無い。
-# --retry だけでは connection refused / DNS 失敗が再試行対象に入らない
-# (対象は timeout と 408/429/5xx 等) ため --retry-connrefused を併用する。
+# --retry 単体の対象は timeout と 408/429/5xx 等で、ECONNREFUSED は入らない
+# ため --retry-connrefused を併用する。**DNS 解決失敗は依然として再試行されない**
+# (拾うには --retry-all-errors が要る)。取りこぼす範囲を承知の上で、
+# 「どんなエラーでも 3 回粘る」より失敗を早く見せる側を選んでいる。
 curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused -o "${workdir}/${archive}" "$url"
 
 # SHA256 検証。Linux は sha256sum、macOS は shasum -a 256 (coreutils 非前提)。
