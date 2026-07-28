@@ -42,7 +42,9 @@ files=$(git diff "$REF...HEAD" --name-only)
 # `README*.md` / `docs/` / `LICENSE*` / `.txt` / `evals/*.md` fixture。
 # SKILL.md / AGENTS.md / CLAUDE.md / claude/skills/**/*.md などは
 # エージェントが指示として解釈するため content check の対象に残す
-# (security ゲート bypass 防止 / eval fixture 誤検知回避の両立)
+# (security ゲート bypass 防止 / eval fixture 誤検知回避の両立)。
+# 散文の誤検知は「ここから *.md を除外する」ではなく RULES 側のパターンを
+# 実行構文に寄せて直すこと (issue #227)
 NOT_EXECUTABLE_DOC_PATTERN='(^|/)README[^/]*\.md$|^docs/|(^|/)LICENSE[^/]*$|\.txt$|(^|/)evals?/[^/]*\.md$'
 
 # code_files を pathspec 安全に取得するため -z (NUL 区切り) を使う。
@@ -105,7 +107,51 @@ check_path "dependency"   'package\.json$|package-lock\.json$|pnpm-lock\.yaml$|y
 check_path "agent-config" 'settings[^/]*\.json$|(^|/)hooks/|hooks\.json$|AGENTS\.md$|CLAUDE\.md$|\.mcp\.json$'
 check_path "env-files"    '(^|/)\.env|\.npmrc$|config\.toml$'
 check_path "infra"        'Dockerfile|docker-compose|\.tf$|\.tfvars$'
-check_content "exec-pattern"        'eval |child_process|subprocess|os\.system|exec\(|dangerouslySetInnerHTML'
+# exec-pattern の `eval` は、シェルの実行構文として読める形だけを検出する
+# (issue #227)。散文中の「eval」の語では発火させないが、実行形を取りこぼすと
+# `.md` 単独 diff は tier=low = 無レビューになるため、FN は FP より高くつく。
+# 4 経路の OR で、どれか 1 つでも当たれば検出する:
+#   ADJACENT — eval から展開・引用文字までが、シェルの語として解釈できる
+#     ASCII トークンだけで繋がっている形。`run: eval "$x"` のように行の途中に
+#     前置がある実行指示形を拾うのが役割 (位置に依存しない)
+#   CMDPOS — eval がシェルのコマンド位置 (行頭 / `;` `&` `{` `!` `||` の直後 /
+#     `then` `do` `else` `elif` の直後) にあり、
+#     同じ行のどこかに展開・引用文字がある形。ADJACENT の語クラスは allow-list
+#     なので `[` `\` `>` `,` や多バイトを 1 文字挟むだけで越えられる
+#     (`eval arr[$i]=$X` `eval value=\$$name` `eval 2>/dev/null "$x"`)。
+#     位置を固定する代わりに間の文字種を問わないことでその穴を塞ぐ
+#   OPENPOS — `(` または単独の `|` の直後に eval があり、**eval の次のトークンの
+#     先頭が ASCII のシェル語文字**で、同じ行に展開・引用文字がある形
+#     (`(eval arr[$i]=$X)` `producer | eval arr[$i]=$X`)。この 2 文字は
+#     日本語の丸括弧 (`(eval が ...`) と Markdown のテーブル行
+#     (`| eval | ... |`) と衝突するので CMDPOS の位置集合には入れられないが、
+#     「次トークンが ASCII で始まる」条件を足せば散文と分離できる
+#     (散文では eval の次が多バイト、テーブルでは次が `|` になる)
+#   LINECONT — 行末が `eval \` の形。引数が次行にあるため grep の行単位
+#     マッチでは中身を見られないので、この形自体を検出対象にする。
+#     eval の左側に語境界を要求する (`preeval \` `re-eval \` を弾くため)
+# 位置集合にもどの経路にも入れられないもの:
+#   バッククォート — Markdown のインラインコード (`` `eval ls -la` ``) と
+#     コマンド置換 (`` x=`eval arr[$i]=$X` ``) が、どちらも「バッククォート +
+#     eval + ASCII トークン」の形で区別できない (OPENPOS の条件が効かない)。
+#     このため `` `eval arr[$i]=$X` `` は取りこぼす
+# 既知の非検出: 展開も引用も一切含まない静的リテラルの `eval ls -la`
+# (動的展開が無く、このルールが見ているリスクに当たらないため意図的)。
+# 実測 (tracked 行に `+` を前置した added_code 相当のコーパスに対するマッチ
+# ファイル数): 旧 `eval ` = 58 / ADJACENT のみ = 5 / 現行の 4 経路 = 5。
+# 手で組んだ検体では危険形 24 種を 24 件とも検出、散文 11 種は 0 件検出。
+# 4 経路それぞれの検出責務は mutation check で確認済み (経路を 1 つ落とすと
+# tests/classify-risk の対応ケースが FAIL する)。
+# なお下の例示コメント自身がこのパターンにマッチするため、このファイルを触る
+# PR は tier=high になる。実行構文の具体例を残す方を優先した意図的な結果で、
+# 自ファイル除外は入れない (除外は bypass 経路になる)。
+EVAL_WORD='[-A-Za-z0-9_./=]'      # eval の引数の語として許す文字集合
+EVAL_Q='["$`'"'"']'               # 展開・引用の開始文字 (" $ backquote ')
+EVAL_ADJACENT="eval([[:space:]]+${EVAL_WORD}+)*[[:space:]]+(${EVAL_WORD}*[=_])?${EVAL_Q}"
+EVAL_CMDPOS="(^\\+|[;&{!]|\\|\\||(^|[^A-Za-z0-9_])(then|do|else|elif)[[:space:]])[[:space:]]*eval[[:space:]].*${EVAL_Q}"
+EVAL_OPENPOS="[(|][[:space:]]*eval[[:space:]]+${EVAL_WORD}.*${EVAL_Q}"
+EVAL_LINECONT='(^|[^A-Za-z0-9_-])eval[[:space:]]*\\$'
+check_content "exec-pattern"        "${EVAL_ADJACENT}|${EVAL_CMDPOS}|${EVAL_OPENPOS}|${EVAL_LINECONT}|child_process|subprocess|os\\.system|exec\\(|dangerouslySetInnerHTML"
 check_content "pipe-to-shell"       '(curl|wget)[^|;]*\|[[:space:]]*(ba|z|da)?sh'
 check_content "permission-widening" 'chmod (777|666)|--dangerously|--no-verify'
 check_deleted "test-removal" '(^|/)(tests?|__tests__|spec)/|\.(test|spec)\.[a-z]+$|_test\.(go|py|rb|ts|tsx|js|jsx)$|\.cases\.jsonl$'
