@@ -13,7 +13,6 @@ brew "starship"  # cross-shell prompt (fish から init して使用。pwsh 未�
 brew "ripgrep"
 brew "fd"
 brew "tree"
-brew "tmux"  # ローカル terminal multiplexer (リモート用ではない)
 # brew "p7zip"  # Excluded due to known archive extraction vulnerabilities
                 # Use macOS built-in compression or The Unarchiver instead
 
@@ -25,8 +24,6 @@ brew "fzf"  # 対話型ファジー検索 (fish 統合は `fzf --fish | source`�
 brew "zoxide"  # frecency 学習型 cd。`zoxide init fish --cmd cd` で cd を置き換え
 brew "eza"  # modern ls (git status 統合、tree、group-directories-first)
 brew "bat"  # cat + syntax highlight (sharkdp 製、fzf preview で使用)
-brew "tealdeer"  # tldr の rust 実装。初回のみ `tldr --update` で cache 取得
-brew "glow"  # Markdown を terminal で装飾表示 (README / notes 閲覧用)
 
 # ========================================
 # Development Languages & Tools
