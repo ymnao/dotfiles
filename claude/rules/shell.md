@@ -64,7 +64,7 @@ paths:
   (`curl -sI` の Location、`ls -l` のバイト数、runner-images の README、
   `man` の該当項)。測定日を添えるのは、後から読む人が「いつの事実か」を
   判断できるようにするため。
-  実例: PR #232 (issue #196) で 1 PR のうちに 4 件外した — release asset は
+  実例: issue #196 の対応で 1 PR のうちに 4 件外した — release asset は
   `release-assets.githubusercontent.com` へリダイレクトされるのに「失敗
   ドメインは増えない」、tarball は 2.4MiB なのに「~1.5MB」、`bash <path>`
   起動では shebang が参照されないのに「shebang 側で決まる」、
