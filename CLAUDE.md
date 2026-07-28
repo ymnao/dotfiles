@@ -26,6 +26,7 @@ skill / hook / テスト / CI は、この目的を安全に達成するため�
 - `.claude/backlog.conf` はリポジトリごとの配分・backlog 観測設定（`/dev` と `/next` が参照するオプトインファイル。`INWARD_RATIO_MAX` が本体の指標、`BACKLOG_CAP` は煙探知機）
 - `tests/` — hook・スクリプトの回帰テスト群（make test で全実行）
 - `claude/templates/` — 新規プロジェクト用の CLAUDE.md テンプレート（5 種）
+- `.github/scripts/` — CI 専用スクリプトの置き場（workflow から `bash <path>` で起動する。CI 依存のバージョン pin と SHA256 の正本もここ）
 
 ## よく使うコマンド
 

@@ -105,6 +105,21 @@ scenario ci-config high <<EOF
 .github/workflows/ci.yml${T}name: ci
 EOF
 
+# CI の正本 (バージョン pin / SHA256) は .github/scripts/ にも置くため
+# (issue #196)、workflows/ 配下と同じく ci-config として拾う必要がある。
+scenario ci-config-scripts high <<EOF
+.github/scripts/install-dep.sh${T}echo install
+EOF
+
+# 上のルールは `^\.github/scripts/` と行頭アンカー付き。アンカーが外れると
+# 任意の階層下の同名パスまで ci-config になるので、非 CI の同名パスが
+# high に昇格しないことを陰性側で固定する。docs/ 配下だと low-only 短絡が
+# 先に効いて ci-config の有無を判別できないため、src/ 配下 (= plain-src
+# 相当の medium) に置く。
+scenario ci-config-scripts-anchor medium <<EOF
+src/.github/scripts/example.sh${T}echo example
+EOF
+
 scenario auth-path high <<EOF
 src/auth/login.ts${T}export const login = () => 1
 EOF
