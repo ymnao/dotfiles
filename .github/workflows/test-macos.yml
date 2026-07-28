@@ -62,11 +62,15 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      # macOS runner は Homebrew 事前インストール済み。依存 2 個のみのため
-      # キャッシュ action は不採用。pre-install されていれば "already installed"
-      # で通る (エラーにならない)。
-      - name: Install shellcheck and jq (brew)
-        run: brew install shellcheck jq
+      # shellcheck は固定バージョンのバイナリを SHA256 検証付きで入れる
+      # (issue #196)。brew install をやめた理由・bump 手順・jq を pin しない
+      # 理由は .github/scripts/install-shellcheck.sh 冒頭のコメント参照
+      # (バージョンと SHA256 の正本もそこ 1 箇所。Linux 側 test.yml と共用)。
+      # macos runner に shellcheck は pre-install されておらず、従来は毎回
+      # Homebrew から最新版を取得していた (同じコミットでも結果が変わりうる)。
+      # jq は pre-install 済みのものを使う (下の Verify environment で assert)。
+      - name: Install shellcheck (pinned)
+        run: .github/scripts/install-shellcheck.sh
 
       # この job の存在意義 (BSD awk + bash 3.2 + en_US.UTF-8) をログで明示し、
       # **前提が崩れたら fail させる**。表示だけだと macos runner の更新で
@@ -80,9 +84,20 @@ jobs:
           /bin/bash --version
           command -v awk
           type awk
+          command -v shellcheck
           shellcheck --version
+          command -v jq
           jq --version
           locale -a | grep -i -E 'en_US|ja_JP' || true
+
+          # (0) shellcheck が pin 済みの実体に解決されること (issue #196)。
+          # brew や runner イメージ側の shellcheck が PATH で勝つと、CI は green
+          # のままバージョンが run 毎に変わる元の状態に戻る。バージョン番号を
+          # ここに転記すると正本が 2 箇所に分かれるので実体 path で比較する。
+          if [ "$(command -v shellcheck)" != "$HOME/.local/bin/shellcheck" ]; then
+            echo "ERROR: shellcheck resolves to $(command -v shellcheck), not the pinned install" >&2
+            exit 1
+          fi
 
           # (a) 実行 shell が bash 3.2 系であること。目的 (B) の bash 3.2 heredoc
           # unbound は 4+/5 では非再現、3.x で走ってないと workflow の存在意義の

@@ -57,17 +57,42 @@ jobs:
         if: matrix.locale != 'C'
         run: sudo locale-gen "${{ matrix.locale }}"
 
-      # 開発機は Brewfile 経由 (Homebrew) で shellcheck/jq を入れるが、CI は
-      # ubuntu-latest 上で Linuxbrew を起動するオーバーヘッド (数分) を避けるため
-      # apt で入れる。install 経路が dev↔CI で分岐している点は意図。
+      # shellcheck は固定バージョンのバイナリを SHA256 検証付きで入れる
+      # (issue #196)。apt をやめた理由・bump 手順・jq を pin しない理由は
+      # .github/scripts/install-shellcheck.sh 冒頭のコメントに集約してある
+      # (バージョンと SHA256 の正本もそこ 1 箇所)。
+      # 開発機は Brewfile 経由 (Homebrew) で入れるため install 経路が dev↔CI で
+      # 分岐している点は従来どおり意図的だが、shellcheck のバージョンは
+      # この pin により CI 側が予測可能になる。
+      #
+      # matrix (locale 3 通り) で tarball を 3 回取得するが、~1.5MB × 数秒の
+      # ためキャッシュは入れない (キー設計という抽象を増やす価値が無い)。
+      #
       # LC_ALL/LANG は step-level env で make test 系にのみ渡す (下記 step 参照)。
       # 未生成のロケールを job-level env で先に立てると、locale-gen 前に走る
-      # checkout / apt / sudo が ambient LC_ALL=<未生成> でスタートし perl 等が
+      # checkout / sudo が ambient LC_ALL=<未生成> でスタートし perl 等が
       # locale warning を吐いてログを汚す。
-      - name: Install shellcheck and jq
+      - name: Install shellcheck (pinned)
+        run: .github/scripts/install-shellcheck.sh
+
+      # 前提が崩れたら fail させる (test-macos.yml の Verify environment と同じ
+      # 方針)。ubuntu runner には shellcheck 0.9.0 が pre-install されており、
+      # PATH 解決がそちらに倒れると「CI は green だが手元 (0.11.0) より緩い」
+      # 偽 pass に戻る。バージョン番号を workflow 側に転記すると正本が 2 箇所に
+      # 分かれるので、**実際に解決される実体が install 先と一致するか**を見る。
+      # jq は pin せず runner pre-install を使うため、存在確認をここで明示する
+      # (pre-install が消えたら make test の前にこの step で落ちる)。
+      - name: Verify shellcheck and jq
         run: |
-          sudo apt-get update
-          sudo apt-get install -y shellcheck jq
+          resolved="$(command -v shellcheck)"
+          echo "resolved shellcheck: $resolved"
+          shellcheck --version
+          if [ "$resolved" != "$HOME/.local/bin/shellcheck" ]; then
+            echo "ERROR: shellcheck resolves to $resolved, not the pinned install" >&2
+            exit 1
+          fi
+          command -v jq
+          jq --version
 
       # bash 版数とロケールを毎 job のログに残す (issue #181 の再発防止観点)。
       # 何かで CI が誤 pass したときの切り分けのため、環境情報は必ず記録する。
