@@ -114,16 +114,21 @@ check_path "infra"        'Dockerfile|docker-compose|\.tf$|\.tfvars$'
 #   ADJACENT — eval から展開・引用文字までが、シェルの語として解釈できる
 #     ASCII トークンだけで繋がっている形。`run: eval "$x"` のように行の途中に
 #     前置がある実行指示形を拾うのが役割 (位置に依存しない)
-#   CMDPOS — eval がシェルのコマンド位置 (行頭 / `;` / `&` の直後) にあり、
+#   CMDPOS — eval がシェルのコマンド位置 (行頭 / `;` `&` `||` の直後 /
+#     `then` `do` `else` `elif` の直後) にあり、
 #     同じ行のどこかに展開・引用文字がある形。ADJACENT の語クラスは allow-list
 #     なので `[` `\` `>` `,` や多バイトを 1 文字挟むだけで越えられる
 #     (`eval arr[$i]=$X` `eval value=\$$name` `eval 2>/dev/null "$x"`)。
 #     位置を固定する代わりに間の文字種を問わないことでその穴を塞ぐ
 #   LINECONT — 行末が `eval \` の形。引数が次行にあるため grep の行単位
 #     マッチでは中身を見られないので、この形自体を検出対象にする
-# 位置集合に `(` とバッククォートを入れない: 日本語の丸括弧 (`(eval が ...`) と
-# Markdown のインラインコード (`` `eval ls -la` ``) が散文で頻出し、
-# repo 実測でどちらも FP になった。
+# 位置集合に入れないもの (いずれも repo 実測で FP になった):
+#   `(` — 日本語の丸括弧 (`(eval が ...`) が散文で頻出する。このため
+#         `(eval arr[$i]=$X)` のような subshell 直後の形は取りこぼす
+#         (`(eval "$x")` は ADJACENT が拾う)
+#   バッククォート — Markdown のインラインコード (`` `eval ls -la` ``)
+#   単独の `|` — Markdown のテーブル行 (`| eval | ... | `$x` |`)。
+#         `||` の 2 文字を要求すればテーブルと分離できるので `||` は入れている
 # 既知の非検出: 展開も引用も一切含まない静的リテラルの `eval ls -la`
 # (動的展開が無く、このルールが見ているリスクに当たらないため意図的)。
 # 実測 (tracked 行に `+` を前置した added_code 相当のコーパスに対するマッチ
@@ -137,7 +142,7 @@ check_path "infra"        'Dockerfile|docker-compose|\.tf$|\.tfvars$'
 EVAL_WORD='[-A-Za-z0-9_./=]'      # eval の引数の語として許す文字集合
 EVAL_Q='["$`'"'"']'               # 展開・引用の開始文字 (" $ backquote ')
 EVAL_ADJACENT="eval([[:space:]]+${EVAL_WORD}+)*[[:space:]]+(${EVAL_WORD}*[=_])?${EVAL_Q}"
-EVAL_CMDPOS="(^\\+|[;&])[[:space:]]*eval[[:space:]].*${EVAL_Q}"
+EVAL_CMDPOS="(^\\+|[;&]|\\|\\||(^|[^A-Za-z0-9_])(then|do|else|elif)[[:space:]])[[:space:]]*eval[[:space:]].*${EVAL_Q}"
 EVAL_LINECONT='eval[[:space:]]*\\$'
 check_content "exec-pattern"        "${EVAL_ADJACENT}|${EVAL_CMDPOS}|${EVAL_LINECONT}|child_process|subprocess|os\\.system|exec\\(|dangerouslySetInnerHTML"
 check_content "pipe-to-shell"       '(curl|wget)[^|;]*\|[[:space:]]*(ba|z|da)?sh'

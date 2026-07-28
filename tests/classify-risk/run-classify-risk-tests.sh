@@ -241,6 +241,25 @@ scenario skill-md-eval-prefixed-assign high <<EOF
 claude/skills/foo/SKILL.md${T}run: eval name=\$CMD
 EOF
 
+# CMDPOS の位置集合: `||` の直後と予約語 (then / do / else / elif) の直後
+scenario sh-eval-after-or high <<EOF
+scripts/or.sh${T}false || eval arr[\$i]=\$X
+EOF
+
+scenario sh-eval-after-then high <<EOF
+scripts/then.sh${T}if true; then eval arr[\$i]=\$X; fi
+EOF
+
+scenario sh-eval-after-do high <<EOF
+scripts/do.sh${T}for f in a; do eval x[\$i]=\$f; done
+EOF
+
+# 位置集合に単独の | を入れない回帰。Markdown のテーブル行は散文で頻出するので、
+# | 単独を足すとこのケースが high に転ぶ (|| の 2 文字要求で分離している)
+scenario md-eval-table-row low <<EOF
+claude/skills/foo/SKILL.md${T}| eval | 評価する | \`\$x\` |
+EOF
+
 # CMDPOS の位置集合に丸括弧を入れない回帰。日本語の「(eval が ...」は散文で
 # 頻出するので、位置集合に ( を足すとこのケースが high に転ぶ
 scenario sh-eval-paren-prose medium <<EOF
