@@ -251,6 +251,12 @@ scenario sh-eval-after-or high <<EOF
 scripts/or.sh${T}false || eval arr[\$i]=\$X
 EOF
 
+# || の直後で、eval の次のトークンが多バイトで始まる形。OPENPOS は
+# 「次トークンが ASCII」を要求するので、この形は CMDPOS の || 分岐だけが拾う
+scenario sh-eval-after-or-multibyte high <<EOF
+scripts/or2.sh${T}false || eval で "\$X" を実行する
+EOF
+
 scenario sh-eval-after-then high <<EOF
 scripts/then.sh${T}if true; then eval arr[\$i]=\$X; fi
 EOF
@@ -281,12 +287,30 @@ scenario md-eval-table-row low <<EOF
 claude/skills/foo/SKILL.md${T}| eval | 評価する | \`\$x\` |
 EOF
 
-# SUBSHELL 経路: ( の直後の eval で、次のトークンが ASCII で始まる形
+# OPENPOS 経路: ( または単独 | の直後の eval で、次のトークンが ASCII で始まる形
 scenario sh-eval-subshell high <<EOF
 scripts/sub.sh${T}(eval arr[\$i]=\$UNTRUSTED)
 EOF
 
-# SUBSHELL の「次トークンが ASCII で始まる」条件の回帰。日本語の「(eval が ...」は
+scenario sh-eval-after-pipe high <<EOF
+scripts/pipe.sh${T}producer | eval arr[\$i]=\$X
+EOF
+
+# CMDPOS の位置集合のうち { と !
+scenario sh-eval-after-brace high <<EOF
+scripts/brace.sh${T}{ eval arr[\$i]=\$X; }
+EOF
+
+scenario sh-eval-after-bang high <<EOF
+scripts/bang.sh${T}! eval arr[\$i]=\$X
+EOF
+
+# LINECONT の語境界。境界を外すと `re-eval \` 等の散文が high に転ぶ
+scenario md-eval-word-boundary low <<EOF
+claude/skills/foo/SKILL.md${T}再実行は re-eval \\
+EOF
+
+# OPENPOS の「次トークンが ASCII で始まる」条件の回帰。日本語の「(eval が ...」は
 # 散文で頻出するので、条件を外すとこのケースが high に転ぶ
 scenario sh-eval-paren-prose medium <<EOF
 scripts/doc.sh${T}# この JSON は (eval が literal "tier" を読むため) verbatim に転記する
