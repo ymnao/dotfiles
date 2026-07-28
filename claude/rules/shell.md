@@ -72,3 +72,14 @@ paths:
   実例: issue #225 / `tests/fish-pnpm/`・`tests/fish-version-managers/`・
   `tests/link/`(前 2 者は fish の `$fish_user_paths` と、後者は `readlink` が
   返す symlink target と比較していた)
+- **テスト用の一時 git リポジトリを作ったら、`git init` の直後に
+  `git config gc.auto 0` と `git config maintenance.auto false` を置く**。
+  `git commit` は auto gc を detach して起動するため、これがテスト終了時の
+  `trap` の `rm -rf` と競合し、`.git/objects/info/packs` と `.git/info/refs` を
+  書き戻す。結果として **全ケースが pass していても `rm` が ENOTEMPTY で失敗し、
+  スイートが exit 1 になる**。commit 数が増えるほど発生確率が上がり、症状が
+  「たまに落ちる」なので flaky と誤診しやすい(実測: 無効化前は 20 回中 2 回、
+  無効化後は 30 回連続 green)。
+  現在 repo 内で一時 git リポジトリを作るのは
+  `tests/classify-risk/run-classify-risk-tests.sh` の 1 箇所だけなので、
+  これは**新しくその形のテストを書くとき向けの規約**。
