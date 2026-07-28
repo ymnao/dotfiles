@@ -70,6 +70,16 @@ paths:
   起動では shebang が参照されないのに「shebang 側で決まる」、
   `--retry-connrefused` は ECONNREFUSED だけなのに「DNS 失敗も再試行される」。
   いずれもレビュアーが実測して覆した(2 周連続)
+- **`mktemp -d` はテンプレートを明示する** (`mktemp -d "${TMPDIR:-/tmp}/<name>.XXXXXX"`)。
+  macOS の BSD mktemp はテンプレート無しだと **TMPDIR を無視**して
+  `confstr(_CS_DARWIN_USER_TEMP_DIR)` の per-user temp dir
+  (`/var/folders/.../T`) を使うため、TMPDIR を差し替えた環境では作業先が
+  意図とずれる。GNU coreutils は TMPDIR を見るので、**macOS でだけ**
+  「TMPDIR を設定したのに効かない」形で出る。
+  実例: issue #196 の対応中、sandbox 下で `TMPDIR` を書き込み可能な場所に
+  差し替えて手元検証したところ `mkdtemp failed on /var/folders/...:
+  Operation not permitted` で落ちた (スクリプト側のバグではなく mktemp の
+  仕様差)。テンプレートを明示すると BSD / GNU どちらでも TMPDIR に従う
 - **一時ディレクトリのパスを「外部ツールが返す値」と文字列比較するテストでは、
   `${TMPDIR:-/tmp}` を連結する前に末尾スラッシュを落とす**。macOS の TMPDIR は
   末尾がスラッシュ(`getconf DARWIN_USER_TEMP_DIR` → `/var/folders/.../T/`)
