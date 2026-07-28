@@ -65,21 +65,26 @@ jobs:
       # 分岐している点は従来どおり意図的だが、shellcheck のバージョンは
       # この pin により CI 側が予測可能になる。
       #
-      # matrix (locale 3 通り) で tarball を 3 回取得するが、~1.5MB × 数秒の
-      # ためキャッシュは入れない (キー設計という抽象を増やす価値が無い)。
+      # matrix (locale 3 通り) で tarball を 3 回取得するが、linux.x86_64 は
+      # 2.4MiB (2026-07-28 実測) で数秒のためキャッシュは入れない
+      # (キー設計という抽象を増やす価値が無い)。削除した apt-get update の方が
+      # 重いので wall-clock はむしろ改善する。
       #
       # LC_ALL/LANG は step-level env で make test 系にのみ渡す (下記 step 参照)。
       # 未生成のロケールを job-level env で先に立てると、locale-gen 前に走る
       # checkout / sudo が ambient LC_ALL=<未生成> でスタートし perl 等が
       # locale warning を吐いてログを汚す。
       - name: Install shellcheck (pinned)
-        run: .github/scripts/install-shellcheck.sh
+        run: bash .github/scripts/install-shellcheck.sh
 
       # 前提が崩れたら fail させる (test-macos.yml の Verify environment と同じ
       # 方針)。ubuntu runner には shellcheck 0.9.0 が pre-install されており、
       # PATH 解決がそちらに倒れると「CI は green だが手元 (0.11.0) より緩い」
-      # 偽 pass に戻る。バージョン番号を workflow 側に転記すると正本が 2 箇所に
-      # 分かれるので、**実際に解決される実体が install 先と一致するか**を見る。
+      # 偽 pass に戻る。バージョン番号も設置先 path も workflow 側には転記せず、
+      # インストーラが GITHUB_ENV に書いた SHELLCHECK_BIN / SHELLCHECK_VERSION と
+      # 突き合わせる (正本を 1 箇所に保つ。:? で未設定自体も fail させる)。
+      # path とバージョンの両方を見るのは、path 一致だけでは「その場所にある
+      # 実体が pin 版か」までは保証できないため。
       # jq は pin せず runner pre-install を使うため、存在確認をここで明示する
       # (pre-install が消えたら make test の前にこの step で落ちる)。
       - name: Verify shellcheck and jq
@@ -87,8 +92,13 @@ jobs:
           resolved="$(command -v shellcheck)"
           echo "resolved shellcheck: $resolved"
           shellcheck --version
-          if [ "$resolved" != "$HOME/.local/bin/shellcheck" ]; then
-            echo "ERROR: shellcheck resolves to $resolved, not the pinned install" >&2
+          if [ "$resolved" != "${SHELLCHECK_BIN:?not set by install-shellcheck.sh}" ]; then
+            echo "ERROR: shellcheck resolves to $resolved, not the pinned $SHELLCHECK_BIN" >&2
+            exit 1
+          fi
+          : "${SHELLCHECK_VERSION:?not set by install-shellcheck.sh}"
+          if ! shellcheck --version | grep -Fqx "version: ${SHELLCHECK_VERSION#v}"; then
+            echo "ERROR: shellcheck is not ${SHELLCHECK_VERSION}" >&2
             exit 1
           fi
           command -v jq

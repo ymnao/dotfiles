@@ -19,7 +19,10 @@
 #     (`brew search /^shellcheck/` → `shellcheck` のみ)
 #   - apt 側の `shellcheck=0.9.0-1` 形式の pin は Ubuntu が旧版を保持しないため
 #     runner イメージ更新で壊れる
-#   - checkout が既に github.com に依存しているので、失敗ドメインは増えない
+#   - 依存する外部サービスは GitHub 1 社に閉じる (checkout と同じ)。ただし
+#     release asset の実体は `release-assets.githubusercontent.com` へ
+#     リダイレクトされる (2026-07-28 に Location ヘッダで実測) ので、
+#     **checkout とは別ドメインが 1 つ増える**点は正確に把握しておく
 #
 # jq を扱わない理由: CI での用途が `jq empty` 等の構文検証のみでバージョン感度が
 # 無く、SHA 管理コストが価値を上回る。runner pre-install を workflow 側の assert
@@ -30,15 +33,22 @@
 #   1. 下の VERSION と 2 つの SHA256 を更新する (SHA256 は
 #      `gh release download <tag> --repo koalaman/shellcheck --pattern '...'` +
 #      `shasum -a 256` で実測する。README 等の転記はしない)
-#   2. **先に手元で `make test` を通す**。CI より開発機が厳しい側に倒れている
-#      ので、新バージョンの新規 warning は手元で必ず先に出る
+#   2. **先に手元で `make test` を通す**。Brewfile の shellcheck は unpin なので
+#      開発機は Homebrew 追従で先行しやすく、その間は開発機の方が厳しい側に
+#      倒れる (新バージョンの新規 warning が手元で先に出る)。ただしこれは
+#      2026-07-28 時点 (dev 0.11.0 / この pin 0.11.0) の状態であって不変では
+#      ない。Homebrew が先に上がれば CI が緩い側に転ぶので、bump を溜めない。
 #   Dependabot は GitHub Releases の直取得を追跡しないため bump は手動運用。
 #   放置された場合でも「固定された古い版」であり、置き換え前 (実質 0.9.0 固定)
 #   より状況は悪化しない。
 #
-# 制約: macOS workflow の既定 shell が bash 3.2 のため **bash 3.2 互換**で書く
-# (連想配列を使わない)。`scripts/lib/log.sh` は source しない — CI 専用で
-# repo 内の他スクリプトから独立させ、checkout レイアウトへの依存を作らないため。
+# 制約: **bash 3.2 互換**で書く (連想配列を使わない)。これは macOS 標準 bash に
+# 合わせる repo 全体の規約 (claude/rules/shell.md) による。なお test-macos.yml の
+# `defaults.run.shell` による bash 3.2 pin は **このスクリプトには効かない** —
+# workflow は `bash <path>` で起動し、実行系は shebang / 明示 bash 側で決まる
+# (同 workflow が「shell pin は step 直下にしか効かない」と自ら注記している)。
+# `scripts/lib/log.sh` は source しない — CI 専用で repo 内の他スクリプトから
+# 独立させ、checkout レイアウトへの依存を作らないため。
 set -euo pipefail
 
 # ロケール依存の出力ゆらぎを排除する (claude/rules/shell.md)。
@@ -82,9 +92,10 @@ workdir="$(mktemp -d "${TMPDIR:-/tmp}/shellcheck-install.XXXXXX")"
 trap 'rm -rf "$workdir"' EXIT
 
 printf '==> downloading %s\n' "$url"
-# --retry は github.com の一時的な瞬断のみを吸収する目的。恒常障害は
-# checkout の時点で落ちるので、ここで長く粘る意味は無い。
-curl -fsSL --retry 3 --retry-delay 2 -o "${workdir}/${archive}" "$url"
+# --retry は一時的な瞬断のみを吸収する目的で、恒常障害を粘る意図は無い。
+# --retry だけでは connection refused / DNS 失敗が再試行対象に入らない
+# (対象は timeout と 408/429/5xx 等) ため --retry-connrefused を併用する。
+curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused -o "${workdir}/${archive}" "$url"
 
 # SHA256 検証。Linux は sha256sum、macOS は shasum -a 256 (coreutils 非前提)。
 if command -v sha256sum >/dev/null 2>&1; then
@@ -108,10 +119,27 @@ install -m 0755 "${workdir}/shellcheck-${VERSION}/shellcheck" "${dest_dir}/shell
 # GITHUB_PATH への追記は後続 step の PATH 先頭側に入るため、runner
 # pre-install の /usr/bin/shellcheck (0.9.0) より優先される。実際にどちらが
 # 解決されるかは workflow 側の assert で検証する (ここでの追記だけを信用しない)。
+#
+# 設置先とバージョンは SHELLCHECK_BIN / SHELLCHECK_VERSION として GITHUB_ENV
+# 経由で後続 step に渡す。workflow 側に path やバージョン番号をリテラルで転記
+# すると正本が複数箇所に分かれ、片方を変えたときに assert が追従せず
+# 「install は成功、しかし解決されているのは pin ではない」という、この変更が
+# 防ごうとしているのと同型の偽 pass を招くため。
+#
+# path だけでなくバージョンも渡すのは、path 一致は「自分が GITHUB_PATH に足した
+# ディレクトリが PATH 競争に勝ったか」しか見ておらず、その実体が pin 版である
+# 保証にならないため (両方 assert して初めて目的を閉じられる)。
 if [ -n "${GITHUB_PATH:-}" ]; then
     printf '%s\n' "$dest_dir" >> "$GITHUB_PATH"
 else
     printf 'NOTE: GITHUB_PATH is unset; add %s to PATH manually\n' "$dest_dir"
+fi
+
+if [ -n "${GITHUB_ENV:-}" ]; then
+    printf 'SHELLCHECK_BIN=%s\n' "${dest_dir}/shellcheck" >> "$GITHUB_ENV"
+    printf 'SHELLCHECK_VERSION=%s\n' "$VERSION" >> "$GITHUB_ENV"
+else
+    printf 'NOTE: GITHUB_ENV is unset; SHELLCHECK_BIN / SHELLCHECK_VERSION not exported\n'
 fi
 
 printf '==> installed to %s\n' "${dest_dir}/shellcheck"

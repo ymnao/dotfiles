@@ -69,8 +69,10 @@ jobs:
       # macos runner に shellcheck は pre-install されておらず、従来は毎回
       # Homebrew から最新版を取得していた (同じコミットでも結果が変わりうる)。
       # jq は pre-install 済みのものを使う (下の Verify environment で assert)。
+      # 起動は `bash <path>` に揃える (Makefile の `bash scripts/...` と同じ形。
+      # 実行権限ビットが落ちた checkout でも壊れない)。
       - name: Install shellcheck (pinned)
-        run: .github/scripts/install-shellcheck.sh
+        run: bash .github/scripts/install-shellcheck.sh
 
       # この job の存在意義 (BSD awk + bash 3.2 + en_US.UTF-8) をログで明示し、
       # **前提が崩れたら fail させる**。表示だけだと macos runner の更新で
@@ -92,10 +94,19 @@ jobs:
 
           # (0) shellcheck が pin 済みの実体に解決されること (issue #196)。
           # brew や runner イメージ側の shellcheck が PATH で勝つと、CI は green
-          # のままバージョンが run 毎に変わる元の状態に戻る。バージョン番号を
-          # ここに転記すると正本が 2 箇所に分かれるので実体 path で比較する。
-          if [ "$(command -v shellcheck)" != "$HOME/.local/bin/shellcheck" ]; then
-            echo "ERROR: shellcheck resolves to $(command -v shellcheck), not the pinned install" >&2
+          # のままバージョンが run 毎に変わる元の状態に戻る。バージョン番号も
+          # 設置先 path もここには転記せず、インストーラが GITHUB_ENV に書いた
+          # SHELLCHECK_BIN / SHELLCHECK_VERSION と突き合わせる (正本を 1 箇所に
+          # 保つ)。path 一致だけでは「その場所にある実体が pin 版か」までは
+          # 保証できないので、バージョンも併せて見る。
+          resolved_shellcheck="$(command -v shellcheck)"
+          if [ "$resolved_shellcheck" != "${SHELLCHECK_BIN:?not set by install-shellcheck.sh}" ]; then
+            echo "ERROR: shellcheck resolves to $resolved_shellcheck, not the pinned $SHELLCHECK_BIN" >&2
+            exit 1
+          fi
+          : "${SHELLCHECK_VERSION:?not set by install-shellcheck.sh}"
+          if ! shellcheck --version | grep -Fqx "version: ${SHELLCHECK_VERSION#v}"; then
+            echo "ERROR: shellcheck is not ${SHELLCHECK_VERSION}" >&2
             exit 1
           fi
 
