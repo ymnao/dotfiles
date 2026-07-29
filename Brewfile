@@ -90,13 +90,19 @@ brew "mecab-ipadic"
 # 棚卸しで history のヒット 0 件をこの 2 つの未使用の根拠にしないこと。
 brew "figlet"  # ASCII art バナー生成 (ymnao プロジェクトのロゴ生成で使用)
 brew "poppler"  # pdftotext 等の PDF テキスト抽出 (論文 PDF の読み取りで使用)
-# TeX Live 本体。uplatex / platex を直接使用 (zsh history に 27 / 32 件)、
-# paper-review skill は latexmk をビルド既定のフォールバックにしている。
-# ディスク実測 (2026-07-30): /usr/local/texlive/2026 が 9.7GB、加えて Caskroom に
-# インストーラ pkg 6.9GB が残るので計 16.6GB。新規マシンの make install の所要時間は
-# 実質この 1 行で決まる (make update 側は auto_updates 無しのため cask 新版が出た回のみ)。
+# TeX Live 本体。uplatex / platex を直接使用 (2026-07-30 時点の zsh history に
+# uplatex 27 行 / platex 単独 5 行)、paper-review skill は latexmk をビルド既定の
+# フォールバックにしている。
+# ディスク実測 (2026-07-30、du -sh): /usr/local/texlive/2026 が 9.7GiB、加えて
+# Caskroom にインストーラ pkg が 6.4GiB 残るので計 16.1GiB。Brewfile 中で単一項目
+# としては最大 (make install の所要時間への寄与は未計測)。
+# また pkg artifact の cask なので install に sudo のパスワード入力を伴う。ここで
+# 失敗すると scripts/install.sh は set -euo pipefail のため symlink 作成前に中断する。
+# make update 側の追加 DL は auto_updates 無しのため cask 新版が出た回のみ。
 # LaTeX を書かないマシンでは Brewfile を編集せず、環境変数で除外する:
-#   HOMEBREW_BUNDLE_CASK_SKIP=mactex-no-gui brew bundle install
+#   HOMEBREW_BUNDLE_CASK_SKIP=mactex-no-gui make install
+# この変数は brew bundle check も見るため、make update でも同じ指定が要る
+# (未指定だと Makefile の check が未インストール扱いで hard-fail する)。
 cask "mactex-no-gui"
 
 # ========================================
