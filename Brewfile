@@ -85,6 +85,16 @@ brew "imagemagick"
 brew "marp-cli"
 brew "nkf"
 brew "mecab-ipadic"
+brew "figlet"  # ASCII art バナー生成 (ymnao プロジェクトのロゴ生成で使用)
+
+# ========================================
+# Document & LaTeX
+# ========================================
+# この 2 つは主に agent (Claude Code / codex) の Bash 経由で叩かれるため
+# shell history に痕跡が残らない。未使用ツールの棚卸しで history だけを見て
+# 「0 ヒット = 未使用」と判定しないこと。
+cask "mactex-no-gui"  # TeX Live 本体 (uplatex / latexmk。paper-review skill が前提にする)
+brew "poppler"  # pdftotext 等の PDF テキスト抽出 (論文 PDF の読み取りで使用)
 
 # ========================================
 # Security
