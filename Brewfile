@@ -86,15 +86,13 @@ brew "marp-cli"
 brew "nkf"
 brew "mecab-ipadic"
 brew "figlet"  # ASCII art バナー生成 (ymnao プロジェクトのロゴ生成で使用)
-
-# ========================================
-# Document & LaTeX
-# ========================================
-# この 2 つは主に agent (Claude Code / codex) の Bash 経由で叩かれるため
-# shell history に痕跡が残らない。未使用ツールの棚卸しで history だけを見て
-# 「0 ヒット = 未使用」と判定しないこと。
-cask "mactex-no-gui"  # TeX Live 本体 (uplatex / latexmk。paper-review skill が前提にする)
 brew "poppler"  # pdftotext 等の PDF テキスト抽出 (論文 PDF の読み取りで使用)
+# TeX Live 本体 (uplatex / latexmk。paper-review skill が前提にする)。
+# 実測 9.7GB あり、新規マシンの make install と以後の make update の所要時間は
+# 実質この 1 行で決まる。LaTeX を書かないマシンではこの行を外してから install する。
+cask "mactex-no-gui"
+# 上の 3 つは主に agent (Claude Code / codex) の Bash 経由で叩くため shell history に
+# 痕跡が残らない。棚卸しで history のヒット 0 件を未使用の根拠にしないこと。
 
 # ========================================
 # Security
