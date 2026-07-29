@@ -85,14 +85,19 @@ brew "imagemagick"
 brew "marp-cli"
 brew "nkf"
 brew "mecab-ipadic"
+# figlet / poppler は主に agent (Claude Code / codex) の Bash 経由で叩くため
+# shell history に痕跡が残らない (2026-07-30 時点で zsh / fish とも 0 ヒット)。
+# 棚卸しで history のヒット 0 件をこの 2 つの未使用の根拠にしないこと。
 brew "figlet"  # ASCII art バナー生成 (ymnao プロジェクトのロゴ生成で使用)
 brew "poppler"  # pdftotext 等の PDF テキスト抽出 (論文 PDF の読み取りで使用)
-# TeX Live 本体 (uplatex / latexmk。paper-review skill が前提にする)。
-# 実測 9.7GB あり、新規マシンの make install と以後の make update の所要時間は
-# 実質この 1 行で決まる。LaTeX を書かないマシンではこの行を外してから install する。
+# TeX Live 本体。uplatex / platex を直接使用 (zsh history に 27 / 32 件)、
+# paper-review skill は latexmk をビルド既定のフォールバックにしている。
+# ディスク実測 (2026-07-30): /usr/local/texlive/2026 が 9.7GB、加えて Caskroom に
+# インストーラ pkg 6.9GB が残るので計 16.6GB。新規マシンの make install の所要時間は
+# 実質この 1 行で決まる (make update 側は auto_updates 無しのため cask 新版が出た回のみ)。
+# LaTeX を書かないマシンでは Brewfile を編集せず、環境変数で除外する:
+#   HOMEBREW_BUNDLE_CASK_SKIP=mactex-no-gui brew bundle install
 cask "mactex-no-gui"
-# 上の 3 つは主に agent (Claude Code / codex) の Bash 経由で叩くため shell history に
-# 痕跡が残らない。棚卸しで history のヒット 0 件を未使用の根拠にしないこと。
 
 # ========================================
 # Security
