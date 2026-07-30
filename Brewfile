@@ -85,6 +85,25 @@ brew "imagemagick"
 brew "marp-cli"
 brew "nkf"
 brew "mecab-ipadic"
+# figlet / poppler は主に agent (Claude Code / codex) の Bash 経由で叩くため
+# shell history に痕跡が残らない (2026-07-30 時点で zsh / fish とも 0 ヒット)。
+# 棚卸しで history のヒット 0 件をこの 2 つの未使用の根拠にしないこと。
+brew "figlet"  # ASCII art バナー生成 (ymnao プロジェクトのロゴ生成で使用)
+brew "poppler"  # pdftotext 等の PDF テキスト抽出 (論文 PDF の読み取りで使用)
+# TeX Live 本体。uplatex / platex を直接使用 (2026-07-30 時点の zsh history に
+# uplatex 27 行 / platex 単独 5 行)、paper-review skill は latexmk をビルド既定の
+# フォールバックにしている。
+# ディスク実測 (2026-07-30、du -sh): /usr/local/texlive/2026 が 9.7GiB、加えて
+# Caskroom にインストーラ pkg が 6.4GiB 残るので計 16.1GiB。Brewfile 中で単一項目
+# としては最大 (make install の所要時間への寄与は未計測)。
+# また pkg artifact の cask なので install に sudo のパスワード入力を伴う。ここで
+# 失敗すると scripts/install.sh は set -euo pipefail のため symlink 作成前に中断する。
+# make update 側の追加 DL は auto_updates 無しのため cask 新版が出た回のみ。
+# LaTeX を書かないマシンでは Brewfile を編集せず、環境変数で除外する:
+#   HOMEBREW_BUNDLE_CASK_SKIP=mactex-no-gui make install
+# この変数は brew bundle check も見るため、make update でも同じ指定が要る
+# (未指定だと Makefile の check が未インストール扱いで hard-fail する)。
+cask "mactex-no-gui"
 
 # ========================================
 # Security
@@ -108,6 +127,12 @@ brew "openssl@3"
 brew "readline", link: true
 brew "gmp"
 brew "pkgconf"
+# pyenv の Python 3.10.13 が /opt/homebrew/opt/gdbm/lib/libgdbm.6.dylib に直リンク
+# している (otool -L で確認)。Homebrew の依存グラフからは見えないため、依存元の
+# formula を消すと autoremove の巻き添えで消え、pyenv 側の dbm.gnu / dbm.ndbm が
+# ImportError になる (2026-07-30 に python@3.10 の uninstall で実際に踏んだ)。
+# 明示的に記載して autoremove の対象から外す。
+brew "gdbm"
 
 # ========================================
 # GUI Applications

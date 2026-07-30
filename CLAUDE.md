@@ -55,3 +55,4 @@ AI 運用の方針（モデル使い分け・移行手順・ツール追加の�
 - 新ツール追加時は `scripts/link.sh` にシンボリックリンク定義を追加
 - Homebrew パッケージ追加・削除時は Brewfile を**手動で編集**する（セクション・コメント・`trusted:` オプションを維持）
 - `make brewfile`（`brew bundle dump --force`）は手動編集の構造を全て破壊するため使わない
+- ツールの未使用判定を shell history 単独で行わない。agent（Claude Code / codex）の Bash 実行は shell history に残らないため、ヒット 0 件は未使用の根拠にならない（`figlet` / `poppler` は zsh / fish とも 0 ヒットだが agent セッションログに実行記録がある）。設定ファイル・state の mtime・repo やエディタ設定からの参照・agent のセッションログも併せて見る
