@@ -127,6 +127,12 @@ brew "openssl@3"
 brew "readline", link: true
 brew "gmp"
 brew "pkgconf"
+# pyenv の Python 3.10.13 が /opt/homebrew/opt/gdbm/lib/libgdbm.6.dylib に直リンク
+# している (otool -L で確認)。Homebrew の依存グラフからは見えないため、依存元の
+# formula を消すと autoremove の巻き添えで消え、pyenv 側の dbm.gnu / dbm.ndbm が
+# ImportError になる (2026-07-30 に python@3.10 の uninstall で実際に踏んだ)。
+# 明示的に記載して autoremove の対象から外す。
+brew "gdbm"
 
 # ========================================
 # GUI Applications
