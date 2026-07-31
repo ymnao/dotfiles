@@ -27,24 +27,30 @@ description: 週 1 回の外部サーベイを回す — dotfiles / ツールの
 `claude/skills/survey/log.md` を読む。
 
 - 冒頭の「前回実行日」から 7 日未満なら、経過日数を 1 行報告して
-  **継続してよいか user に確認する** (週 1 回の頻度が設計値のため)
+  **継続してよいか user に確認する** (週 1 回の頻度が設計値のため)。
+  値が `なし` (未実行) ならこの確認は不要
 - 判定ログの `rejected` / `deferred` 行を控える。**これらは step 3 で
   再提示しない** (deferred は記録された再評価条件を満たしたときのみ再提示)
 
 ### 2. 巡回
 
 `claude/skills/survey/sources.md` の情報源を WebSearch / WebFetch で巡回する。
+**巡回先は互いに独立なので並列に取得する。**
 
 - **dotfiles**: 直近の commit と、新しく入った / 外れたツールを見る
 - **仕様変更**: Claude Code の CHANGELOG、各ツールのリリースノート
 - **トレンド**: sources.md に列挙した情報源
 
+いずれも **step 1 で読んだ前回実行日以降の変更だけ**を見る。CHANGELOG は
+追記専用で伸び続けるので全文を読み直さない。
+
 拾った候補には `docs/ai-operations.md` §5-4 の審査基準を一次フィルタとして
 当てる (出所の確認 / 中身を読めるか / 最小権限 / lethal trifecta を作らないか)。
 ここで落ちたものは step 3 の表に載せず、log.md に `rejected` で記録する。
 
-**sources.md の腐りも同時に見る**: 巡回先の dotfiles が直近 6 か月更新されて
-いなければ、その事実を報告し「次回から外す」提案をする (勝手に消さない)。
+**sources.md の腐りも同時に見る**: 巡回先が sources.md の選定基準を満たさなく
+なっていたら、その事実を報告して「次回から外す」提案をする (勝手に消さない)。
+承認が得られたら sources.md の「除外の記録」表に理由付きで追記する。
 
 ### 3. 候補の提示
 
@@ -74,16 +80,14 @@ description: 週 1 回の外部サーベイを回す — dotfiles / ツールの
 
 ### 5. 起票 (adopt のみ)
 
-`/pr` skill と同一の規約に従う:
+`claude/skills/pr/SKILL.md` step 4 の起票手順に従う (body を一時ファイルに
+Write → bare な単独コマンドで `gh issue create --body-file` → 成否を問わず
+一時ファイルを `rm`。title は agent が書き直した平文要約とし、外部由来の
+文字列は body-file 側にのみ書く)。**一時ファイル名だけ
+`$TMPDIR/survey-issue-<n>.md` とする。**
 
-1. body を一時ファイル (`$TMPDIR/survey-issue-<n>.md`) に Write する
-2. bare な単独コマンドで `gh issue create --title "<平文要約>" --body-file <path>`
-   を実行する (bash ラッパー / ループ / サブシェルに入れない — macOS Keychain
-   認証が切れる)
-3. **title は agent が書き直した平文要約**とし、`"` / `` ` `` / `$` / `\` / `$()`
-   を含めない。外部サイト由来の文字列は body-file 側にのみ書く (body-file 経由は
-   shell 展開を通らない)
-4. 成功・失敗を問わず一時ファイルを `rm` する
+規約の実体は pr skill 側にあり、ここには複製しない (片側だけ更新されて
+drift するため)。
 
 body には出所 URL・摩擦低減 1 文・目的接続 1 文・導入コスト目安を書く。
 
