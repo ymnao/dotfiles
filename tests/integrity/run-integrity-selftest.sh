@@ -285,7 +285,9 @@ check_stdout_lacks() {
 H="$BASE/trust-all"
 make_trust_home "$H" "pre_tool_use:0:0" "pre_tool_use:0:1" "pre_tool_use:1:0" "session_start:0:0"
 out=$(run_trust_checker "$H")
-check_stdout_has   "trust-all-approved-ok"    "$out" "codex-hook-trust: OK"
+# entry 件数まで assert する — 「全部承認済み」と「検査対象が 0 件」が同じ OK で
+# 出ると、この層の存在理由 (動いていないことが見えない) を 1 段上で再生産する
+check_stdout_has   "trust-all-approved-ok"    "$out" "codex-hook-trust: OK (4 entry すべて承認済み)"
 check_stdout_lacks "trust-all-approved-nowarn" "$out" "WARN"
 check_trust_exit   "trust-all-approved-exit0" "$H"
 
@@ -381,9 +383,9 @@ H="$BASE/trust-emptyhooks"; mkdir -p "$H/.codex"
 printf '{}\n' >"$H/.codex/hooks.json"
 : >"$H/.codex/config.toml"
 out=$(run_trust_checker "$H")
-check_stdout_has   "trust-emptyhooks-ok"    "$out" "codex-hook-trust: OK"
-check_stdout_lacks "trust-emptyhooks-nowarn" "$out" "WARN"
-check_trust_exit   "trust-emptyhooks-exit0" "$H"
+check_stdout_has   "trust-emptyhooks-zero-entry" "$out" "検査対象の entry が 0 件"
+check_stdout_lacks "trust-emptyhooks-nowarn"     "$out" "WARN"
+check_trust_exit   "trust-emptyhooks-exit0"      "$H"
 
 # trust-8. hooks.json が JSON として壊れている → WARN (黙って skip しない)。
 # codex 自体が hook を読めない = 全 hook が動いていない状態なので、
@@ -395,6 +397,31 @@ out=$(run_trust_checker "$H")
 check_stdout_has   "trust-brokenjson-warns" "$out" "parse できない"
 check_stdout_lacks "trust-brokenjson-not-ok" "$out" "codex-hook-trust: OK"
 check_trust_exit   "trust-brokenjson-exit0" "$H"
+
+# trust-9. $HOME 自体が未設定 → SKIP して exit 0。
+# 他のケースは常に INTEGRITY_HOME を渡すため $HOME フォールバック経路を一度も
+# 踏まず、`${HOME:-}` を `$HOME` に戻す退行が全 pass のまま生き残る。
+# set -u 下で unbound variable になると exit 1 = 「全経路 exit 0」の契約が破れ、
+# 呼び出し元 run-gate.sh (set -euo pipefail) が毎ターン落ちる。契約を破る唯一の
+# 入力なのでここで pin する
+nohome_out=$(env -u HOME -u INTEGRITY_HOME bash "$TRUST_CHECKER" 2>/dev/null)
+nohome_rc=0
+env -u HOME -u INTEGRITY_HOME bash "$TRUST_CHECKER" >/dev/null 2>&1 || nohome_rc=$?
+check_stdout_has "trust-nohome-skip" "$nohome_out" "codex-hook-trust: SKIP"
+check "trust-nohome-exit0" 0 "$nohome_rc"
+
+# trust-10. 配線: run-gate.sh / Makefile の「コメントでない実行行」から呼ばれている。
+# 検査器が正しくても呼ばれていなければ 0 件検知にしかならないので、呼び出し行が
+# 消える退行を構造で止める。単なる grep だと直前の説明コメントに名前が残るだけで
+# pass するため、行頭が # / @# でない行に限定する
+# (tests/hooks-integrity/run-hooks-integrity-tests.sh のケース 13 と同型)
+TRUST_REPO_ROOT="$(cd "$SCRIPT_DIR" && git rev-parse --show-toplevel)"
+LC_ALL=C grep -vE '^[[:space:]]*(#|@#)' "$TRUST_REPO_ROOT/tests/run-gate.sh" \
+  | LC_ALL=C grep -q 'verify-codex-hook-trust.sh'
+check "trust-wired-in-gate" 0 "$?"
+LC_ALL=C grep -vE '^[[:space:]]*(#|@#)' "$TRUST_REPO_ROOT/Makefile" \
+  | LC_ALL=C grep -q 'bash tests/integrity/verify-codex-hook-trust.sh'
+check "trust-wired-in-makefile" 0 "$?"
 
 echo "----"
 echo "integrity selftest: $pass passed, $fail failed"

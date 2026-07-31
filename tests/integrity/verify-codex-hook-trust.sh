@@ -94,11 +94,13 @@ if [ -f "$cfg" ]; then
 fi
 
 warn=0
+total=0
 prev_event=""
 snake=""
 
 while IFS= read -r entry; do
   [ -n "$entry" ] || continue
+  total=$((total + 1))
   event="${entry%%:*}"
   position="${entry#*:}"
 
@@ -140,8 +142,13 @@ done <<EOF
 $entries
 EOF
 
-if [ "$warn" = 0 ]; then
-  echo "$label: OK"
+# 件数を必ず添える。「全部承認済み」と「そもそも検査対象が 0 件」を同じ `OK` で
+# 出すと、この層が存在する理由 (「警告が出ない = 正常」と「そもそも動いていない」
+# が区別できない) を 1 段上で再生産することになる
+if [ "$warn" = 0 ] && [ "$total" = 0 ]; then
+  echo "$label: OK (検査対象の entry が 0 件 — hooks.json に hook 定義が無い)"
+elif [ "$warn" = 0 ]; then
+  echo "$label: OK ($total entry すべて承認済み)"
 else
   echo "$label: 未承認の entry があります。codex TUI を開いて承認してください (agent からは実行不可)"
 fi
