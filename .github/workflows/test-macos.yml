@@ -86,6 +86,11 @@ jobs:
           /bin/bash --version
           command -v awk
           type awk
+          # 版数は判定に使わない (判定は下の (b) が挙動で行う。理由は (b) の
+          # コメント参照)。どの検査より前に無条件で出るので、(b) が fail した
+          # ときも同じ step ログ上でここを見れば「gawk が混入した」のか
+          # 「awk 実装が更新された」のかを切り分けられる。
+          awk --version 2>&1 | head -1 || true
           command -v shellcheck
           shellcheck --version
           command -v jq
@@ -118,15 +123,6 @@ jobs:
             *) echo "ERROR: expected BASH_VERSION=3.2.*, got: $BASH_VERSION" >&2; exit 1 ;;
           esac
 
-          # (b) awk が BSD awk であること。GNU awk (gawk) は `--version` を
-          # サポートするが BSD awk は usage error で非 0 終了する。gawk が
-          # 先行 PATH に入っている場合、目的 (A) の strcoll 依存は原理的に
-          # 再現しないので fail させる。
-          if awk --version >/dev/null 2>&1; then
-            echo "ERROR: awk supports --version (likely GNU awk). Expected BSD awk." >&2
-            exit 1
-          fi
-
           # (c) en_US.UTF-8 が host にあること。目的 (A) の BSD awk strcoll
           # バグはこのロケールで発火した実績があり、driver は skip 挙動を
           # 持つため「en_US.UTF-8 が無いまま他 UTF-8 だけ通って green」の
@@ -136,6 +132,45 @@ jobs:
               echo "ERROR: en_US.UTF-8 locale required for BSD awk regression" >&2
               exit 1
             fi
+          fi
+
+          # (b) awk が目的 (A) の strcoll 依存挙動を実際に持つこと。
+          #
+          # BSD awk (one-true-awk) は UTF-8 ロケールで文字列比較に strcoll() を
+          # 使うため、en_US.UTF-8 では照合できない日本語文字列同士が `==` で
+          # 誤って等しくなる。gawk はこの挙動を原理的に持たないので、この probe が
+          # 通れば「gawk が先行 PATH にいる」ケースも同時に排除できる。
+          # 実測 (2026-08-01, macOS 26.5.2 / awk version 20200816): 下記の 2 文字列は
+          # LC_ALL=C と ja_JP.UTF-8 では notequal、en_US.UTF-8 でだけ EQUAL になる。
+          #
+          # 旧実装は「`--version` を受理する = GNU awk」という版数ヒューリスティクス
+          # だったが、近年の one-true-awk は --version を受理して 0 終了するため
+          # false positive で環境検証ごと落ちていた (issue #244。runner 実測
+          # 2026-07-26 の run で awk は /usr/bin/awk に解決していた)。版数や PATH の
+          # 解決先ではなく、この workflow が踏みたい挙動そのものを測る形にする。
+          #
+          # 将来 Apple がこのバグを修正した場合もここで fail する。これは意図した
+          # 設計: 目的 (A) が検証不能になったことを green で隠さず、この job の
+          # 存在意義を人間に再判断させる (このファイル冒頭の「前提が崩れたら
+          # fail させる」方針)。
+          #
+          # ロケール pin の理由: バグを踏むロケールを固定するため (C では非再現)。
+          # (c) の後ろに置くのは、「en_US.UTF-8 が無い」失敗と「awk が期待挙動を
+          # 持たない」失敗をログ上で分離するため。
+          # stderr は捕らずに step ログへ流す (stdout の値と混ぜて比較しない)。
+          # awk の exit status は握り潰さない (`|| true` にすると EQUAL を出した
+          # 直後に異常終了した場合まで pass 扱いになる)。if の条件部なので
+          # errexit は発火せず、失敗時も理由つきで止まる。
+          if ! awk_strcoll="$(LC_ALL=en_US.UTF-8 awk 'BEGIN{ a="セキュリティ"; b="コード品質"; if (a==b) print "EQUAL"; else print "notequal" }')"; then
+            echo "ERROR: awk exited non-zero while running the strcoll probe (got: '${awk_strcoll}')." >&2
+            echo "ERROR: see the awk version printed at the top of this step." >&2
+            exit 1
+          fi
+          if [ "${awk_strcoll}" != "EQUAL" ]; then
+            echo "ERROR: awk does not exhibit the strcoll-dependent == under en_US.UTF-8 (got: '${awk_strcoll}')." >&2
+            echo "ERROR: purpose (A) of this workflow cannot be verified on this runner." >&2
+            echo "ERROR: see the awk version printed at the top of this step to tell gawk from an updated awk." >&2
+            exit 1
           fi
 
       # step-level LC_ALL は付けない: driver (tests/run-locale-matrix.sh) 自身が
