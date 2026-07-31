@@ -23,10 +23,13 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      するので安全) → `git diff HEAD main --stat` が空か確認 → 空なら
      `git checkout main`。この fetch は `.git/config` の lock 失敗で
      `fatal:` を出しながら ref の更新には成功する (CLAUDE.md「変更時の
-     注意」)。**`fatal:` で中断せず diff の確認まで進む** — 成否の判定は
-     この diff が兼ねる。diff 非空なら (fetch が実際に拒否された /
-     squash merge / 他コミット混入) user Terminal 依頼にフォールバック
-     (memory `project_settings_pr_pull_workaround.md`)
+     注意」)。**`fatal:` で中断しない** — 拒否されたかどうかは同じ出力の
+     `! [rejected]` 行の有無で判定する (`fatal:` だけなら成功)。
+     拒否された場合、または diff 非空の場合 (squash merge / 他コミット
+     混入) は user Terminal 依頼にフォールバック
+     (memory `project_settings_pr_pull_workaround.md`)。**拒否と diff は
+     別々に見る** — 拒否されても local main が偶然 HEAD と同一 tree なら
+     diff は空になり、stale な main へ checkout してしまう
    - **既に main checkout 済みで `git pull` が unlink 失敗**:
      この状況は origin/main が locked file を書き換えている場合に発生
      するため、local main の working tree は古い locked file が残った
@@ -37,8 +40,9 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
 3. **ブランチ削除**: merge 済みの作業ブランチを `git branch -d` で削除する
    (`-D` は使わない。-d が拒否されたら未 merge コミットがある異常なので
    報告して停止)。これも config lock の警告を出しながら削除には成功する
-   ので、`git branch -d <branch>` と `git branch` を 1 コマンドで続けて
-   打ち、**警告文ではなく後者の出力**で消えたことを確認する
+   ので、`git branch -d <branch>` と `git branch` を **`;` で continue**
+   させて 1 コマンドで打ち (`&&` にしない)、**警告文ではなく後者の出力**で
+   消えたことを確認する
 4. **学びの昇格チェック**: このセッションで CLAUDE.md / skill / memory に
    昇格すべき学び (同じ指摘を 2 回受けた・skill の手順が実態とズレていた等)
    がないか振り返り、あれば提案する (勝手に書き換えない)。
