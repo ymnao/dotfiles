@@ -158,7 +158,14 @@ jobs:
           # (c) の後ろに置くのは、「en_US.UTF-8 が無い」失敗と「awk が期待挙動を
           # 持たない」失敗をログ上で分離するため。
           # stderr は捕らずに step ログへ流す (stdout の値と混ぜて比較しない)。
-          awk_strcoll="$(LC_ALL=en_US.UTF-8 awk 'BEGIN{ a="セキュリティ"; b="コード品質"; if (a==b) print "EQUAL"; else print "notequal" }' || true)"
+          # awk の exit status は握り潰さない (`|| true` にすると EQUAL を出した
+          # 直後に異常終了した場合まで pass 扱いになる)。if の条件部なので
+          # errexit は発火せず、失敗時も理由つきで止まる。
+          if ! awk_strcoll="$(LC_ALL=en_US.UTF-8 awk 'BEGIN{ a="セキュリティ"; b="コード品質"; if (a==b) print "EQUAL"; else print "notequal" }')"; then
+            echo "ERROR: awk exited non-zero while running the strcoll probe (got: '${awk_strcoll}')." >&2
+            echo "ERROR: see the awk version printed at the top of this step." >&2
+            exit 1
+          fi
           if [ "${awk_strcoll}" != "EQUAL" ]; then
             echo "ERROR: awk does not exhibit the strcoll-dependent == under en_US.UTF-8 (got: '${awk_strcoll}')." >&2
             echo "ERROR: purpose (A) of this workflow cannot be verified on this runner." >&2
