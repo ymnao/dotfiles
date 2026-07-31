@@ -244,7 +244,8 @@ host 側の実ファイル `~/.codex/config.toml`(これが git 追跡外。repo
 
 | 層 | 実装 | 効くもの | 効かないもの |
 |---|---|---|---|
-| 検知 (session) | `agents/hooks/hooks-integrity-warn.sh` を `claude/settings.json` の SessionStart (`startup\|resume\|clear`) に配線 | セッション開始時に、監視対象の未コミット改変を警告として context に注入する。**自動で発火する唯一の経路**(model の context に入り、人は transcript で確認できる) | 警告のみで遮断はしない(dotfiles 開発中は dirty が正常状態のため意図的に warn-only) |
+| 検知 (session, Claude Code) | `agents/hooks/hooks-integrity-warn.sh` を `claude/settings.json` の SessionStart (`startup\|resume\|clear`) に配線 | セッション開始時に、監視対象の未コミット改変を警告として context に注入する。**自動で発火する経路**(model の context に入り、人は transcript で確認できる) | 警告のみで遮断はしない(dotfiles 開発中は dirty が正常状態のため意図的に warn-only)。**codex 単体の作業では発火しない**(下の行が担当) |
+| 検知 (session, codex) | 同 hook を `codex/hooks.json` の SessionStart (`startup\|resume\|clear`) に配線(issue #215)。`codex/hooks/hooks-integrity-warn.sh` は正本への相対 symlink | codex CLI 単体で作業する経路。本節の脅威モデルの中心は codex 側なので、ここが塞がって初めて主要経路が覆われる | 同上(warn-only)。加えて **codex TUI で承認するまで発火しない** — 新 entry は trusted_hash 未登録で Untrusted 扱いになる(承認は host 側の user 操作) |
 | 検知 (手動) | 同 hook を `make test` と `tests/run-gate.sh`(`make gate`)からも呼ぶ | **手で `make test` / `make gate` を叩いたとき**の表示 | **Stop hook 経由では表示されない** — `stop-verify-gate.sh` は gate の出力を変数に capture し、gate が通れば捨て、落ちても `tail -20` しか出さないため。ターンごとの自動検知にはなっていない |
 | 構造検査 | `tests/integrity/run-integrity-check.sh` | symlink が期待どおりの実体を指しているか(置換・実体化の検出)。ズレは異常なので exit 1 | ファイル**内容**の改変 |
 | review | git 追跡 + PR review | push されて PR に載った改変 | 未コミットの改変(検知層が担当)と、**push されないローカル commit**(下記) |
@@ -262,14 +263,14 @@ host 側の実ファイル `~/.codex/config.toml`(これが git 追跡外。repo
 
 **残余リスク(塞げていないもの)**:
 
-- **検知層は Claude Code のライフサイクルにしか配線されていない**。SessionStart も
-  `make gate`(Stop hook)も Claude Code 側のイベントで、`codex/hooks.json` には
-  SessionStart セクションが無く、codex の Stop hook は `notify-stop.sh` を呼ぶだけで
-  `run-gate.sh` には繋がっていない。つまり **Claude Code を経由せず codex CLI 単体で
-  作業して `codex/hooks/*.sh` を未コミットで改変した場合、`make gate` / `make test`
-  を手で回さない限りこの警告は一度も出ない**。本節の脅威モデルの中心が codex 側で
-  ある以上これは主要な穴であり、codex 側配線は別 issue で扱う(配線には
-  `codex/hooks/` への symlink 追加と codex TUI での再承認が要る)
+- **codex 側の配線は codex TUI で承認するまで発火しない**(issue #215 で配線自体は
+  入れた)。`codex/hooks.json` に entry を追加すると trusted_hash が変わり、その entry は
+  Untrusted 扱いで実行されない。承認は **host 側の user 操作**で、agent からは行えない。
+  承認前は issue #215 以前と同じ状態 — Claude Code を経由せず codex CLI 単体で作業して
+  `codex/hooks/*.sh` を未コミット改変した場合、`make gate` / `make test` を手で回さない
+  限り警告は出ない。なお **codex の Stop hook は依然 `notify-stop.sh` を呼ぶだけ**で
+  `run-gate.sh` には繋がっていないため、codex 側の自動検知はセッション開始時のみ
+  (ターンごとではない)
 - **ローカル commit すると検知が消える**。検査は `git status --porcelain`
   (HEAD との差分)なので、改変を commit した時点で clean になる。push されない
   ローカル commit は PR review にも載らないため、「commit されていれば review で
@@ -279,9 +280,10 @@ host 側の実ファイル `~/.codex/config.toml`(これが git 追跡外。repo
   新しい settings.json が読まれるため警告は出ない(自己隠蔽)。settings.json は
   監視対象なので **改変した回の警告は出る**が、それを人が見落とせばそこで途切れる
 - **無関係なプロジェクトのセッションでも警告が出る**。配線先は
-  `~/.claude/settings.json`(グローバル)で、hook は cwd を無視して dotfiles repo を
-  見る。dotfiles を dirty のまま別プロジェクトで作業している間はずっと同じ警告が
-  context に入り、warn-only の signal が摩耗する
+  `~/.claude/settings.json` と `~/.codex/hooks.json`(どちらもグローバル)で、hook は
+  cwd を無視して dotfiles repo を見る。dotfiles を dirty のまま別プロジェクトで
+  作業している間はずっと同じ警告が context に入り、warn-only の signal が摩耗する。
+  codex 側を配線した分、この摩耗は増える方向に働く(issue #215)
 - **`.gitignore` にマッチする新規ファイルは `-uall` でも見えない**。`.gitignore`
   自体も監視対象外なので、「`.gitignore` に追記 → 無視されるファイル名で設置」の
   2 手で検知を避けられる(それ単体では実行に繋がらないが、fail-open の穴の一つ)

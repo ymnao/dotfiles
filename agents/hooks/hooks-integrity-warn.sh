@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
 #
-# SessionStart hook (Claude Code, matcher: startup|resume|clear): host 側で実行される
-# hook 定義に未コミットの変更があれば警告する (warn-only)。
-# 正本: agents/hooks/hooks-integrity-warn.sh (claude/hooks/ からは相対 symlink)
+# SessionStart hook: host 側で実行される hook 定義に未コミットの変更があれば
+# 警告する (warn-only)。両 harness の SessionStart に配線してある:
+#   Claude Code — claude/settings.json  (matcher: startup|resume|clear)
+#   codex       — codex/hooks.json      (matcher: startup|resume|clear)
+# codex 側も matcher は有効で、突合対象は SessionStartSource の
+# startup / resume / clear / compact (codex 0.146.0 の upstream ソース
+# codex-rs/hooks/src/events/{common,session_start}.rs を 2026-07-31 に確認。
+# matcher が無視されるのは UserPromptSubmit と Stop の 2 イベントだけ)。
+# compact を拾わないのは Claude Code 側と揃えるため (compact は会話継続であって
+# セッション開始ではなく、同じ警告を 1 セッション内で繰り返すと signal が摩耗する)。
+# 正本: agents/hooks/hooks-integrity-warn.sh (claude/hooks/ と codex/hooks/ からは
+# それぞれ相対 symlink)
 #
 # 背景 (issue #207): codex CLI の hook 承認 (~/.codex/config.toml の
 # [hooks.state].trusted_hash) は **hook の設定 identity のみ** をハッシュしており、

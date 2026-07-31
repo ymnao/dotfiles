@@ -6,8 +6,9 @@
 #   1. 検知ロジック — 監視対象パスの未コミット改変だけを警告し、対象外の
 #      変更や clean な repo では何も出さない。常に exit 0 (warn-only)
 #   2. fail-open — git 不在 / repo 外 / 存在しないパスで黙って exit 0
-#   3. 配線 — claude/hooks/ からの symlink・settings.json の SessionStart
-#      エントリ・tests/run-gate.sh と Makefile からの呼び出しが揃っている
+#   3. 配線 — claude/hooks/ と codex/hooks/ からの symlink・settings.json と
+#      codex/hooks.json の SessionStart エントリ・tests/run-gate.sh と Makefile
+#      からの呼び出しが揃っている
 #
 # すべて $TMPDIR の一時 git repo に対して実行する。実 dotfiles 作業ツリーは
 # 一切変更しない (以前は cwd 非依存の導出を実 repo で確認していたが、中断時に
@@ -242,6 +243,18 @@ if [ -L "$LINK" ]; then
   check_cmd "symlink が agents/hooks/hooks-integrity-warn.sh に解決されること (got ${resolved})" [ "$resolved" = "$HOOK" ]
 fi
 
+# --- 11b. 配線: codex/hooks/ からの symlink が正本に解決される (issue #215) ---
+# codex 側は `~/.codex/hooks` を **ディレクトリごと** symlink する配線なので
+# (scripts/link.sh / link.ps1)、ここに実体ファイルを置くと正本と drift する。
+CODEX_LINK="$REPO_ROOT/codex/hooks/hooks-integrity-warn.sh"
+check_cmd "codex/hooks/hooks-integrity-warn.sh が symlink であること" [ -L "$CODEX_LINK" ]
+if [ -L "$CODEX_LINK" ]; then
+  codex_target=$(readlink "$CODEX_LINK")
+  codex_resolved=$(cd "$(dirname "$CODEX_LINK")" && cd "$(dirname "$codex_target")" && pwd -P)/$(basename "$codex_target")
+  check_cmd "symlink が agents/hooks/hooks-integrity-warn.sh に解決されること (got ${codex_resolved})" \
+    [ "$codex_resolved" = "$HOOK" ]
+fi
+
 # --- 12. 配線: settings.json の SessionStart entry が 3 イベントすべてを拾う ---
 matcher=$(jq -r '
   .hooks.SessionStart[]
@@ -273,6 +286,42 @@ entry=$(jq -r '
 ' "$REPO_ROOT/claude/settings.json")
 check_cmd "SessionStart entry が type/timeout/command とも期待どおりであること (got ${entry})" \
   [ "$entry" = 'command|10|bash "$HOME/.claude/hooks/hooks-integrity-warn.sh"' ]
+
+# --- 12b. 配線 (codex): hooks.json の SessionStart entry (issue #215) ---
+# codex 側でも matcher は有効で、突合対象は SessionStartSource の
+# startup / resume / clear / compact (codex 0.146.0 の upstream ソース
+# codex-rs/hooks/src/events/{common,session_start}.rs を 2026-07-31 に確認。
+# matcher_pattern_for_event が None を返す = matcher を無視するのは
+# UserPromptSubmit と Stop の 2 イベントだけ)。よって Claude 側 (ケース 12) と
+# **同じ検査を掛けられる** — 空 matcher や `.*` で全イベントを拾う形は通さない。
+codex_matcher=$(jq -r '
+  .hooks.SessionStart[]
+  | select([.hooks[].command] | any(test("hooks-integrity-warn\\.sh")))
+  | .matcher
+' "$REPO_ROOT/codex/hooks.json")
+check_cmd "codex/hooks.json の SessionStart に hooks-integrity-warn.sh の entry が 1 つあること" \
+  [ -n "$codex_matcher" ]
+for ev in startup resume clear; do
+  check_cmd "codex SessionStart matcher が ${ev} に一致すること (got: ${codex_matcher})" \
+    matches_re "$ev" "$codex_matcher"
+done
+check_cmd "codex SessionStart matcher が無関係なイベントに一致しないこと (got: ${codex_matcher})" \
+  not_matches_re "no-such-event" "$codex_matcher"
+# compact は Claude 側の配線 (session-compact-context.sh) と揃えて意図的に拾わない。
+# 会話継続であってセッション開始ではなく、同じ警告を 1 セッション内で繰り返すと
+# warn-only の signal が摩耗するため。意図的な除外なので pin しておく。
+check_cmd "codex SessionStart matcher が compact を拾わないこと (got: ${codex_matcher})" \
+  not_matches_re "compact" "$codex_matcher"
+# command は完全一致で pin する。statusMessage / timeout は codex の
+# trusted_hash の入力に含まれる (docs/ai-operations.md §10) ため、ここが変わると
+# codex TUI の再承認が要る。黙って変わらないよう全フィールドを含めて pin する。
+codex_entry=$(jq -r '
+  .hooks.SessionStart[].hooks[]
+  | select(.command | test("hooks-integrity-warn\\.sh"))
+  | "\(.type)|\(.timeout)|\(.statusMessage)|\(.command)"
+' "$REPO_ROOT/codex/hooks.json")
+check_cmd "codex SessionStart entry が type/timeout/statusMessage/command とも期待どおりであること (got ${codex_entry})" \
+  [ "$codex_entry" = 'command|10|hook 定義の未コミット変更を確認中...|bash "$HOME/.codex/hooks/hooks-integrity-warn.sh"' ]
 
 # --- 13. 配線: run-gate.sh / Makefile の「コメントでない実行行」から呼ばれている ---
 # 単なる grep だと直前の説明コメントに hook 名が残るだけで pass してしまうため、
@@ -510,9 +559,11 @@ check_empty "$violations" "配線 command が全件分類され、監視対象�
 # 下限は claude/rules/shell.md の規約どおり **守る対象から導出せず独立した定数**で
 # 持つ (配列長等から計算すると、対象が減ったときに下限も一緒に下がって無効化される)。
 # 値は 2026-07-31 時点の実測: claude/settings.json = hooks 9 件 + statusLine 1 件、
-# codex/hooks.json = 7 件。配線を意図的に減らすときはここも更新する。
+# codex/hooks.json = 8 件 (SessionStart 1 件を含む。issue #215 で 7 → 8)。
+# 配線を意図的に増減させるときはここも更新する — 増やしたのに据え置くと、
+# その分だけ「配線が 1 件消えても floor が拾わない」隙間になる。
 MIN_REPO_COMMANDS_CLAUDE=10
-MIN_REPO_COMMANDS_CODEX=7
+MIN_REPO_COMMANDS_CODEX=8
 
 count_repo_ref_commands() {
   # $1=対象 JSON, $2 以降=jq 式 (複数可)。home 配下 dotfiles を指す command を数える。
