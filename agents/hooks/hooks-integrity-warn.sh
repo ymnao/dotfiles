@@ -4,12 +4,8 @@
 # 警告する (warn-only)。両 harness の SessionStart に配線してある:
 #   Claude Code — claude/settings.json  (matcher: startup|resume|clear)
 #   codex       — codex/hooks.json      (matcher: startup|resume|clear)
-# codex 側も matcher は有効で、突合対象は SessionStartSource の
-# startup / resume / clear / compact (codex 0.146.0 の upstream ソース
-# codex-rs/hooks/src/events/{common,session_start}.rs を 2026-07-31 に確認。
-# matcher が無視されるのは UserPromptSubmit と Stop の 2 イベントだけ)。
-# compact を拾わないのは Claude Code 側と揃えるため (compact は会話継続であって
-# セッション開始ではなく、同じ警告を 1 セッション内で繰り返すと signal が摩耗する)。
+# codex 側でも matcher は有効で、両 harness とも compact は意図的に拾わない
+# (実測根拠と理由は docs/ai-operations.md §10。事実の正本はそちらに 1 箇所だけ置く)。
 # 正本: agents/hooks/hooks-integrity-warn.sh (claude/hooks/ と codex/hooks/ からは
 # それぞれ相対 symlink)
 #
@@ -114,7 +110,15 @@ porcelain=$(git -C "$repo" status --porcelain=v1 -uall -- "${WATCHED_PATHS[@]}" 
 count=$(printf '%s\n' "$porcelain" | grep -c . || true)
 limit=20
 
-echo "[hooks-integrity] 警告: host 実行される hook 定義に未コミットの変更があります (${count} 件)"
+# **stdout の 1 文字目を `{` / `[` にしないこと**。codex は hook の stdout が
+# その 2 文字のどちらかで始まると JSON 出力とみなし、パースに失敗した時点で
+# run 全体を Failed にして本文を model の context に **入れない**
+# (upstream rust-v0.146.0 の codex-rs/hooks/src/engine/output_parser.rs の
+# `looks_like_json` と同 events/session_start.rs の分岐。2026-07-31 に確認)。
+# plain text として context に入るのは「JSON に見えない」出力だけなので、
+# 以前の `[hooks-integrity]` ラベルは codex 側で警告が丸ごと消える形だった。
+# この 1 文字目の制約は下のテストが pin している。
+echo "hooks-integrity 警告: host 実行される hook 定義に未コミットの変更があります (${count} 件)"
 printf '%s\n' "$porcelain" | head -"$limit"
 if [ "$count" -gt "$limit" ]; then
   echo "  ... 他 $((count - limit)) 件 (先頭 ${limit} 件のみ表示)"

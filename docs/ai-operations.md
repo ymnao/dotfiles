@@ -245,7 +245,7 @@ host 側の実ファイル `~/.codex/config.toml`(これが git 追跡外。repo
 | 層 | 実装 | 効くもの | 効かないもの |
 |---|---|---|---|
 | 検知 (session, Claude Code) | `agents/hooks/hooks-integrity-warn.sh` を `claude/settings.json` の SessionStart (`startup\|resume\|clear`) に配線 | セッション開始時に、監視対象の未コミット改変を警告として context に注入する。**自動で発火する経路**(model の context に入り、人は transcript で確認できる) | 警告のみで遮断はしない(dotfiles 開発中は dirty が正常状態のため意図的に warn-only)。**codex 単体の作業では発火しない**(下の行が担当) |
-| 検知 (session, codex) | 同 hook を `codex/hooks.json` の SessionStart (`startup\|resume\|clear`) に配線(issue #215)。`codex/hooks/hooks-integrity-warn.sh` は正本への相対 symlink | codex CLI 単体で作業する経路。本節の脅威モデルの中心は codex 側なので、ここが塞がって初めて主要経路が覆われる | 同上(warn-only)。加えて **codex TUI で承認するまで発火しない** — 新 entry は trusted_hash 未登録で Untrusted 扱いになる(承認は host 側の user 操作) |
+| 検知 (session, codex) | 同 hook を `codex/hooks.json` の SessionStart (`startup\|resume\|clear`) に配線(issue #215)。`codex/hooks/hooks-integrity-warn.sh` は正本への相対 symlink | **(codex TUI で承認された後に限り)** codex CLI 単体で作業する経路。本節の脅威モデルの中心は codex 側なので、ここが塞がって初めて主要経路が覆われる | 同上(warn-only)。加えて **承認するまで発火しない** — 新 entry は trusted_hash 未登録で Untrusted 扱いになる(承認は host 側の user 操作で、agent からは行えない) |
 | 検知 (手動) | 同 hook を `make test` と `tests/run-gate.sh`(`make gate`)からも呼ぶ | **手で `make test` / `make gate` を叩いたとき**の表示 | **Stop hook 経由では表示されない** — `stop-verify-gate.sh` は gate の出力を変数に capture し、gate が通れば捨て、落ちても `tail -20` しか出さないため。ターンごとの自動検知にはなっていない |
 | 構造検査 | `tests/integrity/run-integrity-check.sh` | symlink が期待どおりの実体を指しているか(置換・実体化の検出)。ズレは異常なので exit 1 | ファイル**内容**の改変 |
 | review | git 追跡 + PR review | push されて PR に載った改変 | 未コミットの改変(検知層が担当)と、**push されないローカル commit**(下記) |
@@ -300,6 +300,43 @@ host 側の実ファイル `~/.codex/config.toml`(これが git 追跡外。repo
 - **repo の hook 実装は host 側で実行される = 実質 trusted zone** である。
   この repo に書き込める主体は、次回の Claude Code / codex 起動時に host 上で
   任意コードを実行できると考えること
+
+### codex 側 SessionStart hook の実測結果(この節が正本)
+
+すべて **2026-07-31 に upstream の tag `rust-v0.146.0`(host の codex-cli 0.146.0)の
+ソースで確認**した。hook 本体とテストのコメントはこの節を指すだけに留めてある
+(同じ実測事実を複数箇所に書くと、codex の upgrade で挙動が変わったときに片方だけ
+更新されて食い違うため)。**codex を upgrade したら §10 冒頭の trusted_hash と
+あわせてここも再確認する**。
+
+**1. matcher は SessionStart でも有効**。突合対象は `SessionStartSource` の
+`startup` / `resume` / `clear` / `compact`。matcher が無視される(実装上
+`matcher_pattern_for_event` が `None` を返す)のは **`UserPromptSubmit` と `Stop` の
+2 イベントだけ**(`codex-rs/hooks/src/events/common.rs`、同 `session_start.rs`)。
+
+**2. matcher の突合方式は 2 通りに分岐する**(同 `common.rs` の `matches_matcher`)。
+Claude Code の regex 一本槍とは違うので、ここを取り違えるとテストだけが通る:
+
+| matcher | 判定 |
+|---|---|
+| `""` / `*` | `is_match_all_matcher` → **無条件に match** |
+| 英数字 / `_` / `\|` のみ | `is_exact_matcher` → `split('\|')` して**完全一致**(部分一致しない) |
+| それ以外 | regex として評価 |
+
+配線している `startup|resume|clear` は 2 番目に当たり **exact 一致**で評価される。
+テスト側で bash の `=~`(部分一致)だけを掛けると、`tartup|esume|lear` のような
+綴り違いが「一致する」と判定されて通るのに codex では一度も発火しない。よって
+`tests/hooks-integrity/run-hooks-integrity-tests.sh` の codex 側 matcher 検査は
+**全文 pin** にしてある。
+
+**3. hook の stdout が `{` または `[` で始まると、警告は model の context に入らない**。
+codex は `looks_like_json`(`codex-rs/hooks/src/engine/output_parser.rs`)でその 2 文字を
+JSON 出力の合図とみなし、JSON としてパースできなければ run を `Failed` にして
+`hook returned invalid session start JSON output` だけを残す。plain text が
+additional context になるのは「JSON に見えない」出力のときだけ。
+`agents/hooks/hooks-integrity-warn.sh` の警告ラベルが `[hooks-integrity]` ではなく
+`hooks-integrity 警告:` なのはこのため(**Claude Code 側では素通しなので、
+ラベルを戻しても codex 側でだけ静かに壊れる**。テストが 1 文字目を pin している)。
 
 ### scope 外(別 issue)
 

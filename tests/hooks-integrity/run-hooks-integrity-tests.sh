@@ -128,8 +128,20 @@ check_empty "$out" "対象外変更 (README.md) を警告しないこと"
 printf 'echo tampered\n' >> "$FIXTURE/agents/hooks/sample.sh"
 out=$(run_hook "$FIXTURE"); rc=$?
 check "$rc" "改変検知時も exit 0 を返すこと (warn-only、got $rc)"
-grep -q '\[hooks-integrity\]' <<<"$out"
+grep -q '^hooks-integrity 警告:' <<<"$out"
 check "$?" "改変時に警告ラベルを出すこと"
+# **出力の 1 文字目が `{` / `[` でないこと** (issue #215)。codex は hook の stdout が
+# その 2 文字のどちらかで始まると JSON 出力とみなし、パースに失敗した時点で run を
+# Failed にして本文を model の context に入れない (upstream rust-v0.146.0 の
+# codex-rs/hooks/src/engine/output_parser.rs の `looks_like_json` と
+# 同 events/session_start.rs の分岐。2026-07-31 に確認)。つまり `[hooks-integrity]`
+# のようなラベルに戻すと **codex 側でだけ警告が丸ごと消える** — Claude Code 側は
+# 素通しで気付けないので、ここで pin する。
+first_char=$(printf '%s' "$out" | head -c 1)
+check_cmd "警告出力の 1 文字目が JSON 開始文字でないこと (got '${first_char}')" \
+  [ "$first_char" != "{" ]
+check_cmd "警告出力の 1 文字目が JSON 配列開始文字でないこと (got '${first_char}')" \
+  [ "$first_char" != "[" ]
 git -C "$FIXTURE" checkout -q -- agents/hooks/sample.sh
 
 # --- 4. 監視対象パスごとの検知 ---
@@ -234,26 +246,24 @@ grep -q 'agents/hooks/sample.sh' <<<"$derived"
 check "$?" "自前導出でも fixture repo の変更を検知すること (got: ${derived})"
 git -C "$FIXTURE" checkout -q -- agents/hooks/sample.sh
 
-# --- 11. 配線: claude/hooks/ からの symlink が正本に解決される ---
-LINK="$REPO_ROOT/claude/hooks/hooks-integrity-warn.sh"
-check_cmd "claude/hooks/hooks-integrity-warn.sh が symlink であること" [ -L "$LINK" ]
-if [ -L "$LINK" ]; then
-  target=$(readlink "$LINK")
-  resolved=$(cd "$(dirname "$LINK")" && cd "$(dirname "$target")" && pwd -P)/$(basename "$target")
-  check_cmd "symlink が agents/hooks/hooks-integrity-warn.sh に解決されること (got ${resolved})" [ "$resolved" = "$HOOK" ]
-fi
-
-# --- 11b. 配線: codex/hooks/ からの symlink が正本に解決される (issue #215) ---
+# --- 11. 配線: 各 harness の hooks/ からの symlink が正本に解決される ---
+# harness ごとに書き写すと、解決ロジックを直したとき片方だけ古いまま残る。
+# 相対 symlink を実体側に解決して $HOOK と比較するだけの機械的な処理なので、
+# 1 関数にまとめても「何を検査しているか」は落ちない。
+check_symlink_to_canonical() {
+  # $1=検査する symlink の絶対パス (repo 相対の表示名は basename の親から作る)
+  local link="$1" label="${1#"$REPO_ROOT"/}" target resolved
+  check_cmd "${label} が symlink であること" [ -L "$link" ]
+  [ -L "$link" ] || return 0
+  target=$(readlink "$link")
+  resolved=$(cd "$(dirname "$link")" && cd "$(dirname "$target")" && pwd -P)/$(basename "$target")
+  check_cmd "${label} が agents/hooks/hooks-integrity-warn.sh に解決されること (got ${resolved})" \
+    [ "$resolved" = "$HOOK" ]
+}
+check_symlink_to_canonical "$REPO_ROOT/claude/hooks/hooks-integrity-warn.sh"
 # codex 側は `~/.codex/hooks` を **ディレクトリごと** symlink する配線なので
-# (scripts/link.sh / link.ps1)、ここに実体ファイルを置くと正本と drift する。
-CODEX_LINK="$REPO_ROOT/codex/hooks/hooks-integrity-warn.sh"
-check_cmd "codex/hooks/hooks-integrity-warn.sh が symlink であること" [ -L "$CODEX_LINK" ]
-if [ -L "$CODEX_LINK" ]; then
-  codex_target=$(readlink "$CODEX_LINK")
-  codex_resolved=$(cd "$(dirname "$CODEX_LINK")" && cd "$(dirname "$codex_target")" && pwd -P)/$(basename "$codex_target")
-  check_cmd "symlink が agents/hooks/hooks-integrity-warn.sh に解決されること (got ${codex_resolved})" \
-    [ "$codex_resolved" = "$HOOK" ]
-fi
+# (scripts/link.sh / link.ps1)、ここに実体ファイルを置くと正本と drift する (issue #215)。
+check_symlink_to_canonical "$REPO_ROOT/codex/hooks/hooks-integrity-warn.sh"
 
 # --- 12. 配線: settings.json の SessionStart entry が 3 イベントすべてを拾う ---
 matcher=$(jq -r '
@@ -288,12 +298,13 @@ check_cmd "SessionStart entry が type/timeout/command とも期待どおりで�
   [ "$entry" = 'command|10|bash "$HOME/.claude/hooks/hooks-integrity-warn.sh"' ]
 
 # --- 12b. 配線 (codex): hooks.json の SessionStart entry (issue #215) ---
-# codex 側でも matcher は有効で、突合対象は SessionStartSource の
-# startup / resume / clear / compact (codex 0.146.0 の upstream ソース
-# codex-rs/hooks/src/events/{common,session_start}.rs を 2026-07-31 に確認。
-# matcher_pattern_for_event が None を返す = matcher を無視するのは
-# UserPromptSubmit と Stop の 2 イベントだけ)。よって Claude 側 (ケース 12) と
-# **同じ検査を掛けられる** — 空 matcher や `.*` で全イベントを拾う形は通さない。
+# **Claude 側 (ケース 12) と同じ regex 検査を掛けてはいけない**。codex の matcher は
+# 「英数字 / `_` / `|` だけからなる場合は regex ではなく split('|') の完全一致」
+# として評価される (`is_exact_matcher`。実測根拠は docs/ai-operations.md §10)。
+# bash の `=~` は部分一致なので、例えば `tartup|esume|lear` は 3 イベントすべてに
+# 「一致する」と判定されて regex 検査を全部通るが、codex では exact 比較のため
+# **一度も発火しない**。受理側の口が広いまま fail-closed のつもりになる形なので
+# (claude/rules/shell.md)、matcher は **全文 pin** で受ける。
 codex_matcher=$(jq -r '
   .hooks.SessionStart[]
   | select([.hooks[].command] | any(test("hooks-integrity-warn\\.sh")))
@@ -301,20 +312,16 @@ codex_matcher=$(jq -r '
 ' "$REPO_ROOT/codex/hooks.json")
 check_cmd "codex/hooks.json の SessionStart に hooks-integrity-warn.sh の entry が 1 つあること" \
   [ -n "$codex_matcher" ]
-for ev in startup resume clear; do
-  check_cmd "codex SessionStart matcher が ${ev} に一致すること (got: ${codex_matcher})" \
-    matches_re "$ev" "$codex_matcher"
-done
-check_cmd "codex SessionStart matcher が無関係なイベントに一致しないこと (got: ${codex_matcher})" \
-  not_matches_re "no-such-event" "$codex_matcher"
-# compact は Claude 側の配線 (session-compact-context.sh) と揃えて意図的に拾わない。
-# 会話継続であってセッション開始ではなく、同じ警告を 1 セッション内で繰り返すと
-# warn-only の signal が摩耗するため。意図的な除外なので pin しておく。
-check_cmd "codex SessionStart matcher が compact を拾わないこと (got: ${codex_matcher})" \
-  not_matches_re "compact" "$codex_matcher"
-# command は完全一致で pin する。statusMessage / timeout は codex の
-# trusted_hash の入力に含まれる (docs/ai-operations.md §10) ため、ここが変わると
-# codex TUI の再承認が要る。黙って変わらないよう全フィールドを含めて pin する。
+# 全文 pin なので、空 matcher / `*` (codex では match-all) / イベント名の綴り違いは
+# すべて落ちる。compact を含めないのは Claude 側の配線 (session-compact-context.sh) と
+# 揃えた意図的な除外 — 会話継続であってセッション開始ではなく、同じ警告を
+# 1 セッション内で繰り返すと warn-only の signal が摩耗するため。
+check_cmd "codex SessionStart matcher が startup|resume|clear で pin されていること (got: ${codex_matcher})" \
+  [ "$codex_matcher" = "startup|resume|clear" ]
+# entry 側も完全一致で pin する。matcher / timeout / statusMessage / command は
+# いずれも codex の trusted_hash の入力に含まれる (docs/ai-operations.md §10) ため、
+# 変えると codex TUI の再承認が要る。黙って変わらないよう全フィールドを pin する
+# (matcher は上の 1 件が担当)。
 codex_entry=$(jq -r '
   .hooks.SessionStart[].hooks[]
   | select(.command | test("hooks-integrity-warn\\.sh"))
