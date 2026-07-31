@@ -433,16 +433,23 @@ ${chunk}"
     [ -n "$cmd" ] || continue
     # command 全体が「インタプリタ + パス 1 個」の単一起動形かを見る。
     # 部分一致で断片を拾う形にしない理由は上のブロックコメントを参照。
-    # パス部分に空白を許さないのが要点。`[^"]+` にすると、クォート無しで書いた
-    # 配線の **後続コマンドごと** 1 個のパスとして吸い込まれ、前方一致で
-    # 「監視対象内」と判定されて素通りする (実測: `bash $HOME/.claude/hooks/a.sh
-    # && bash /tmp/evil.sh` が clean 判定になった)。空白を除けば、この形は
-    # 単一起動形にマッチせず未分類 = 違反に落ちる。
-    # 副作用として空白を含むパスの配線は受理されなくなるが、2026-07-31 時点の
-    # 実配線 19 件はいずれも空白を含まない (実測)。
+    # パス部分は **安全な文字の allowlist** で受ける。除外リスト方式
+    # (`[^"]+` や `[^"[:space:]]+`) だと、除外し忘れたシェルメタ文字を通じて
+    # 後続コマンドごと 1 個のパスとして吸い込まれ、前方一致で「監視対象内」と
+    # 判定されて素通りする。実測で確認した素通り形 (いずれも clean 判定になった):
+    #   `bash $HOME/.claude/hooks/a.sh && bash /tmp/evil.sh`  (空白区切り)
+    #   `bash $HOME/.claude/hooks/a.sh;bash</tmp/evil.sh`     (空白なし・`;` `<`)
+    #   `bash $HOME/.claude/hooks/a.sh$(id)`                  (コマンド置換)
+    # allowlist にすればこれらは単一起動形にマッチせず未分類 = 違反に落ちる。
+    # **`$` / `{` / `}` を許すのは先頭の `$HOME` / `${HOME}` / `~` 表記だけ**で、
+    # それ以降のパス要素は `[A-Za-z0-9._-]` に限る。後半でも `$` を許すと
+    # `bash $HOME/.claude/hooks/$EVIL` のような実行時展開が監視対象内として
+    # 通ってしまう (実測で素通りを確認した)。
+    # 副作用として空白やメタ文字を含むパスの配線は受理されなくなるが、
+    # 2026-07-31 時点の実配線 19 件はいずれも該当しない (実測)。
     argpath=$(
       printf '%s\n' "$cmd" |
-        sed -nE 's#^(bash|sh|zsh|python3|node) "?([^"[:space:]]+)"?$#\2#p'
+        sed -nE 's#^(bash|sh|zsh|python3|node) "?((\$\{?HOME\}?|~)(/[A-Za-z0-9._-]+)+)"?$#\2#p'
     )
     if [ -z "$argpath" ]; then
       # 単一起動形でない → 全文 pin と突合する側に回す。
@@ -633,6 +640,17 @@ assert_case15 "case15g-extra-invocation" \
 assert_case15 "case15h-unquoted-extra-invocation" \
   'bash $HOME/.claude/hooks/post-format.sh && bash /tmp/evil.sh' expect-violation \
   '未分類 command (NON_REPO_EXPECTED に無い): bash $HOME/.claude/hooks/post-format.sh && bash /tmp/evil.sh'
+# 15j: **空白を挟まない** シェルメタ文字での連結 → 落ちること。15h は空白区切り
+#      なので、空白だけを除外する形 (`[^"[:space:]]+`) では守れない。受理を
+#      安全な文字の allowlist にして初めて塞がる経路 (codex-review が surface)。
+assert_case15 "case15j-metachar-no-space" \
+  'bash $HOME/.claude/hooks/post-format.sh;bash</tmp/evil.sh' expect-violation \
+  '未分類 command (NON_REPO_EXPECTED に無い): bash $HOME/.claude/hooks/post-format.sh;bash</tmp/evil.sh'
+# 15k: パス **後半** の変数展開 → 落ちること。`$` は先頭の `$HOME` 表記のために
+#      許す必要があるが、後半でも許すと実行時展開で監視対象の外へ抜けられる。
+assert_case15 "case15k-var-expansion-in-path" \
+  'bash $HOME/.claude/hooks/$EVIL' expect-violation \
+  '未分類 command (NON_REPO_EXPECTED に無い): bash $HOME/.claude/hooks/$EVIL'
 
 # 15i: NON_REPO_EXPECTED の **missing 方向** (pin にあるのに配線から消えた) を守る。
 # assert_case15 は「1 件足す」mutation しか作れないので、ここだけ「1 件消す」
