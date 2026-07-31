@@ -103,6 +103,10 @@ bash tests/link-backup/run-link-backup-tests.sh
 # ため、未コミットの hook 改変がそのまま host 実行される窓を検知で受ける。
 # repo root は冒頭で解決済みなので渡す (hook 側の再導出 subshell + git fork を省く)
 [ -f agents/hooks/hooks-integrity-warn.sh ] && HOOKS_INTEGRITY_REPO="$REPO_ROOT" bash agents/hooks/hooks-integrity-warn.sh
+# codex hook が配線済みだが codex TUI で未承認 (= 一度も実行されない) 状態を
+# 警告する (warn-only、gate の合否には影響させない)。issue #239 — 承認は host 側の
+# user 操作でしか行えないため、agent が直せないものでゲートを落とさない
+[ -f tests/integrity/verify-codex-hook-trust.sh ] && bash tests/integrity/verify-codex-hook-trust.sh
 [ -f tests/session-compact/run-session-compact-tests.sh ] && bash tests/session-compact/run-session-compact-tests.sh
 
 # 3) hook 関連ファイルが変更されているときだけ重いコーパスを実行

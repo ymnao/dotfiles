@@ -13,6 +13,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 CHECKER="${CHECKER_PATH:-$SCRIPT_DIR/run-integrity-check.sh}"
 SETTINGS_VERIFIER="${SETTINGS_VERIFIER_PATH:-$SCRIPT_DIR/verify-settings-codex-domains.sh}"
+TRUST_CHECKER="${TRUST_CHECKER_PATH:-$SCRIPT_DIR/verify-codex-hook-trust.sh}"
 
 if [ ! -f "$CHECKER" ]; then
   echo "ERROR: checker not found: $CHECKER" >&2
@@ -20,6 +21,10 @@ if [ ! -f "$CHECKER" ]; then
 fi
 if [ ! -f "$SETTINGS_VERIFIER" ]; then
   echo "ERROR: settings verifier not found: $SETTINGS_VERIFIER" >&2
+  exit 1
+fi
+if [ ! -f "$TRUST_CHECKER" ]; then
+  echo "ERROR: trust checker not found: $TRUST_CHECKER" >&2
   exit 1
 fi
 command -v jq >/dev/null 2>&1 || { echo "ERROR: jq is required" >&2; exit 1; }
@@ -201,6 +206,127 @@ check "settings-denywrite-key-absent" 1 "$(run_settings_verifier "$SF")"
 SF="$BASE/settings-deny-string.json"; make_good_settings "$SF"
 jq '.sandbox.filesystem.denyWrite = "~/.zshrc,~/.codex/config.toml"' "$SF" >"$SF.tmp" && mv "$SF.tmp" "$SF"
 check "settings-deny-string-not-array" 1 "$(run_settings_verifier "$SF")"
+
+# ---- verify-codex-hook-trust.sh の selftest (issue #239) ----
+# この検査は warn-only (全経路 exit 0) なので、exit code だけを見る run_checker
+# では「常に OK を返す退行」を一切検出できない。stdout を assert する経路を
+# 別に用意し、「警告が出るべきときに出る」と「出るべきでないときに出ない」の
+# 両方を固定する (片方だけだと vacuous pass する)。
+
+# 偽 HOME に hooks 定義入りの hooks.json と、承認記録つき config.toml を作る。
+# $1=HOME パス、$2 以降=承認済みにする entry ("session_start:0:0" 形式)。
+# hooks.json は 3 entry (pre_tool_use:0:0 / 0:1 と session_start:0:0) を持つ。
+make_trust_home() {
+  local h="$1"; shift
+  mkdir -p "$h/.codex"
+  jq -n '{
+    hooks: {
+      PreToolUse: [ { matcher: "^Bash$", hooks: [
+        { type: "command", command: "bash a.sh" },
+        { type: "command", command: "bash b.sh" }
+      ] } ],
+      SessionStart: [ { matcher: "startup", hooks: [
+        { type: "command", command: "bash c.sh" }
+      ] } ]
+    }
+  }' >"$h/.codex/hooks.json"
+  : >"$h/.codex/config.toml"
+  local e
+  for e in "$@"; do
+    printf '[hooks.state."%s/.codex/hooks.json:%s"]\ntrusted_hash = "sha256:deadbeef"\n\n' \
+      "$h" "$e" >>"$h/.codex/config.toml"
+  done
+}
+
+run_trust_checker() {
+  # $1=HOME。stdout を返す (exit code は check_trust_exit で別に見る)
+  INTEGRITY_HOME="$1" bash "$TRUST_CHECKER" 2>/dev/null
+}
+
+check_trust_exit() {
+  # $1=名前, $2=HOME。warn-only の契約 (run-gate.sh は set -e) を固定する
+  local rc=0
+  INTEGRITY_HOME="$2" bash "$TRUST_CHECKER" >/dev/null 2>&1 || rc=$?
+  check "$1" 0 "$rc"
+}
+
+check_stdout_has() {
+  # $1=名前, $2=出力, $3=含まれるべき文字列
+  if printf '%s\n' "$2" | LC_ALL=C grep -Fq "$3"; then
+    pass=$((pass + 1))
+  else
+    echo "FAIL $1: 出力に '$3' が含まれない"
+    fail=$((fail + 1))
+  fi
+}
+
+check_stdout_lacks() {
+  # $1=名前, $2=出力, $3=含まれてはいけない文字列
+  if printf '%s\n' "$2" | LC_ALL=C grep -Fq "$3"; then
+    echo "FAIL $1: 出力に '$3' が含まれてはいけない"
+    fail=$((fail + 1))
+  else
+    pass=$((pass + 1))
+  fi
+}
+
+# trust-1. 3 entry すべて承認済み → OK のみ、WARN なし
+H="$BASE/trust-all"; make_trust_home "$H" "pre_tool_use:0:0" "pre_tool_use:0:1" "session_start:0:0"
+out=$(run_trust_checker "$H")
+check_stdout_has   "trust-all-approved-ok"    "$out" "codex-hook-trust: OK"
+check_stdout_lacks "trust-all-approved-nowarn" "$out" "WARN"
+check_trust_exit   "trust-all-approved-exit0" "$H"
+
+# trust-2. session_start だけ未承認 → その entry の WARN が出て、承認済みの
+# entry の WARN は出ない (「全部 WARN する」退行と「何も WARN しない」退行の両方を殺す)
+H="$BASE/trust-partial"; make_trust_home "$H" "pre_tool_use:0:0" "pre_tool_use:0:1"
+out=$(run_trust_checker "$H")
+check_stdout_has   "trust-partial-warns-missing" "$out" "未承認の codex hook entry: session_start:0:0"
+check_stdout_lacks "trust-partial-quiet-approved" "$out" "未承認の codex hook entry: pre_tool_use:0:0"
+check_stdout_lacks "trust-partial-not-ok"        "$out" "codex-hook-trust: OK"
+check_trust_exit   "trust-partial-exit0"         "$H"
+
+# trust-3. config.toml が無い (= 承認記録ゼロ) → 3 entry 全部 WARN。
+# 「配線済みなのに承認記録が 1 件も無い」はまさに検知したい状態なので skip ではなく警告
+H="$BASE/trust-noconfig"; make_trust_home "$H"
+rm -f "$H/.codex/config.toml"
+out=$(run_trust_checker "$H")
+warn_count=$(printf '%s\n' "$out" | LC_ALL=C grep -c "未承認の codex hook entry:" | tr -d ' ')
+check "trust-noconfig-warn-count" 3 "$warn_count"
+check_trust_exit "trust-noconfig-exit0" "$H"
+
+# trust-4. 承認記録はあるが **別 HOME のパス** で登録されている → WARN。
+# 照合キーに hooks.json の絶対パスが効いていることの mutation テスト。
+# パス部分を落とす簡略化 (":session_start:0:0" の suffix 一致等) をすると、
+# 他ホストの承認記録を自ホストの承認と取り違えるが、それをここで固定する。
+H="$BASE/trust-otherpath"; make_trust_home "$H" "pre_tool_use:0:0" "pre_tool_use:0:1" "session_start:0:0"
+LC_ALL=C sed -e "s|$H/.codex/hooks.json|/other/home/.codex/hooks.json|g" \
+  "$H/.codex/config.toml" >"$H/.codex/config.toml.tmp"
+mv "$H/.codex/config.toml.tmp" "$H/.codex/config.toml"
+out=$(run_trust_checker "$H")
+check_stdout_has "trust-otherpath-warns" "$out" "未承認の codex hook entry: session_start:0:0"
+check_stdout_lacks "trust-otherpath-not-ok" "$out" "codex-hook-trust: OK"
+
+# trust-5. ~/.codex が無い (codex 未セットアップ機) → SKIP
+H="$BASE/trust-nocodex"; mkdir -p "$H"
+out=$(run_trust_checker "$H")
+check_stdout_has   "trust-nocodex-skip"   "$out" "codex-hook-trust: SKIP"
+check_stdout_lacks "trust-nocodex-nowarn" "$out" "WARN"
+
+# trust-6. hooks.json が無い → SKIP
+H="$BASE/trust-nohooksjson"; mkdir -p "$H/.codex"
+out=$(run_trust_checker "$H")
+check_stdout_has   "trust-nohooksjson-skip"   "$out" "codex-hook-trust: SKIP"
+check_stdout_lacks "trust-nohooksjson-nowarn" "$out" "WARN"
+
+# trust-7. hooks 定義が空の hooks.json → entry 0 件なので OK (警告を出さない)。
+# `.hooks // {}` の fallback が効いていることの固定
+H="$BASE/trust-emptyhooks"; mkdir -p "$H/.codex"
+printf '{}\n' >"$H/.codex/hooks.json"
+: >"$H/.codex/config.toml"
+out=$(run_trust_checker "$H")
+check_stdout_has   "trust-emptyhooks-ok"    "$out" "codex-hook-trust: OK"
+check_stdout_lacks "trust-emptyhooks-nowarn" "$out" "WARN"
 
 echo "----"
 echo "integrity selftest: $pass passed, $fail failed"
