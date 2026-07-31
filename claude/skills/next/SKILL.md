@@ -23,13 +23,15 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      するので安全) → `git diff HEAD main --stat` が空か確認 → 空なら
      `git checkout main`。この fetch は `.git/config` の lock 失敗で
      `fatal:` を出しながら ref の更新には成功する (CLAUDE.md「変更時の
-     注意」)。**`fatal:` で中断しない** — 拒否されたかどうかは同じ出力の
-     `! [rejected]` 行の有無で判定する (`fatal:` だけなら成功)。
-     拒否された場合、または diff 非空の場合 (squash merge / 他コミット
-     混入) は user Terminal 依頼にフォールバック
-     (memory `project_settings_pr_pull_workaround.md`)。**拒否と diff は
-     別々に見る** — 拒否されても local main が偶然 HEAD と同一 tree なら
-     diff は空になり、stale な main へ checkout してしまう
+     注意」)。**`fatal:` で中断しない**。ただし成否をエラー文言で判定
+     するのも誤り (通信 / 認証 / remote 不在でも別の文言が出る) なので、
+     **`git ls-remote origin refs/heads/main` と `git rev-parse main` の
+     SHA が一致すること**を fetch の成功条件にする。
+     **この SHA 一致と diff は別々に見る** — 一致しないまま diff が空に
+     なることがあり (local main が偶然 HEAD と同一 tree)、その場合は
+     stale な main へ checkout してしまう。SHA 不一致、または diff 非空
+     (squash merge / 他コミット混入) なら user Terminal 依頼に
+     フォールバック (memory `project_settings_pr_pull_workaround.md`)
    - **既に main checkout 済みで `git pull` が unlink 失敗**:
      この状況は origin/main が locked file を書き換えている場合に発生
      するため、local main の working tree は古い locked file が残った
