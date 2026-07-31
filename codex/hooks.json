@@ -55,6 +55,19 @@
         ]
       }
     ],
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.codex/hooks/hooks-integrity-warn.sh\"",
+            "timeout": 10,
+            "statusMessage": "hook 定義の未コミット変更を確認中..."
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "matcher": "",

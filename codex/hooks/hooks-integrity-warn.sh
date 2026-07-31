@@ -1,0 +1,1 @@
+../../agents/hooks/hooks-integrity-warn.sh

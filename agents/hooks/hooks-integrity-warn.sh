@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 #
-# SessionStart hook (Claude Code, matcher: startup|resume|clear): host 側で実行される
-# hook 定義に未コミットの変更があれば警告する (warn-only)。
-# 正本: agents/hooks/hooks-integrity-warn.sh (claude/hooks/ からは相対 symlink)
+# SessionStart hook: host 側で実行される hook 定義に未コミットの変更があれば
+# 警告する (warn-only)。両 harness の SessionStart に配線してある:
+#   Claude Code — claude/settings.json  (matcher: startup|resume|clear)
+#   codex       — codex/hooks.json      (matcher: startup|resume|clear)
+# codex 側でも matcher は有効で、両 harness とも compact は意図的に拾わない
+# (実測根拠と理由は docs/ai-operations.md §10。事実の正本はそちらに 1 箇所だけ置く)。
+# 正本: agents/hooks/hooks-integrity-warn.sh (claude/hooks/ と codex/hooks/ からは
+# それぞれ相対 symlink)
 #
 # 背景 (issue #207): codex CLI の hook 承認 (~/.codex/config.toml の
 # [hooks.state].trusted_hash) は **hook の設定 identity のみ** をハッシュしており、
@@ -105,7 +110,9 @@ porcelain=$(git -C "$repo" status --porcelain=v1 -uall -- "${WATCHED_PATHS[@]}" 
 count=$(printf '%s\n' "$porcelain" | grep -c . || true)
 limit=20
 
-echo "[hooks-integrity] 警告: host 実行される hook 定義に未コミットの変更があります (${count} 件)"
+# **stdout を `{` / `[` で始めないこと**。codex 側で警告が丸ごと捨てられる
+# (実測根拠は docs/ai-operations.md §10。テストが先頭行を pin している)。
+echo "hooks-integrity 警告: host 実行される hook 定義に未コミットの変更があります (${count} 件)"
 printf '%s\n' "$porcelain" | head -"$limit"
 if [ "$count" -gt "$limit" ]; then
   echo "  ... 他 $((count - limit)) 件 (先頭 ${limit} 件のみ表示)"

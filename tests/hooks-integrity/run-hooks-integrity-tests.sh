@@ -6,8 +6,9 @@
 #   1. 検知ロジック — 監視対象パスの未コミット改変だけを警告し、対象外の
 #      変更や clean な repo では何も出さない。常に exit 0 (warn-only)
 #   2. fail-open — git 不在 / repo 外 / 存在しないパスで黙って exit 0
-#   3. 配線 — claude/hooks/ からの symlink・settings.json の SessionStart
-#      エントリ・tests/run-gate.sh と Makefile からの呼び出しが揃っている
+#   3. 配線 — claude/hooks/ と codex/hooks/ からの symlink・settings.json と
+#      codex/hooks.json の SessionStart エントリ・tests/run-gate.sh と Makefile
+#      からの呼び出しが揃っている
 #
 # すべて $TMPDIR の一時 git repo に対して実行する。実 dotfiles 作業ツリーは
 # 一切変更しない (以前は cwd 非依存の導出を実 repo で確認していたが、中断時に
@@ -112,6 +113,14 @@ run_hook() {
   HOOKS_INTEGRITY_REPO="$1" bash "$HOOK" 2>&1
 }
 
+# codex の出力書式検査だけは **stdout 単独**で見る必要がある (下のケース 3)。
+# run_hook は 2>&1 で stderr を混ぜるため、stderr の 1 行目を stdout の書式と
+# 取り違える (実測: `echo x >&2` を足すだけで書式 assert が誤検知に倒れ、
+# 逆に stderr が先に出ると本物の JSON 始まりを見逃す)。
+run_hook_stdout_only() {
+  HOOKS_INTEGRITY_REPO="$1" bash "$HOOK" 2>/dev/null
+}
+
 # --- 1. clean な repo では何も出さない ---
 out=$(run_hook "$FIXTURE"); rc=$?
 check "$rc" "clean repo で exit 0 を返すこと (got $rc)"
@@ -127,8 +136,22 @@ check_empty "$out" "対象外変更 (README.md) を警告しないこと"
 printf 'echo tampered\n' >> "$FIXTURE/agents/hooks/sample.sh"
 out=$(run_hook "$FIXTURE"); rc=$?
 check "$rc" "改変検知時も exit 0 を返すこと (warn-only、got $rc)"
-grep -q '\[hooks-integrity\]' <<<"$out"
+grep -q '^hooks-integrity 警告:' <<<"$out"
 check "$?" "改変時に警告ラベルを出すこと"
+# **stdout が JSON に見えてはいけない** (issue #215)。codex は hook の stdout が
+# `{` / `[` で始まると JSON 出力とみなし、パースに失敗した時点で run を Failed にして
+# 本文を model の context に入れない (根拠は docs/ai-operations.md §10)。
+#
+# 検査は **先頭行の全文 pin** で行う。「1 文字目が `{` / `[` でない」だけを見る形は、
+# 守りたい状態を測れないまま緑になる (両方とも実測済み):
+#   - 先頭に空行が付くと 1 文字目は空文字になり、2 行目が `{` でも assert が通る
+#     (codex は `trim_start` してから判定するので、空行があっても JSON 扱いされる)
+#   - 警告の前に別の行が挿し込まれても 1 文字目しか見ないので気付けない
+# 先頭行を全文で pin すれば、そのどちらも落ちる。
+stdout_only=$(run_hook_stdout_only "$FIXTURE")
+first_line=${stdout_only%%$'\n'*}
+check_cmd "stdout の先頭行が警告ラベルそのものであること (got: ${first_line})" \
+  [ "$first_line" = "hooks-integrity 警告: host 実行される hook 定義に未コミットの変更があります (1 件)" ]
 git -C "$FIXTURE" checkout -q -- agents/hooks/sample.sh
 
 # --- 4. 監視対象パスごとの検知 ---
@@ -233,14 +256,24 @@ grep -q 'agents/hooks/sample.sh' <<<"$derived"
 check "$?" "自前導出でも fixture repo の変更を検知すること (got: ${derived})"
 git -C "$FIXTURE" checkout -q -- agents/hooks/sample.sh
 
-# --- 11. 配線: claude/hooks/ からの symlink が正本に解決される ---
-LINK="$REPO_ROOT/claude/hooks/hooks-integrity-warn.sh"
-check_cmd "claude/hooks/hooks-integrity-warn.sh が symlink であること" [ -L "$LINK" ]
-if [ -L "$LINK" ]; then
-  target=$(readlink "$LINK")
-  resolved=$(cd "$(dirname "$LINK")" && cd "$(dirname "$target")" && pwd -P)/$(basename "$target")
-  check_cmd "symlink が agents/hooks/hooks-integrity-warn.sh に解決されること (got ${resolved})" [ "$resolved" = "$HOOK" ]
-fi
+# --- 11. 配線: 各 harness の hooks/ からの symlink が正本に解決される ---
+# harness ごとに書き写すと、解決ロジックを直したとき片方だけ古いまま残る。
+# 相対 symlink を実体側に解決して $HOOK と比較するだけの機械的な処理なので、
+# 1 関数にまとめても「何を検査しているか」は落ちない。
+check_symlink_to_canonical() {
+  # $1=検査する symlink の絶対パス (repo 相対の表示名は basename の親から作る)
+  local link="$1" label="${1#"$REPO_ROOT"/}" target resolved
+  check_cmd "${label} が symlink であること" [ -L "$link" ]
+  [ -L "$link" ] || return 0
+  target=$(readlink "$link")
+  resolved=$(cd "$(dirname "$link")" && cd "$(dirname "$target")" && pwd -P)/$(basename "$target")
+  check_cmd "${label} が agents/hooks/hooks-integrity-warn.sh に解決されること (got ${resolved})" \
+    [ "$resolved" = "$HOOK" ]
+}
+check_symlink_to_canonical "$REPO_ROOT/claude/hooks/hooks-integrity-warn.sh"
+# codex 側は `~/.codex/hooks` を **ディレクトリごと** symlink する配線なので
+# (scripts/link.sh / link.ps1)、ここに実体ファイルを置くと正本と drift する (issue #215)。
+check_symlink_to_canonical "$REPO_ROOT/codex/hooks/hooks-integrity-warn.sh"
 
 # --- 12. 配線: settings.json の SessionStart entry が 3 イベントすべてを拾う ---
 matcher=$(jq -r '
@@ -273,6 +306,38 @@ entry=$(jq -r '
 ' "$REPO_ROOT/claude/settings.json")
 check_cmd "SessionStart entry が type/timeout/command とも期待どおりであること (got ${entry})" \
   [ "$entry" = 'command|10|bash "$HOME/.claude/hooks/hooks-integrity-warn.sh"' ]
+
+# --- 12b. 配線 (codex): hooks.json の SessionStart entry (issue #215) ---
+# **Claude 側 (ケース 12) と同じ regex 検査を掛けてはいけない**。codex の matcher は
+# 条件次第で regex ではなく完全一致として評価される (実測根拠は
+# docs/ai-operations.md §10)。bash の `=~` は部分一致なので、`tartup|esume|lear` の
+# ような綴り違いが全 assert を通るのに codex では一度も発火しない。受理側の口が
+# 広いまま fail-closed のつもりになる形なので (claude/rules/shell.md)、
+# matcher は **全文 pin** で受ける。
+codex_matcher=$(jq -r '
+  .hooks.SessionStart[]
+  | select([.hooks[].command] | any(test("hooks-integrity-warn\\.sh")))
+  | .matcher
+' "$REPO_ROOT/codex/hooks.json")
+check_cmd "codex/hooks.json の SessionStart に hooks-integrity-warn.sh の entry が 1 つあること" \
+  [ -n "$codex_matcher" ]
+# 全文 pin なので、空 matcher / `*` (codex では match-all) / イベント名の綴り違いは
+# すべて落ちる。compact を含めないのは Claude 側の配線 (session-compact-context.sh) と
+# 揃えた意図的な除外 — 会話継続であってセッション開始ではなく、同じ警告を
+# 1 セッション内で繰り返すと warn-only の signal が摩耗するため。
+check_cmd "codex SessionStart matcher が startup|resume|clear で pin されていること (got: ${codex_matcher})" \
+  [ "$codex_matcher" = "startup|resume|clear" ]
+# entry 側も完全一致で pin する。matcher / timeout / statusMessage / command は
+# いずれも codex の trusted_hash の入力に含まれる (docs/ai-operations.md §10) ため、
+# 変えると codex TUI の再承認が要る。黙って変わらないよう全フィールドを pin する
+# (matcher は上の 1 件が担当)。
+codex_entry=$(jq -r '
+  .hooks.SessionStart[].hooks[]
+  | select(.command | test("hooks-integrity-warn\\.sh"))
+  | "\(.type)|\(.timeout)|\(.statusMessage)|\(.command)"
+' "$REPO_ROOT/codex/hooks.json")
+check_cmd "codex SessionStart entry が type/timeout/statusMessage/command とも期待どおりであること (got ${codex_entry})" \
+  [ "$codex_entry" = 'command|10|hook 定義の未コミット変更を確認中...|bash "$HOME/.codex/hooks/hooks-integrity-warn.sh"' ]
 
 # --- 13. 配線: run-gate.sh / Makefile の「コメントでない実行行」から呼ばれている ---
 # 単なる grep だと直前の説明コメントに hook 名が残るだけで pass してしまうため、
@@ -510,9 +575,11 @@ check_empty "$violations" "配線 command が全件分類され、監視対象�
 # 下限は claude/rules/shell.md の規約どおり **守る対象から導出せず独立した定数**で
 # 持つ (配列長等から計算すると、対象が減ったときに下限も一緒に下がって無効化される)。
 # 値は 2026-07-31 時点の実測: claude/settings.json = hooks 9 件 + statusLine 1 件、
-# codex/hooks.json = 7 件。配線を意図的に減らすときはここも更新する。
+# codex/hooks.json = 8 件 (SessionStart 1 件を含む。issue #215 で 7 → 8)。
+# 配線を意図的に増減させるときはここも更新する — 増やしたのに据え置くと、
+# その分だけ「配線が 1 件消えても floor が拾わない」隙間になる。
 MIN_REPO_COMMANDS_CLAUDE=10
-MIN_REPO_COMMANDS_CODEX=7
+MIN_REPO_COMMANDS_CODEX=8
 
 count_repo_ref_commands() {
   # $1=対象 JSON, $2 以降=jq 式 (複数可)。home 配下 dotfiles を指す command を数える。
