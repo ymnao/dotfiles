@@ -24,6 +24,13 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      `git checkout main`。fetch が拒否された、または diff 非空 (squash
      merge や他コミット混入) なら user Terminal 依頼にフォールバック
      (memory `project_settings_pr_pull_workaround.md`)
+     - **この fetch は `fatal: failed to store: 100001` を出しながら成功
+       する**。sandbox が `.git/config` を lock できず、ref の更新とは
+       無関係な config 書き込みだけが失敗するため (`/pr` step 7 の
+       `git push -u` と同じ根)。**`fatal:` を見て fetch が拒否されたと
+       誤読しない** — 拒否されたかどうかは
+       `git rev-parse --short main` が merge commit を指しているかで
+       判定する
    - **既に main checkout 済みで `git pull` が unlink 失敗**:
      この状況は origin/main が locked file を書き換えている場合に発生
      するため、local main の working tree は古い locked file が残った
@@ -33,7 +40,10 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      working tree の locked file が silent に stale 化するため禁止)
 3. **ブランチ削除**: merge 済みの作業ブランチを `git branch -d` で削除する
    (`-D` は使わない。-d が拒否されたら未 merge コミットがある異常なので
-   報告して停止)
+   報告して停止)。これも step 2 の fetch と同様に
+   `error: could not lock config file .git/config` +
+   `warning: update of config-file failed` を出しながら削除自体は成功する。
+   **拒否と誤読しない** — 実際に消えたかは `git branch` の出力で確認する
 4. **学びの昇格チェック**: このセッションで CLAUDE.md / skill / memory に
    昇格すべき学び (同じ指摘を 2 回受けた・skill の手順が実態とズレていた等)
    がないか振り返り、あれば提案する (勝手に書き換えない)。
