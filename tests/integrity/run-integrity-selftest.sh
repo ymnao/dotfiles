@@ -291,7 +291,7 @@ check_trust_exit   "trust-partial-exit0"         "$H"
 H="$BASE/trust-noconfig"; make_trust_home "$H"
 rm -f "$H/.codex/config.toml"
 out=$(run_trust_checker "$H")
-warn_count=$(printf '%s\n' "$out" | LC_ALL=C grep -c "未承認の codex hook entry:" | tr -d ' ')
+warn_count=$(printf '%s\n' "$out" | LC_ALL=C grep -c "未承認の codex hook entry:")
 check "trust-noconfig-warn-count" 3 "$warn_count"
 check_trust_exit "trust-noconfig-exit0" "$H"
 

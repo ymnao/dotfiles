@@ -66,7 +66,17 @@ if ! entries=$(jq -r '
   exit 0
 fi
 
+# config.toml はループ中ずっと不変なので 1 度だけ読む (entry ごとに grep を
+# fork してファイルを読み直さない)。存在しない場合は空のままにして全 entry を
+# WARN に倒す — 「配線済みなのに承認記録が 1 件も無い」はまさに検知したい状態
+cfg_content=""
+if [ -f "$cfg" ]; then
+  cfg_content=$(cat "$cfg")
+fi
+
 warn=0
+prev_event=""
+snake=""
 
 while IFS= read -r entry; do
   [ -n "$entry" ] || continue
@@ -77,18 +87,27 @@ while IFS= read -r entry; do
   # 既知 4 イベントのハードコード表にしないのは、hooks.json に未知のイベントが
   # 増えたときに黙って検査対象から漏れるため — それはこの検査が塞ごうとしている
   # 「配線したのに検知ゼロ件」と同型の穴になる。
-  snake=$(printf '%s' "$event" \
-    | LC_ALL=C sed -E 's/([a-z0-9])([A-Z])/\1_\2/g' \
-    | LC_ALL=C tr '[:upper:]' '[:lower:]')
+  # 同じ event が複数 entry にまたがる (1 group に複数 hook / 複数 group) ので、
+  # 変換結果は event が変わったときだけ計算し直す (sed + tr の 2 fork/entry を節約)
+  if [ "$event" != "$prev_event" ]; then
+    snake=$(printf '%s' "$event" \
+      | LC_ALL=C sed -E 's/([a-z0-9])([A-Z])/\1_\2/g' \
+      | LC_ALL=C tr '[:upper:]' '[:lower:]')
+    prev_event="$event"
+  fi
 
-  # 照合はキー行の完全一致 (grep -F)。パス部分まで含めるのは、別ホームの
-  # hooks.json に対する承認記録を自ホストの承認と取り違えないため。
+  # 照合はキー行の完全一致。パス部分まで含めるのは、別ホームの hooks.json に
+  # 対する承認記録を自ホストの承認と取り違えないため。
+  # case の pattern 側は quote 済み展開なので、キー中の [ ] " はリテラル扱いになる
   key="[hooks.state.\"$hooks_json:$snake:$position\"]"
 
-  if [ ! -f "$cfg" ] || ! LC_ALL=C grep -Fq "$key" "$cfg"; then
-    echo "$label: WARN 未承認の codex hook entry: $snake:$position (codex TUI で承認するまで実行されない)"
-    warn=1
-  fi
+  case "$cfg_content" in
+    *"$key"*) ;;
+    *)
+      echo "$label: WARN 未承認の codex hook entry: $snake:$position (codex TUI で承認するまで実行されない)"
+      warn=1
+      ;;
+  esac
 done <<EOF
 $entries
 EOF
