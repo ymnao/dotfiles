@@ -242,7 +242,7 @@ merge 後に初めて判明した学び (merge 手順 / CI / 運用で分かっ�
 
 #### 5b. push と PR 作成
 
-レビューループの最終 commit 直後にまず `git push -u origin <branch>` で
+レビューループの最終 commit 直後にまず `git push origin <branch>` で
 push し、CI 実行と後続の evidence 組み立て・issue 起票を並走させる
 (CI green 確認ゲート自体は維持)。
 その上で `/pr` skill を実行する (risk 分類 → tier 別 codex-review →

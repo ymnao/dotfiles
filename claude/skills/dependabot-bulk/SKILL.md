@@ -50,7 +50,7 @@ open な Dependabot PR を 1 branch に統合し、push を 1 回にして CI �
      - 依存ごとに 1 commit を保つ (CI 赤時の bisect のため)
    - commit message body に `統合元: #<N>` を書けば統合 PR body から原本 PR に辿れる。release notes 全文転記は不要
 8. **ローカル検証**: `make test && make lint`
-9. **push は 1 回だけ**: `git push -u origin <step 6 で決めた branch 名>` (collision で `-2`/`-3` を付けた場合はその名前で push する。literal `deps/bulk-<YYYY-MM-DD>` を貼らない)
+9. **push は 1 回だけ**: `git push origin <step 6 で決めた branch 名>` (collision で `-2`/`-3` を付けた場合はその名前で push する。literal `deps/bulk-<YYYY-MM-DD>` を貼らない。`-u` を付けない理由は `/pr` skill の step 7 参照)
 10. **CI 完走待ち**
     - push 直後は GitHub 側で run が作成されるまで数秒〜十数秒のラグがある。まず HEAD の commit SHA を取得: `HEAD_SHA=$(git rev-parse HEAD)`
     - `gh run list --branch <branch名> --limit 5 --json databaseId,status,headSha` で HEAD 一致の run を探す

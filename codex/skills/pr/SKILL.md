@@ -36,7 +36,7 @@ Run each `gh` command as a bare invocation and substitute prior output literally
 6. Generate PR title and body:
    - **Title**: under 70 characters, summarizing the changes
    - **Body**: use the repo's PR template if `pr_template` is not null, otherwise the default template below. ALWAYS append the evidence section (below) at the end of the body.
-7. Run `git push -u origin <branch_name>` (no-op if origin is already up to date; also syncs review-fix commits made after an early push). If the push is rejected as non-fast-forward (origin advanced independently), do NOT force push — report the divergence to the user and stop
+7. Run `git push origin <branch_name>` (no-op if origin is already up to date; also syncs review-fix commits made after an early push). **`-u` は付けない** — sandbox 下では `.git/config` を lock できず、upstream 設定の書き込みだけが `fatal: failed to store: 100001` / `error: unable to write upstream branch configuration` で失敗する。**push 本体は成功しているのに `fatal:` の文言で失敗と誤読する**ため、確認は `git ls-remote --heads origin <branch_name>` で行う。If the push is rejected as non-fast-forward (origin advanced independently), do NOT force push — report the divergence to the user and stop
 8. Create the PR with `gh pr create` (add `--draft` when step 4/5 decided draft). If `linked_issue` exists, include `Closes #<number>` in the body.
 
 ## Default template (fallback)
