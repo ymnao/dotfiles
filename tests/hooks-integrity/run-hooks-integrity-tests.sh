@@ -309,9 +309,18 @@ check "$?" "Makefile の実行行が hooks-integrity-warn.sh を呼ぶこと"
 #
 # **この検査でも捕まらないと分かっているもの** (「観測していない = 起きない」と
 # 書かないため、既知の穴として明記する):
-#   - repo 内ファイルを指す配線が **すべて** 消えた場合。jq は「hooks が空」でも
-#     「ファイルが空」でも exit 0 かつ空出力を返すため、分類対象がゼロになっても
-#     違反は出ない。これは下の MIN_REPO_COMMANDS_* の下限 assert で別に受ける
+#   - repo 参照 command **だけ** が消えた場合 (非 repo command は残る)。jq は
+#     「hooks が空」でも「ファイルが空」でも exit 0 かつ空出力を返すため、
+#     分類対象がゼロになっても違反は出ない。これは下の MIN_REPO_COMMANDS_* の
+#     下限 assert で別に受ける。なお **配線が丸ごと** 消えた場合は
+#     NON_REPO_EXPECTED の missing 方向が afplay / osascript の欠落を拾うので
+#     違反になる (実測で両方確認した。ここを取り違えないこと)
+#   - 監視対象ディレクトリ内に置いた **symlink で監視対象外へ抜ける**経路。
+#     `claude/hooks/x.sh` → `../../scripts/link.sh` の symlink を配線すると、
+#     テキスト上は監視対象内なので分類器は clean と判定し、hook 本体の
+#     `git status -- claude/hooks` も link 先の改変を報告しない (実測)。
+#     テキストの `..` は塞いだが symlink 版は塞いでいない — 実体解決は
+#     「`$HOME` 表記から実パスを求める」という別問題を持ち込むため
 #   - NON_REPO_EXPECTED に安易に追記して通す運用。構造では防げないので、
 #     リスト側のコメントで追加時の確認事項を明示するに留めている
 #
@@ -424,9 +433,16 @@ ${chunk}"
     [ -n "$cmd" ] || continue
     # command 全体が「インタプリタ + パス 1 個」の単一起動形かを見る。
     # 部分一致で断片を拾う形にしない理由は上のブロックコメントを参照。
+    # パス部分に空白を許さないのが要点。`[^"]+` にすると、クォート無しで書いた
+    # 配線の **後続コマンドごと** 1 個のパスとして吸い込まれ、前方一致で
+    # 「監視対象内」と判定されて素通りする (実測: `bash $HOME/.claude/hooks/a.sh
+    # && bash /tmp/evil.sh` が clean 判定になった)。空白を除けば、この形は
+    # 単一起動形にマッチせず未分類 = 違反に落ちる。
+    # 副作用として空白を含むパスの配線は受理されなくなるが、2026-07-31 時点の
+    # 実配線 19 件はいずれも空白を含まない (実測)。
     argpath=$(
       printf '%s\n' "$cmd" |
-        sed -nE 's#^(bash|sh|zsh|python3|node) "?([^"]+)"?$#\2#p'
+        sed -nE 's#^(bash|sh|zsh|python3|node) "?([^"[:space:]]+)"?$#\2#p'
     )
     if [ -z "$argpath" ]; then
       # 単一起動形でない → 全文 pin と突合する側に回す。
@@ -480,8 +496,10 @@ violations=$(classify_wired_commands \
 check_empty "$violations" "配線 command が全件分類され、監視対象から漏れていないこと"
 
 # 分類器は「違反が無いこと」しか言わないので、**分類対象が消えた**ケースを別に受ける。
-# jq は hooks が空でもファイルが空でも exit 0 かつ空出力を返すため、配線が丸ごと
-# 消滅しても分類器は無違反 = clean のまま通る (実測で確認)。
+# jq は hooks が空でもファイルが空でも exit 0 かつ空出力を返すため、**repo 参照
+# command だけが消える** と分類器は無違反 = clean のまま通る (実測で確認)。
+# 配線が丸ごと消えた場合は NON_REPO_EXPECTED の missing 方向が拾うので、
+# 下限 assert が受け持つのは前者に限る。
 # 下限は claude/rules/shell.md の規約どおり **守る対象から導出せず独立した定数**で
 # 持つ (配列長等から計算すると、対象が減ったときに下限も一緒に下がって無効化される)。
 # 値は 2026-07-31 時点の実測: claude/settings.json = hooks 9 件 + statusLine 1 件、
@@ -492,6 +510,10 @@ MIN_REPO_COMMANDS_CODEX=7
 count_repo_ref_commands() {
   # $1=対象 JSON, $2 以降=jq 式 (複数可)。home 配下 dotfiles を指す command を数える。
   # jq 失敗時は 0 件になり下限 assert が落ちる (fail-closed) ので握りつぶしてよい。
+  # 判定パターンは分類器の正規化 (`s#^(\$\{?HOME\}?|~)/\.([a-z]+)/#\2/#`) とは
+  # 別物である点に注意 — こちらは行内のどこでも一致する数え上げ用で、dotdir も
+  # claude|codex に限定している。どちらかがずれても分類器か下限 assert の
+  # いずれかが落ちる (fail-loud) ので、あえて 1 本に統合していない。
   local file="$1" q total=0 n
   shift
   for q in "$@"; do
@@ -562,8 +584,9 @@ assert_case15() {
         return
       fi
       # パイプではなく herestring を使う。`printf | grep -q` は grep が一致で
-      # 即終了するため、入力がパイプバッファを超えると printf が write error を
-      # 返し、pipefail 下で「一致しているのに非 0」になる (実測: rc=1)。
+      # 即終了するため、入力がパイプバッファを超えると書き手側が壊れたパイプで
+      # 落ち、pipefail 下で「一致しているのに非 0」になる。返る値は測るたびに
+      # 割れた (rc=1 と rc=141 の両方を観測) ので特定の数値には依存しない。
       grep -qxF -- "$needle" <<<"$violations"
       check "$?" "${name}: 違反として報告されること (needle=${needle}, got: ${violations})"
       ;;
@@ -603,6 +626,32 @@ assert_case15 "case15f-parent-traversal" \
 assert_case15 "case15g-extra-invocation" \
   'bash "$HOME/.claude/hooks/post-format.sh" && bash /tmp/evil.sh' expect-violation \
   '未分類 command (NON_REPO_EXPECTED に無い): bash "$HOME/.claude/hooks/post-format.sh" && bash /tmp/evil.sh'
+# 15h: 15g の **クォート無し** 版 → 落ちること。パスを引用符で囲まない書き方は
+#      JSON の command として自然に書けてしまうので、15g だけでは守れない。
+#      受理パターンが空白を許すと後続コマンドごと 1 個のパスとして吸い込まれ、
+#      前方一致で「監視対象内」になって素通りする (実測で確認した経路)。
+assert_case15 "case15h-unquoted-extra-invocation" \
+  'bash $HOME/.claude/hooks/post-format.sh && bash /tmp/evil.sh' expect-violation \
+  '未分類 command (NON_REPO_EXPECTED に無い): bash $HOME/.claude/hooks/post-format.sh && bash /tmp/evil.sh'
+
+# 15i: NON_REPO_EXPECTED の **missing 方向** (pin にあるのに配線から消えた) を守る。
+# assert_case15 は「1 件足す」mutation しか作れないので、ここだけ「1 件消す」
+# fixture を別に組む。この分岐を潰した mutant (missing="") は 15a-15h では
+# 1 件も落ちないことを確認済みで、その穴を埋めるためのケース。
+case15i_out="$CASE15_DIR/case15i-removed-nonrepo.json"
+jq 'del(.hooks[][].hooks[] | select(.command | startswith("afplay")))' \
+  "$REPO_ROOT/claude/settings.json" > "$case15i_out" || check "1" "case15i: fixture の生成に失敗"
+# mutation の実効確認 (afplay の配線が 1 件から 0 件になったこと)。
+case15i_before=$(jq -r '.hooks | to_entries[] | .value[].hooks[].command' \
+  "$REPO_ROOT/claude/settings.json" | grep -c '^afplay ' || true)
+case15i_after=$(jq -r '.hooks | to_entries[] | .value[].hooks[].command' \
+  "$case15i_out" | grep -c '^afplay ' || true)
+check_cmd "case15i: mutation で afplay の配線が 1 件から 0 件になること (got ${case15i_before} -> ${case15i_after})" \
+  [ "${case15i_before}/${case15i_after}" = "1/0" ]
+case15i_violations=$(classify_wired_commands "$case15i_out" "$REPO_ROOT/codex/hooks.json")
+grep -qxF -- 'NON_REPO_EXPECTED に載っているが配線に無い command: afplay /System/Library/Sounds/Funk.aiff' \
+  <<<"$case15i_violations"
+check "$?" "case15i: pin にあるのに配線から消えた command を違反として報告すること (got: ${case15i_violations})"
 
 echo "hooks-integrity: ${pass} passed, ${fail} failed"
 [ "$fail" = 0 ] || exit 1
