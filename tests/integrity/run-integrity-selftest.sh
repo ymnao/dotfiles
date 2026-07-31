@@ -4,8 +4,10 @@ set -uo pipefail
 # tests/integrity/ 配下の検知器 script 群の selftest。
 # 偽の dotfiles / 偽の HOME / 偽の settings.json を組み立て、正常構成で PASS・
 # 改ざん各種で FAIL になることを検証する (検知器が壊れて常に OK を返す退行の防止)。
-# 対象: run-integrity-check.sh, verify-settings-codex-domains.sh
-# (issue #189 で 3 項目分、issue #190 で denyWrite 項目分を追加)。
+# 対象: run-integrity-check.sh, verify-settings-codex-domains.sh,
+# verify-codex-hook-trust.sh
+# (issue #189 で 3 項目分、issue #190 で denyWrite 項目分、issue #239 で
+#  codex hook の承認状態検査分を追加)。
 # verify-guard-codex-wiring.sh の selftest は未実装 (別 issue で対応予定)。
 #
 # 依存: bash 3.2+ / jq / git
@@ -13,6 +15,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 CHECKER="${CHECKER_PATH:-$SCRIPT_DIR/run-integrity-check.sh}"
 SETTINGS_VERIFIER="${SETTINGS_VERIFIER_PATH:-$SCRIPT_DIR/verify-settings-codex-domains.sh}"
+TRUST_CHECKER="${TRUST_CHECKER_PATH:-$SCRIPT_DIR/verify-codex-hook-trust.sh}"
 
 if [ ! -f "$CHECKER" ]; then
   echo "ERROR: checker not found: $CHECKER" >&2
@@ -20,6 +23,10 @@ if [ ! -f "$CHECKER" ]; then
 fi
 if [ ! -f "$SETTINGS_VERIFIER" ]; then
   echo "ERROR: settings verifier not found: $SETTINGS_VERIFIER" >&2
+  exit 1
+fi
+if [ ! -f "$TRUST_CHECKER" ]; then
+  echo "ERROR: trust checker not found: $TRUST_CHECKER" >&2
   exit 1
 fi
 command -v jq >/dev/null 2>&1 || { echo "ERROR: jq is required" >&2; exit 1; }
@@ -201,6 +208,220 @@ check "settings-denywrite-key-absent" 1 "$(run_settings_verifier "$SF")"
 SF="$BASE/settings-deny-string.json"; make_good_settings "$SF"
 jq '.sandbox.filesystem.denyWrite = "~/.zshrc,~/.codex/config.toml"' "$SF" >"$SF.tmp" && mv "$SF.tmp" "$SF"
 check "settings-deny-string-not-array" 1 "$(run_settings_verifier "$SF")"
+
+# ---- verify-codex-hook-trust.sh の selftest (issue #239) ----
+# この検査は warn-only (全経路 exit 0) なので、exit code だけを見る run_checker
+# では「常に OK を返す退行」を一切検出できない。stdout を assert する経路を
+# 別に用意し、「警告が出るべきときに出る」と「出るべきでないときに出ない」の
+# 両方を固定する (片方だけだと vacuous pass する)。
+
+# 偽 HOME に hooks 定義入りの hooks.json と、承認記録つき config.toml を作る。
+# $1=HOME パス、$2 以降=承認済みにする entry ("session_start:0:0" 形式)。
+# hooks.json は 4 entry (pre_tool_use:0:0 / 0:1 / 1:0 と session_start:0:0)。
+# **PreToolUse に group を 2 つ置くのは意図的** — 1 event 1 group だけの
+# fixture では、キーの <group> 軸を落とす退行 (jq の \($g) を 0 に固定する等) が
+# 全 pass のまま生き残る。実 codex/hooks.json は PreToolUse に 2 group
+# (^Bash$ と ^(apply_patch|Edit|Write)$) を持つので、これは仮想の穴ではない。
+make_trust_home() {
+  local h="$1"; shift
+  mkdir -p "$h/.codex"
+  jq -n '{
+    hooks: {
+      PreToolUse: [
+        { matcher: "^Bash$", hooks: [
+          { type: "command", command: "bash a.sh" },
+          { type: "command", command: "bash b.sh" }
+        ] },
+        { matcher: "^(apply_patch|Edit|Write)$", hooks: [
+          { type: "command", command: "bash d.sh" }
+        ] }
+      ],
+      SessionStart: [ { matcher: "startup", hooks: [
+        { type: "command", command: "bash c.sh" }
+      ] } ]
+    }
+  }' >"$h/.codex/hooks.json"
+  : >"$h/.codex/config.toml"
+  local e
+  for e in "$@"; do
+    printf '[hooks.state."%s/.codex/hooks.json:%s"]\ntrusted_hash = "sha256:deadbeef"\n\n' \
+      "$h" "$e" >>"$h/.codex/config.toml"
+  done
+}
+
+run_trust_checker() {
+  # $1=HOME。stdout を返す (exit code は check_trust_exit で別に見る)
+  INTEGRITY_HOME="$1" bash "$TRUST_CHECKER" 2>/dev/null
+}
+
+check_trust_exit() {
+  # $1=名前, $2=HOME。warn-only の契約 (run-gate.sh は set -e) を固定する
+  local rc=0
+  INTEGRITY_HOME="$2" bash "$TRUST_CHECKER" >/dev/null 2>&1 || rc=$?
+  check "$1" 0 "$rc"
+}
+
+check_stdout_has() {
+  # $1=名前, $2=出力, $3=含まれるべき文字列
+  if printf '%s\n' "$2" | LC_ALL=C grep -Fq "$3"; then
+    pass=$((pass + 1))
+  else
+    echo "FAIL $1: 出力に '$3' が含まれない"
+    fail=$((fail + 1))
+  fi
+}
+
+check_stdout_lacks() {
+  # $1=名前, $2=出力, $3=含まれてはいけない文字列
+  if printf '%s\n' "$2" | LC_ALL=C grep -Fq "$3"; then
+    echo "FAIL $1: 出力に '$3' が含まれてはいけない"
+    fail=$((fail + 1))
+  else
+    pass=$((pass + 1))
+  fi
+}
+
+# trust-1. 4 entry すべて承認済み → OK のみ、WARN なし
+H="$BASE/trust-all"
+make_trust_home "$H" "pre_tool_use:0:0" "pre_tool_use:0:1" "pre_tool_use:1:0" "session_start:0:0"
+out=$(run_trust_checker "$H")
+# entry 件数まで assert する — 「全部承認済み」と「検査対象が 0 件」が同じ OK で
+# 出ると、この層の存在理由 (動いていないことが見えない) を 1 段上で再生産する
+check_stdout_has   "trust-all-approved-ok"    "$out" "codex-hook-trust: OK (4 entry すべて承認済み)"
+check_stdout_lacks "trust-all-approved-nowarn" "$out" "WARN"
+check_trust_exit   "trust-all-approved-exit0" "$H"
+
+# trust-2. session_start だけ未承認 → その entry の WARN が出て、承認済みの
+# entry の WARN は出ない (「全部 WARN する」退行と「何も WARN しない」退行の両方を殺す)
+H="$BASE/trust-partial"; make_trust_home "$H" "pre_tool_use:0:0" "pre_tool_use:0:1" "pre_tool_use:1:0"
+out=$(run_trust_checker "$H")
+check_stdout_has   "trust-partial-warns-missing" "$out" "未承認の codex hook entry: session_start:0:0"
+check_stdout_lacks "trust-partial-quiet-approved" "$out" "未承認の codex hook entry: pre_tool_use:0:0"
+check_stdout_lacks "trust-partial-not-ok"        "$out" "codex-hook-trust: OK"
+check_trust_exit   "trust-partial-exit0"         "$H"
+
+# trust-2b. **同一 event の 2 つ目の group だけ**が未承認 → その entry の WARN が出る。
+# キーの <group> 軸が実際に測られていることの mutation テスト。group を落とす退行
+# (jq の \($g) を 0 に固定する等) をすると 1:0 が承認済みの 0:0 に潰れて黙って通る。
+# trust-1 / trust-2 だけではこの退行が全 pass のまま生き残っていた
+H="$BASE/trust-group"; make_trust_home "$H" "pre_tool_use:0:0" "pre_tool_use:0:1" "session_start:0:0"
+out=$(run_trust_checker "$H")
+check_stdout_has   "trust-group-warns-second-group" "$out" "未承認の codex hook entry: pre_tool_use:1:0"
+check_stdout_lacks "trust-group-quiet-first-group"  "$out" "未承認の codex hook entry: pre_tool_use:0:0"
+check_trust_exit   "trust-group-exit0"              "$H"
+
+# trust-3. config.toml が無い (= 承認記録ゼロ) → 4 entry 全部 WARN。
+# 「配線済みなのに承認記録が 1 件も無い」はまさに検知したい状態なので skip ではなく警告
+H="$BASE/trust-noconfig"; make_trust_home "$H"
+rm -f "$H/.codex/config.toml"
+out=$(run_trust_checker "$H")
+warn_count=$(printf '%s\n' "$out" | LC_ALL=C grep -cF "未承認の codex hook entry:")
+check "trust-noconfig-warn-count" 4 "$warn_count"
+check_trust_exit "trust-noconfig-exit0" "$H"
+
+# trust-4. 承認記録はあるが **別 HOME のパス** で登録されている → WARN。
+# 照合キーに hooks.json の絶対パスが効いていることの mutation テスト。
+# パス部分を落とす簡略化 (":session_start:0:0" の suffix 一致等) をすると、
+# 他ホストの承認記録を自ホストの承認と取り違えるが、それをここで固定する。
+H="$BASE/trust-otherpath"
+make_trust_home "$H" "pre_tool_use:0:0" "pre_tool_use:0:1" "pre_tool_use:1:0" "session_start:0:0"
+# パスを差し替えた config.toml を組み直す (sed で $H を BRE に埋めると、
+# mktemp 由来のパスに含まれるメタ文字で壊れるため文字列連結で作る)
+: >"$H/.codex/config.toml"
+for e in "pre_tool_use:0:0" "pre_tool_use:0:1" "pre_tool_use:1:0" "session_start:0:0"; do
+  printf '[hooks.state."/other/home/.codex/hooks.json:%s"]\ntrusted_hash = "sha256:deadbeef"\n\n' \
+    "$e" >>"$H/.codex/config.toml"
+done
+out=$(run_trust_checker "$H")
+check_stdout_has "trust-otherpath-warns" "$out" "未承認の codex hook entry: session_start:0:0"
+check_stdout_lacks "trust-otherpath-not-ok" "$out" "codex-hook-trust: OK"
+check_trust_exit "trust-otherpath-exit0" "$H"
+
+# trust-4b. 承認記録がコメント行としてだけ存在する → WARN。
+# 照合が「ファイル全体の部分文字列一致」だと、コメントに書いてあるだけで
+# 承認済みと判定される (検知器が fail-open する方向の穴)。行頭アンカーの固定
+H="$BASE/trust-commented"
+make_trust_home "$H" "pre_tool_use:0:0" "pre_tool_use:0:1" "pre_tool_use:1:0" "session_start:0:0"
+: >"$H/.codex/config.toml"
+for e in "pre_tool_use:0:0" "pre_tool_use:0:1" "pre_tool_use:1:0" "session_start:0:0"; do
+  printf '# [hooks.state."%s/.codex/hooks.json:%s"] あとで承認する\n' \
+    "$H" "$e" >>"$H/.codex/config.toml"
+done
+out=$(run_trust_checker "$H")
+warn_count=$(printf '%s\n' "$out" | LC_ALL=C grep -cF "未承認の codex hook entry:")
+check "trust-commented-warn-count" 4 "$warn_count"
+check_trust_exit "trust-commented-exit0" "$H"
+
+# trust-5. ~/.codex が無い (codex 未セットアップ機) → SKIP
+H="$BASE/trust-nocodex"; mkdir -p "$H"
+out=$(run_trust_checker "$H")
+check_stdout_has   "trust-nocodex-skip"   "$out" "codex-hook-trust: SKIP"
+check_stdout_lacks "trust-nocodex-nowarn" "$out" "WARN"
+check_trust_exit   "trust-nocodex-exit0"  "$H"
+
+# trust-6. hooks.json が無い → SKIP
+H="$BASE/trust-nohooksjson"; mkdir -p "$H/.codex"
+out=$(run_trust_checker "$H")
+check_stdout_has   "trust-nohooksjson-skip"   "$out" "codex-hook-trust: SKIP"
+check_stdout_lacks "trust-nohooksjson-nowarn" "$out" "WARN"
+check_trust_exit   "trust-nohooksjson-exit0"  "$H"
+
+# trust-6b. hooks.json が壊れた symlink → SKIP ではなく WARN。
+# ~/.codex/hooks.json は repo への symlink なので、切れている = hook が
+# 1 個も動いていない状態そのもの。-f は symlink を辿るため、-L を先に見ないと
+# 「hook 全滅」を未セットアップ機と同じ扱いで静かに見逃す
+H="$BASE/trust-dangling"; mkdir -p "$H/.codex"
+ln -s "$BASE/does-not-exist.json" "$H/.codex/hooks.json"
+out=$(run_trust_checker "$H")
+check_stdout_has   "trust-dangling-warns"  "$out" "WARN"
+check_stdout_lacks "trust-dangling-noskip" "$out" "codex-hook-trust: SKIP"
+check_trust_exit   "trust-dangling-exit0"  "$H"
+
+# trust-7. hooks 定義が空の hooks.json → entry 0 件なので OK (警告を出さない)。
+# `.hooks // {}` の fallback が効いていることの固定
+H="$BASE/trust-emptyhooks"; mkdir -p "$H/.codex"
+printf '{}\n' >"$H/.codex/hooks.json"
+: >"$H/.codex/config.toml"
+out=$(run_trust_checker "$H")
+check_stdout_has   "trust-emptyhooks-zero-entry" "$out" "検査対象の entry が 0 件"
+check_stdout_lacks "trust-emptyhooks-nowarn"     "$out" "WARN"
+check_trust_exit   "trust-emptyhooks-exit0"      "$H"
+
+# trust-8. hooks.json が JSON として壊れている → WARN (黙って skip しない)。
+# codex 自体が hook を読めない = 全 hook が動いていない状態なので、
+# この検査が拾いたいものと同型。warn-only 契約 (exit 0) もここで固定する
+H="$BASE/trust-brokenjson"; mkdir -p "$H/.codex"
+printf 'not json at all\n' >"$H/.codex/hooks.json"
+: >"$H/.codex/config.toml"
+out=$(run_trust_checker "$H")
+check_stdout_has   "trust-brokenjson-warns" "$out" "parse できない"
+check_stdout_lacks "trust-brokenjson-not-ok" "$out" "codex-hook-trust: OK"
+check_trust_exit   "trust-brokenjson-exit0" "$H"
+
+# trust-9. $HOME 自体が未設定 → SKIP して exit 0。
+# 他のケースは常に INTEGRITY_HOME を渡すため $HOME フォールバック経路を一度も
+# 踏まず、`${HOME:-}` を `$HOME` に戻す退行が全 pass のまま生き残る。
+# set -u 下で unbound variable になると exit 1 = 「全経路 exit 0」の契約が破れ、
+# 呼び出し元 run-gate.sh (set -euo pipefail) が毎ターン落ちる。契約を破る唯一の
+# 入力なのでここで pin する
+nohome_out=$(env -u HOME -u INTEGRITY_HOME bash "$TRUST_CHECKER" 2>/dev/null)
+nohome_rc=0
+env -u HOME -u INTEGRITY_HOME bash "$TRUST_CHECKER" >/dev/null 2>&1 || nohome_rc=$?
+check_stdout_has "trust-nohome-skip" "$nohome_out" "codex-hook-trust: SKIP"
+check "trust-nohome-exit0" 0 "$nohome_rc"
+
+# trust-10. 配線: run-gate.sh / Makefile の「コメントでない実行行」から呼ばれている。
+# 検査器が正しくても呼ばれていなければ 0 件検知にしかならないので、呼び出し行が
+# 消える退行を構造で止める。単なる grep だと直前の説明コメントに名前が残るだけで
+# pass するため、行頭が # / @# でない行に限定する
+# (tests/hooks-integrity/run-hooks-integrity-tests.sh のケース 13 と同型)
+TRUST_REPO_ROOT="$(cd "$SCRIPT_DIR" && git rev-parse --show-toplevel)"
+LC_ALL=C grep -vE '^[[:space:]]*(#|@#)' "$TRUST_REPO_ROOT/tests/run-gate.sh" \
+  | LC_ALL=C grep -q 'verify-codex-hook-trust.sh'
+check "trust-wired-in-gate" 0 "$?"
+LC_ALL=C grep -vE '^[[:space:]]*(#|@#)' "$TRUST_REPO_ROOT/Makefile" \
+  | LC_ALL=C grep -q 'bash tests/integrity/verify-codex-hook-trust.sh'
+check "trust-wired-in-makefile" 0 "$?"
 
 echo "----"
 echo "integrity selftest: $pass passed, $fail failed"

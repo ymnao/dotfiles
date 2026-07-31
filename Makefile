@@ -99,6 +99,9 @@ test: lint-locale-pin ## Verify shell scripts (shellcheck), JSON files (jq), and
 	@# stop-verify-gate.sh が gate の出力を握り潰すため、警告が人の目に入る
 	@# 経路として make test / make gate の手動実行を確保しておく。
 	@bash agents/hooks/hooks-integrity-warn.sh
+	@# 同じ理由で、codex hook の未承認 (配線済みだが一度も実行されない) 警告も
+	@# make test から呼ぶ。gate 経由の出力は握り潰されるため (warn-only、exit 0)。
+	@bash tests/integrity/verify-codex-hook-trust.sh
 	@bash tests/integrity/run-integrity-selftest.sh
 	@bash tests/integrity/verify-guard-codex-wiring.sh
 	@bash tests/integrity/verify-settings-codex-domains.sh
