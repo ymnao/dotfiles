@@ -1,7 +1,7 @@
 # survey の巡回先
 
 `/survey` skill の step 2 が読む固定リスト。
-`docs/ai-operations.md` §5-5 の半年ごとの棚卸しと同じタイミングで見直す。
+`docs/ai-operations.md` §5 の 5 番目 (半年ごとの棚卸し) と同じタイミングで見直す。
 
 ## 選定基準 (dotfiles の人選)
 
