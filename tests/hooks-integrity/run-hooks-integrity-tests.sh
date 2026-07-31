@@ -286,35 +286,222 @@ check "$?" "Makefile の実行行が hooks-integrity-warn.sh を呼ぶこと"
 # 監視対象はハードコード列挙なので、配線 (settings.json / hooks.json の command)
 # から drift しうる。warn-only ゆえ漏れても静かに検知されなくなるだけなので、
 # ここで pin しておく (この repo には同型の「対更新漏れ」の前歴がある)。
-watched=$(bash "$HOOK" --list-watched)
-# hooks/ 配下だけでなく statusLine のような ~/.claude 直下の実行ファイルも拾う
-# (hooks/ に限定すると watch list に claude/hooks がある限り必ず通る
-# トートロジーになり、drift を検出できない)。
-wired=$(
-  {
-    jq -r '.hooks | to_entries[] | .value[].hooks[].command' "$REPO_ROOT/claude/settings.json"
-    jq -r '.statusLine.command // empty' "$REPO_ROOT/claude/settings.json"
-    jq -r '.hooks | to_entries[] | .value[].hooks[].command' "$REPO_ROOT/codex/hooks.json"
-  } 2>/dev/null \
-    | grep -oE '\$HOME/\.(claude|codex)/[A-Za-z0-9._/-]+\.(sh|json)' \
-    | sed -E 's#^\$HOME/\.([a-z]+)/#\1/#' \
-    | sort -u
+#
+# 旧実装は「既知書式にマッチしたパスだけを照合し、抽出結果が完全に空のときだけ
+# fail する」形だった。これは取りこぼしの落ち先が pass なので、`${HOME}` 表記・
+# `~` 表記・拡張子なし・別インタプリタ等で 1 件配線が増えると、照合対象から
+# 静かに外れて assert 自体が無効化される (issue #213)。
+#
+# そこで **配線 command を 1 件残らず 3 分類のどれかに落とす** 形に変える:
+#   1. repo 参照 command — home 配下 dotfiles を指す。パスを正規化して
+#      WATCHED_PATHS と照合し、外れていれば違反
+#   2. 既知の非 repo command — 下の NON_REPO_EXPECTED と全文一致すれば pass
+#   3. それ以外すべて — 違反 (未知書式 / 新規の非 repo 配線 / 解析不能)
+# 取りこぼしの落ち先が pass から fail に変わるので、silent に無効化される経路が
+# 構造的に消える。誤検知 (正当な新書式で落ちる) は起こりうるが、その場合は
+# classify_wired_commands の抽出パターンを拡張すればよい。
+#
+# 対象に含めないもの (意図的):
+#   - codex/config.toml の notify — 値は repo 外の絶対パス (host バイナリ) を
+#     指しており repo 内ファイルを参照しない。含めると「repo 外パスの正当性判定」
+#     という別の分類問題を持ち込むことになる。ファイル自体は WATCHED_PATHS に
+#     載っているので改変検知はされる。将来 notify が repo 内ファイルを指すよう
+#     変わった場合、この検査では捕まらない
+#   - .claude/stop-gate.conf の中身 (`make gate`) — 同上。間接実行の連鎖まで
+#     広げない方針は hooks-integrity-warn.sh の WATCHED_PATHS コメントに準ずる
+
+# repo 内ファイルを一切参照しない正当な command の全文 pin。
+# 形式上は allowlist だが、ここに無い command が現れたら違反になるので drift は
+# 必ず顕在化する (通すにはこのリストの意図的な更新 = レビューが要る)。
+# **追加する前に、その command が repo 内ファイルを一切参照しないことを確認する**
+# (引数に repo 内パスを足す改変を素通しさせないため、第 1 トークンではなく全文で pin する)。
+NON_REPO_EXPECTED=$(cat <<'EOF'
+afplay /System/Library/Sounds/Funk.aiff
+osascript -e 'display notification "タスクが完了しました" with title "Claude Code" sound name "Glass"'
+EOF
 )
-check_cmd "settings.json / hooks.json から配線済み実行ファイルを抽出できること" [ -n "$wired" ]
-while IFS= read -r rel; do
-  [ -n "$rel" ] || continue
-  covered=0
-  while IFS= read -r w; do
-    case "$rel" in
-      "$w"|"$w"/*) covered=1; break ;;
-    esac
-  done <<EOF
+
+# jq を 1 経路実行する。失敗したら違反行を stdout に出して非 0 を返す
+# (旧実装は 2>/dev/null で jq エラーごと握りつぶしていた)。
+run_jq_extract() {
+  # $1=経路の説明, $2=jq 式, $3=対象ファイル
+  local out
+  if ! out=$(jq -r "$2" "$3" 2>&1); then
+    printf 'jq 抽出に失敗 (%s): %s\n' "$1" "$out"
+    return 1
+  fi
+  printf '%s\n' "$out"
+}
+
+# 配線 command を全件分類し、**違反を 1 行 1 件で stdout に出す**。違反が無ければ無出力。
+# exit code ではなく一覧を返すのは、ケース 15 の negative 検証 (違反が出ることを
+# 期待する側) をケース 14 と同じ関数で回すため。
+classify_wired_commands() {
+  # $1=claude/settings.json 相当のパス, $2=codex/hooks.json 相当のパス
+  local claude_json="$1" codex_json="$2"
+  local watched commands chunk cmd paths rel covered w
+  local nonrepo_actual expected_sorted extra missing
+
+  watched=$(bash "$HOOK" --list-watched) || {
+    printf '%s\n' "--list-watched の取得に失敗しました"
+    return 0
+  }
+
+  commands=""
+  if ! chunk=$(run_jq_extract "${claude_json} の hooks" \
+    '.hooks | to_entries[] | .value[].hooks[].command' "$claude_json"); then
+    printf '%s\n' "$chunk"
+    return 0
+  fi
+  commands="$chunk"
+  if ! chunk=$(run_jq_extract "${claude_json} の statusLine" \
+    '.statusLine.command // empty' "$claude_json"); then
+    printf '%s\n' "$chunk"
+    return 0
+  fi
+  commands="${commands}
+${chunk}"
+  if ! chunk=$(run_jq_extract "${codex_json} の hooks" \
+    '.hooks | to_entries[] | .value[].hooks[].command' "$codex_json"); then
+    printf '%s\n' "$chunk"
+    return 0
+  fi
+  commands="${commands}
+${chunk}"
+
+  nonrepo_actual=""
+  while IFS= read -r cmd; do
+    [ -n "$cmd" ] || continue
+    # まず「home 配下の dotfiles を参照している *らしさ*」だけを見る。
+    # 断片があるのに具体的なパスを取り出せない = 未知書式なので違反にする。
+    if printf '%s\n' "$cmd" | grep -qE '(\$\{?HOME\}?|~)/\.(claude|codex)'; then
+      paths=$(
+        printf '%s\n' "$cmd" \
+          | grep -oE '(\$\{?HOME\}?|~)/\.(claude|codex)/[A-Za-z0-9._/-]+' \
+          | sed -E 's#^(\$\{?HOME\}?|~)/\.([a-z]+)/#\2/#' \
+          | sort -u
+      )
+      if [ -z "$paths" ]; then
+        printf '未知書式 (repo 参照らしき断片があるがパスを抽出できません): %s\n' "$cmd"
+        continue
+      fi
+      while IFS= read -r rel; do
+        [ -n "$rel" ] || continue
+        covered=0
+        while IFS= read -r w; do
+          [ -n "$w" ] || continue
+          case "$rel" in
+            "$w" | "$w"/*)
+              covered=1
+              break
+              ;;
+          esac
+        done <<EOF
 $watched
 EOF
-  check_cmd "配線済みの ${rel} が監視対象に含まれること" [ "$covered" = "1" ]
-done <<EOF
-$wired
+        [ "$covered" = "1" ] ||
+          printf '監視対象外 (配線されているが WATCHED_PATHS に無い): %s\n' "$rel"
+      done <<EOF
+$paths
 EOF
+    else
+      nonrepo_actual="${nonrepo_actual}${cmd}
+"
+    fi
+  done <<EOF
+$commands
+EOF
+
+  # 非 repo command は全文 pin と双方向で突合する。増えた分だけでなく減った分も
+  # 違反にするのは、pin 側が実態から離れて空リスト同然になる drift を防ぐため。
+  # LC_ALL=C はファイル冒頭で export 済み (日本語を含む行をバイト順で安定させる)。
+  nonrepo_actual=$(printf '%s' "$nonrepo_actual" | grep -v '^$' | sort -u)
+  expected_sorted=$(printf '%s\n' "$NON_REPO_EXPECTED" | grep -v '^$' | sort -u)
+  if [ -n "$nonrepo_actual" ]; then
+    extra=$(printf '%s\n' "$nonrepo_actual" | grep -Fxv -f <(printf '%s\n' "$expected_sorted"))
+    if [ -n "$extra" ]; then
+      printf '未知の非 repo command (NON_REPO_EXPECTED に無い): %s\n' "$extra"
+    fi
+  fi
+  if [ -n "$expected_sorted" ]; then
+    missing=$(printf '%s\n' "$expected_sorted" | grep -Fxv -f <(printf '%s\n' "$nonrepo_actual"))
+    if [ -n "$missing" ]; then
+      printf 'NON_REPO_EXPECTED に載っているが配線に無い command: %s\n' "$missing"
+    fi
+  fi
+}
+
+violations=$(classify_wired_commands \
+  "$REPO_ROOT/claude/settings.json" "$REPO_ROOT/codex/hooks.json")
+check_empty "$violations" "配線 command が全件分類され、監視対象から漏れていないこと"
+
+# --- 15. 上記の網羅性検査そのものが drift を検出できることの回帰検査 ---
+# ケース 14 は「今の配線が clean である」ことしか言わない。旧実装が silent pass
+# だった以上、**検査側が本当に落ちるか** を別に確かめないと同じ穴が再発する。
+#
+# fixture は実 settings.json に jq で hook を 1 件だけ足したコピー。
+# mutation を適用したら「実際に 1 件だけ増えた」ことを確認してから判定する
+# (claude/rules/shell.md の mutation 規約。この repo は設計コメントが厚く、
+# 置換が空振りして偽陰性の結論になった前歴が 2 回ある)。
+CASE15_DIR="$WORK/case15"
+mkdir -p "$CASE15_DIR"
+
+assert_case15() {
+  # $1=ケース名, $2=追加する command, $3=expect-clean|expect-violation,
+  # $4=違反一覧に現れるべき文字列 (expect-violation のときのみ参照)
+  local name="$1" cmd="$2" mode="$3" needle="${4:-}"
+  local out before after added has_cmd violations
+  out="$CASE15_DIR/${name}.json"
+  jq --arg cmd "$cmd" \
+    '.hooks.SessionStart += [{"hooks":[{"type":"command","timeout":10,"command":$cmd}]}]' \
+    "$REPO_ROOT/claude/settings.json" > "$out" || {
+    check "1" "${name}: fixture の生成に失敗"
+    return
+  }
+
+  # mutation の実効確認 (件数 +1 かつ狙った command 文字列が実在すること)。
+  before=$(jq -r '.hooks | to_entries[] | .value[].hooks[].command' \
+    "$REPO_ROOT/claude/settings.json" | grep -c . || true)
+  after=$(jq -r '.hooks | to_entries[] | .value[].hooks[].command' "$out" | grep -c . || true)
+  added=$((after - before))
+  check_cmd "${name}: mutation で配線 command が 1 件だけ増えること (got ${added})" \
+    [ "$added" = "1" ]
+  has_cmd=$(jq -r --arg cmd "$cmd" \
+    '[.hooks | to_entries[] | .value[].hooks[].command | select(. == $cmd)] | length' "$out")
+  check_cmd "${name}: 追加した command 文字列が fixture に実在すること (got ${has_cmd})" \
+    [ "$has_cmd" = "1" ]
+
+  violations=$(classify_wired_commands "$out" "$REPO_ROOT/codex/hooks.json")
+  case "$mode" in
+    expect-clean)
+      check_empty "$violations" "${name}: 違反として報告されないこと"
+      ;;
+    expect-violation)
+      printf '%s\n' "$violations" | grep -qF -- "$needle"
+      check "$?" "${name}: 違反として報告されること (needle=${needle}, got: ${violations})"
+      ;;
+  esac
+}
+
+# 15a: 書式が違う (${HOME} ブレース表記) が監視対象内 → 通ること。
+#      旧実装はこの形を抽出できず、照合対象から静かに落としていた。
+assert_case15 "case15a-brace-watched" \
+  'bash "${HOME}/.claude/hooks/post-format.sh"' expect-clean
+# 15b: 監視対象外のディレクトリに配線された → 落ちること (受け入れ条件の本体)。
+assert_case15 "case15b-unwatched-path" \
+  'bash "$HOME/.claude/notwatched/x.sh"' expect-violation "claude/notwatched/x.sh"
+# 15c: repo を参照しない未知の command → 落ちること (NON_REPO_EXPECTED の外)。
+assert_case15 "case15c-unknown-nonrepo" \
+  'say done' expect-violation "say done"
+# 15d: repo 参照の断片はあるがパスを取り出せない → 落ちること
+#      (「断片あり・抽出不可」の分岐を素通しさせない)。
+assert_case15 "case15d-fragment-unparseable" \
+  'bash "$HOME/.claude"' expect-violation "未知書式"
+# 15e: **書式違い かつ 監視対象外** → 落ちること。issue #213 が指摘した穴そのもの。
+#      15b は `$HOME` 表記なので旧実装でも捕まえられた形で、旧実装が silent pass
+#      していたのはこの組み合わせ (抽出できない → 照合対象から外れる → 素通り)。
+assert_case15 "case15e-brace-unwatched" \
+  'bash "${HOME}/.claude/notwatched/y.sh"' expect-violation "claude/notwatched/y.sh"
 
 echo "hooks-integrity: ${pass} passed, ${fail} failed"
 [ "$fail" = 0 ] || exit 1
