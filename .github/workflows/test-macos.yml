@@ -86,10 +86,10 @@ jobs:
           /bin/bash --version
           command -v awk
           type awk
-          # 版数は判定に使わない (下の (b) は挙動で判定する)。fail したときに
-          # 「gawk が混入した」のか「awk 実装が更新された」のかを切り分ける
-          # ための診断材料としてログに残す。one-true-awk は --version を
-          # 受理して 0 終了し、gawk は "GNU Awk ..." を出す (実測 2026-08-01)。
+          # 版数は判定に使わない (判定は下の (b) が挙動で行う。理由は (b) の
+          # コメント参照)。どの検査より前に無条件で出るので、(b) が fail した
+          # ときも同じ step ログ上でここを見れば「gawk が混入した」のか
+          # 「awk 実装が更新された」のかを切り分けられる。
           awk --version 2>&1 | head -1 || true
           command -v shellcheck
           shellcheck --version
@@ -162,7 +162,7 @@ jobs:
           if [ "${awk_strcoll}" != "EQUAL" ]; then
             echo "ERROR: awk does not exhibit the strcoll-dependent == under en_US.UTF-8 (got: '${awk_strcoll}')." >&2
             echo "ERROR: purpose (A) of this workflow cannot be verified on this runner." >&2
-            awk --version 2>&1 | head -1 >&2 || true
+            echo "ERROR: see the awk version printed at the top of this step to tell gawk from an updated awk." >&2
             exit 1
           fi
 
