@@ -38,7 +38,7 @@ Claude Code の CHANGELOG は週次で動き、使い方系の発信も高頻度
 
 この線引きを外すと、この skill は週次のニュースレターになって摩耗する。
 
-## A. 定点観測 — dotfiles (4 枠)
+## A. 定点観測 — dotfiles (5 枠)
 
 ### 選定基準
 
@@ -55,13 +55,18 @@ Claude Code の CHANGELOG は週次で動き、使い方系の発信も高頻度
 
 | 巡回先 | 軸 | 最終更新 (実測) |
 |---|---|---|
-| [citypaul/.dotfiles](https://github.com/citypaul/.dotfiles) | CLAUDE.md / skills / agents / slash commands (696 stars) | 2026-07-31 |
-| **(空き)** | 初回サーベイで探して埋める。有力候補は [zircote/.claude](https://github.com/zircote/.claude) (agents / skills / commands、ただし 2026-02-03 更新で基準 (b) の境界) | — |
+| [ryoppippi/dotfiles](https://github.com/ryoppippi/dotfiles) | **この repo とほぼ同じ構造** — `agents/` + `claude/` + `codex/` + `fish/` + `nvim/`。両 harness 併用の実例 (254 stars) | 2026-07-31 |
+| [citypaul/.dotfiles](https://github.com/citypaul/.dotfiles) | CLAUDE.md / skills / agents / slash commands。規模と作り込みが違う視点 (696 stars) | 2026-07-31 |
 
-### shell / エディタ枠 (2)
+citypaul は `CHANGELOG.md` / changesets / `install-claude.sh` を持ち、**配布物として
+整備されている**ぶん基準 (c) からはやや外れる。作り込みの参考として残すが、
+「毎日動いているもの」としての重みは ryoppippi の方が高い。
+
+### shell / エディタ枠 (3)
 
 | 巡回先 | 軸 | 最終更新 (実測) |
 |---|---|---|
+| [rockyzhang24/dotfiles](https://github.com/rockyzhang24/dotfiles) | **この repo のスタック 4 つすべて** — wezterm / fish / nvim / starship + macOS (yabai / skhd / karabiner)。nvim への貢献で知られる (239 stars) | 2026-07-26 |
 | [folke/dot](https://github.com/folke/dot) | nvim (lazy.nvim 作者), macOS | 2026-04-17 |
 | [mattmc3/dotfiles](https://github.com/mattmc3/dotfiles) | fish, macOS | 2026-07-11 |
 
@@ -71,7 +76,11 @@ Claude Code の CHANGELOG は週次で動き、使い方系の発信も高頻度
 
 | 候補 | 除外理由 |
 |---|---|
-| craftzdog/dotfiles-public | AI 設定を含まず、shell / エディタ枠は folke / mattmc3 で足りるため 2026-07-31 に外した (基準未達ではない) |
+| craftzdog/dotfiles-public | AI 設定を含まず、wezterm からも ghostty に移行済み (`.config` を実測)。2026-07-31 に外した (基準未達ではない) |
+| zircote/.claude | AI 設定枠の候補だったが 2026-02-03 更新・26 stars で信号が弱い |
+| Dbochman/dotfiles | AI 設定枠の候補だったが 2 stars でブログ記事由来。日常運用の重みが判断できない |
+| g6ai/dotfiles | wezterm 枠の候補だったが chezmoi + zsh で fish を使っていない |
+| barryblando/dotfiles | wezterm / fish / nvim を持つが 3 stars。rockyzhang24 が上位互換 |
 | mathiasbynens/dotfiles | 基準 (b) 未達 — 最終更新 2024-08 |
 | jorgebucaran/cookbook.fish | 基準 (b) 未達 — 最終更新 2023-09 |
 | sindresorhus/dotfiles | repo が存在しない (404) |
