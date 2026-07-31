@@ -231,6 +231,11 @@ Untrusted となり承認するまで実行されない)。
 この結論は codex の実装詳細に依存するため、**codex を upgrade したら再実測する**
 (本節にバージョンを明記してあるのがその trigger)。
 
+**2026-07-31 時点で host は 0.146.0 に上がっており、この trigger は発火済みだが
+trusted_hash の再実測はまだ行っていない**(上の記述は 0.145.0 での測定のまま)。
+再実測は issue #214 が担当する。本節の下流の判断(「承認するまで発火しない」
+「スクリプト本体は hash に入らない」)は 0.145.0 の測定に依存している点に注意。
+
 ### hooks 系ファイルの防御層
 
 `~/.codex/hooks.json` / `~/.codex/hooks/` / `~/.codex/skills/` は
@@ -284,6 +289,13 @@ host 側の実ファイル `~/.codex/config.toml`(これが git 追跡外。repo
   cwd を無視して dotfiles repo を見る。dotfiles を dirty のまま別プロジェクトで
   作業している間はずっと同じ警告が context に入り、warn-only の signal が摩耗する。
   codex 側を配線した分、この摩耗は増える方向に働く(issue #215)
+- **警告本文には `git status --porcelain` のパス文字列がそのまま載る**。監視対象
+  ディレクトリにファイルを置ける主体は、両 harness の context に入るテキストの一部を
+  制御できる(ファイル名経由の prompt injection 経路)。実害は低い — その前提能力は
+  「repo に書ける = host で任意コード実行できる」(本節末尾)と同値で、より強い経路を
+  既に持っている。ただし **codex 側にも毎セッション注入されるようになり、経路が
+  harness 2 系統に広がった**(issue #215)。ファイル名を伏せると警告の用をなさないので
+  出力自体は変えていない
 - **`.gitignore` にマッチする新規ファイルは `-uall` でも見えない**。`.gitignore`
   自体も監視対象外なので、「`.gitignore` に追記 → 無視されるファイル名で設置」の
   2 手で検知を避けられる(それ単体では実行に繋がらないが、fail-open の穴の一つ)
@@ -303,11 +315,17 @@ host 側の実ファイル `~/.codex/config.toml`(これが git 追跡外。repo
 
 ### codex 側 SessionStart hook の実測結果(この節が正本)
 
-すべて **2026-07-31 に upstream の tag `rust-v0.146.0`(host の codex-cli 0.146.0)の
-ソースで確認**した。hook 本体とテストのコメントはこの節を指すだけに留めてある
-(同じ実測事実を複数箇所に書くと、codex の upgrade で挙動が変わったときに片方だけ
-更新されて食い違うため)。**codex を upgrade したら §10 冒頭の trusted_hash と
-あわせてここも再確認する**。
+**codex 側の記述**はすべて **2026-07-31 に upstream の tag `rust-v0.146.0`
+(host の codex-cli 0.146.0)のソースを読んで確認**した(実際に codex を起動して
+発火させた観測ではない — 本節の配線は執筆時点で未承認のため)。
+hook 本体とテストのコメントはこの節を指すだけに留めてある(同じ実測事実を複数箇所に
+書くと、codex の upgrade で挙動が変わったときに片方だけ更新されて食い違うため)。
+**codex を upgrade したら §10 冒頭の trusted_hash とあわせてここも再確認する**。
+
+**Claude Code 側の挙動は実装非公開のため同じようには確認できない**。以下で
+「Claude Code 側では素通し」と書いているのは、この repo での運用上の観測
+(SessionStart hook の stdout がそのまま context に入っており、JSON 風かどうかで
+落ちた例が無い)に基づく。codex 側の記述と根拠の強さが違う点に注意。
 
 **1. matcher は SessionStart でも有効**。突合対象は `SessionStartSource` の
 `startup` / `resume` / `clear` / `compact`。matcher が無視される(実装上
@@ -336,7 +354,12 @@ JSON 出力の合図とみなし、JSON としてパースできなければ run
 additional context になるのは「JSON に見えない」出力のときだけ。
 `agents/hooks/hooks-integrity-warn.sh` の警告ラベルが `[hooks-integrity]` ではなく
 `hooks-integrity 警告:` なのはこのため(**Claude Code 側では素通しなので、
-ラベルを戻しても codex 側でだけ静かに壊れる**。テストが 1 文字目を pin している)。
+ラベルを戻しても codex 側でだけ静かに壊れる**。テストが stdout の先頭行を全文で
+pin している — 1 文字目だけを見る形は、先頭に空行が入ると素通りする)。
+
+なおこの制約は SessionStart 固有ではなく、codex に配線する hook 全般に及ぶ。
+現時点で `agents/hooks/session-compact-context.sh` は `[` 始まりの stdout を出すが、
+Claude Code 専用配線なので実害は無い(codex へ配線するときに踏む。issue で追跡)。
 
 ### scope 外(別 issue)
 

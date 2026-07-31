@@ -110,14 +110,8 @@ porcelain=$(git -C "$repo" status --porcelain=v1 -uall -- "${WATCHED_PATHS[@]}" 
 count=$(printf '%s\n' "$porcelain" | grep -c . || true)
 limit=20
 
-# **stdout の 1 文字目を `{` / `[` にしないこと**。codex は hook の stdout が
-# その 2 文字のどちらかで始まると JSON 出力とみなし、パースに失敗した時点で
-# run 全体を Failed にして本文を model の context に **入れない**
-# (upstream rust-v0.146.0 の codex-rs/hooks/src/engine/output_parser.rs の
-# `looks_like_json` と同 events/session_start.rs の分岐。2026-07-31 に確認)。
-# plain text として context に入るのは「JSON に見えない」出力だけなので、
-# 以前の `[hooks-integrity]` ラベルは codex 側で警告が丸ごと消える形だった。
-# この 1 文字目の制約は下のテストが pin している。
+# **stdout を `{` / `[` で始めないこと**。codex 側で警告が丸ごと捨てられる
+# (実測根拠は docs/ai-operations.md §10。テストが先頭行を pin している)。
 echo "hooks-integrity 警告: host 実行される hook 定義に未コミットの変更があります (${count} 件)"
 printf '%s\n' "$porcelain" | head -"$limit"
 if [ "$count" -gt "$limit" ]; then

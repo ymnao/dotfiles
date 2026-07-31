@@ -113,6 +113,14 @@ run_hook() {
   HOOKS_INTEGRITY_REPO="$1" bash "$HOOK" 2>&1
 }
 
+# codex の出力書式検査だけは **stdout 単独**で見る必要がある (下のケース 3)。
+# run_hook は 2>&1 で stderr を混ぜるため、stderr の 1 行目を stdout の書式と
+# 取り違える (実測: `echo x >&2` を足すだけで書式 assert が誤検知に倒れ、
+# 逆に stderr が先に出ると本物の JSON 始まりを見逃す)。
+run_hook_stdout_only() {
+  HOOKS_INTEGRITY_REPO="$1" bash "$HOOK" 2>/dev/null
+}
+
 # --- 1. clean な repo では何も出さない ---
 out=$(run_hook "$FIXTURE"); rc=$?
 check "$rc" "clean repo で exit 0 を返すこと (got $rc)"
@@ -130,18 +138,20 @@ out=$(run_hook "$FIXTURE"); rc=$?
 check "$rc" "改変検知時も exit 0 を返すこと (warn-only、got $rc)"
 grep -q '^hooks-integrity 警告:' <<<"$out"
 check "$?" "改変時に警告ラベルを出すこと"
-# **出力の 1 文字目が `{` / `[` でないこと** (issue #215)。codex は hook の stdout が
-# その 2 文字のどちらかで始まると JSON 出力とみなし、パースに失敗した時点で run を
-# Failed にして本文を model の context に入れない (upstream rust-v0.146.0 の
-# codex-rs/hooks/src/engine/output_parser.rs の `looks_like_json` と
-# 同 events/session_start.rs の分岐。2026-07-31 に確認)。つまり `[hooks-integrity]`
-# のようなラベルに戻すと **codex 側でだけ警告が丸ごと消える** — Claude Code 側は
-# 素通しで気付けないので、ここで pin する。
-first_char=$(printf '%s' "$out" | head -c 1)
-check_cmd "警告出力の 1 文字目が JSON 開始文字でないこと (got '${first_char}')" \
-  [ "$first_char" != "{" ]
-check_cmd "警告出力の 1 文字目が JSON 配列開始文字でないこと (got '${first_char}')" \
-  [ "$first_char" != "[" ]
+# **stdout が JSON に見えてはいけない** (issue #215)。codex は hook の stdout が
+# `{` / `[` で始まると JSON 出力とみなし、パースに失敗した時点で run を Failed にして
+# 本文を model の context に入れない (根拠は docs/ai-operations.md §10)。
+#
+# 検査は **先頭行の全文 pin** で行う。「1 文字目が `{` / `[` でない」だけを見る形は、
+# 守りたい状態を測れないまま緑になる (両方とも実測済み):
+#   - 先頭に空行が付くと 1 文字目は空文字になり、2 行目が `{` でも assert が通る
+#     (codex は `trim_start` してから判定するので、空行があっても JSON 扱いされる)
+#   - 警告の前に別の行が挿し込まれても 1 文字目しか見ないので気付けない
+# 先頭行を全文で pin すれば、そのどちらも落ちる。
+stdout_only=$(run_hook_stdout_only "$FIXTURE")
+first_line=${stdout_only%%$'\n'*}
+check_cmd "stdout の先頭行が警告ラベルそのものであること (got: ${first_line})" \
+  [ "$first_line" = "hooks-integrity 警告: host 実行される hook 定義に未コミットの変更があります (1 件)" ]
 git -C "$FIXTURE" checkout -q -- agents/hooks/sample.sh
 
 # --- 4. 監視対象パスごとの検知 ---
@@ -299,12 +309,11 @@ check_cmd "SessionStart entry が type/timeout/command とも期待どおりで�
 
 # --- 12b. 配線 (codex): hooks.json の SessionStart entry (issue #215) ---
 # **Claude 側 (ケース 12) と同じ regex 検査を掛けてはいけない**。codex の matcher は
-# 「英数字 / `_` / `|` だけからなる場合は regex ではなく split('|') の完全一致」
-# として評価される (`is_exact_matcher`。実測根拠は docs/ai-operations.md §10)。
-# bash の `=~` は部分一致なので、例えば `tartup|esume|lear` は 3 イベントすべてに
-# 「一致する」と判定されて regex 検査を全部通るが、codex では exact 比較のため
-# **一度も発火しない**。受理側の口が広いまま fail-closed のつもりになる形なので
-# (claude/rules/shell.md)、matcher は **全文 pin** で受ける。
+# 条件次第で regex ではなく完全一致として評価される (実測根拠は
+# docs/ai-operations.md §10)。bash の `=~` は部分一致なので、`tartup|esume|lear` の
+# ような綴り違いが全 assert を通るのに codex では一度も発火しない。受理側の口が
+# 広いまま fail-closed のつもりになる形なので (claude/rules/shell.md)、
+# matcher は **全文 pin** で受ける。
 codex_matcher=$(jq -r '
   .hooks.SessionStart[]
   | select([.hooks[].command] | any(test("hooks-integrity-warn\\.sh")))
