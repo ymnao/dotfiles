@@ -105,9 +105,21 @@ citypaul は `CHANGELOG.md` / changesets / `install-claude.sh` を持ち、**配
 
 | 情報源 | 見るもの |
 |---|---|
+| [anthropics/skills](https://github.com/anthropics/skills) | **公式 skill 集**。`spec/` は skill の仕様そのものなので、この repo の自作 skill を壊す変更が直撃する |
 | [Simon Willison — claude-code タグ](https://simonwillison.net/tags/claude-code/) | 実運用の観察と落とし穴 |
 | [awesome-claude-code](https://github.com/hesreallyhim/awesome-claude-code) | skill / hook / command の実例カタログ |
 | [anthropics/claude-cookbooks](https://github.com/anthropics/claude-cookbooks) | 公式の実装例 |
+
+**フィードではない公式リファレンス** (毎回巡回しない。初回に一度読み、以後は
+リンク先が更新されたときだけ見る):
+
+- [Best practices for Claude Code](https://code.claude.com/docs/en/best-practices) — 公式ドキュメント
+- [How Anthropic teams use Claude Code](https://claude.com/blog/how-anthropic-teams-use-claude-code) — 社内チーム別の実運用
+
+**Anthropic のエンジニア個人の dotfiles は公開されていない** (2026-07-31 に
+`bcherny` の公開 repo を全件走査して確認。出回っている「Boris Cherny の
+CLAUDE.md」は第三者の gist コピーで本人の公開物ではない)。個人枠を探す代わりに
+上記の公式チャンネルを見る。
 
 ## D. 探索 (固定クエリ 2〜3 本)
 
