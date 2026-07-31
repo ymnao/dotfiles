@@ -27,9 +27,10 @@ Run each `gh` command as a bare invocation and substitute prior output literally
    - **Fix-or-issue-or-dismiss ポリシー (三択)**: レビューで確認された finding の行き先は次の 3 つ。スコープ距離 (主旨との近さ) で振り分ける。「起票せず次セッションに暗黙持ち越し」は不可(verify-ci-before-pr hook も body 内の `defer(未起票)` を検出すると `gh pr create` をブロックする。ただし hook が検証するのは marker 有無のみで、(c) 対応しない の許可条件や user 承認の実在は hook では検証されない — skill 遵守で担保する):
      - **(a) 本 PR で fix**: スコープ距離「直結 (主旨と同機能・同ファイル)」、または CONFIRMED HIGH で本 PR スコープ内
      - **前提: Tier3 は三択に載せない**。`/dev` step 4-0 の三層分類で Tier3 (スタイル・好み・「今は壊れていないが将来こう変更されたら検出できない」型の網羅性向上・micro-optimization) と判定した finding は、fix も起票も**記録も**しない。分類表にも出さない。三択にかけるのは Tier1 / Tier2 だけ
-     - **(b) issue 起票して追跡**: スコープ距離「隣接 (主旨外だが関連)」以上で、次の 2 つを**両方**書けるもの。書けなければ (c):
+     - **(b) issue 起票して追跡**: スコープ距離「隣接 (主旨外だが関連)」以上で、次の 3 つを**すべて**満たすもの。1 つでも欠けたら (c):
        1. **実害 1 文** — 「この状態だと <誰/何> が <どう> 壊れる・気付けない」
        2. **目的接続 1 文** — repo の CLAUDE.md 冒頭にある目的文 (この repo は何のために存在するか) に照らして、直すと何が良くなるか。目的文が無い repo では「利用者に届く価値」で代用する
+       3. **忘れたら手遅れになる** — 「もし起票せず忘れた場合、次に同じ話題が浮上したときに手遅れになっているか」に yes と言えること。**no なら起票しない** (前提が未確定のもの・調査タスクはここで落ちる。確定すれば別経路 — 定期サーベイ / 次に踏んだとき / 次のレビュー — で再浮上するので、issue に積むと消化されない在庫として残るだけ)。逆に**時限式のもの** (放置コストが時間とともに上がる / 外部の更新で消える) はここを通る
        - 定型句のコピペで 2 が埋まり始めたらゲートは形骸化している。文面が issue 間でほぼ同一になっていないか自分で点検する
        - 同一根本原因から派生する finding は 1 本の統合 issue にまとめる (body に個別 finding を列挙)
        - 背景: レビュー観点を増やすほど finding は線形に増えるが消化速度は増えない。既定を起票にすると backlog は PR を回すほど単調増加する (この repo の実測: 2026-07 は merged PR 105 / 起票 56 / close 31 で純増 +25、棚卸し直前の open 29 件のうち 26 件がレビュー由来の内向きタスクだった)
@@ -65,7 +66,7 @@ Run each `gh` command as a bare invocation and substitute prior output literally
 6. Generate PR title and body:
    - **Title**: under 70 characters, summarizing the changes
    - **Body**: use the repo's PR template if `pr_template` is not null, otherwise the default template below. ALWAYS append the evidence section (below) at the end of the body.
-7. Run `git push -u origin <branch_name>` (no-op if origin is already up to date; also syncs review-fix commits made after an early push). If the push is rejected as non-fast-forward (origin advanced independently), do NOT force push — report the divergence to the user and stop
+7. Run `git push origin <branch_name>` (no-op if origin is already up to date; also syncs review-fix commits made after an early push). **`-u` は付けない** — sandbox 下では `.git/config` を lock できず、upstream 設定の書き込みだけが `fatal: failed to store: 100001` / `error: unable to write upstream branch configuration` で失敗する。**push 本体は成功しているのに `fatal:` の文言で失敗と誤読する**ため、確認は `git ls-remote --heads origin <branch_name>` で行う。If the push is rejected as non-fast-forward (origin advanced independently), do NOT force push — report the divergence to the user and stop
 8. Create the PR with `gh pr create`. Add `--draft` when step 4 **or** step 5 decided draft (draft-wins). **Exception**: user が PR 作成前の任意の時点(step 5 の walkthrough 応答 / それ以前 いずれも可、tier を問わない)で「step 4 の draft 判定は別 PR で追う。normal で作って」等、draft 判定を明示的に override する指示を出した場合は normal で作成し、その override 内容(受け取った user 指示の要約と受け取った step)を evidence の Draft 判定に記録する。**制約**: normal override でも hook の defer 検査は bypass されないため、未起票 finding が残ったまま normal 化するには (b) 起票または (c) dismiss (「追跡しない (user 指示: <要約>)」の記録) が前提。marker 文字列 `defer(未起票)` を残すと hook が block して deadlock になる。If `linked_issue` exists, include `Closes #<number>` in the body. ただし **tier=high で override が step 5 前に受け取られた場合**、step 5 walkthrough で新 finding が surface した際は override 継続意思を user に再確認する(walkthrough で見えた新事実に対して pre-walkthrough override が sticky にならないよう safety net)。この再確認は「[Telemetry markers](#telemetry-markers)」節の 2 つの marker(`override-recheck` / `override-recheck-question`)の形式で出力し、user の回答を受け取るまで `gh pr create` を実行しない。
 
 ## Telemetry markers
