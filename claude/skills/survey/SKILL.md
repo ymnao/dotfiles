@@ -1,6 +1,6 @@
 ---
 name: survey
-description: 週 1 回の外部サーベイを回す — dotfiles / ツールの仕様変更・トレンドを巡回し、導入候補を提示して user が承認したものだけ issue にする。外向きタスクの入口
+description: 週 1 回の外部サーベイを回す — AI (Claude / codex) の仕様変更と使い方を主に、dotfiles の定点観測と shell / エディタを副に巡回し、導入候補を提示して user が承認したものだけ issue にする。外向きタスクの入口
 ---
 
 外向きタスク (この repo の目的 = 毎日使う shell / エディタ / CLI 環境の摩擦を
@@ -37,17 +37,25 @@ description: 週 1 回の外部サーベイを回す — dotfiles / ツールの
 `claude/skills/survey/sources.md` の情報源を WebSearch / WebFetch で巡回する。
 **巡回先は互いに独立なので並列に取得する。**
 
-- **dotfiles**: 直近の commit と、新しく入った / 外れたツールを見る
-- **仕様変更**: Claude Code の CHANGELOG、各ツールのリリースノート
-- **トレンド**: sources.md に列挙した情報源
+- **A. dotfiles (定点観測)**: 直近の commit と、新しく入った / 外れた設定を見る
+- **B. AI の仕様変更**: Claude Code CHANGELOG、codex changelog / releases、
+  Anthropic Engineering blog
+- **C. 使い方**: 海外エンジニアの発信・実例カタログ
+- **D. 探索**: sources.md の固定クエリ 2〜3 本。**クエリを増やさない** (発散する)
+- **E. shell / エディタ (副)**: 各ツールの releases、This Week in Neovim
 
-dotfiles と仕様変更は **step 1 で読んだ前回実行日以降の変更だけ**を見る
-(CHANGELOG は追記専用で伸び続けるので全文を読み直さない)。トレンドは
-時系列の追記ではないので、直近の号 / 直近 30 日分をそのまま見る。
+A / B / C / E は **step 1 で読んだ前回実行日以降の変更だけ**を見る (CHANGELOG は
+追記専用で伸び続けるので全文を読み直さない)。D は時系列の追記ではないので直近分を
+そのまま見る。
 
-拾った候補には `docs/ai-operations.md` §5 の 4 番目 (導入審査) を一次フィルタとして
-当てる (出所の確認 / 中身を読めるか / 最小権限 / lethal trifecta を作らないか)。
-ここで落ちたものは step 3 の表に載せず、log.md に `rejected` で記録する。
+拾った候補には 2 段のフィルタを当てる。**落ちたものは step 3 の表に載せず、
+log.md に `rejected` で記録する**:
+
+1. **sources.md の「AI 情報の取捨」** — 既存の設定を壊す仕様変更 / 自作機構を
+   単純化できる公式機能 / 現に困っている運用に当たる使い方、のいずれでもなければ
+   落とす。ここを緩めるとこの skill は週次のニュースレターになって摩耗する
+2. **`docs/ai-operations.md` §5 の 4 番目 (導入審査)** — 出所の確認 / 中身を
+   読めるか / 最小権限 / lethal trifecta を作らないか
 
 **sources.md の腐りも同時に見る**: 巡回先が sources.md の選定基準を満たさなく
 なっていたら、その事実を報告して「次回から外す」提案をする (勝手に消さない)。
