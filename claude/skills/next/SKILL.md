@@ -21,9 +21,17 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
    - **feature ブランチ checkout 中**:
      `git fetch origin main:main` (non-fast-forward は refspec が自動拒否
      するので安全) → `git diff HEAD main --stat` が空か確認 → 空なら
-     `git checkout main`。fetch が拒否された、または diff 非空 (squash
-     merge や他コミット混入) なら user Terminal 依頼にフォールバック
-     (memory `project_settings_pr_pull_workaround.md`)
+     `git checkout main`。この fetch は `.git/config` の lock 失敗で
+     `fatal:` を出しながら ref の更新には成功する (CLAUDE.md「変更時の
+     注意」)。**`fatal:` で中断しない**。ただし成否をエラー文言で判定
+     するのも誤り (通信 / 認証 / remote 不在でも別の文言が出る) なので、
+     **`git ls-remote origin refs/heads/main` と `git rev-parse main` の
+     SHA が一致すること**を fetch の成功条件にする。
+     **この SHA 一致と diff は別々に見る** — 一致しないまま diff が空に
+     なることがあり (local main が偶然 HEAD と同一 tree)、その場合は
+     stale な main へ checkout してしまう。SHA 不一致、または diff 非空
+     (squash merge / 他コミット混入) なら user Terminal 依頼に
+     フォールバック (memory `project_settings_pr_pull_workaround.md`)
    - **既に main checkout 済みで `git pull` が unlink 失敗**:
      この状況は origin/main が locked file を書き換えている場合に発生
      するため、local main の working tree は古い locked file が残った
@@ -33,7 +41,10 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      working tree の locked file が silent に stale 化するため禁止)
 3. **ブランチ削除**: merge 済みの作業ブランチを `git branch -d` で削除する
    (`-D` は使わない。-d が拒否されたら未 merge コミットがある異常なので
-   報告して停止)
+   報告して停止)。これも config lock の警告を出しながら削除には成功する
+   ので、`git branch -d <branch>` と `git branch` を **`;` で continue**
+   させて 1 コマンドで打ち (`&&` にしない)、**警告文ではなく後者の出力**で
+   消えたことを確認する
 4. **学びの昇格チェック**: このセッションで CLAUDE.md / skill / memory に
    昇格すべき学び (同じ指摘を 2 回受けた・skill の手順が実態とズレていた等)
    がないか振り返り、あれば提案する (勝手に書き換えない)。
