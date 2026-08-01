@@ -63,6 +63,15 @@ printf '%s' "$out" | grep -q "未コミット変更: 1 件" && pass=$((pass + 1)
 printf '%s' "$out" | grep -q "初期コミット" && pass=$((pass + 1)) \
   || { echo "FAIL recent-commits: 直近コミットがない"; fail=$((fail + 1)); }
 
+# stdout の先頭行が `[` / `{` で始まってはいけない (issue #240)。codex はその 2 文字で
+# 始まる stdout を JSON 出力とみなし、パースに失敗した時点で本文を model の context に
+# 入れない。検査は **先頭行の全文 pin** で行う: 「1 文字目が `[` でない」だけを見る形は、
+# 先頭に空行が入る mutant を素通しする (issue #215 で実際に踏んだ)。
+# $out は上で 2>/dev/null (stdout 単独) で取得済み — 2>&1 で取ると stderr の 1 行が
+# 混じって pin が壊れる。横断の静的検査は scripts/lint-hook-stdout.sh 側。
+first_line=${out%%$'\n'*}
+check "stdout-first-line" "session-compact-context: コンパクション後の作業状態リマインダー" "$first_line"
+
 # 2. git リポジトリ外: 出力なし・exit 0
 plain="$BASE/plain"; mkdir -p "$plain"
 json2=$(jq -cn --arg cwd "$plain" '{"hook_event_name":"SessionStart","source":"compact","cwd":$cwd}')

@@ -68,6 +68,10 @@ test: lint-locale-pin ## Verify shell scripts (shellcheck), JSON files (jq), and
 	@# symlink 除外: claude/hooks と codex/hooks は agents/hooks への symlink なので実体だけ検査する。
 	@# SC2088 の局所無効化は agents/hooks/.shellcheckrc に委譲 (editor/CI 直 shellcheck も継承)。
 	@git ls-files '*.sh' | while read -r f; do [ -L "$$f" ] || printf '%s\n' "$$f"; done | xargs shellcheck -S warning
+	@echo "==> hook stdout の JSON 誤認検査 (issue #240)"
+	@# 実 repo に対する fail-closed ゲート。codex に配線した hook の stdout が
+	@# { / [ で始まると本文が model に届かないため、配線前にここで弾く。
+	@bash scripts/lint-hook-stdout.sh
 	@echo "==> JSON validation"
 	@git ls-files '*.json' | while read -r f; do \
 	    jq empty "$$f" >/dev/null || { echo "FAIL: $$f"; exit 1; }; \
@@ -113,6 +117,7 @@ test: lint-locale-pin ## Verify shell scripts (shellcheck), JSON files (jq), and
 	@bash tests/codex-review-skip/run-codex-skip-tests.sh
 	@bash tests/locale-matrix/run-locale-matrix-tests.sh
 	@bash tests/lint-locale-pin/run-lint-locale-pin-tests.sh
+	@bash tests/lint-hook-stdout/run-lint-hook-stdout-tests.sh
 	@bash tests/install-shellcheck/run-install-shellcheck-tests.sh
 	@echo "OK: all checks passed"
 

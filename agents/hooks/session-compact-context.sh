@@ -10,6 +10,12 @@
 # 短く再注入する。CLAUDE.md の内容は重複になるため注入しない。
 #
 # fail-open: git リポジトリ外・git/jq 不在では何も出さず exit 0。
+#
+# stdout の先頭行は `[` / `{` で始めない (issue #240)。codex は hook の stdout が
+# その 2 文字で始まると JSON 出力とみなし、パースに失敗した時点で本文を model の
+# context に入れない (実測根拠は docs/ai-operations.md §10)。横断検査は
+# scripts/lint-hook-stdout.sh、この hook 固有の先頭行 pin は
+# tests/session-compact/run-session-compact-tests.sh にある。
 
 set -uo pipefail
 
@@ -33,7 +39,7 @@ dirty_count=0
 recent=$(git -C "$root" log --oneline -3 2>/dev/null)
 
 cat <<EOF
-[session-compact-context] コンパクション後の作業状態リマインダー:
+session-compact-context: コンパクション後の作業状態リマインダー
 - リポジトリ: $root
 - ブランチ: ${branch:-(detached HEAD)}
 - 未コミット変更: ${dirty_count} 件
