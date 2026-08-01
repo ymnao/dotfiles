@@ -50,7 +50,7 @@ For each finding, Read the actual `file`:`line` (and enough surrounding code to 
 
 **既定はそのブランチで fix する**。閾値を超えた CONFIRMED finding は、**本 PR の diff 外のファイルであっても原則そのブランチで直す**。指摘の出所と修正が同じ PR に揃っていないと、根拠だけ別の場所に散るため。
 
-**例外**: fix が**本 PR の risk tier / レビュー範囲を押し上げる**場合 — (1) security 境界・権限・秘密情報を扱う箇所に**新たに**触ることになる、(2) 別 repo / 別コンポーネントへ波及する、(3) 新しい test / eval / infra 基盤の追加が要る — に限り、CONFIRMED HIGH でも fix せず REPORT-ONLY として記録し、行き先判断は `$HOME/.claude/skills/pr/SKILL.md` の fix-or-issue-or-dismiss ポリシー (step 4) に委ねる。例外にしたときは理由を 1 文で記録する。**「面倒」「対象ファイルが多い」「主旨と無関係」はいずれも理由にならない**(その場合は fix する)。
+**例外**: fix が**本 PR の risk tier / レビュー範囲を押し上げる**場合に限り、CONFIRMED HIGH でも fix せず REPORT-ONLY として記録し、理由を 1 文添える。**該当条件の正本と行き先判断は `$HOME/.claude/skills/pr/SKILL.md` の fix-or-issue-or-dismiss ポリシー (step 4 の (a)) に置く**(条件をここに書き写すと片方だけ更新されて食い違うため)。**「面倒」「対象ファイルが多い」「主旨と無関係」はいずれも理由にならない**(その場合は fix する)。
 
 Do not commit anything — leave fixes in the working tree for the user / `/pr`.
 
