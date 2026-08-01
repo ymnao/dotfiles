@@ -35,7 +35,7 @@ ran=0
 
 # 期待実行ケース数は**独立した定数**として持つ (ケース定義から導出しない。
 # 導出するとケースが消えたとき下限も一緒に下がって検出が無効化される)。
-EXPECTED_CASES=14
+EXPECTED_CASES=33
 
 # run_lint <fixture root> — 出力は $OUT に書き、exit code は $rc に入れる。
 # コマンド置換で受けると subshell になり rc が呼び出し元に返らないため、
@@ -78,6 +78,24 @@ new_root() {
   printf '%s' "$root"
 }
 
+# form_case <ケース名> <期待 exit code> — stdin を 1 本の hook として置いて lint する。
+# 「1 形 = 1 fixture」にして、どの形で落ちたかがケース名から分かるようにする。
+form_case() {
+  local name="$1" want="$2"
+  local root="$BASE/form-$name"
+  mkdir -p "$root/agents/hooks"
+  cat >"$root/agents/hooks/x.sh"
+  check_detect "form-${name}" "$root" "$want"
+}
+
+# check_report <ケース名> <期待する報告行> — 直前の run_lint の出力に完全一致行があるか。
+# exit code だけを見ると、別経路で偶然 1 件報告されても pass してしまう。
+check_report() {
+  # 報告行はファイル名と行番号のバイト一致で見る (照合順序を持ち込まないため
+  # LC_ALL=C 固定。env 経由なのは check_bool が "$@" をそのまま実行するため)
+  check_bool "$1" "報告行 '$2' が無い" env LC_ALL=C grep -qF "$2" "$OUT"
+}
+
 # ---------------------------------------------------------------------------
 # 1. clean: 違反なし fixture は exit 0 かつ無出力
 # ---------------------------------------------------------------------------
@@ -105,6 +123,7 @@ cat <<EOF
 EOF
 SH
 check_detect "mutation-heredoc" "$root" 1
+check_report "mutation-heredoc-report" "agents/hooks/bad.sh:3: heredoc-json-prefix"
 
 # ---------------------------------------------------------------------------
 # 3. mutation: echo のリテラルが [ 始まり
@@ -112,6 +131,7 @@ check_detect "mutation-heredoc" "$root" 1
 root=$(new_root mut-echo)
 printf '%s\n' '#!/usr/bin/env bash' "echo '[x] メッセージ'" >"$root/agents/hooks/bad.sh"
 check_detect "mutation-echo" "$root" 1
+check_report "mutation-echo-report" "agents/hooks/bad.sh:2: stdout-json-prefix"
 
 # ---------------------------------------------------------------------------
 # 4. mutation: printf の第 1 引数が { 始まり (JSON リテラル)
@@ -127,6 +147,99 @@ check_detect "mutation-printf-json" "$root" 1
 root=$(new_root mut-printf-arg2)
 printf '%s\n' '#!/usr/bin/env bash' 'printf '"'"'%s\n'"'"' '"'"'[x]'"'"'' >"$root/agents/hooks/bad.sh"
 check_detect "mutation-printf-second-arg" "$root" 1
+
+# ---------------------------------------------------------------------------
+# 5b. 受理側の広さ: いずれも「stdout に JSON 始まりが出る」形。code-reviewer が
+#     実測で素通りを確認した 14 形の回帰ケース (PR のレビュー 1 周目)。
+#     前半 2 形 (heredoc 誤爆) は**そのファイルの残り全部が無検査になる**型で、
+#     この linter が防ごうとしている「静かに壊れる」構図と同じ壊れ方をする。
+# ---------------------------------------------------------------------------
+form_case "tab-heredoc" 1 <<'SH'
+#!/usr/bin/env bash
+cat <<-EOF
+	[tab-indented]
+	EOF
+SH
+
+form_case "here-string" 1 <<'SH'
+#!/usr/bin/env bash
+grep -q foo <<<somevalue
+echo '[after-here-string]'
+SH
+
+form_case "trailing-comment-lt" 1 <<'SH'
+#!/usr/bin/env bash
+foo=bar   # heredoc (<< EOF) is not used here
+echo '[after-trailing-comment]'
+SH
+
+form_case "then" 1 <<'SH'
+#!/usr/bin/env bash
+if [ -n xx ]; then echo '[then-form]'; fi
+SH
+
+form_case "case-branch" 1 <<'SH'
+#!/usr/bin/env bash
+case xx in y) echo '[case-form]' ;; esac
+SH
+
+form_case "brace-group" 1 <<'SH'
+#!/usr/bin/env bash
+{ echo '[brace-group]'; }
+SH
+
+form_case "subshell" 1 <<'SH'
+#!/usr/bin/env bash
+( echo '[subshell]' )
+SH
+
+form_case "do-inline" 1 <<'SH'
+#!/usr/bin/env bash
+for f in a; do echo '[do-inline]'; done
+SH
+
+form_case "stderr-mention-in-literal" 1 <<'SH'
+#!/usr/bin/env bash
+echo "[hint] redirect with >&2 to be safe"
+SH
+
+form_case "stderr-mention-in-comment" 1 <<'SH'
+#!/usr/bin/env bash
+cat <<EOF   # advice: send it to >&2 instead
+[heredoc-with-mention]
+EOF
+SH
+
+form_case "line-continuation" 1 <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' \
+  '[continued-arg]'
+SH
+
+form_case "backslash-terminator" 1 <<'SH'
+#!/usr/bin/env bash
+cat <<\EOF
+[backslash-term]
+EOF
+SH
+
+# issue #215 が「守りたい状態」と定義した形 — 先頭が改行で、その次が JSON 始まり
+form_case "leading-newline-escape" 1 <<'SH'
+#!/usr/bin/env bash
+printf '\n{"a":1}\n'
+SH
+
+form_case "leading-space" 1 <<'SH'
+#!/usr/bin/env bash
+echo ' [x] warn'
+SH
+
+# 引用の中の `<<` は heredoc ではない (mask が誤爆すると後続が無検査になる)
+form_case "quoted-lt-is-not-heredoc" 0 <<'SH'
+#!/usr/bin/env bash
+echo "shift << amount is fine"
+echo "ok"
+SH
 
 # ---------------------------------------------------------------------------
 # 6. 効き目の実測: **実物の session-compact-context.sh** を fixture に置き、
@@ -183,6 +296,18 @@ check_bool "symlink-single-count" "expected 1 hit got ${hits}" [ "$hits" = "1" ]
 root=$(new_root codex-dir)
 printf '%s\n' '#!/usr/bin/env bash' "echo '[x]'" >"$root/codex/hooks/bad.sh"
 check_detect "codex-hooks-scanned" "$root" 1
+
+# ---------------------------------------------------------------------------
+# 9b. 走査 0 件はゲートが消えた状態なので fail させる (緑で通すと、hook
+#     ディレクトリの改名や root の指定ミスで検査が無くなったことに気付けない)
+# ---------------------------------------------------------------------------
+check_detect "zero-scan-fails" "$BASE/does-not-exist" 1
+
+root=$(new_root renamed-dir)
+mv "$root/agents/hooks" "$root/agents/hook"
+printf '%s\n' '#!/usr/bin/env bash' "echo '[x]'" >"$root/agents/hook/bad.sh"
+rmdir "$root/claude/hooks" "$root/codex/hooks"
+check_detect "renamed-dir-fails" "$root" 1
 
 # ---------------------------------------------------------------------------
 # 10. 実リポジトリ: override 無しで exit 0 (end-to-end)

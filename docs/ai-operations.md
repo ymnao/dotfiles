@@ -425,9 +425,13 @@ pin している — 1 文字目だけを見る形は、先頭に空行が入る
 `agents/hooks/session-compact-context.sh` のラベルも `[session-compact-context]`
 から `session-compact-context:` に直した(**Claude Code 専用配線だったので実害は
 出ていなかったが、codex へ配線した瞬間に踏む形だった**)。
-静的解析では「どの出力が先頭行になるか」までは決められないため、変数展開経由の
-出力はこの linter からは見えない。その穴は hook ごとの実行時 pin
-(`tests/session-compact/` と `tests/hooks-integrity/` の先頭行全文 pin)で塞ぐ。
+ただし静的解析なので、拾えるのは**リテラルとして書かれた出力**だけ。変数展開経由の
+出力(`printf '%s\n' "$x"`)や 1 行に複数の heredoc を開く形は見えない。現状その穴を
+補っているのは hook ごとの実行時 pin で、`tests/session-compact/` と
+`tests/hooks-integrity/` の 2 本に先頭行全文 pin がある(**新しく stdout を出す hook を
+codex に配線するときは同じ pin を足すこと** — 自動では強制されない)。
+linter の取りこぼしを見つけたら、`tests/lint-hook-stdout/` に `form_case` として
+回帰ケースを足してから直す。
 
 ### scope 外(別 issue)
 

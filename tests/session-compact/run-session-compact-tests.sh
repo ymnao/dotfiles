@@ -28,6 +28,10 @@ trap cleanup EXIT
 pass=0
 fail=0
 
+# 期待実行ケース数は**独立した定数**として持つ (ケース定義から導出しない。
+# 導出するとケースが消えたとき下限も一緒に下がって検出が無効化される)。
+EXPECTED_CASES=8
+
 check() {
   if [ "$3" = "$2" ]; then
     pass=$((pass + 1))
@@ -89,5 +93,11 @@ printf '%s' "$out3" | grep -q "feature/compact-test" && pass=$((pass + 1)) \
 
 echo "----"
 echo "session-compact tests: $pass passed, $fail failed"
+# 数えるのは pass ではなく実行数 (pass + fail)。pass を見ると「実行されたが FAIL した」を
+# 「実行されていない」と誤って報告する。
+if [ "$((pass + fail))" != "$EXPECTED_CASES" ]; then
+  echo "FAIL case-count: expected ${EXPECTED_CASES} cases, ran $((pass + fail)) (ケースの取りこぼし)"
+  exit 1
+fi
 [ "$fail" = 0 ] || exit 1
 exit 0
