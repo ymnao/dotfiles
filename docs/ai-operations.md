@@ -323,18 +323,19 @@ hook 本体とテストのコメントはこの節を指すだけに留めてあ
 書くと、codex の upgrade で挙動が変わったときに片方だけ更新されて食い違うため)。
 **codex を upgrade したら §10 冒頭の trusted_hash とあわせてここも再確認する**。
 
-**Claude Code 側の挙動は実装非公開のため同じようには確認できない**。以下で
-「Claude Code 側では素通し」と書いているのは、この repo での運用上の観測
+**Claude Code 側はソースが公開されていないので、根拠の強さが項目ごとに違う**。
+matcher の突合方式(下の 2b)は配布バイナリを読んで確認したが、
+「Claude Code 側では stdout が素通し」(下の 3)はこの repo での運用上の観測
 (SessionStart hook の stdout がそのまま context に入っており、JSON 風かどうかで
-落ちた例が無い)に基づく。codex 側の記述と根拠の強さが違う点に注意。
+落ちた例が無い)にとどまる。どちらも codex 側の記述と根拠の強さが違う点に注意。
 
 **1. matcher は SessionStart でも有効**。突合対象は `SessionStartSource` の
 `startup` / `resume` / `clear` / `compact`。matcher が無視される(実装上
 `matcher_pattern_for_event` が `None` を返す)のは **`UserPromptSubmit` と `Stop` の
 2 イベントだけ**(`codex-rs/hooks/src/events/common.rs`、同 `session_start.rs`)。
 
-**2. matcher の突合方式は 2 通りに分岐する**(同 `common.rs` の `matches_matcher`)。
-Claude Code の regex 一本槍とは違うので、ここを取り違えるとテストだけが通る:
+**2. matcher の突合方式は 3 通りに分岐する**(同 `common.rs` の `matches_matcher`)。
+ここを取り違えるとテストだけが通る:
 
 | matcher | 判定 |
 |---|---|
@@ -347,6 +348,43 @@ Claude Code の regex 一本槍とは違うので、ここを取り違えると�
 綴り違いが「一致する」と判定されて通るのに codex では一度も発火しない。よって
 `tests/hooks-integrity/run-hooks-integrity-tests.sh` の codex 側 matcher 検査は
 **全文 pin** にしてある。
+
+**2b. Claude Code 側も同じ 3 分岐だった**(2026-08-01 実測、`claude` 2.1.212)。
+以前この節には「Claude Code の regex 一本槍とは違う」と書いてあり、それを根拠に
+ケース 12(Claude 側)だけ部分一致の緩い検査を許していたが、**前提が誤っていた**。
+host のバイナリ(`/opt/homebrew/Caskroom/claude-code/2.1.212/claude`)の
+matcher 関数は、matcher が `^[a-zA-Z0-9_|, -]+$` に当たると
+`split(/[|,]/)` して `.includes(source)` で**完全一致**判定し、regex
+(`new RegExp(matcher)`)を使うのはそれ以外の形のときだけ。`""` / `*` が
+無条件 match なのも同じ。よって `startup|resume|clear|fork` は **exact 一致**側で、
+codex とまったく同じ穴が開く。ケース 12 も **全文 pin** に直した。
+
+根拠の強さは codex 側と違う点に注意 — codex は upstream のソース、こちらは
+**配布バイナリの minify 済みバンドル**から読んだもので、版が上がれば黙って
+変わりうる。**Claude Code を upgrade したらここも再確認する**。
+
+**2c. `fork` を matcher に含めている理由**(2026-08-01、公式 hooks docs
+`code.claude.com/docs/en/hooks` で確認)。SessionStart の source は
+`startup` / `resume` / `clear` / `compact` / `fork` の 5 値で、`fork` は
+セッション複製(`--fork-session` + `--resume`/`--continue`、`/fork` の
+バックグラウンド複製、`/branch`)で報告される。docs に
+"Before v2.1.214, forked sessions reported source `resume`" と明記されており、
+実際 host の 2.1.212 のバイナリ内の source 列挙は
+`["startup","resume","clear","compact"]` で `fork` を含まない。
+
+つまり**今の host では一度も match しない代わりに、足さないまま CLI を
+2.1.214 以上に上げると複製セッションで改変検知が一度も発火しなくなる**。
+先に入れておけば穴が開く瞬間が来ない(issue #245 step 1)。codex 側の
+`SessionStartSource` は 4 値で `fork` を持たないため、`codex/hooks.json` は
+`startup|resume|clear` のまま。
+
+**2d. 両 harness とも `compact` を意図的に拾わない理由**。`compact` は
+会話の継続であってセッションの開始ではなく、同じ警告を 1 セッション内で
+繰り返すと warn-only の signal が摩耗する。`compact` は別 entry
+(`session-compact-context.sh`)が担当している。なお仮に拾っても
+`hooks-integrity-warn.sh` が 2 回走るわけではない(matcher group が別なら
+それぞれの hook が 1 回ずつ走るだけ)ので、**避けたいのは二重発火ではなく
+警告の摩耗**。
 
 **3. hook の stdout が `{` または `[` で始まると、警告は model の context に入らない**。
 codex は `looks_like_json`(`codex-rs/hooks/src/engine/output_parser.rs`)でその 2 文字を

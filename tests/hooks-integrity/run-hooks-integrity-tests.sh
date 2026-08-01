@@ -275,40 +275,29 @@ check_symlink_to_canonical "$REPO_ROOT/claude/hooks/hooks-integrity-warn.sh"
 # (scripts/link.sh / link.ps1)、ここに実体ファイルを置くと正本と drift する (issue #215)。
 check_symlink_to_canonical "$REPO_ROOT/codex/hooks/hooks-integrity-warn.sh"
 
-# --- 12. 配線: settings.json の SessionStart entry が compact 以外の対象イベントを拾う ---
-# 見出しに件数を書かないのは、Claude Code 側にイベントが増えるたび (2.1.214 の `fork`)
-# 見出しとループの両方を直す必要が出るため。
+# --- 12. 配線: settings.json の SessionStart entry の matcher ---
 matcher=$(jq -r '
   .hooks.SessionStart[]
   | select([.hooks[].command] | any(test("hooks-integrity-warn\\.sh")))
   | .matcher
 ' "$REPO_ROOT/claude/settings.json")
 check_cmd "SessionStart に hooks-integrity-warn.sh の entry が 1 つあること" [ -n "$matcher" ]
-# matcher は正規表現なので、部分文字列ではなく「実イベント名に一致するか」で判定する
-# (`startup-broken|...` のような実イベントに当たらない値を通さないため)。
-matches_re() {
-  # $1=検査する文字列, $2=正規表現
-  [[ "$1" =~ $2 ]]
-}
-not_matches_re() {
-  ! matches_re "$1" "$2"
-}
-# `fork` は 2.1.214 以降、セッション複製 (`--fork-session` / `/fork` / `/branch`) の
-# source として報告される (公式 hooks docs で確認、2026-08-01)。それより前は `resume`
-# として報告されていたため、古い CLI で足しても一度も match しない代わりに、
-# **足さないまま CLI を上げると複製セッションで改変検知が一度も発火しなくなる** (issue #245)。
-for ev in startup resume clear fork; do
-  check_cmd "SessionStart matcher が ${ev} に一致すること (got: ${matcher})" \
-    matches_re "$ev" "$matcher"
-done
-# 非対象イベントまで拾う緩い matcher (例: 空文字 / `.*`) になっていないこと
-check_cmd "SessionStart matcher が無関係なイベントに一致しないこと (got: ${matcher})" \
-  not_matches_re "no-such-event" "$matcher"
-# `compact` を拾わないこと。上の `no-such-event` は `.*` のような match-all を弾くが、
-# 「`compact` を明示的に足す」変更は通してしまう。compact は別 entry
-# (session-compact-context.sh) が担当しており、ここで拾うと二重発火になる。
-check_cmd "SessionStart matcher が compact に一致しないこと (got: ${matcher})" \
-  not_matches_re "compact" "$matcher"
+# matcher は **全文 pin** で受ける。以前はここを bash の `=~` (部分一致) で
+# 「実イベント名に一致するか」を 1 件ずつ見る形にしていたが、それは
+# **「Claude Code の matcher は regex 一本槍」という誤った前提に立っていた**。
+# 実際は codex と同じ 3 分岐で評価され、英数字と `|` だけの matcher は
+# **exact 一致**の側に入る (実測根拠は docs/ai-operations.md §10)。
+# 部分一致で検査すると `tartup|esume|lear|ork` のような綴り違いが全 assert を
+# 通るのに一度も発火しない — 12b が codex 側で明示的に塞いでいる穴と同型。
+# 全文 pin なら空 matcher / `*` (match-all) / 綴り違い / `compact` の混入 /
+# `fork` の脱落がすべて 1 件で落ちる。
+#
+# 期待値は settings.json から導出せず独立した定数として持つ (claude/rules/shell.md)。
+# `compact` を含めないのは意図的な除外で、理由は docs/ai-operations.md §10 に置く。
+# `fork` を含めるのは 2.1.214 以降セッション複製の source が `resume` から `fork` に
+# 変わるため (同 §10。足さないまま CLI を上げると複製セッションで発火しなくなる)。
+check_cmd "SessionStart matcher が startup|resume|clear|fork で pin されていること (got: ${matcher})" \
+  [ "$matcher" = "startup|resume|clear|fork" ]
 # command は完全一致で pin する (パス誤記や余計なコマンドの混入を通さない)
 entry=$(jq -r '
   .hooks.SessionStart[].hooks[]
@@ -319,12 +308,13 @@ check_cmd "SessionStart entry が type/timeout/command とも期待どおりで�
   [ "$entry" = 'command|10|bash "$HOME/.claude/hooks/hooks-integrity-warn.sh"' ]
 
 # --- 12b. 配線 (codex): hooks.json の SessionStart entry (issue #215) ---
-# **Claude 側 (ケース 12) と同じ regex 検査を掛けてはいけない**。codex の matcher は
-# 条件次第で regex ではなく完全一致として評価される (実測根拠は
+# codex の matcher は条件次第で regex ではなく完全一致として評価される (実測根拠は
 # docs/ai-operations.md §10)。bash の `=~` は部分一致なので、`tartup|esume|lear` の
 # ような綴り違いが全 assert を通るのに codex では一度も発火しない。受理側の口が
 # 広いまま fail-closed のつもりになる形なので (claude/rules/shell.md)、
-# matcher は **全文 pin** で受ける。
+# matcher は **全文 pin** で受ける。ケース 12 (Claude 側) も同じ理由で全文 pin —
+# 以前はここだけ codex 固有の危険として書いていたが、実測すると Claude Code も
+# 同じ 3 分岐で評価しており、区別する理由は無かった (§10)。
 codex_matcher=$(jq -r '
   .hooks.SessionStart[]
   | select([.hooks[].command] | any(test("hooks-integrity-warn\\.sh")))
@@ -333,9 +323,8 @@ codex_matcher=$(jq -r '
 check_cmd "codex/hooks.json の SessionStart に hooks-integrity-warn.sh の entry が 1 つあること" \
   [ -n "$codex_matcher" ]
 # 全文 pin なので、空 matcher / `*` (codex では match-all) / イベント名の綴り違いは
-# すべて落ちる。compact を含めないのは Claude 側の配線 (session-compact-context.sh) と
-# 揃えた意図的な除外 — 会話継続であってセッション開始ではなく、同じ警告を
-# 1 セッション内で繰り返すと warn-only の signal が摩耗するため。
+# すべて落ちる。compact を含めないのは Claude 側と揃えた意図的な除外 (理由は §10)。
+# `fork` を含めないのは codex の SessionStartSource が 4 値で fork を持たないため (同 §10)。
 check_cmd "codex SessionStart matcher が startup|resume|clear で pin されていること (got: ${codex_matcher})" \
   [ "$codex_matcher" = "startup|resume|clear" ]
 # entry 側も完全一致で pin する。matcher / timeout / statusMessage / command は
