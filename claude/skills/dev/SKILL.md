@@ -43,7 +43,9 @@ main にいる場合は `feature/` `fix/` `refactor/` `docs/` + 英語小文字�
 まるごと skip。`.claude/stop-gate.conf` と同じ opt-in 方式)。書式は
 `KEY=VALUE` の 1 行ずつ、`#` 始まりはコメント。
 
-`BACKLOG_CAP` があれば `gh issue list --state open --limit 100 --jq 'length'`
+`BACKLOG_CAP` があれば
+`gh issue list --state open --limit 100 --json number --jq 'length'`
+(`--jq` は `--json` 無しでは `cannot use --jq without specifying --json` で落ちる)
 で実数を取り、**超過していたら 1 行報告するだけで着手は止めない**。
 
 上限そのものは在庫の症状を抑える対症療法であり、原因ではない。ここでの

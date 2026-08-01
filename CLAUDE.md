@@ -9,6 +9,8 @@ dotfiles リポジトリ。各種開発ツールの設定ファイルを管理�
 skill / hook / テスト / CI は、この目的を安全に達成するための**手段**であって目的ではない。
 作業の行き先を判断するときはこの 1 文に照らす（`/pr` の起票ゲートが参照する）。
 
+目的側（日常設定）のタスクは**事前の棚卸しでは見つからない** — 使っていて摩擦を踏んだ瞬間にしか具体化しないため、在庫として積むのではなく**踏んだその場で issue に落とす**。手段側（skill / hook / test / CI）はレビューが finding を生むので放っておいても在庫が積み上がる。両者を比率で管理しない（2026-08-01 に `INWARD_RATIO_MAX` を廃止した経緯は `.claude/backlog.conf` のコメント参照）。
+
 ## 構造の要点
 
 - 各ディレクトリ（fish/, nvim/, wezterm/ 等）が1ツールの設定に対応
@@ -23,7 +25,7 @@ skill / hook / テスト / CI は、この目的を安全に達成するため�
 - `claude/statusline.sh` → `~/.claude/statusline.sh` にシンボリックリンク（Claude Code の statusline スクリプト）
 - `starship/starship.toml` → `~/.config/starship.toml` にシンボリックリンク（Starship プロンプト設定、fish から init される）
 - `.claude/stop-gate.conf` はリポジトリごとの Stop hook 検証ゲート設定（`claude/hooks/stop-verify-gate.sh` が参照するオプトインファイル）
-- `.claude/backlog.conf` はリポジトリごとの配分・backlog 観測設定（`/dev` と `/next` が参照するオプトインファイル。`INWARD_RATIO_MAX` が本体の指標、`BACKLOG_CAP` は煙探知機）
+- `.claude/backlog.conf` はリポジトリごとの backlog 観測設定（`/dev` と `/next` が参照するオプトインファイル。`BACKLOG_CAP` は起票ゲートの煙探知機）
 - `tests/` — hook・スクリプトの回帰テスト群（make test で全実行）
 - `claude/templates/` — 新規プロジェクト用の CLAUDE.md テンプレート（5 種）
 - `.github/scripts/` — CI 専用スクリプトの置き場（workflow から `bash <path>` で起動する。CI 依存のバージョン pin と SHA256 の正本もここ）

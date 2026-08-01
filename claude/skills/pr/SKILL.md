@@ -128,7 +128,7 @@ tier: <tier> — <reasons を列挙>
 
 ## 追跡先
 backlog delta: 起票 <N> 件 / 本 PR で close <M> 件 / 現在 open <合計> 件
-<起票 0 件でも行ごと省略しない。open 合計は `gh issue list --state open --limit 100 --jq 'length'` の実測値を書く。起票が 1 件を超えたら理由 (user 承認の要約) を併記する>
+<起票 0 件でも行ごと省略しない。open 合計は `gh issue list --state open --limit 100 --json number --jq 'length'` の実測値を書く (`--jq` は `--json` 無しでは落ちる)。起票が 1 件を超えたら理由 (user 承認の要約) を併記する>
 
 <本 PR で fix しない finding ((b) 起票 / (c) 対応しない) を列挙。0 件なら「なし」とだけ書き、表は省略。Finding 列は `file:line — 短い summary(30 字以内)` の compound identifier で書く(codex-review Report format 表には file:line 列が無く、参照だけでは同定不能なため、短い summary を併記して人間可読性を確保)。URL 列は (b) なら起票済み issue URL、(c) なら「追跡しない (user 指示: <承認要約>)」を書く。normal PR で `defer(未起票)` を残すのは不可 — hook が block する。draft のみ `defer(未起票)` を許容(起票失敗 = step 4 pending の一時待避)>
 
