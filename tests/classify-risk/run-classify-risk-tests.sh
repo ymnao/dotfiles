@@ -331,10 +331,25 @@ scenario sh-eval-paren-prose medium <<EOF
 scripts/doc.sh${T}# この JSON は (eval が literal "tier" を読むため) verbatim に転記する
 EOF
 
-# CMDPOS の位置集合にバッククォートを入れない回帰。Markdown のインラインコードで
-# 頻出するので、位置集合に \` を足すとこのケースが high に転ぶ
+# CMDPOS / OPENPOS の位置集合にバッククォートを入れない回帰。Markdown の
+# インラインコードで頻出するので、位置集合に \` を足すとこのケースが high に転ぶ。
+# BACKTICK 経路 (issue #230) が展開文字を含まない散文インラインコードに発火しない
+# 回帰も兼ねる — EVAL_QNB を EVAL_Q に戻すと行末の \`\$HOME\` の \` で充足されて high
 scenario md-eval-inline-code low <<EOF
 claude/skills/foo/SKILL.md${T}- \`eval ls -la\` は静的リテラルの例。\`\$HOME\` も参照
+EOF
+
+# BACKTICK 経路 (issue #230) の TP: バッククォートのコマンド置換内の eval。
+# ADJACENT は \` の後の \`[\` で、CMDPOS/OPENPOS は位置集合に \` が無いことで
+# 当たらないため、この経路が無いと SKILL.md 単独変更が tier=low = 無レビューになる
+scenario md-eval-backtick-subst high <<EOF
+claude/skills/foo/SKILL.md${T}x=\`eval arr[\$i]=\$UNTRUSTED\`
+EOF
+
+# BACKTICK 経路の区間限定 (\`[^\`]*\`) の回帰。バッククォート区間の**外**に展開文字が
+# あるだけでは発火しない。\`[^\`]*\` を \`.*\` に緩めるとこのケースが high に転ぶ
+scenario md-eval-backtick-outside-dollar low <<EOF
+claude/skills/foo/SKILL.md${T}- \`eval ls -la\` を \$HOME で実行する例
 EOF
 
 # doc + code 混在で code 側に exec-pattern があれば従来通り high

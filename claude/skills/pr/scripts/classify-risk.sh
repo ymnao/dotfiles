@@ -110,7 +110,7 @@ check_path "infra"        'Dockerfile|docker-compose|\.tf$|\.tfvars$'
 # exec-pattern の `eval` は、シェルの実行構文として読める形だけを検出する
 # (issue #227)。散文中の「eval」の語では発火させないが、実行形を取りこぼすと
 # `.md` 単独 diff は tier=low = 無レビューになるため、FN は FP より高くつく。
-# 4 経路の OR で、どれか 1 つでも当たれば検出する:
+# 5 経路の OR で、どれか 1 つでも当たれば検出する:
 #   ADJACENT — eval から展開・引用文字までが、シェルの語として解釈できる
 #     ASCII トークンだけで繋がっている形。`run: eval "$x"` のように行の途中に
 #     前置がある実行指示形を拾うのが役割 (位置に依存しない)
@@ -130,17 +130,31 @@ check_path "infra"        'Dockerfile|docker-compose|\.tf$|\.tfvars$'
 #   LINECONT — 行末が `eval \` の形。引数が次行にあるため grep の行単位
 #     マッチでは中身を見られないので、この形自体を検出対象にする。
 #     eval の左側に語境界を要求する (`preeval \` `re-eval \` を弾くため)
-# 位置集合にもどの経路にも入れられないもの:
-#   バッククォート — Markdown のインラインコード (`` `eval ls -la` ``) と
-#     コマンド置換 (`` x=`eval arr[$i]=$X` ``) が、どちらも「バッククォート +
-#     eval + ASCII トークン」の形で区別できない (OPENPOS の条件が効かない)。
-#     このため `` `eval arr[$i]=$X` `` は取りこぼす
-# 既知の非検出: 展開も引用も一切含まない静的リテラルの `eval ls -la`
+#   BACKTICK — バッククォートのコマンド置換の中の eval
+#     (`` x=`eval arr[$i]=$X` ``)。位置集合 (CMDPOS / OPENPOS) にバッククォートを
+#     足す形では塞げない。真因は**`EVAL_Q` 自身がバッククォートを含む**ことで、
+#     `.*${EVAL_Q}` の条件が「行内のどこかにバッククォートがある」だけで自明に
+#     充足される。Markdown のインラインコード行は必ず閉じバッククォートを持つ
+#     ので、位置集合に足すと散文 (`` `eval ls -la` は静的リテラルの例 ``) が
+#     無条件に発火する。そこで独立経路にして 2 点を要求する:
+#       (a) 展開・引用文字の集合から backquote を除く (EVAL_QNB)
+#       (b) `[^`]*` で、**閉じバッククォートに達する前に**その文字が現れること
+#     これで「バッククォート区間の中で展開が起きている」形だけを取れる。
+#     区間の外に `$` があるだけの散文 (`` `eval ls -la` を $HOME で実行 ``) は
+#     発火しない (issue #230)
+# 既知の非検出:
+#   `` `eval "$x"` `` は BACKTICK 経路には当たらない (eval の次が `"` で
+#     EVAL_WORD に入らない) が、ADJACENT が拾うので FN にはならない。
+#   `` x=$(eval arr[$i]=$X) `` は OPENPOS の `(` 分岐が拾う。
+#   展開も引用も一切含まない静的リテラルの `eval ls -la`
 # (動的展開が無く、このルールが見ているリスクに当たらないため意図的)。
-# 実測 (tracked 行に `+` を前置した added_code 相当のコーパスに対するマッチ
-# ファイル数): 旧 `eval ` = 58 / ADJACENT のみ = 5 / 現行の 4 経路 = 5。
+# 実測 (2026-08-02、tracked 行に `+` を前置した added_code 相当のコーパスに
+# 対するマッチファイル数): 旧 `eval ` = 57 / ADJACENT のみ = 8 /
+# 4 経路 = 10 / BACKTICK を足した 5 経路 = 10。**5 経路にしても増分 0** で、
+# BACKTICK は repo 内の既存ファイルを 1 件も新たに拾わない
+# (issue #227 時点の記録は 58 / 5 / 5。コーパス側が変わったための差)。
 # 手で組んだ検体では危険形 24 種を 24 件とも検出、散文 11 種は 0 件検出。
-# 4 経路それぞれの検出責務は mutation check で確認済み (経路を 1 つ落とすと
+# 5 経路それぞれの検出責務は mutation check で確認済み (経路を 1 つ落とすと
 # tests/classify-risk の対応ケースが FAIL する)。
 # なお下の例示コメント自身がこのパターンにマッチするため、このファイルを触る
 # PR は tier=high になる。実行構文の具体例を残す方を優先した意図的な結果で、
@@ -151,7 +165,12 @@ EVAL_ADJACENT="eval([[:space:]]+${EVAL_WORD}+)*[[:space:]]+(${EVAL_WORD}*[=_])?$
 EVAL_CMDPOS="(^\\+|[;&{!]|\\|\\||(^|[^A-Za-z0-9_])(then|do|else|elif)[[:space:]])[[:space:]]*eval[[:space:]].*${EVAL_Q}"
 EVAL_OPENPOS="[(|][[:space:]]*eval[[:space:]]+${EVAL_WORD}.*${EVAL_Q}"
 EVAL_LINECONT='(^|[^A-Za-z0-9_-])eval[[:space:]]*\\$'
-check_content "exec-pattern"        "${EVAL_ADJACENT}|${EVAL_CMDPOS}|${EVAL_OPENPOS}|${EVAL_LINECONT}|child_process|subprocess|os\\.system|exec\\(|dangerouslySetInnerHTML"
+# EVAL_Q から backquote を除いた集合。EVAL_BACKTICK の (a) に対応する。
+# バッククォートは二重引用符の中だとコマンド置換になるので、EVAL_Q と同じく
+# 単一引用符側に置いて連結する
+EVAL_QNB='["$'"'"']'
+EVAL_BACKTICK='`[[:space:]]*eval[[:space:]]+'"${EVAL_WORD}"'[^`]*'"${EVAL_QNB}"
+check_content "exec-pattern"        "${EVAL_ADJACENT}|${EVAL_CMDPOS}|${EVAL_OPENPOS}|${EVAL_LINECONT}|${EVAL_BACKTICK}|child_process|subprocess|os\\.system|exec\\(|dangerouslySetInnerHTML"
 check_content "pipe-to-shell"       '(curl|wget)[^|;]*\|[[:space:]]*(ba|z|da)?sh'
 check_content "permission-widening" 'chmod (777|666)|--dangerously|--no-verify'
 check_deleted "test-removal" '(^|/)(tests?|__tests__|spec)/|\.(test|spec)\.[a-z]+$|_test\.(go|py|rb|ts|tsx|js|jsx)$|\.cases\.jsonl$'
