@@ -45,7 +45,7 @@ export LC_ALL=C
 # 指すのに使う)。デフォルトは linter 自身のあるリポジトリ root。
 scan_root="${LINT_HOOK_STDOUT_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 
-scan_dirs="agents/hooks claude/hooks codex/hooks"
+scan_dirs=(agents/hooks claude/hooks codex/hooks)
 
 # 走査は awk 1 プロセスに全ファイルを渡して行う (ファイルごとに fork しない)。
 # ファイル境界では heredoc 追跡状態を必ずリセットする — 前のファイルが heredoc を
@@ -61,7 +61,9 @@ scan_files() {
 
         # 引用の中身を \001 に潰し、未引用の行末コメントを捨てたマスク行を返す。
         # 添字は元の行と 1 対 1 で対応する (コメント以降が短くなるだけ)。
-        function mask(line,   i, n, ch, q, out) {
+        # `$(( ))` の中身も潰す — 算術の `1 << 3` を heredoc 開始と誤認すると、
+        # 以降そのファイル全体が本文扱いで無検査になる。
+        function mask(line,   i, n, ch, q, out, depth) {
             n = length(line); q = ""; out = ""
             for (i = 1; i <= n; i++) {
                 ch = substr(line, i, 1)
@@ -70,12 +72,38 @@ scan_files() {
                     if (ch == q) { out = out ch; q = ""; continue }
                     out = out "\001"; continue
                 }
+                if (ch == "$" && substr(line, i + 1, 2) == "((") {
+                    depth = 0
+                    out = out "$(("
+                    i += 2
+                    while (++i <= n) {          # 対応する )) まで潰す
+                        ch = substr(line, i, 1)
+                        if (ch == "(") depth++
+                        else if (ch == ")") {
+                            if (depth == 0 && substr(line, i + 1, 1) == ")") { out = out "))"; i++; break }
+                            depth--
+                        }
+                        out = out "\001"
+                    }
+                    continue
+                }
+                if (ch == "$" && substr(line, i + 1, 1) == "'"'"'") {
+                    # ANSI-C quoting ($'...') は 1 個の引用トークンとして扱う
+                    out = out "$'"'"'"; q = "'"'"'"; i++
+                    continue
+                }
                 if (ch == "\\") { out = out ch "\001"; i++; continue }
                 if (ch == "'"'"'" || ch == "\"") { q = ch; out = out ch; continue }
-                if (ch == "#" && (i == 1 || substr(line, i - 1, 1) ~ /[[:space:]]/)) break
+                # コメントは行頭・空白の後だけでなく ; & | ( の直後でも始まる
+                if (ch == "#" && (i == 1 || substr(line, i - 1, 1) ~ /[[:space:];&|(]/)) break
                 out = out ch
             }
             return out
+        }
+
+        # segment の出力先が stderr かどうか。`>& 2` の空白と `> /dev/stderr` も拾う。
+        function to_stderr(seg) {
+            return (seg ~ /[0-9]?>&[[:space:]]*2([^0-9]|$)/ || seg ~ />[[:space:]]*\/dev\/stderr/)
         }
 
         # マスク行を見て segment 境界 (unquoted な ; | & ( ) { }) の添字を segs に積む。
@@ -109,6 +137,9 @@ scan_files() {
             while (i <= n) {
                 ch = substr(m, i, 1)
                 if (ch == " " || ch == "\t") { i++; continue }
+                # $'...' は引用トークン。$ を飛ばして中身を見る
+                if (ch == "$" && substr(m, i + 1, 1) == "'"'"'") i++
+                ch = substr(m, i, 1)
                 if (ch == "'"'"'" || ch == "\"") {
                     j = index(substr(m, i + 1), ch)
                     if (j == 0) return 0   # 閉じ引用が無い — 判定しない
@@ -146,11 +177,21 @@ scan_files() {
             }
             if (term == "") return 0
             hd_term = term
-            hd_stderr = (m ~ />&2/)
+            hd_pos = p
             return 1
         }
 
-        FNR == 1 { in_hd = 0 }
+        # heredoc が閉じないままファイルが終わるのは、解析が `<<` を誤検出した
+        # (= 以降そのファイルが丸ごと無検査になった) 兆候。無言で緑にせず報告する。
+        function check_unclosed() {
+            if (in_hd) {
+                printf "%s:%d: unclosed-heredoc\n", hd_file, hd_line > "/dev/stderr"
+                in_hd = 0
+            }
+        }
+
+        FNR == 1 { check_unclosed() }
+        END { check_unclosed() }
 
         {
             if (in_hd) {
@@ -175,18 +216,25 @@ scan_files() {
             m = mask(line)
             if (m ~ /^[[:space:]]*$/) next
 
-            if (heredoc_start(line, m)) { in_hd = 1; next }
-
             cnt = split_points(m, segs)
+            hd_pos = 0
+            hd_stderr = 0
+            has_hd = heredoc_start(line, m)
+
+            # segment 検査は heredoc 追跡に入る**前**に行う。`echo '[x]'; cat <<EOF`
+            # のように、heredoc 開始より前に置かれた出力を取りこぼさないため。
             for (s = 1; s < cnt; s++) {
                 start = segs[s]
                 len = segs[s + 1] - start - 1
                 if (len <= 0) continue
                 seg_m = substr(m, start, len)
-                if (seg_m ~ />&2/) continue
-                # 制御構文の直後に続く echo / printf も対象にする
-                # (`then echo ...` / `do echo ...`。( ) { } と ; | & は segment 境界)
-                if (seg_m !~ /^[[:space:]]*((then|else|elif|do)[[:space:]]+)*(echo|printf)[[:space:]]/) continue
+                if (has_hd && hd_pos >= start && hd_pos < start + len) {
+                    hd_stderr = to_stderr(seg_m)   # heredoc 本文の宛先はこの segment で決まる
+                }
+                if (to_stderr(seg_m)) continue
+                # 制御構文と前置の変数代入をまたいだ echo / printf も対象にする
+                # (`then echo ...` / `LC_ALL=C echo ...`。( ) { } と ; | & は segment 境界)
+                if (seg_m !~ /^[[:space:]]*((then|else|elif|do)[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*(echo|printf)[[:space:]]/) continue
                 if (!match(seg_m, /(echo|printf)[[:space:]]/)) continue
                 if (bad_literal(substr(line, start, len), seg_m, RSTART + RLENGTH)) {
                     printf "%s:%d: stdout-json-prefix\n", FILENAME, ln > "/dev/stderr"
@@ -194,6 +242,8 @@ scan_files() {
                 }
             }
             delete segs
+
+            if (has_hd) { in_hd = 1; hd_file = FILENAME; hd_line = ln }
         }
     ' "$@"
 }
@@ -201,7 +251,7 @@ scan_files() {
 # 存在するディレクトリだけを find に渡す (無いディレクトリを渡すと find が
 # エラーで非 0 を返す)。
 existing_dirs=()
-for d in $scan_dirs; do
+for d in "${scan_dirs[@]}"; do
     if [ -d "${scan_root}/${d}" ]; then
         existing_dirs+=("$d")
     fi
@@ -217,7 +267,7 @@ fi
 # 走査 0 件は「ゲートが静かに消えた」状態 (ディレクトリ改名・root の指定ミス)。
 # 緑で通すと検査が無くなったことに気付けないので fail させる。
 if [ "${#files[@]}" -eq 0 ]; then
-    echo "lint-hook-stdout: 走査対象が 0 件です (root=${scan_root}, dirs=${scan_dirs})" >&2
+    echo "lint-hook-stdout: 走査対象が 0 件です (root=${scan_root}, dirs=${scan_dirs[*]})" >&2
     echo "hook ディレクトリの改名か root の指定ミスを疑ってください" >&2
     exit 1
 fi

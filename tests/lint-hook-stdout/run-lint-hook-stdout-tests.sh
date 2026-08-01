@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# linter の exit code を検査対象として自分で扱うため `set -e` は付けない
+# (`-e` だと違反あり = exit 1 の時点でスイートごと落ちる)。
 set -uo pipefail
 
 # scripts/lint-hook-stdout.sh の回帰テスト (issue #240)。
@@ -35,7 +37,7 @@ ran=0
 
 # 期待実行ケース数は**独立した定数**として持つ (ケース定義から導出しない。
 # 導出するとケースが消えたとき下限も一緒に下がって検出が無効化される)。
-EXPECTED_CASES=33
+EXPECTED_CASES=44
 
 # run_lint <fixture root> — 出力は $OUT に書き、exit code は $rc に入れる。
 # コマンド置換で受けると subshell になり rc が呼び出し元に返らないため、
@@ -239,6 +241,79 @@ form_case "quoted-lt-is-not-heredoc" 0 <<'SH'
 #!/usr/bin/env bash
 echo "shift << amount is fine"
 echo "ok"
+SH
+
+# ---------------------------------------------------------------------------
+# 5c. codex-review (shell-senior) と code-reviewer 2 周目が実測で挙げた形。
+#     前半 4 形は「解析が `<<` を誤検出してファイル全体が無検査になる」型で、
+#     閉じない heredoc として **unclosed-heredoc** で必ず表面化させる
+#     (無言で緑にすると、この linter 自身が静かに消える)。
+# ---------------------------------------------------------------------------
+form_case "heredoc-after-echo" 1 <<'SH'
+#!/usr/bin/env bash
+echo '[before-heredoc]'; cat <<EOF
+body
+EOF
+SH
+
+form_case "ansi-c-quote" 1 <<'SH'
+#!/usr/bin/env bash
+printf $'{"a":1}\n'
+SH
+
+form_case "var-assign-prefix" 1 <<'SH'
+#!/usr/bin/env bash
+LC_ALL=C echo '[x]'
+SH
+
+form_case "arith-shift" 1 <<'SH'
+#!/usr/bin/env bash
+x=$((1 << 3))
+echo '[after-shift]'
+SH
+
+form_case "multiline-string-lt" 1 <<'SH'
+#!/usr/bin/env bash
+usage="usage:
+  cmd << EOF"
+echo '[after-multiline-string]'
+SH
+# 報告は「`<<` を拾った行」= 引用の 2 行目 (3 行目)。ここがずれると
+# 追跡開始位置の取り違えを見逃す
+check_report "multiline-string-lt-unclosed" "agents/hooks/x.sh:3: unclosed-heredoc"
+
+form_case "comment-after-semicolon" 1 <<'SH'
+#!/usr/bin/env bash
+echo ok;#<< EOF
+echo '[after-inline-comment]'
+SH
+
+form_case "heredoc-stderr-other-segment" 1 <<'SH'
+#!/usr/bin/env bash
+{ echo warn >&2; cat <<EOF; }
+[should-be-flagged]
+EOF
+SH
+
+# --- 以下は非検出が正しい形 (受理側を広げすぎていないかの対照) ---
+
+form_case "ok-arith-shift" 0 <<'SH'
+#!/usr/bin/env bash
+x=$((1 << 3))
+echo "ok ${x}"
+SH
+
+form_case "ok-stderr-variants" 0 <<'SH'
+#!/usr/bin/env bash
+echo '[x]' > /dev/stderr
+echo '[y]' >& 2
+SH
+
+form_case "ok-heredoc-to-stderr" 0 <<'SH'
+#!/usr/bin/env bash
+cat >&2 <<EOF
+[stderr body]
+EOF
 SH
 
 # ---------------------------------------------------------------------------
