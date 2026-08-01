@@ -30,9 +30,40 @@ check() {
 }
 
 matcher_matches() {
-  # $1=matcher regex, $2=tool name
-  # Claude Code の hook matcher は Perl 相当の正規表現。bash の =~ で近似 (unanchored 動作を再現)
-  [[ "$2" =~ $1 ]]
+  # $1=matcher, $2=ツール名, $3=harness (claude|codex)
+  #
+  # **両 harness とも matcher は「正規表現一本槍」ではない**。match-all / 完全一致 /
+  # regex の 3 分岐で評価され、英数字と区切り文字だけの matcher は **完全一致**側に
+  # 落ちる (実測根拠は docs/ai-operations.md §10)。
+  #
+  # 以前ここは `[[ "$2" =~ $1 ]]` の部分一致近似で、コメントにも「Perl 相当の
+  # 正規表現」と書いていたが、その前提が誤りだった。部分一致で検査すると
+  # `dit|rite|ultiEdit|otebookEdit` のような綴り違いが対象ツール全件に一致して
+  # 緑のまま通るのに、実機では guard-codex-dir.sh が一度も発火しない。
+  # ここは ~/.codex を守る**遮断層**の配線検査なので、受理側の口を実装に合わせる。
+  local matcher="$1" tool="$2" harness="$3" exact_re part
+  [ -z "$matcher" ] && return 0        # 空 matcher は match-all
+  [ "$matcher" = "*" ] && return 0     # `*` も match-all
+  # 完全一致に落ちる文字集合は harness で違う (Claude は `,` と `-` も含む)。
+  if [ "$harness" = "claude" ]; then
+    exact_re='^[a-zA-Z0-9_|, -]+$'
+  else
+    exact_re='^[a-zA-Z0-9_|]+$'
+  fi
+  if [[ "$matcher" =~ $exact_re ]]; then
+    # `|` (claude は `,` も) で分割して完全一致。部分一致はしない。
+    local IFS='|'
+    [ "$harness" = "claude" ] && IFS='|,'
+    for part in $matcher; do
+      # 前後の空白は実装側で trim される
+      part="${part#"${part%%[![:space:]]*}"}"
+      part="${part%"${part##*[![:space:]]}"}"
+      [ "$part" = "$tool" ] && return 0
+    done
+    return 1
+  fi
+  # それ以外は regex として評価 (アンカー無し = 部分一致)
+  [[ "$tool" =~ $matcher ]]
 }
 
 # 1. claude/settings.json: guard-codex-dir が Edit/Write/MultiEdit/NotebookEdit/Bash を全部拾えるか
@@ -42,7 +73,7 @@ for tool in Edit Write MultiEdit NotebookEdit Bash; do
   # 各 PreToolUse エントリの matcher を取り出し、tool 名にマッチする group で guard-codex-dir が命令されているか
   while IFS= read -r entry; do
     matcher=$(printf '%s' "$entry" | jq -r '.matcher')
-    if [ -n "$matcher" ] && matcher_matches "$matcher" "$tool"; then
+    if [ -n "$matcher" ] && matcher_matches "$matcher" "$tool" claude; then
       cmds=$(printf '%s' "$entry" | jq -r '.hooks[].command')
       if printf '%s' "$cmds" | grep -q 'guard-codex-dir.sh'; then
         hit=1
@@ -59,7 +90,7 @@ for tool in Bash apply_patch Edit Write; do
   hit=0
   while IFS= read -r entry; do
     matcher=$(printf '%s' "$entry" | jq -r '.matcher')
-    if [ -n "$matcher" ] && matcher_matches "$matcher" "$tool"; then
+    if [ -n "$matcher" ] && matcher_matches "$matcher" "$tool" codex; then
       cmds=$(printf '%s' "$entry" | jq -r '.hooks[].command')
       if printf '%s' "$cmds" | grep -q 'guard-codex-dir.sh'; then
         hit=1

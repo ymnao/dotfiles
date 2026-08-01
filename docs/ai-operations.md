@@ -314,14 +314,21 @@ host 側の実ファイル `~/.codex/config.toml`(これが git 追跡外。repo
   この repo に書き込める主体は、次回の Claude Code / codex 起動時に host 上で
   任意コードを実行できると考えること
 
-### codex 側 SessionStart hook の実測結果(この節が正本)
+### SessionStart hook の実測結果 — codex / Claude Code 両方(この節が正本)
 
-**codex 側の記述**はすべて **2026-07-31 に upstream の tag `rust-v0.146.0`
-(host の codex-cli 0.146.0)のソースを読んで確認**した(実際に codex を起動して
-発火させた観測ではない — 本節の配線は執筆時点で未承認のため)。
+**再確認の trigger は harness ごとに 2 系統ある。どちらか一方を上げたら、
+その側の項目を読み直す**(片方だけ更新して他方が取り残されるのを防ぐため、
+各項目の冒頭に測定日と対象 harness を書いてある):
+
+- **codex を upgrade したら** — 1 / 2 / 3、および §10 冒頭の trusted_hash
+- **Claude Code を upgrade したら** — 2b / 2c
+
+**codex 側の記述**(1 / 2 / 3)はすべて **2026-07-31 に upstream の tag
+`rust-v0.146.0`(host の codex-cli 0.146.0)のソースを読んで確認**した
+(実際に codex を起動して発火させた観測ではない — 本節の配線は執筆時点で
+未承認のため)。
 hook 本体とテストのコメントはこの節を指すだけに留めてある(同じ実測事実を複数箇所に
-書くと、codex の upgrade で挙動が変わったときに片方だけ更新されて食い違うため)。
-**codex を upgrade したら §10 冒頭の trusted_hash とあわせてここも再確認する**。
+書くと、upgrade で挙動が変わったときに片方だけ更新されて食い違うため)。
 
 **Claude Code 側はソースが公開されていないので、根拠の強さが項目ごとに違う**。
 matcher の突合方式(下の 2b)は配布バイナリを読んで確認したが、
@@ -335,7 +342,9 @@ matcher の突合方式(下の 2b)は配布バイナリを読んで確認した�
 2 イベントだけ**(`codex-rs/hooks/src/events/common.rs`、同 `session_start.rs`)。
 
 **2. matcher の突合方式は 3 通りに分岐する**(同 `common.rs` の `matches_matcher`)。
-ここを取り違えるとテストだけが通る:
+ここを取り違えるとテストだけが通る(以前この行は「2 通り」と書いていたが、
+直下の表は当初から 3 行あった。**再実測して変えたのではなく、本文が表と
+食い違っていたのを直しただけ** — 測定日は上記 2026-07-31 のまま):
 
 | matcher | 判定 |
 |---|---|
@@ -353,11 +362,20 @@ matcher の突合方式(下の 2b)は配布バイナリを読んで確認した�
 以前この節には「Claude Code の regex 一本槍とは違う」と書いてあり、それを根拠に
 ケース 12(Claude 側)だけ部分一致の緩い検査を許していたが、**前提が誤っていた**。
 host のバイナリ(`/opt/homebrew/Caskroom/claude-code/2.1.212/claude`)の
-matcher 関数は、matcher が `^[a-zA-Z0-9_|, -]+$` に当たると
-`split(/[|,]/)` して `.includes(source)` で**完全一致**判定し、regex
-(`new RegExp(matcher)`)を使うのはそれ以外の形のときだけ。`""` / `*` が
-無条件 match なのも同じ。よって `startup|resume|clear|fork` は **exact 一致**側で、
-codex とまったく同じ穴が開く。ケース 12 も **全文 pin** に直した。
+matcher 関数は、**SessionStart を含む一部イベントでは** matcher が
+`^[a-zA-Z0-9_|, -]+$` に当たると `split(/[|,]/)` して trim したうえで
+`.includes(source)` で**完全一致**判定し、regex(`new RegExp(matcher)`)を
+使うのはそれ以外の形のときだけ。`""` / `*` が無条件 match なのも同じ。
+**「一部イベントでは」を落とさないこと** — 許容文字集合と分割文字は
+イベント名によって 2 択に分かれており(SessionStart は広い側)、他のイベントに
+この記述をそのまま転用すると外れる。
+
+よって `startup|resume|clear|fork` は **exact 一致**側に落ちる。
+**綴り違いを取り逃がす穴という点では codex と同型**(ただし exact 側に入る
+*条件*は同じではない — Claude は `,` と `-` も許すので、例えば
+`startup, resume` は Claude では exact 側、codex では regex 側に落ちる。
+現行の配線はどちらも `|` 区切りのみなので実害は無い)。
+ケース 12 も **全文 pin** に直した。
 
 根拠の強さは codex 側と違う点に注意 — codex は upstream のソース、こちらは
 **配布バイナリの minify 済みバンドル**から読んだもので、版が上がれば黙って
@@ -381,10 +399,13 @@ codex とまったく同じ穴が開く。ケース 12 も **全文 pin** に直
 **2d. 両 harness とも `compact` を意図的に拾わない理由**。`compact` は
 会話の継続であってセッションの開始ではなく、同じ警告を 1 セッション内で
 繰り返すと warn-only の signal が摩耗する。`compact` は別 entry
-(`session-compact-context.sh`)が担当している。なお仮に拾っても
-`hooks-integrity-warn.sh` が 2 回走るわけではない(matcher group が別なら
-それぞれの hook が 1 回ずつ走るだけ)ので、**避けたいのは二重発火ではなく
-警告の摩耗**。
+(`session-compact-context.sh`)が担当している。
+
+なお仮に拾っても `hooks-integrity-warn.sh` が 2 回走るわけではない
+(2026-08-01 実測、同じ 2.1.212 のバイナリ。呼び出し側はマッチした
+matcher group を集めて各 group の hooks を 1 回ずつ展開するだけなので、
+group が別なら**それぞれの hook が 1 回ずつ**走る)。つまり
+**避けたいのは二重発火ではなく警告の摩耗**。
 
 **3. hook の stdout が `{` または `[` で始まると、警告は model の context に入らない**。
 codex は `looks_like_json`(`codex-rs/hooks/src/engine/output_parser.rs`)でその 2 文字を

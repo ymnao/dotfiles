@@ -282,20 +282,13 @@ matcher=$(jq -r '
   | .matcher
 ' "$REPO_ROOT/claude/settings.json")
 check_cmd "SessionStart に hooks-integrity-warn.sh の entry が 1 つあること" [ -n "$matcher" ]
-# matcher は **全文 pin** で受ける。以前はここを bash の `=~` (部分一致) で
-# 「実イベント名に一致するか」を 1 件ずつ見る形にしていたが、それは
-# **「Claude Code の matcher は regex 一本槍」という誤った前提に立っていた**。
-# 実際は codex と同じ 3 分岐で評価され、英数字と `|` だけの matcher は
-# **exact 一致**の側に入る (実測根拠は docs/ai-operations.md §10)。
-# 部分一致で検査すると `tartup|esume|lear|ork` のような綴り違いが全 assert を
-# 通るのに一度も発火しない — 12b が codex 側で明示的に塞いでいる穴と同型。
+# matcher は **全文 pin** で受ける (12b の codex 側と同じ理由。実測根拠は
+# docs/ai-operations.md §10 の 2b / 2c / 2d)。以前はここを bash の `=~`
+# (部分一致) で 1 イベントずつ見る形にしていたが、それは §10 に書かれていた
+# 誤った前提に立っており、綴り違いが全 assert を通る状態だった。
 # 全文 pin なら空 matcher / `*` (match-all) / 綴り違い / `compact` の混入 /
 # `fork` の脱落がすべて 1 件で落ちる。
-#
 # 期待値は settings.json から導出せず独立した定数として持つ (claude/rules/shell.md)。
-# `compact` を含めないのは意図的な除外で、理由は docs/ai-operations.md §10 に置く。
-# `fork` を含めるのは 2.1.214 以降セッション複製の source が `resume` から `fork` に
-# 変わるため (同 §10。足さないまま CLI を上げると複製セッションで発火しなくなる)。
 check_cmd "SessionStart matcher が startup|resume|clear|fork で pin されていること (got: ${matcher})" \
   [ "$matcher" = "startup|resume|clear|fork" ]
 # command は完全一致で pin する (パス誤記や余計なコマンドの混入を通さない)
@@ -308,13 +301,10 @@ check_cmd "SessionStart entry が type/timeout/command とも期待どおりで�
   [ "$entry" = 'command|10|bash "$HOME/.claude/hooks/hooks-integrity-warn.sh"' ]
 
 # --- 12b. 配線 (codex): hooks.json の SessionStart entry (issue #215) ---
-# codex の matcher は条件次第で regex ではなく完全一致として評価される (実測根拠は
-# docs/ai-operations.md §10)。bash の `=~` は部分一致なので、`tartup|esume|lear` の
-# ような綴り違いが全 assert を通るのに codex では一度も発火しない。受理側の口が
-# 広いまま fail-closed のつもりになる形なので (claude/rules/shell.md)、
-# matcher は **全文 pin** で受ける。ケース 12 (Claude 側) も同じ理由で全文 pin —
-# 以前はここだけ codex 固有の危険として書いていたが、実測すると Claude Code も
-# 同じ 3 分岐で評価しており、区別する理由は無かった (§10)。
+# matcher は **全文 pin** で受ける。部分一致で検査すると受理側の口が広いまま
+# fail-closed のつもりになるため (claude/rules/shell.md、実測根拠は §10 の 2)。
+# ケース 12 (Claude 側) も同じ理由で全文 pin — 以前はここだけ codex 固有の
+# 危険として書いていたが、区別する理由は無かった (§10 の 2b)。
 codex_matcher=$(jq -r '
   .hooks.SessionStart[]
   | select([.hooks[].command] | any(test("hooks-integrity-warn\\.sh")))
