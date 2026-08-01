@@ -55,8 +55,13 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      handoff を書くと HANDOFF.md が「承認待ち」で確定してしまい、直後に
      承認されても記述が stale になる)。repo に置くものは merge 済み main
      から作業ブランチを切って commit し、memory はその場で反映する
-   - 反映結果 (どこに何を書いたか / ブランチ名) を step 5 の handoff に
-     引き継ぐ
+   - **repo 側は commit で止めず `/pr` skill で PR 作成まで行う**。
+     `/next` の起動をこの PR 作成の明示指示とみなす (memory
+     `feedback_pr_creation` の例外)。commit だけで止めると昇格ブランチが
+     宙に浮き、次セッションに「PR を作るだけ」の残タスクとして持ち越される。
+     handoff にその 1 行を書く手間ごと無駄になる
+   - 反映結果 (どこに何を書いたか / ブランチ名 / PR URL) を step 5 の
+     handoff に引き継ぐ
 5. **handoff**: `/handoff` skill を実行して HANDOFF.md を更新する。
    HANDOFF.md に「次セッション持ち越しメモ」等の恒久メモ節がある場合は
    消さずに引き継ぐ
