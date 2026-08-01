@@ -2,7 +2,7 @@
 #
 # SessionStart hook: host 側で実行される hook 定義に未コミットの変更があれば
 # 警告する (warn-only)。両 harness の SessionStart に配線してある:
-#   Claude Code — claude/settings.json  (matcher: startup|resume|clear)
+#   Claude Code — claude/settings.json  (matcher: startup|resume|clear|fork)
 #   codex       — codex/hooks.json      (matcher: startup|resume|clear)
 # codex 側でも matcher は有効で、両 harness とも compact は意図的に拾わない
 # (実測根拠と理由は docs/ai-operations.md §10。事実の正本はそちらに 1 箇所だけ置く)。

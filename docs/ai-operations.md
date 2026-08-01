@@ -249,7 +249,7 @@ host 側の実ファイル `~/.codex/config.toml`(これが git 追跡外。repo
 
 | 層 | 実装 | 効くもの | 効かないもの |
 |---|---|---|---|
-| 検知 (session, Claude Code) | `agents/hooks/hooks-integrity-warn.sh` を `claude/settings.json` の SessionStart (`startup\|resume\|clear`) に配線 | セッション開始時に、監視対象の未コミット改変を警告として context に注入する。**自動で発火する経路**(model の context に入り、人は transcript で確認できる) | 警告のみで遮断はしない(dotfiles 開発中は dirty が正常状態のため意図的に warn-only)。**codex 単体の作業では発火しない**(下の行が担当) |
+| 検知 (session, Claude Code) | `agents/hooks/hooks-integrity-warn.sh` を `claude/settings.json` の SessionStart (`startup\|resume\|clear\|fork`) に配線 | セッション開始時に、監視対象の未コミット改変を警告として context に注入する。**自動で発火する経路**(model の context に入り、人は transcript で確認できる) | 警告のみで遮断はしない(dotfiles 開発中は dirty が正常状態のため意図的に warn-only)。**codex 単体の作業では発火しない**(下の行が担当) |
 | 検知 (session, codex) | 同 hook を `codex/hooks.json` の SessionStart (`startup\|resume\|clear`) に配線(issue #215)。`codex/hooks/hooks-integrity-warn.sh` は正本への相対 symlink | **(codex TUI で承認された後に限り)** codex CLI 単体で作業する経路。本節の脅威モデルの中心は codex 側なので、ここが塞がって初めて主要経路が覆われる | 同上(warn-only)。加えて **承認するまで発火しない** — 新 entry は trusted_hash 未登録で Untrusted 扱いになる(承認は host 側の user 操作で、agent からは行えない)。この「配線済みだが未承認」状態自体は下の承認状態検査が拾う |
 | 承認状態の検査 | `tests/integrity/verify-codex-hook-trust.sh` を `make test` と `tests/run-gate.sh` から呼ぶ(issue #239) | `codex/hooks.json` の各 entry に対応する `[hooks.state."<hooks.json の絶対パス>:<event>:<group>:<index>"]` キーが `~/.codex/config.toml` に無い状態 = **配線済みだが未承認(一度も実行されない)** の検出。新しいマシンにセットアップして承認を忘れた場合も同じ形で出る。監視系 hook は「警告が出ない = 正常」と「そもそも動いていない」が区別できないため、ここを機械が言わないと誰も気付けない | **キー存在しか見ていない** — `trusted_hash` の値そのものは検証しない(検証には codex upstream のハッシュ入力仕様が要る。未調査で、再実測は issue #214 が担当)。したがって「承認後に `hooks.json` の command を書き換えた」ケースで古いキーが残るなら「承認済み」と誤って報告する。**この残存挙動自体は未検証**(再現には承認済みの状態が必要だが、本機の対象 entry は未承認のため作れない)。キー書式は codex-cli 0.146.0 で実測(2026-07-31)。また承認は user 操作でしか行えないので**警告のみ**(全経路 exit 0。agent が直せないものでゲートを落としても手詰まりになる)。**Stop hook 経由では表示されない**のは下の「検知 (手動)」と同じで、人の目に入るのは `make test` / `make gate` を手で叩いたときだけ |
 | 検知 (手動) | `hooks-integrity-warn.sh` を `make test` と `tests/run-gate.sh`(`make gate`)からも呼ぶ | **手で `make test` / `make gate` を叩いたとき**の表示 | **Stop hook 経由では表示されない** — `stop-verify-gate.sh` は gate の出力を変数に capture し、gate が通れば捨て、落ちても `tail -20` しか出さないため。ターンごとの自動検知にはなっていない |
@@ -314,27 +314,37 @@ host 側の実ファイル `~/.codex/config.toml`(これが git 追跡外。repo
   この repo に書き込める主体は、次回の Claude Code / codex 起動時に host 上で
   任意コードを実行できると考えること
 
-### codex 側 SessionStart hook の実測結果(この節が正本)
+### SessionStart hook の実測結果 — codex / Claude Code 両方(この節が正本)
 
-**codex 側の記述**はすべて **2026-07-31 に upstream の tag `rust-v0.146.0`
-(host の codex-cli 0.146.0)のソースを読んで確認**した(実際に codex を起動して
-発火させた観測ではない — 本節の配線は執筆時点で未承認のため)。
+**再確認の trigger は harness ごとに 2 系統ある。どちらか一方を上げたら、
+その側の項目を読み直す**(片方だけ更新して他方が取り残されるのを防ぐため、
+各項目の冒頭に測定日と対象 harness を書いてある):
+
+- **codex を upgrade したら** — 1 / 2 / 3、および §10 冒頭の trusted_hash
+- **Claude Code を upgrade したら** — 2b / 2c
+
+**codex 側の記述**(1 / 2 / 3)はすべて **2026-07-31 に upstream の tag
+`rust-v0.146.0`(host の codex-cli 0.146.0)のソースを読んで確認**した
+(実際に codex を起動して発火させた観測ではない — 本節の配線は執筆時点で
+未承認のため)。
 hook 本体とテストのコメントはこの節を指すだけに留めてある(同じ実測事実を複数箇所に
-書くと、codex の upgrade で挙動が変わったときに片方だけ更新されて食い違うため)。
-**codex を upgrade したら §10 冒頭の trusted_hash とあわせてここも再確認する**。
+書くと、upgrade で挙動が変わったときに片方だけ更新されて食い違うため)。
 
-**Claude Code 側の挙動は実装非公開のため同じようには確認できない**。以下で
-「Claude Code 側では素通し」と書いているのは、この repo での運用上の観測
+**Claude Code 側はソースが公開されていないので、根拠の強さが項目ごとに違う**。
+matcher の突合方式(下の 2b)は配布バイナリを読んで確認したが、
+「Claude Code 側では stdout が素通し」(下の 3)はこの repo での運用上の観測
 (SessionStart hook の stdout がそのまま context に入っており、JSON 風かどうかで
-落ちた例が無い)に基づく。codex 側の記述と根拠の強さが違う点に注意。
+落ちた例が無い)にとどまる。どちらも codex 側の記述と根拠の強さが違う点に注意。
 
 **1. matcher は SessionStart でも有効**。突合対象は `SessionStartSource` の
 `startup` / `resume` / `clear` / `compact`。matcher が無視される(実装上
 `matcher_pattern_for_event` が `None` を返す)のは **`UserPromptSubmit` と `Stop` の
 2 イベントだけ**(`codex-rs/hooks/src/events/common.rs`、同 `session_start.rs`)。
 
-**2. matcher の突合方式は 2 通りに分岐する**(同 `common.rs` の `matches_matcher`)。
-Claude Code の regex 一本槍とは違うので、ここを取り違えるとテストだけが通る:
+**2. matcher の突合方式は 3 通りに分岐する**(同 `common.rs` の `matches_matcher`)。
+ここを取り違えるとテストだけが通る(以前この行は「2 通り」と書いていたが、
+直下の表は当初から 3 行あった。**再実測して変えたのではなく、本文が表と
+食い違っていたのを直しただけ** — 測定日は上記 2026-07-31 のまま):
 
 | matcher | 判定 |
 |---|---|
@@ -347,6 +357,55 @@ Claude Code の regex 一本槍とは違うので、ここを取り違えると�
 綴り違いが「一致する」と判定されて通るのに codex では一度も発火しない。よって
 `tests/hooks-integrity/run-hooks-integrity-tests.sh` の codex 側 matcher 検査は
 **全文 pin** にしてある。
+
+**2b. Claude Code 側も同じ 3 分岐だった**(2026-08-01 実測、`claude` 2.1.212)。
+以前この節には「Claude Code の regex 一本槍とは違う」と書いてあり、それを根拠に
+ケース 12(Claude 側)だけ部分一致の緩い検査を許していたが、**前提が誤っていた**。
+host のバイナリ(`/opt/homebrew/Caskroom/claude-code/2.1.212/claude`)の
+matcher 関数は、**SessionStart を含む一部イベントでは** matcher が
+`^[a-zA-Z0-9_|, -]+$` に当たると `split(/[|,]/)` して trim したうえで
+`.includes(source)` で**完全一致**判定し、regex(`new RegExp(matcher)`)を
+使うのはそれ以外の形のときだけ。`""` / `*` が無条件 match なのも同じ。
+**「一部イベントでは」を落とさないこと** — 許容文字集合と分割文字は
+イベント名によって 2 択に分かれており(SessionStart は広い側)、他のイベントに
+この記述をそのまま転用すると外れる。
+
+よって `startup|resume|clear|fork` は **exact 一致**側に落ちる。
+**綴り違いを取り逃がす穴という点では codex と同型**(ただし exact 側に入る
+*条件*は同じではない — Claude は `,` と `-` も許すので、例えば
+`startup, resume` は Claude では exact 側、codex では regex 側に落ちる。
+現行の配線はどちらも `|` 区切りのみなので実害は無い)。
+ケース 12 も **全文 pin** に直した。
+
+根拠の強さは codex 側と違う点に注意 — codex は upstream のソース、こちらは
+**配布バイナリの minify 済みバンドル**から読んだもので、版が上がれば黙って
+変わりうる。**Claude Code を upgrade したらここも再確認する**。
+
+**2c. `fork` を matcher に含めている理由**(2026-08-01、公式 hooks docs
+`code.claude.com/docs/en/hooks` で確認)。SessionStart の source は
+`startup` / `resume` / `clear` / `compact` / `fork` の 5 値で、`fork` は
+セッション複製(`--fork-session` + `--resume`/`--continue`、`/fork` の
+バックグラウンド複製、`/branch`)で報告される。docs に
+"Before v2.1.214, forked sessions reported source `resume`" と明記されており、
+実際 host の 2.1.212 のバイナリ内の source 列挙は
+`["startup","resume","clear","compact"]` で `fork` を含まない。
+
+つまり**今の host では一度も match しない代わりに、足さないまま CLI を
+2.1.214 以上に上げると複製セッションで改変検知が一度も発火しなくなる**。
+先に入れておけば穴が開く瞬間が来ない(issue #245 step 1)。codex 側の
+`SessionStartSource` は 4 値で `fork` を持たないため、`codex/hooks.json` は
+`startup|resume|clear` のまま。
+
+**2d. 両 harness とも `compact` を意図的に拾わない理由**。`compact` は
+会話の継続であってセッションの開始ではなく、同じ警告を 1 セッション内で
+繰り返すと warn-only の signal が摩耗する。`compact` は別 entry
+(`session-compact-context.sh`)が担当している。
+
+なお仮に拾っても `hooks-integrity-warn.sh` が 2 回走るわけではない
+(2026-08-01 実測、同じ 2.1.212 のバイナリ。呼び出し側はマッチした
+matcher group を集めて各 group の hooks を 1 回ずつ展開するだけなので、
+group が別なら**それぞれの hook が 1 回ずつ**走る)。つまり
+**避けたいのは二重発火ではなく警告の摩耗**。
 
 **3. hook の stdout が `{` または `[` で始まると、警告は model の context に入らない**。
 codex は `looks_like_json`(`codex-rs/hooks/src/engine/output_parser.rs`)でその 2 文字を
