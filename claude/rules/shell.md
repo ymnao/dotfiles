@@ -110,7 +110,17 @@ paths:
   stdout がその 2 文字で始まると JSON 出力とみなし、パースに失敗した時点で run を
   `Failed` にして**本文を model の context に入れない**(実測根拠は
   docs/ai-operations.md §10)。Claude Code 側は素通しなので、**片方の harness でだけ
-  静かに壊れる**形になり、テストが無ければ気付けない
+  静かに壊れる**形になる。防御は 2 層で、**どちらも必要**(issue #240):
+  - **静的**: `scripts/lint-hook-stdout.sh` が `agents/hooks/` `claude/hooks/`
+    `codex/hooks/` を横断検査し、`make test` を fail させる。拾えるのは
+    **リテラルとして書かれた出力**だけ
+  - **実行時**: 変数展開経由の出力は静的には見えないので、hook ごとに
+    **stdout 単独 (`2>&1` で取らない) で先頭行を全文 pin** する
+    (実例: `tests/session-compact/` `tests/hooks-integrity/`)。
+    **新しく stdout を出す hook を codex に配線するときは pin を足す** —
+    自動では強制されない
+  linter が取りこぼす形を見つけたら、`tests/lint-hook-stdout/` に `form_case` で
+  回帰ケースを足してから直す。取りこぼしの既知の形は linter 冒頭コメントにある
 - **mutation check は 1 回に 1 変数だけ変える**。複数変えた mutant が FAIL しても
   どの変数が検出されたのか特定できず、誤った因果をコメントに残す。
   実例: issue #218 の対応で `fish_add_path -g` を `--path -a` に変えた mutant
@@ -178,5 +188,5 @@ paths:
   「たまに落ちる」なので flaky と誤診しやすい(実測: 無効化前は 20 回中 2 回、
   無効化後は 30 回連続 green)。
   現在 repo 内で一時 git リポジトリを作るのは
-  `tests/classify-risk/run-classify-risk-tests.sh` の 1 箇所だけなので、
-  これは**新しくその形のテストを書くとき向けの規約**。
+  `tests/classify-risk/run-classify-risk-tests.sh` と
+  `tests/session-compact/run-session-compact-tests.sh` の 2 箇所。

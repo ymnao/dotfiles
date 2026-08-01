@@ -418,8 +418,20 @@ additional context になるのは「JSON に見えない」出力のときだ�
 pin している — 1 文字目だけを見る形は、先頭に空行が入ると素通りする)。
 
 なおこの制約は SessionStart 固有ではなく、codex に配線する hook 全般に及ぶ。
-現時点で `agents/hooks/session-compact-context.sh` は `[` 始まりの stdout を出すが、
-Claude Code 専用配線なので実害は無い(codex へ配線するときに踏む。issue で追跡)。
+そのため 1 本ずつ踏んで直すのではなく、**配線前に構造で弾く**形にしてある
+(issue #240): `scripts/lint-hook-stdout.sh` が `agents/hooks/` `claude/hooks/`
+`codex/hooks/` の実体を横断で静的検査し、`echo` / `printf` のリテラルと heredoc
+本文が `{` / `[` で始まっていたら `make test` を fail させる。同 issue で
+`agents/hooks/session-compact-context.sh` のラベルも `[session-compact-context]`
+から `session-compact-context:` に直した(**Claude Code 専用配線だったので実害は
+出ていなかったが、codex へ配線した瞬間に踏む形だった**)。
+ただし静的解析なので、拾えるのは**リテラルとして書かれた出力**だけ。変数展開経由の
+出力(`printf '%s\n' "$x"`)や 1 行に複数の heredoc を開く形は見えない。現状その穴を
+補っているのは hook ごとの実行時 pin で、`tests/session-compact/` と
+`tests/hooks-integrity/` の 2 本に先頭行全文 pin がある(**新しく stdout を出す hook を
+codex に配線するときは同じ pin を足すこと** — 自動では強制されない)。
+linter の取りこぼしを見つけたら、`tests/lint-hook-stdout/` に `form_case` として
+回帰ケースを足してから直す。
 
 ### scope 外(別 issue)
 
