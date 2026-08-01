@@ -33,10 +33,16 @@ set -euo pipefail
 #   - 変数展開経由の出力 (`printf '%s\n' "$x"`) は静的には見えない。この穴は
 #     hook ごとの実行時 pin (tests/session-compact/ と tests/hooks-integrity/ の
 #     先頭行全文 pin) で塞ぐ。
-#   - `>&2` の segment は対象外。リダイレクト先がファイルの場合 (`echo '{}' > x.json`)
-#     は現状 stdout 扱いで誤検知する。実例が 0 本なので、判定を緩める代わりに
-#     踏んだ時点で opt-out の形式を設計する (先回りして逃げ道を作らない)。
+#   - `>&2` / `> /dev/stderr` の segment は対象外。それ以外のリダイレクト先
+#     (`echo '{}' > x.json`) とパイプ (`printf '{}' | jq`) は現状 stdout 扱いで
+#     誤検知する。**誤検知は make test が赤くなって即分かるが、免除を広げると
+#     `| tee` のように実際に stdout へ出る形が silent な見逃しになる**ため、
+#     緩める側には倒さない。実際に踏んだ時点で opt-out の形式を設計する。
 #   - 1 行に複数の heredoc を開く形は追跡しない (repo 内に実例なし)。
+#   - 走査するのは `*.sh` のみ (`make test` の shellcheck ゲートと同じ規約)。
+#     拡張子なしで置かれた hook は対象外になる。
+#   - `echo {}` のように `{` / `}` が単語として現れる形は segment 境界と誤認して
+#     見逃す。分けるには reserved word 判定が要る一方、repo 内に実例なし。
 
 # リテラルの 1 文字目をバイトで見る。ロケール依存の照合順序を持ち込まない。
 export LC_ALL=C
@@ -103,7 +109,10 @@ scan_files() {
 
         # segment の出力先が stderr かどうか。`>& 2` の空白と `> /dev/stderr` も拾う。
         function to_stderr(seg) {
-            return (seg ~ /[0-9]?>&[[:space:]]*2([^0-9]|$)/ || seg ~ />[[:space:]]*\/dev\/stderr/)
+            # fd を省略 (= stdout) か `1` のときだけ免除する。`2>&2` / `2>/dev/stderr`
+            # は fd2 の自己リダイレクトで stdout はそのまま出るため免除しない
+            return (seg ~ /(^|[^0-9])1?>&[[:space:]]*2([^0-9]|$)/ \
+                || seg ~ /(^|[^0-9])1?>[[:space:]]*\/dev\/stderr/)
         }
 
         # マスク行を見て segment 境界 (unquoted な ; | & ( ) { }) の添字を segs に積む。
@@ -234,7 +243,7 @@ scan_files() {
                 if (to_stderr(seg_m)) continue
                 # 制御構文と前置の変数代入をまたいだ echo / printf も対象にする
                 # (`then echo ...` / `LC_ALL=C echo ...`。( ) { } と ; | & は segment 境界)
-                if (seg_m !~ /^[[:space:]]*((then|else|elif|do)[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*(echo|printf)[[:space:]]/) continue
+                if (seg_m !~ /^[[:space:]]*((then|else|elif|do|if|while|until|command|builtin|exec|time|!)[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*(echo|printf)[[:space:]]/) continue
                 if (!match(seg_m, /(echo|printf)[[:space:]]/)) continue
                 if (bad_literal(substr(line, start, len), seg_m, RSTART + RLENGTH)) {
                     printf "%s:%d: stdout-json-prefix\n", FILENAME, ln > "/dev/stderr"

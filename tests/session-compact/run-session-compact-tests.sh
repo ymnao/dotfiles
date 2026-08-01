@@ -45,6 +45,10 @@ check() {
 repo="$BASE/repo"
 mkdir -p "$repo"
 git -C "$repo" init -q
+# auto gc / maintenance が detach 起動すると、trap の rm -rf と競合して
+# 全ケース pass でもスイートが exit 1 になる (claude/rules/shell.md)
+git -C "$repo" config gc.auto 0
+git -C "$repo" config maintenance.auto false
 git -C "$repo" config user.email "test@example.com"
 git -C "$repo" config user.name "test"
 printf 'x\n' >"$repo/f.txt"

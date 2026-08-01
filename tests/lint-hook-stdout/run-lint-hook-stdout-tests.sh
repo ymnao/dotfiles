@@ -37,7 +37,7 @@ ran=0
 
 # 期待実行ケース数は**独立した定数**として持つ (ケース定義から導出しない。
 # 導出するとケースが消えたとき下限も一緒に下がって検出が無効化される)。
-EXPECTED_CASES=44
+EXPECTED_CASES=59
 
 # run_lint <fixture root> — 出力は $OUT に書き、exit code は $rc に入れる。
 # コマンド置換で受けると subshell になり rc が呼び出し元に返らないため、
@@ -94,8 +94,19 @@ form_case() {
 # exit code だけを見ると、別経路で偶然 1 件報告されても pass してしまう。
 check_report() {
   # 報告行はファイル名と行番号のバイト一致で見る (照合順序を持ち込まないため
-  # LC_ALL=C 固定。env 経由なのは check_bool が "$@" をそのまま実行するため)
-  check_bool "$1" "報告行 '$2' が無い" env LC_ALL=C grep -qF "$2" "$OUT"
+  # LC_ALL=C 固定。env 経由なのは check_bool が "$@" をそのまま実行するため)。
+  # `-x` で**行全体**の一致にする — 部分一致だと余計な接頭・接尾が付いた
+  # 誤った診断でも通ってしまう。
+  check_bool "$1" "報告行 '$2' が無い" env LC_ALL=C grep -qFx -- "$2" "$OUT"
+}
+
+# detect_with_report <ケース名> <期待報告行> — stdin の hook を lint し、
+# exit 1 と**報告種別+行番号**の両方を pin する。exit code だけ見ると、
+# 別経路で誤った理由の 1 件が出ても pass してしまう (mutant で実証済み)。
+detect_with_report() {
+  local name="$1" want_line="$2"
+  form_case "$name" 1
+  check_report "${name}-report" "$want_line"
 }
 
 # ---------------------------------------------------------------------------
@@ -156,20 +167,20 @@ check_detect "mutation-printf-second-arg" "$root" 1
 #     前半 2 形 (heredoc 誤爆) は**そのファイルの残り全部が無検査になる**型で、
 #     この linter が防ごうとしている「静かに壊れる」構図と同じ壊れ方をする。
 # ---------------------------------------------------------------------------
-form_case "tab-heredoc" 1 <<'SH'
+detect_with_report "tab-heredoc" "agents/hooks/x.sh:3: heredoc-json-prefix" <<'SH'
 #!/usr/bin/env bash
 cat <<-EOF
 	[tab-indented]
 	EOF
 SH
 
-form_case "here-string" 1 <<'SH'
+detect_with_report "here-string" "agents/hooks/x.sh:3: stdout-json-prefix" <<'SH'
 #!/usr/bin/env bash
 grep -q foo <<<somevalue
 echo '[after-here-string]'
 SH
 
-form_case "trailing-comment-lt" 1 <<'SH'
+detect_with_report "trailing-comment-lt" "agents/hooks/x.sh:3: stdout-json-prefix" <<'SH'
 #!/usr/bin/env bash
 foo=bar   # heredoc (<< EOF) is not used here
 echo '[after-trailing-comment]'
@@ -205,7 +216,7 @@ form_case "stderr-mention-in-literal" 1 <<'SH'
 echo "[hint] redirect with >&2 to be safe"
 SH
 
-form_case "stderr-mention-in-comment" 1 <<'SH'
+detect_with_report "stderr-mention-in-comment" "agents/hooks/x.sh:3: heredoc-json-prefix" <<'SH'
 #!/usr/bin/env bash
 cat <<EOF   # advice: send it to >&2 instead
 [heredoc-with-mention]
@@ -218,7 +229,7 @@ printf '%s\n' \
   '[continued-arg]'
 SH
 
-form_case "backslash-terminator" 1 <<'SH'
+detect_with_report "backslash-terminator" "agents/hooks/x.sh:3: heredoc-json-prefix" <<'SH'
 #!/usr/bin/env bash
 cat <<\EOF
 [backslash-term]
@@ -249,7 +260,7 @@ SH
 #     閉じない heredoc として **unclosed-heredoc** で必ず表面化させる
 #     (無言で緑にすると、この linter 自身が静かに消える)。
 # ---------------------------------------------------------------------------
-form_case "heredoc-after-echo" 1 <<'SH'
+detect_with_report "heredoc-after-echo" "agents/hooks/x.sh:2: stdout-json-prefix" <<'SH'
 #!/usr/bin/env bash
 echo '[before-heredoc]'; cat <<EOF
 body
@@ -266,7 +277,7 @@ form_case "var-assign-prefix" 1 <<'SH'
 LC_ALL=C echo '[x]'
 SH
 
-form_case "arith-shift" 1 <<'SH'
+detect_with_report "arith-shift" "agents/hooks/x.sh:3: stdout-json-prefix" <<'SH'
 #!/usr/bin/env bash
 x=$((1 << 3))
 echo '[after-shift]'
@@ -282,7 +293,7 @@ SH
 # 追跡開始位置の取り違えを見逃す
 check_report "multiline-string-lt-unclosed" "agents/hooks/x.sh:3: unclosed-heredoc"
 
-form_case "comment-after-semicolon" 1 <<'SH'
+detect_with_report "comment-after-semicolon" "agents/hooks/x.sh:3: stdout-json-prefix" <<'SH'
 #!/usr/bin/env bash
 echo ok;#<< EOF
 echo '[after-inline-comment]'
@@ -314,6 +325,36 @@ form_case "ok-heredoc-to-stderr" 0 <<'SH'
 cat >&2 <<EOF
 [stderr body]
 EOF
+SH
+
+# ---------------------------------------------------------------------------
+# 5d. codex-review / Fable 代替レビューが実測で挙げた命令 prefix の穴。
+#     いずれも実 bash では stdout に `[` / `{` が出る形。
+# ---------------------------------------------------------------------------
+form_case "if-condition-echo" 1 <<'SH'
+#!/usr/bin/env bash
+if echo '[if-cond]'; then :; fi
+SH
+
+form_case "while-condition-printf" 1 <<'SH'
+#!/usr/bin/env bash
+while printf '[while-cond]\n'; do break; done
+SH
+
+form_case "negated-echo" 1 <<'SH'
+#!/usr/bin/env bash
+! echo '[negated]'
+SH
+
+form_case "command-prefix" 1 <<'SH'
+#!/usr/bin/env bash
+command echo '[via-command]'
+SH
+
+# fd2 の自己リダイレクトは stdout をそのまま出すので免除しない
+form_case "fd2-self-redirect" 1 <<'SH'
+#!/usr/bin/env bash
+echo '[x]' 2>&2
 SH
 
 # ---------------------------------------------------------------------------
@@ -385,10 +426,31 @@ rmdir "$root/claude/hooks" "$root/codex/hooks"
 check_detect "renamed-dir-fails" "$root" 1
 
 # ---------------------------------------------------------------------------
-# 10. 実リポジトリ: override 無しで exit 0 (end-to-end)
+# 10. 実リポジトリ: 違反 0 件 (end-to-end)。走査 root は明示する — linter は
+#     cwd ではなく自身の dirname から root を導出するので、`cd` しても
+#     LINT_PATH 次第で別の木を走査してしまい、測っている対象がずれる
 # ---------------------------------------------------------------------------
-(cd "$REPO_ROOT" && bash "$LINT" >"$OUT" 2>&1)
+run_lint "$REPO_ROOT"
 check_bool "real-repo-clean" "実リポジトリで違反が出ている" [ ! -s "$OUT" ]
+
+# ---------------------------------------------------------------------------
+# 11. canary: 実 hook 全部をコピーして末尾に違反行を足し、**全ファイル分**の
+#     報告が出るかを見る。clean 判定 (10 章) だけでは「解析が途中で heredoc
+#     追跡に落ちてファイル後半が無検査」になった状態と区別が付かない
+# ---------------------------------------------------------------------------
+root="$BASE/canary"
+canary_n=0
+while IFS= read -r rel; do
+  mkdir -p "$root/$(dirname "$rel")"
+  cp "$REPO_ROOT/$rel" "$root/$rel"
+  printf '%s\n' "echo '[canary]'" >>"$root/$rel"
+  canary_n=$((canary_n + 1))
+done < <(cd "$REPO_ROOT" && find agents/hooks claude/hooks codex/hooks -type f -name '*.sh' | sort)
+check_bool "canary-fixture-built" "実 hook が 1 本もコピーできていない" [ "$canary_n" -ge 1 ]
+run_lint "$root"
+canary_hits=$(grep -c 'stdout-json-prefix' "$OUT")
+check_bool "canary-all-files-reached" "expected ${canary_n} hits got ${canary_hits} (解析が最終行まで届いていない)" \
+  [ "$canary_hits" = "$canary_n" ]
 
 echo "----"
 echo "lint-hook-stdout tests: $pass passed, $fail failed"
