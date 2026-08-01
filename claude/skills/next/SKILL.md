@@ -66,12 +66,11 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
    (ai-operations §4「無関係タスク間で /clear」の定石に従い、同一セッション
    での連続実行はしない)。あわせて **健康状態**を 3 行で報告する
    (`.claude/backlog.conf` がある repo のみ。無ければ省略):
-   - **内向き比率**: 直近 20 件の merged PR のうち、内向き (`claude/`
-     `codex/` `tests/` `docs/` `.github/` のみを触るもの) の割合を
-     `gh pr list --state merged --limit 20 --json number,files` の実測から
-     算出する。`INWARD_RATIO_MAX` を超えていたら、次サイクルの候補は外向きを
-     既定にして提示する。**これが本体の指標** — repo の目的側が進んでいるかを
-     直接見ている
+   - **摩擦の取りこぼし確認**: 「直近で日常設定の摩擦を踏んだのに issue に
+     していないものはないか」を user に 1 行で聞く。目的側のタスクは踏んだ
+     瞬間にしか具体化しないので (CLAUDE.md 目的節)、取りこぼしは**人の記憶
+     でしか検出できない**。これは煙探知機であって集計ではない — **比率や
+     閾値を復活させない** (経緯は `.claude/backlog.conf` のコメント)
    - `open <数> / cap <BACKLOG_CAP>` と今サイクルの delta (起票 − close)。
      cap 超過は「起票ゲートが機能していない」サインとして報告するだけで、
      棚卸しの強制はしない
