@@ -50,13 +50,22 @@ run_lint() {
 check_detect() {
   # $1=ケース名 $2=fixture root $3=期待 exit code (0=clean / 1=違反あり)
   local name="$1" root="$2" want="$3"
-  ran=$((ran + 1))
   run_lint "$root"
-  if [ "$rc" = "$want" ]; then
+  check_bool "$name" "expected exit=${want} got=${rc}" [ "$rc" = "$want" ]
+}
+
+# check_bool <ケース名> <FAIL 時の説明> <判定コマンド...>
+# ran/pass/fail の更新を 1 箇所に集約する ($ran は EXPECTED_CASES との突き合わせに
+# 使うため、加算をケースごとに手書きすると書き忘れで検出力が静かに落ちる)。
+check_bool() {
+  local name="$1" detail="$2"
+  shift 2
+  ran=$((ran + 1))
+  if "$@"; then
     pass=$((pass + 1))
   else
-    echo "FAIL ${name}: expected exit=${want} got=${rc}"
-    cat "$OUT"
+    echo "FAIL ${name}: ${detail}"
+    [ -s "$OUT" ] && cat "$OUT"
     fail=$((fail + 1))
   fi
 }
@@ -82,15 +91,8 @@ cat <<EOF
 EOF
 SH
 check_detect "clean-exit" "$root" 0
-ran=$((ran + 1))
 run_lint "$root"
-if [ ! -s "$OUT" ]; then
-  pass=$((pass + 1))
-else
-  echo "FAIL clean-silent: 違反なしなのに出力がある:"
-  cat "$OUT"
-  fail=$((fail + 1))
-fi
+check_bool "clean-silent" "違反なしなのに出力がある" [ ! -s "$OUT" ]
 
 # ---------------------------------------------------------------------------
 # 2. mutation: heredoc 本文の先頭が [ (issue #240 の実ケースの形)
@@ -142,13 +144,8 @@ mutant="$root/agents/hooks/session-compact-context.sh"
 # ロケール依存で、UTF-8 ロケールでは同一に見える別バイト列を取り違えうる)
 LC_ALL=C awk '{ sub(/^session-compact-context: コンパクション後/, "[session-compact-context] コンパクション後"); print }' \
   "$mutant" >"$mutant.new" && mv "$mutant.new" "$mutant"
-ran=$((ran + 1))
-if grep -q '^\[session-compact-context\]' "$mutant"; then
-  pass=$((pass + 1))
-else
-  echo "FAIL real-hook-mutation-applied: 置換が空振りした (コード行に当たっていない)"
-  fail=$((fail + 1))
-fi
+check_bool "real-hook-mutation-applied" "置換が空振りした (コード行に当たっていない)" \
+  grep -q '^\[session-compact-context\]' "$mutant"
 check_detect "real-hook-mutated-detected" "$root" 1
 
 # ---------------------------------------------------------------------------
@@ -176,16 +173,9 @@ check_detect "stdout-via-tee-flagged" "$root" 1
 root=$(new_root symlink)
 printf '%s\n' '#!/usr/bin/env bash' "echo '[x]'" >"$root/agents/hooks/bad.sh"
 ln -s ../../agents/hooks/bad.sh "$root/claude/hooks/bad.sh"
-ran=$((ran + 1))
 run_lint "$root"
 hits=$(grep -c 'stdout-json-prefix' "$OUT")
-if [ "$hits" = "1" ]; then
-  pass=$((pass + 1))
-else
-  echo "FAIL symlink-single-count: expected 1 hit got ${hits}"
-  cat "$OUT"
-  fail=$((fail + 1))
-fi
+check_bool "symlink-single-count" "expected 1 hit got ${hits}" [ "$hits" = "1" ]
 
 # ---------------------------------------------------------------------------
 # 9. codex 固有 hook のディレクトリも走査対象であること
@@ -197,14 +187,8 @@ check_detect "codex-hooks-scanned" "$root" 1
 # ---------------------------------------------------------------------------
 # 10. 実リポジトリ: override 無しで exit 0 (end-to-end)
 # ---------------------------------------------------------------------------
-ran=$((ran + 1))
-if (cd "$REPO_ROOT" && bash "$LINT" >/dev/null 2>&1); then
-  pass=$((pass + 1))
-else
-  echo "FAIL real-repo-clean: 実リポジトリで違反が出ている"
-  (cd "$REPO_ROOT" && bash "$LINT") || true
-  fail=$((fail + 1))
-fi
+(cd "$REPO_ROOT" && bash "$LINT" >"$OUT" 2>&1)
+check_bool "real-repo-clean" "実リポジトリで違反が出ている" [ ! -s "$OUT" ]
 
 echo "----"
 echo "lint-hook-stdout tests: $pass passed, $fail failed"

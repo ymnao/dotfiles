@@ -34,8 +34,13 @@ scan_root="${LINT_HOOK_STDOUT_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 
 scan_dirs="agents/hooks claude/hooks codex/hooks"
 
-scan_file() {
-    awk -v FILE="$1" '
+# 走査は awk 1 プロセスに全ファイルを渡して行う (ファイルごとに fork しない)。
+# ファイル境界では heredoc 追跡状態を必ずリセットする — 前のファイルが heredoc を
+# 閉じずに終わると、次のファイル全体が本文とみなされて検査が丸ごと抜ける。
+scan_files() {
+    awk '
+        FNR == 1 { in_hd = 0 }
+
         function is_json_prefix(c) { return (c == "[" || c == "{") }
 
         # 引用を意識して 1 行をコマンド segment に割る。segment 境界は
@@ -93,7 +98,7 @@ scan_file() {
             if (hd_dash) sub(/^\t+/, "", line)
             if (line == hd_term) { in_hd = 0; next }
             if (!hd_stderr && is_json_prefix(substr($0, 1, 1))) {
-                printf "%s:%d: heredoc-json-prefix\n", FILE, NR > "/dev/stderr"
+                printf "%s:%d: heredoc-json-prefix\n", FILENAME, FNR > "/dev/stderr"
             }
             next
         }
@@ -118,28 +123,42 @@ scan_file() {
                 if (segs[s] !~ /^[[:space:]]*(echo|printf)[[:space:]]/) continue
                 if (segs[s] ~ />&2/) continue
                 if (bad_literal(segs[s])) {
-                    printf "%s:%d: stdout-json-prefix\n", FILE, NR > "/dev/stderr"
+                    printf "%s:%d: stdout-json-prefix\n", FILENAME, FNR > "/dev/stderr"
                     break
                 }
             }
             delete segs
         }
-    ' "$1"
+    ' "$@"
 }
 
-violations=""
+# 存在するディレクトリだけを find に渡す (無いディレクトリを渡すと find が
+# エラーで非 0 を返す)。1 つも無ければ検査対象なしで正常終了。
+existing_dirs=()
 for d in $scan_dirs; do
-    [ -d "${scan_root}/${d}" ] || continue
-    while IFS= read -r f; do
-        out=$(scan_file "${scan_root}/${f}" 2>&1 >/dev/null)
-        [ -n "$out" ] && violations="${violations}${out}"$'\n'
-    done < <(cd "$scan_root" && find "$d" -type f -name '*.sh' | sort)
+    if [ -d "${scan_root}/${d}" ]; then
+        existing_dirs+=("$d")
+    fi
 done
+if [ "${#existing_dirs[@]}" -eq 0 ]; then
+    exit 0
+fi
+
+files=()
+while IFS= read -r f; do
+    files+=("$f")
+done < <(cd "$scan_root" && find "${existing_dirs[@]}" -type f -name '*.sh' | sort)
+if [ "${#files[@]}" -eq 0 ]; then
+    exit 0
+fi
+
+# 違反は awk が stderr に出す。stdout 側は捨てて stderr だけを受け取る。
+violations=$(cd "$scan_root" && scan_files "${files[@]}" 2>&1 >/dev/null)
 
 if [ -n "$violations" ]; then
     {
         echo "hook stdout が JSON に見える形で始まっています (codex では本文が捨てられます):"
-        printf '%s' "$violations"
+        printf '%s\n' "$violations"
         echo "対処: そのリテラルの先頭から { / [ を外すか、出力を stderr (>&2) に回す"
     } >&2
     exit 1
