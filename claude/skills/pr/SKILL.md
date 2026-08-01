@@ -24,10 +24,14 @@ Run each `gh` command as a bare invocation and substitute prior output literally
    - **medium**: run the codex-review `security` perspective (follow the codex-review skill's detect→verify→apply→confirm steps for that one perspective). Also run the project's test suite if one exists.
    - **high**: run all 3 codex-review perspectives AND the project's test suite. Then do the explain-the-diff walkthrough (step 5).
    - **codex 不能時のフォールバック**(not installed / sandbox skip (exit 3) / rate-limit skip (exit 4) いずれも): 第二意見をゼロにせず、**別系統サブエージェント(Agent tool, `model: "fable"`)のフレッシュレビュー**で代替する。skip された観点のプロンプト(`codex/review-prompts/<P>.md`)と diff を渡し、findings は codex-review と同じ verify→apply 手順で処理する。evidence には「codex-review skipped (<理由>) → fable 代替: <結果>」と記録する。Do not silently skip.
-   - **Fix-or-issue-or-dismiss ポリシー (三択)**: レビューで確認された finding の行き先は次の 3 つ。スコープ距離 (主旨との近さ) で振り分ける。「起票せず次セッションに暗黙持ち越し」は不可(verify-ci-before-pr hook も body 内の `defer(未起票)` を検出すると `gh pr create` をブロックする。ただし hook が検証するのは marker 有無のみで、(c) 対応しない の許可条件や user 承認の実在は hook では検証されない — skill 遵守で担保する):
-     - **(a) 本 PR で fix**: スコープ距離「直結 (主旨と同機能・同ファイル)」、または CONFIRMED HIGH で本 PR スコープ内
+   - **Fix-or-issue-or-dismiss ポリシー (三択)**: レビューで確認された finding の行き先は次の 3 つ。**(a) fix が既定**で、(b) / (c) は下記の条件を満たす例外として扱う。「起票せず次セッションに暗黙持ち越し」は不可(verify-ci-before-pr hook も body 内の `defer(未起票)` を検出すると `gh pr create` をブロックする。ただし hook が検証するのは marker 有無のみで、(c) 対応しない の許可条件や user 承認の実在は hook では検証されない — skill 遵守で担保する):
+     - **(a) 本 PR で fix (既定)**: CONFIRMED な Tier1 / Tier2 の finding は、**本 PR の diff 外のファイルであっても原則ここに入れる**。codex-review 由来かサブエージェント由来かで扱いを変えない。(b) / (c) に落とせるのは、fix が**本 PR の risk tier / レビュー範囲を押し上げる**次のいずれかに当たるときだけで、その理由を 1 文で記録する:
+       - security 境界・権限・秘密情報を扱う箇所に**新たに**触ることになる
+       - 別 repo / 別コンポーネントへ波及する
+       - 新しい test / eval / infra 基盤の追加が要る
+       - **「主旨と無関係」「対象ファイルが多い」「面倒」は理由にならない** — その場合は fix する。指摘の出所と修正が同じ PR に揃っていないと、根拠だけ別の場所に散る
      - **前提: Tier3 は三択に載せない**。`/dev` step 4-0 の三層分類で Tier3 (スタイル・好み・「今は壊れていないが将来こう変更されたら検出できない」型の網羅性向上・micro-optimization) と判定した finding は、fix も起票も**記録も**しない。分類表にも出さない。三択にかけるのは Tier1 / Tier2 だけ
-     - **(b) issue 起票して追跡**: スコープ距離「隣接 (主旨外だが関連)」以上で、次の 3 つを**すべて**満たすもの。1 つでも欠けたら (c):
+     - **(b) issue 起票して追跡**: (a) の例外条件に当たったうえで、次の 3 つを**すべて**満たすもの。1 つでも欠けたら (c):
        1. **実害 1 文** — 「この状態だと <誰/何> が <どう> 壊れる・気付けない」
        2. **目的接続 1 文** — repo の CLAUDE.md 冒頭にある目的文 (この repo は何のために存在するか) に照らして、直すと何が良くなるか。目的文が無い repo では「利用者に届く価値」で代用する
        3. **忘れたら手遅れになる 1 文** — 起票せず忘れた場合に、次に同じ話題が浮上した時点では手遅れになっていること
