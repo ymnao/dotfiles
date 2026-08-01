@@ -275,7 +275,9 @@ check_symlink_to_canonical "$REPO_ROOT/claude/hooks/hooks-integrity-warn.sh"
 # (scripts/link.sh / link.ps1)、ここに実体ファイルを置くと正本と drift する (issue #215)。
 check_symlink_to_canonical "$REPO_ROOT/codex/hooks/hooks-integrity-warn.sh"
 
-# --- 12. 配線: settings.json の SessionStart entry が 3 イベントすべてを拾う ---
+# --- 12. 配線: settings.json の SessionStart entry が compact 以外の対象イベントを拾う ---
+# 見出しに件数を書かないのは、Claude Code 側にイベントが増えるたび (2.1.214 の `fork`)
+# 見出しとループの両方を直す必要が出るため。
 matcher=$(jq -r '
   .hooks.SessionStart[]
   | select([.hooks[].command] | any(test("hooks-integrity-warn\\.sh")))
@@ -291,13 +293,22 @@ matches_re() {
 not_matches_re() {
   ! matches_re "$1" "$2"
 }
-for ev in startup resume clear; do
+# `fork` は 2.1.214 以降、セッション複製 (`--fork-session` / `/fork` / `/branch`) の
+# source として報告される (公式 hooks docs で確認、2026-08-01)。それより前は `resume`
+# として報告されていたため、古い CLI で足しても一度も match しない代わりに、
+# **足さないまま CLI を上げると複製セッションで改変検知が一度も発火しなくなる** (issue #245)。
+for ev in startup resume clear fork; do
   check_cmd "SessionStart matcher が ${ev} に一致すること (got: ${matcher})" \
     matches_re "$ev" "$matcher"
 done
 # 非対象イベントまで拾う緩い matcher (例: 空文字 / `.*`) になっていないこと
 check_cmd "SessionStart matcher が無関係なイベントに一致しないこと (got: ${matcher})" \
   not_matches_re "no-such-event" "$matcher"
+# `compact` を拾わないこと。上の `no-such-event` は `.*` のような match-all を弾くが、
+# 「`compact` を明示的に足す」変更は通してしまう。compact は別 entry
+# (session-compact-context.sh) が担当しており、ここで拾うと二重発火になる。
+check_cmd "SessionStart matcher が compact に一致しないこと (got: ${matcher})" \
+  not_matches_re "compact" "$matcher"
 # command は完全一致で pin する (パス誤記や余計なコマンドの混入を通さない)
 entry=$(jq -r '
   .hooks.SessionStart[].hooks[]
