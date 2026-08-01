@@ -52,11 +52,13 @@ For each finding, Read the actual `file`:`line` (and enough surrounding code to 
 
 **例外**: fix が**本 PR の risk tier / レビュー範囲を押し上げる**場合に限り、CONFIRMED HIGH でも fix せず REPORT-ONLY として記録し、理由を 1 文添える。**該当条件の正本と行き先判断は `$HOME/.claude/skills/pr/SKILL.md` の fix-or-issue-or-dismiss ポリシー (step 4 の (a)) に置く**(条件をここに書き写すと片方だけ更新されて食い違うため)。**「面倒」「対象ファイルが多い」「主旨と無関係」はいずれも理由にならない**(その場合は fix する)。
 
-Do not commit anything — leave fixes in the working tree for the user / `/pr`.
+detect→apply の途中で勝手に commit しない — fix は working tree に置いて user / `/pr` に渡す。**例外は step 4 の confirm run の直前だけ** (commit 済み diff しか codex に渡らないため)。
 
 ### 4. Confirm (only if fixes were applied)
 
-Re-run step 1 for the SAME perspective exactly once. If it still returns findings, do NOT fix again — record the remaining findings as UNRESOLVED and move on. Max runs per perspective: 2 (one detect + one confirm).
+**先に fix を commit してから**、step 1 を同じ観点でちょうど 1 回だけ再実行する。run-review.sh は `git diff <base>...HEAD` (= **commit 済みの diff**) を codex に渡すため、working tree に置いたままの修正は confirm run から見えない。commit せずに再実行すると、**直したはずの指摘がそのまま返ってきて UNRESOLVED と誤読する** (逆に、直っていないのに緑になる方向にも倒れる)。step 3 の「Do not commit」は detect→apply の途中で勝手に commit しないという意味で、confirm の前段はその例外。
+
+再実行してもまだ findings が出るなら、そこで fix を重ねない — 残りを UNRESOLVED として記録して次へ進む。Max runs per perspective: 2 (one detect + one confirm)。
 
 ## Report format
 
@@ -84,7 +86,7 @@ Then per-perspective details, one line per finding:
 - **Output contract**: run-review.sh returns validated JSON (schema-checked by `parse-review-output.sh`). Exit codes: 0 pass / 2 findings / 1 error / 3 sandbox skip / 4 rate-limit skip. Do NOT attempt to parse codex prose yourself; if you get exit 1, treat it as an error, not as PASS.
 - **Model selection**: run-review.sh はモデルを指定しない — `codex/config.toml` の global 設定 (`model` / `model_reasoning_effort`) が唯一の選択点。観点別・リスク tier 別の切り替えは意図的に持たない (計測なしの最適化はしない)。必要になったら `codex exec -c model=... -c model_reasoning_effort=...` の per-call override で実現できる。
 - **Why verify-then-fix**: cross-vendor reviewers have non-overlapping blind spots but also produce false positives; verification against the actual code filters them before they cost edit time. Detection is instructed to over-report ("report everything") and this skill filters downstream — do not skip verification because findings "look obviously right".
-- **Do not commit** fixes from this skill.
+- **Do not commit** fixes from this skill — ただし confirm run (step 4) の直前だけは commit する。run-review.sh が渡すのは `<base>...HEAD` の commit 済み diff なので、commit しないと confirm が古い状態を見る。
 - **Cost**: max 2 codex calls per perspective (detect + confirm), so max 6 calls for a full run. Confirm with the user before running on very large diffs.
 - **Design: split file layout**: this skill's scripts live in `claude/skills/codex-review/scripts/`; the perspective prompts live in `codex/review-prompts/` (codex-facing content). The split is intentional — to tweak a perspective, edit the `.md` under `codex/review-prompts/`.
 - **Running under a shell sandbox** (Claude Code の Bash sandbox 等): 外側シェルが `$HOME/.codex/` 配下の SQLite (`state_*.sqlite` / `goals_*.sqlite` / `memories_*.sqlite`) の write を allow していない場合、`codex` CLI 内部の in-process app-server client が state DB を open できず `failed to initialize in-process app-server client: Operation not permitted (os error 1)` で exit する。run-review.sh はこのシグネチャを検出して exit 3 (SKIP) を返す (ERROR ではなく明示的 skip)。回避策は 2 通り:
