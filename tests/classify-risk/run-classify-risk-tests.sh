@@ -334,7 +334,9 @@ EOF
 # CMDPOS / OPENPOS の位置集合にバッククォートを入れない回帰。Markdown の
 # インラインコードで頻出するので、位置集合に \` を足すとこのケースが high に転ぶ。
 # BACKTICK 経路 (issue #230) が展開文字を含まない散文インラインコードに発火しない
-# 回帰も兼ねる — EVAL_QNB を EVAL_Q に戻すと行末の \`\$HOME\` の \` で充足されて high
+# 回帰も兼ねる — EVAL_QNB を EVAL_Q に戻すと、同じインラインコード区間の
+# **閉じバッククォート自身**が Q を充足して high に転ぶ (行末の \`\$HOME\` は
+# 原因ではない。\$HOME を除いた検体でも同じ mutant で high になることを実測済み)
 scenario md-eval-inline-code low <<EOF
 claude/skills/foo/SKILL.md${T}- \`eval ls -la\` は静的リテラルの例。\`\$HOME\` も参照
 EOF
@@ -350,6 +352,20 @@ EOF
 # あるだけでは発火しない。\`[^\`]*\` を \`.*\` に緩めるとこのケースが high に転ぶ
 scenario md-eval-backtick-outside-dollar low <<EOF
 claude/skills/foo/SKILL.md${T}- \`eval ls -la\` を \$HOME で実行する例
+EOF
+
+# BACKTICK の先頭文字クラス (EVAL_WORD_BT) の TP。EVAL_WORD のままだと \` の次が
+# \`\\\` で当たらず、この形が tier=low = 無レビューで通る。CMDPOS の解説が危険形として
+# 挙げている eval value=\\\$\$name のイディオムそのものなので必ず pin する
+scenario md-eval-backtick-escaped-assign high <<EOF
+claude/skills/foo/SKILL.md${T}x=\`eval \\\\\$name=\$UNTRUSTED\`
+EOF
+
+# 先頭文字クラスを**丸ごと外す**方向の回帰。ASCII 側を広げるのは FP を増やさないが、
+# クラス自体を消すと eval の次が多バイトの散文まで拾ってしまう。この経路で
+# 先頭文字クラスが担っている唯一の責務がこれ
+scenario md-eval-backtick-multibyte-prose low <<EOF
+claude/skills/foo/SKILL.md${T}- \`eval と "参照"\` の違いを説明する
 EOF
 
 # doc + code 混在で code 側に exec-pattern があれば従来通り high
