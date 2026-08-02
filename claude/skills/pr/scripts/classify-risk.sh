@@ -110,7 +110,7 @@ check_path "infra"        'Dockerfile|docker-compose|\.tf$|\.tfvars$'
 # exec-pattern の `eval` は、シェルの実行構文として読める形だけを検出する
 # (issue #227)。散文中の「eval」の語では発火させないが、実行形を取りこぼすと
 # `.md` 単独 diff は tier=low = 無レビューになるため、FN は FP より高くつく。
-# 4 経路の OR で、どれか 1 つでも当たれば検出する:
+# 5 経路の OR で、どれか 1 つでも当たれば検出する:
 #   ADJACENT — eval から展開・引用文字までが、シェルの語として解釈できる
 #     ASCII トークンだけで繋がっている形。`run: eval "$x"` のように行の途中に
 #     前置がある実行指示形を拾うのが役割 (位置に依存しない)
@@ -130,28 +130,111 @@ check_path "infra"        'Dockerfile|docker-compose|\.tf$|\.tfvars$'
 #   LINECONT — 行末が `eval \` の形。引数が次行にあるため grep の行単位
 #     マッチでは中身を見られないので、この形自体を検出対象にする。
 #     eval の左側に語境界を要求する (`preeval \` `re-eval \` を弾くため)
-# 位置集合にもどの経路にも入れられないもの:
-#   バッククォート — Markdown のインラインコード (`` `eval ls -la` ``) と
-#     コマンド置換 (`` x=`eval arr[$i]=$X` ``) が、どちらも「バッククォート +
-#     eval + ASCII トークン」の形で区別できない (OPENPOS の条件が効かない)。
-#     このため `` `eval arr[$i]=$X` `` は取りこぼす
-# 既知の非検出: 展開も引用も一切含まない静的リテラルの `eval ls -la`
+#   BACKTICK — バッククォートのコマンド置換の中の eval
+#     (`` x=`eval arr[$i]=$X` ``)。位置集合 (CMDPOS / OPENPOS) にバッククォートを
+#     足す形では塞げない。真因は**`EVAL_Q` 自身がバッククォートを含む**ことで、
+#     `.*${EVAL_Q}` の条件が「行内のどこかにバッククォートがある」だけで自明に
+#     充足される。Markdown のインラインコード行は必ず閉じバッククォートを持つ
+#     ので、位置集合に足すと散文 (`` `eval ls -la` は静的リテラルの例 ``) が
+#     無条件に発火する。そこで独立経路にして 2 点を要求する:
+#       (a) 展開・引用文字の集合から backquote を除く (EVAL_QNB)
+#       (b) `[^`]*` で、**閉じバッククォートに達する前に**その文字が現れること
+#     これで「バッククォート区間の中で展開が起きている」形だけを取れる。
+#     区間の外に `$` があるだけの散文 (`` `eval ls -la` を $HOME で実行 ``) は
+#     発火しない (issue #230)
+# 他経路が拾うので FN にならないもの (BACKTICK 単独では当たらない):
+#   `` `eval "$x"` `` — eval の次が `"` で先頭文字クラスに入らないが ADJACENT。
+#   `` x=$(eval arr[$i]=$X) `` — OPENPOS の `(` 分岐。
+# 既知の非検出 (実測で low を確認済み。**塞げていない形をここに漏らさない** —
+# この節は次に触る人が「もう閉じた」と判断する根拠になるので、他経路が拾う形
+# だけを並べると非対称な安心を与える):
+#   `` x=`eval \`build_cmd\`` `` — 入れ子バッククォートで内側が escape された形。
+#     `[^`]*` が閉じ ` の前に展開文字を要求するので当たらない。区間内に
+#     バッククォートを許すと散文が丸ごと巻き込まれるため、意図的に取らない
+#   `` x=`eval >$LOG $CMD` `` `` x=`eval {a,b}$X` `` `` x=`eval ~/$X` ``
+#     `` x=`eval ((i=$X))` `` `` x=`eval *$X` `` — 第 1 引数が
+#     `>` `{` `~` `(` `*` で始まる形。EVAL_WORD_BT は allow-list なので
+#     入っていない。`"` `'` `$` 始まりは ADJACENT が拾うが、これらは
+#     どの経路も拾わない。**先頭文字クラスを広げれば個別には塞げるが、
+#     その足し方こそ下の trigger が止めようとしているもの**なので広げない
+#   `- eval arr[$i]=$X` / `run: eval arr[$i]=$X` — **行頭以外**に置かれた実行形。
+#     Markdown の箇条書き接頭辞 2 文字で CMDPOS の位置集合 (`^\+`) を外せる。
+#     BACKTICK 由来ではなく #227 以前からの穴で、バッククォート形より広い。
+#     経路追加では届かないので下の一般化 trigger の対象 (issue に切り出す)
+#   展開も引用も一切含まない静的リテラルの `eval ls -la`
 # (動的展開が無く、このルールが見ているリスクに当たらないため意図的)。
-# 実測 (tracked 行に `+` を前置した added_code 相当のコーパスに対するマッチ
-# ファイル数): 旧 `eval ` = 58 / ADJACENT のみ = 5 / 現行の 4 経路 = 5。
+# 実測 (2026-08-02。測定方法を明記する — 方法が書いてないと別の数え方で
+# 再現できず「どちらが正しいか」で往復する。**`git ls-files` の各ファイルを
+# symlink 追従で読み、全行に `+` を前置して `grep -iE` し、マッチした
+# ファイル数を数える**。`git grep` は blob を見るので symlink 配下
+# (`claude/hooks/*` 等) が当たらず、同じ総数でも内訳が変わる):
+# ADJACENT のみ = 8 / 4 経路 = 10 / BACKTICK を足した 5 経路 = 10。
+# **旧 `eval ` の側は数値を載せない** — 走査方法の差 (symlink 追従の有無) で
+# 57 と 62 のどちらにも振れ、レビューで 3 回とも違う値が出て決着しなかった。
+# 絶対値は測り方に敏感すぎて根拠にならないので、**同一時点・同一方法で取った
+# 4 経路と 5 経路の差**だけを判断に使う (この 3 つは方法を問わず再現した)。
+# **この増分 0 が測っているのは FP 面積であって経路の有効性ではない** —
+# コーパスは repo 自身の既存ファイルで、脅威は「これから来る diff」の側に
+# あるため (有効性は下の検体と mutation check の側で見る)。
+# **さらに「ファイル数の増分 0」を「散文への巻き込みが無い」と読んではいけない** —
+# 0 なのはそのファイルが既に他経路でマッチ済みだからで、行粒度では
+# 4 経路 41 行 -> 5 経路 53 行 (+12) 増えている (増分のうち 4 行はこの
+# ファイル自身の解説散文)。巻き込みは実際にあり、向きが low->high =
+# レビューが増える側なので許容している、が正しい読み。
 # 手で組んだ検体では危険形 24 種を 24 件とも検出、散文 11 種は 0 件検出。
-# 4 経路それぞれの検出責務は mutation check で確認済み (経路を 1 つ落とすと
+# 5 経路それぞれの検出責務は mutation check で確認済み (経路を 1 つ落とすと
 # tests/classify-risk の対応ケースが FAIL する)。
+# 経路を足し続けることの限界 (issue #230 が提起した論点):
+#   行単位の grep は、コードフェンスの内外も行をまたぐ構文も見られないので、
+#   散文と実行構文を原理的に分離しきれない。取りこぼしは #227 から数えて
+#   ラウンドを跨いで出続けている。経路追加は暫定であって恒久策ではない。
+#   より深い代替は #230 に 2 案ある (`.md` はコードフェンス内の行だけを
+#   content check する / `.md` で発火したら medium に落とす重み付け)。
+#   **次のいずれかを観測したら経路追加をやめて上の一般化に切り替える**
+#   (毎回その場で判断すると必ず「今回はあと 1 本」に倒れるため先に書く):
+#     - 経路が 6 本目に達する
+#     - 同一 issue の中で 2 ラウンド以上の経路追加往復が発生する
+#     - **経路追加では届かない FN を観測する** (上の「行頭以外の実行形」型)。
+#       本数や往復回数だけを trigger にすると、いま既に観測済みのこの穴を
+#       見ても発火しない。停止条件は在庫ではなく FN 側でも測る
 # なお下の例示コメント自身がこのパターンにマッチするため、このファイルを触る
 # PR は tier=high になる。実行構文の具体例を残す方を優先した意図的な結果で、
 # 自ファイル除外は入れない (除外は bypass 経路になる)。
-EVAL_WORD='[-A-Za-z0-9_./=]'      # eval の引数の語として許す文字集合
+# eval の引数の語として許す文字。EVAL_WORD と EVAL_WORD_BT の**両方**がこれを
+# 使う。片方に文字を足してもう片方に足し忘れる drift を構造的に防ぐため、
+# 集合の中身は 1 箇所 (CORE) にしか書かない。bracket 内で `-` が範囲指定に
+# ならないよう、CORE には `-` を入れず各定義側で端に置く
+EVAL_WORD_CORE='A-Za-z0-9_./='
+EVAL_WORD="[-${EVAL_WORD_CORE}]"  # eval の引数の語として許す文字集合
 EVAL_Q='["$`'"'"']'               # 展開・引用の開始文字 (" $ backquote ')
 EVAL_ADJACENT="eval([[:space:]]+${EVAL_WORD}+)*[[:space:]]+(${EVAL_WORD}*[=_])?${EVAL_Q}"
 EVAL_CMDPOS="(^\\+|[;&{!]|\\|\\||(^|[^A-Za-z0-9_])(then|do|else|elif)[[:space:]])[[:space:]]*eval[[:space:]].*${EVAL_Q}"
 EVAL_OPENPOS="[(|][[:space:]]*eval[[:space:]]+${EVAL_WORD}.*${EVAL_Q}"
 EVAL_LINECONT='(^|[^A-Za-z0-9_-])eval[[:space:]]*\\$'
-check_content "exec-pattern"        "${EVAL_ADJACENT}|${EVAL_CMDPOS}|${EVAL_OPENPOS}|${EVAL_LINECONT}|child_process|subprocess|os\\.system|exec\\(|dangerouslySetInnerHTML"
+# EVAL_BACKTICK の (a) に対応する集合。手書きの複製にせず EVAL_Q から
+# backquote を除いて**導出する** — 別リテラルで持つと EVAL_Q に引用文字を
+# 足したとき QNB 側が黙って追随せず、BACKTICK 経路だけが古い集合のまま
+# 陳腐化する (テストは経路の入出力しか見ないのでこの drift は検出できない)
+EVAL_QNB="${EVAL_Q//\`/}"
+# BACKTICK の先頭 1 文字だけは EVAL_WORD より広い集合を使う。EVAL_WORD は
+# allow-list なので `\` `[` `]` で始まる引数 (`` `eval \$name=$X` ``
+# `` `eval [ -n $X ]` ``) が抜け、**この PR が閉じると宣言した族の中に
+# bypass が残る**。CMDPOS の解説が危険形として挙げている `eval value=\$$name`
+# と同じ「`\` を挟む」族 (ただし `value=` 始まりの原形は先頭が `v` なので
+# EVAL_WORD でも当たる — 抜けるのは `\` が先頭に来る形)。
+# 散文との分離は (a)(b) の 2 条件が担っている。このクラスの役割は
+# **eval の次が語らしくない形を落とすこと**で、具体的には多バイト散文
+# (`` `eval と "参照"` の違い ``) と ASCII 記号始まり (`>` `{` `~` `(` `*`) の
+# 両方を落とす。後者は上の「既知の非検出」に挙げた FN の直接原因でもある
+# (クラスは FP と FN のトレードオフの調整点であって、片側だけの装置ではない)。
+# 広げた 3 文字については、危険形 5 種が high に転じ散文 6 種が low のまま
+# であることを実測した (この検体の範囲では FP 増分 0。行粒度の全体傾向は
+# 上の実測節を参照)
+# EVAL_WORD + backslash + 角括弧。CORE を共有するので EVAL_WORD に文字を
+# 足せば自動で追随する (`-` は範囲指定を避けるため末尾に置く)
+EVAL_WORD_BT="[][\\\\${EVAL_WORD_CORE}-]"
+EVAL_BACKTICK="\`[[:space:]]*eval[[:space:]]+${EVAL_WORD_BT}[^\`]*${EVAL_QNB}"
+check_content "exec-pattern"        "${EVAL_ADJACENT}|${EVAL_CMDPOS}|${EVAL_OPENPOS}|${EVAL_LINECONT}|${EVAL_BACKTICK}|child_process|subprocess|os\\.system|exec\\(|dangerouslySetInnerHTML"
 check_content "pipe-to-shell"       '(curl|wget)[^|;]*\|[[:space:]]*(ba|z|da)?sh'
 check_content "permission-widening" 'chmod (777|666)|--dangerously|--no-verify'
 check_deleted "test-removal" '(^|/)(tests?|__tests__|spec)/|\.(test|spec)\.[a-z]+$|_test\.(go|py|rb|ts|tsx|js|jsx)$|\.cases\.jsonl$'

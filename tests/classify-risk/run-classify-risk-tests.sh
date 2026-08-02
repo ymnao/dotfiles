@@ -331,10 +331,57 @@ scenario sh-eval-paren-prose medium <<EOF
 scripts/doc.sh${T}# この JSON は (eval が literal "tier" を読むため) verbatim に転記する
 EOF
 
-# CMDPOS の位置集合にバッククォートを入れない回帰。Markdown のインラインコードで
-# 頻出するので、位置集合に \` を足すとこのケースが high に転ぶ
+# CMDPOS / OPENPOS の位置集合にバッククォートを入れない回帰。Markdown の
+# インラインコードで頻出するので、位置集合に \` を足すとこのケースが high に転ぶ。
+# BACKTICK 経路 (issue #230) が展開文字を含まない散文インラインコードに発火しない
+# 回帰も兼ねる — EVAL_QNB を EVAL_Q に戻すと、同じインラインコード区間の
+# **閉じバッククォート自身**が Q を充足して high に転ぶ (行末の \`\$HOME\` は
+# 原因ではない。\$HOME を除いた検体でも同じ mutant で high になることを実測済み)
 scenario md-eval-inline-code low <<EOF
 claude/skills/foo/SKILL.md${T}- \`eval ls -la\` は静的リテラルの例。\`\$HOME\` も参照
+EOF
+
+# BACKTICK 経路 (issue #230) の TP: バッククォートのコマンド置換内の eval。
+# ADJACENT は \` の後の \`[\` で、CMDPOS/OPENPOS は位置集合に \` が無いことで
+# 当たらないため、この経路が無いと SKILL.md 単独変更が tier=low = 無レビューになる
+scenario md-eval-backtick-subst high <<EOF
+claude/skills/foo/SKILL.md${T}x=\`eval arr[\$i]=\$UNTRUSTED\`
+EOF
+
+# BACKTICK 経路の区間限定 (\`[^\`]*\`) の回帰。バッククォート区間の**外**に展開文字が
+# あるだけでは発火しない。\`[^\`]*\` を \`.*\` に緩めるとこのケースが high に転ぶ
+scenario md-eval-backtick-outside-dollar low <<EOF
+claude/skills/foo/SKILL.md${T}- \`eval ls -la\` を \$HOME で実行する例
+EOF
+
+# BACKTICK の先頭文字クラス (EVAL_WORD_BT) が広げた 3 文字を**分岐ごとに**固定する。
+# 1 ケースにまとめると tier が high に潰れて他分岐の取りこぼしを覆い隠すため、
+# backslash 始まりと角括弧始まりを別ケースで持つ (この分割は同ファイルの
+# 文字クラス 4 分岐ケースと同じ理由)。
+#
+# backslash 始まり。EVAL_WORD のままだと \` の次が \`\\\` で当たらず low になる
+scenario md-eval-backtick-escaped-assign high <<EOF
+claude/skills/foo/SKILL.md${T}x=\`eval \\\\\$name=\$UNTRUSTED\`
+EOF
+
+# 角括弧始まり。クラスから \`][\` だけを外す退行を検出する
+# (この検体が無いと \`][\` を削っても全ケース pass する穴があった)
+scenario md-eval-backtick-bracket-start high <<EOF
+claude/skills/foo/SKILL.md${T}x=\`eval [ -n \$UNTRUSTED ]\`
+EOF
+
+# 開始バッククォートと eval の間の \`[[:space:]]*\` 分岐。この検体が無いと
+# 空白許容を削っても全ケース pass する
+scenario md-eval-backtick-leading-space high <<EOF
+claude/skills/foo/SKILL.md${T}x=\` eval arr[\$i]=\$UNTRUSTED\`
+EOF
+
+# 先頭文字クラスを**丸ごと外す**方向の回帰。クラスを消すと eval の次が多バイトの
+# 散文まで拾ってしまう。クラスは「eval の次が語らしくない形」を落とす調整点で、
+# 多バイト散文のほかに ASCII 記号始まり (\`>\` \`{\` \`~\` 等) も落としている
+# (後者は分類器コメントの「既知の非検出」に挙げた FN の直接原因でもある)
+scenario md-eval-backtick-multibyte-prose low <<EOF
+claude/skills/foo/SKILL.md${T}- \`eval と "参照"\` の違いを説明する
 EOF
 
 # doc + code 混在で code 側に exec-pattern があれば従来通り high
