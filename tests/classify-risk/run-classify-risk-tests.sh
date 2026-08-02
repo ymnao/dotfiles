@@ -354,16 +354,32 @@ scenario md-eval-backtick-outside-dollar low <<EOF
 claude/skills/foo/SKILL.md${T}- \`eval ls -la\` を \$HOME で実行する例
 EOF
 
-# BACKTICK の先頭文字クラス (EVAL_WORD_BT) の TP。EVAL_WORD のままだと \` の次が
-# \`\\\` で当たらず、この形が tier=low = 無レビューで通る。CMDPOS の解説が危険形として
-# 挙げている eval value=\\\$\$name のイディオムそのものなので必ず pin する
+# BACKTICK の先頭文字クラス (EVAL_WORD_BT) が広げた 3 文字を**分岐ごとに**固定する。
+# 1 ケースにまとめると tier が high に潰れて他分岐の取りこぼしを覆い隠すため、
+# backslash 始まりと角括弧始まりを別ケースで持つ (この分割は同ファイルの
+# 文字クラス 4 分岐ケースと同じ理由)。
+#
+# backslash 始まり。EVAL_WORD のままだと \` の次が \`\\\` で当たらず low になる
 scenario md-eval-backtick-escaped-assign high <<EOF
 claude/skills/foo/SKILL.md${T}x=\`eval \\\\\$name=\$UNTRUSTED\`
 EOF
 
-# 先頭文字クラスを**丸ごと外す**方向の回帰。ASCII 側を広げるのは FP を増やさないが、
-# クラス自体を消すと eval の次が多バイトの散文まで拾ってしまう。この経路で
-# 先頭文字クラスが担っている唯一の責務がこれ
+# 角括弧始まり。クラスから \`][\` だけを外す退行を検出する
+# (この検体が無いと \`][\` を削っても全ケース pass する穴があった)
+scenario md-eval-backtick-bracket-start high <<EOF
+claude/skills/foo/SKILL.md${T}x=\`eval [ -n \$UNTRUSTED ]\`
+EOF
+
+# 開始バッククォートと eval の間の \`[[:space:]]*\` 分岐。この検体が無いと
+# 空白許容を削っても全ケース pass する
+scenario md-eval-backtick-leading-space high <<EOF
+claude/skills/foo/SKILL.md${T}x=\` eval arr[\$i]=\$UNTRUSTED\`
+EOF
+
+# 先頭文字クラスを**丸ごと外す**方向の回帰。クラスを消すと eval の次が多バイトの
+# 散文まで拾ってしまう。クラスは「eval の次が語らしくない形」を落とす調整点で、
+# 多バイト散文のほかに ASCII 記号始まり (\`>\` \`{\` \`~\` 等) も落としている
+# (後者は分類器コメントの「既知の非検出」に挙げた FN の直接原因でもある)
 scenario md-eval-backtick-multibyte-prose low <<EOF
 claude/skills/foo/SKILL.md${T}- \`eval と "参照"\` の違いを説明する
 EOF
