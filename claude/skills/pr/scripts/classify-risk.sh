@@ -297,19 +297,24 @@ LOW_ONLY_PATTERN='\.md$|^docs/|^LICENSE|\.txt$'
 # `evals/README.md` を契約文書として参照する)。
 #
 # よって床は独自の除外パターンを持つ。含めるのは**エージェントが指示として
-# 読まない**ものだけ: repo root の `README*.md` (人間向けの入口)、`LICENSE*`、
-# `.txt`。drift は「集合を 1 つにする」ではなく、両パターンに触れるときの
+# 読まない**ものだけ: repo root の `README*.md` (人間向けの入口) と
+# `LICENSE*`。drift は「集合を 1 つにする」ではなく、両パターンに触れるときの
 # 判断基準を上に書き下すことで防ぐ。
 #
+# `.txt` を除外に入れない理由 (一度入れて codex-review security に覆された):
+# この repo の `.txt` は散文ではなく**制御ファイル**で、
+# `tests/integrity/allowed-mcp.txt` は `~/.claude.json` に存在してよい MCP
+# サーバーの許可リスト、`packages/winget-packages.txt` /
+# `packages/scoop-packages.txt` は `scripts/install.ps1` が読んで実際に
+# パッケージを入れる manifest。**許可リストを広げる変更が無レビューで通る**
+# のは、この床が消そうとしている結果そのもの。「エージェント指示文書ではない」
+# は除外の理由にならない — 床が守るのは「実環境に効く変更を無レビューにしない」
+# ことで、指示文書はその一例にすぎない。
+#
 # **既知の非検出 (床の外に残るもの。閉じたと読ませないために明記する)**:
-#   - `.txt` の制御ファイル — `packages/winget-packages.txt` /
-#     `packages/scoop-packages.txt` は `scripts/install.ps1` が読んで実際に
-#     パッケージを入れる manifest、`tests/integrity/allowed-mcp.txt` は
-#     MCP サーバーの許可リスト。エージェント指示文書ではないが、変更が
-#     実環境に効く点は同じ。床ではなく path rule 側で拾うのが筋なので
-#     ここでは広げない
 #   - 非 root の `README*.md` (`sub/README.md`) — root の入口文書と同じ
-#     パターンで除外される
+#     パターンで除外される。`claude/skills/dev/evals/README.md` のように
+#     契約文書として参照される README がこれに当たる
 #
 # rename 対策として床の入力だけは `--no-renames` で取り直す。`--name-only` は
 # rename の**宛先しか返さない**ため、`git mv claude/skills/foo/SKILL.md
@@ -324,7 +329,7 @@ LOW_ONLY_PATTERN='\.md$|^docs/|^LICENSE|\.txt$'
 # コスト: SKILL.md の些細な変更でも codex-review security が回る。この
 # repo は skill 変更 PR が多いので実際にレビュー時間は増える。「無レビュー
 # で通る経路を残さない」方を優先した意図的なトレードオフ
-FLOOR_EXEMPT_PATTERN='^README[^/]*\.md$|(^|/)LICENSE[^/]*$|\.txt$'
+FLOOR_EXEMPT_PATTERN='^README[^/]*\.md$|(^|/)LICENSE[^/]*$'
 # ---- /RULES ----
 
 tier="medium"
