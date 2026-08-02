@@ -8,8 +8,12 @@ set -euo pipefail
 # exit: 0 = 分類成功 (tier がどれでも 0) / 1 = 前提エラー
 #
 # 分類はモデルの判断に任せず path/grep で決定的に行う (下位モデルでも
-# 同一精度にするため)。ルール追加はこのファイルの RULES セクションだけを
-# 編集すればよい構造にしてある。
+# 同一精度にするため)。**high 方向のルール**追加はこのファイルの RULES
+# セクションだけを編集すればよい構造にしてある。
+# 一方 tier の別方向の操作 (medium 床など) は check_path / check_content /
+# check_deleted の 3 プリミティブでは表現できない — いずれも `$reasons` に
+# 積んで high に固定する片方向の装置なので、RULES ではなく下の tier 確定
+# ロジックを直接編集することになる (issue #255 の床が実例)
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "ERROR: jq is not installed" >&2
@@ -160,10 +164,10 @@ check_path "infra"        'Dockerfile|docker-compose|\.tf$|\.tfvars$'
 #   `- eval arr[$i]=$X` / `run: eval arr[$i]=$X` — **行頭以外**に置かれた実行形。
 #     Markdown の箇条書き接頭辞 2 文字で CMDPOS の位置集合 (`^\+`) を外せる。
 #     BACKTICK 由来ではなく #227 以前からの穴で、バッククォート形より広い。
-#     経路追加では届かないので下の一般化 trigger が発火し、issue #255 で
-#     **検出ではなく結果の側**を直した (下の AGENT_DOC_MD_PATTERN の medium
-#     床)。**この形はいまも high にはならない** — 床で最低 1 観点の
-#     レビューに載るだけなので、非検出の一覧からは外さない
+#     経路追加では届かないので下の一般化 trigger が発火した (経緯と対応は
+#     LOW_ONLY_PATTERN 直後の medium 床のコメントに 1 箇所だけ書いてある)。
+#     **この形はいまも high にはならない** — 床で最低 1 観点のレビューに
+#     載るだけなので、非検出の一覧からは外さない
 #   展開も引用も一切含まない静的リテラルの `eval ls -la`
 # (動的展開が無く、このルールが見ているリスクに当たらないため意図的)。
 # 実測 (2026-08-02。測定方法を明記する — 方法が書いてないと別の数え方で
@@ -200,13 +204,11 @@ check_path "infra"        'Dockerfile|docker-compose|\.tf$|\.tfvars$'
 #     - **経路追加では届かない FN を観測する** (上の「行頭以外の実行形」型)。
 #       本数や往復回数だけを trigger にすると、いま既に観測済みのこの穴を
 #       見ても発火しない。停止条件は在庫ではなく FN 側でも測る
-#   **3 つ目は #255 で発火済み**。切り替え先は 2 案のうち後者寄りで、
-#   「`.md` で発火したら medium に落とす」ではなく「エージェント指示文書の
-#   `.md` は low に落とさない」= 床にした (発火しない形が問題だったので、
-#   発火時の重み付けでは閉じない)。前者の案 (コードフェンス内の行だけを
-#   content check する) は未実装で、床とは独立に検出精度を上げる余地として
-#   残っている。**経路 6 本目の trigger は生きている** — 床があっても
-#   exec-pattern に経路を足してよい理由にはならない
+#   **3 つ目は #255 で発火済み** (対応は LOW_ONLY_PATTERN 直後の medium 床)。
+#   もう 1 案の「コードフェンス内の行だけを content check する」は未実装で、
+#   床とは独立に検出精度を上げる余地として残っている。
+#   **経路 6 本目の trigger は生きている** — 床があっても exec-pattern に
+#   経路を足してよい理由にはならない
 # なお下の例示コメント自身がこのパターンにマッチするため、このファイルを触る
 # PR は tier=high になる。実行構文の具体例を残す方を優先した意図的な結果で、
 # 自ファイル除外は入れない (除外は bypass 経路になる)。
@@ -277,6 +279,9 @@ LOW_ONLY_PATTERN='\.md$|^docs/|^LICENSE|\.txt$'
 # 書くと片方に足してもう片方に足し忘れる drift が起きるため。実際 `\.md$`
 # を足した版を mutation check にかけたところ、**広げても狭めても 1 件も
 # FAIL しない** = 検出責務が無いことが分かったので落とした。
+# 実装は上の `paths` 配列 (content check 対象 = 同じ差集合) をそのまま
+# 使う。同じ絞り込みを 2 度書かないため。**`paths` の作り方を変えるときは
+# 床の対象も一緒に動く** — 両者が同じ集合であることが前提。
 # 副作用として、将来 LOW_ONLY_PATTERN に新しい文書形式が入ると既定で床の
 # 対象になる。これは fail-closed 側なので許容する (レビュー不要と判断する
 # なら NOT_EXECUTABLE_DOC_PATTERN に明示的に足す)。
@@ -290,11 +295,12 @@ tier="medium"
 if [ -n "$reasons" ]; then
   tier="high"
 elif [ -n "$files" ] && [ -z "$(printf '%s\n' "$files" | grep -ivE "$LOW_ONLY_PATTERN" || true)" ]; then
-  # doc-only diff。エージェント指示文書を含むなら medium 床で止める
-  agent_docs=$(printf '%s\n' "$files" | grep -vE "$NOT_EXECUTABLE_DOC_PATTERN" | head -3 || true)
-  if [ -n "$agent_docs" ]; then
+  # doc-only diff。エージェント指示文書を含むなら medium 床で止める。
+  # 判定には content check 用に組んだ `paths` をそのまま使う (同じ
+  # NOT_EXECUTABLE_DOC_PATTERN での絞り込みを 2 度書かない)
+  if [ "${#paths[@]}" -gt 0 ]; then
     tier="medium"
-    add_reason "medium-floor: エージェント指示文書の変更を含むため無レビューにしない: $(printf '%s' "$agent_docs" | tr '\n' ' ')"
+    add_reason "medium-floor: エージェント指示文書の変更を含むため無レビューにしない: $(printf '%s ' "${paths[@]:0:3}")"
   else
     tier="low"
     add_reason "low-only: 変更がドキュメント類のみ"
