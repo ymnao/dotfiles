@@ -281,52 +281,62 @@ LOW_ONLY_PATTERN='\.md$|^docs/|^LICENSE|\.txt$'
 # 取りこぼしを 0 にする必要が無くなる分、exec-pattern 側に経路を足し続ける
 # 圧力も下がる。
 #
-# 対象集合は**既存 2 パターンの差**として定義する。床が走るのは既に
-# low-only と判定された後なので、そこから NOT_EXECUTABLE_DOC_PATTERN
-# (= エージェントに指示として解釈されない文書) を引いた残りが、そのまま
-# 「指示として解釈される文書」になる。
-#   LOW_ONLY_PATTERN - NOT_EXECUTABLE_DOC_PATTERN = 床の対象
-# 3 つ目のリテラル (`\.md$` 等) を持たないのは、同じ意味の集合を 2 箇所に
-# 書くと片方に足してもう片方に足し忘れる drift が起きるため。加えて実測でも
-# 不要だった: 一度 `AGENT_DOC_MD_PATTERN='\.md$'` を AND 条件として持つ版を
-# 書き、**その 1 変数だけ** を `'.'` に広げるミュータントを当てたところ
-# 82 ケース中 1 件も FAIL しなかった (2026-08-02)。低くする向き
-# (`SKILL\.md$` 等) は検出されるが、それは床の対象を狭める = 別の変更で
-# あって、この条件が**追加している**判別力ではない。
+# **床の除外集合は content check の除外集合 (NOT_EXECUTABLE_DOC_PATTERN) とは
+# 別物**。当初は「同じ集合を 2 箇所に書くと drift する」という理由で後者を
+# 再利用したが、レビュー (codex security / code-reviewer) が具体的な反例を
+# 出して覆した。2 つの問いは別だから:
+#   content check の除外 = 「この行を grep して実行構文を探す価値があるか」
+#                          (散文を grep すると FP になるので docs/ を外す)
+#   床の除外           = 「この文書はエージェントが指示として読むか」
+#                          (読むなら、危険文字列が無くてもレビューに載せる)
+# `docs/ai-operations.md` はこの 2 つで答えが割れる典型で、散文だが
+# `agents/AGENTS.md` と `claude/skills/paper-review/SKILL.md` から参照され、
+# §8 は settings.json の手動レビュー手順を命令形で書いている。集合を共有
+# していた版では、この文書の変更が tier=low = 無レビューで通っていた。
+# `evals/` 配下の `.md` も同様 (`claude/skills/dev/SKILL.md` が
+# `evals/README.md` を契約文書として参照する)。
 #
-# **床の対象は「エージェントが読む文書すべて」ではない**。NOT_EXECUTABLE_DOC_PATTERN
-# に入る文書 — 具体的には `docs/` 配下 (`docs/ai-operations.md` は
-# `agents/AGENTS.md` と `claude/skills/paper-review/SKILL.md` から参照される
-# 運用指示で、§8 は settings.json の手動レビュー手順を命令形で書いている) と
-# `evals/README.md` (`claude/skills/dev/SKILL.md` が契約文書として参照) は
-# **床の外に残っており、いまも tier=low = 無レビューで通る**。
-# ここを塞ぐには NOT_EXECUTABLE_DOC_PATTERN を絞る必要があるが、それは
-# content check の対象範囲 (= 散文の FP 面積) も同時に動かすので、床とは
-# 別に測り直しが要る。**閉じたと読ませないためにここに明記する**
-# 実装は上の `paths` 配列 (content check 対象 = 同じ差集合) をそのまま
-# 使う。同じ絞り込みを 2 度書かないため。**`paths` の作り方を変えるときは
-# 床の対象も一緒に動く** — 両者が同じ集合であることが前提。
-# 副作用として、将来 LOW_ONLY_PATTERN に新しい文書形式が入ると既定で床の
-# 対象になる。これは fail-closed 側なので許容する (レビュー不要と判断する
-# なら NOT_EXECUTABLE_DOC_PATTERN に明示的に足す)。
+# よって床は独自の除外パターンを持つ。含めるのは**エージェントが指示として
+# 読まない**ものだけ: repo root の `README*.md` (人間向けの入口)、`LICENSE*`、
+# `.txt`。drift は「集合を 1 つにする」ではなく、両パターンに触れるときの
+# 判断基準を上に書き下すことで防ぐ。
+#
+# **既知の非検出 (床の外に残るもの。閉じたと読ませないために明記する)**:
+#   - `.txt` の制御ファイル — `packages/winget-packages.txt` /
+#     `packages/scoop-packages.txt` は `scripts/install.ps1` が読んで実際に
+#     パッケージを入れる manifest、`tests/integrity/allowed-mcp.txt` は
+#     MCP サーバーの許可リスト。エージェント指示文書ではないが、変更が
+#     実環境に効く点は同じ。床ではなく path rule 側で拾うのが筋なので
+#     ここでは広げない
+#   - 非 root の `README*.md` (`sub/README.md`) — root の入口文書と同じ
+#     パターンで除外される
+#
+# rename 対策として床の入力だけは `--no-renames` で取り直す。`--name-only` は
+# rename の**宛先しか返さない**ため、`git mv claude/skills/foo/SKILL.md
+# docs/x.md` のように指示文書を床の外へ動かす変更が、元パスを分類器から
+# 見えなくして low で通っていた (削除は `skill-md-removal-floor` で塞いで
+# いたのに、同じ「指示文書が無くなる」変更である rename は素通りしていた)。
+# `--no-renames` にすると rename が delete + add に分解され、元パスも入力に
+# 入る。**`$files` 側は `--name-only` のまま**にする — check_deleted が
+# `--diff-filter=D` で rename を意図的に除外しており、そちらの意味論を
+# 変えないため。
 #
 # コスト: SKILL.md の些細な変更でも codex-review security が回る。この
 # repo は skill 変更 PR が多いので実際にレビュー時間は増える。「無レビュー
 # で通る経路を残さない」方を優先した意図的なトレードオフ
+FLOOR_EXEMPT_PATTERN='^README[^/]*\.md$|(^|/)LICENSE[^/]*$|\.txt$'
 # ---- /RULES ----
 
 tier="medium"
 if [ -n "$reasons" ]; then
   tier="high"
 elif [ -n "$files" ] && [ -z "$(printf '%s\n' "$files" | grep -ivE "$LOW_ONLY_PATTERN" || true)" ]; then
-  # doc-only diff。エージェント指示文書を含むなら medium 床で止める。
-  # 判定には content check 用に組んだ `paths` をそのまま使う (同じ
-  # NOT_EXECUTABLE_DOC_PATTERN での絞り込みを 2 度書かない)
-  if [ "${#paths[@]}" -gt 0 ]; then
+  # doc-only diff。エージェント指示文書を含むなら medium 床で止める
+  floor_docs=$(git diff "$REF...HEAD" --name-only --no-renames \
+    | grep -vE "$FLOOR_EXEMPT_PATTERN" | head -3 || true)
+  if [ -n "$floor_docs" ]; then
     tier="medium"
-    # 既存 3 ヘルパと同じく改行を潰す (`-z` 由来の生パスなので、改行を含む
-    # ファイル名があると jq の split("\n") が偽の reason 要素を作る)
-    add_reason "medium-floor: エージェント指示文書の変更を含むため無レビューにしない: $(printf '%s ' "${paths[@]:0:3}" | tr '\n' ' ')"
+    add_reason "medium-floor: エージェント指示文書の変更を含むため無レビューにしない: $(printf '%s' "$floor_docs" | tr '\n' ' ')"
   else
     tier="low"
     add_reason "low-only: 変更がドキュメント類のみ"

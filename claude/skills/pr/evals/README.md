@@ -11,7 +11,7 @@
 - 01 — 正常系 (feature ブランチから PR 作成)
 - 02 — 重複 PR 検出
 - 03 — 0 コミットで停止
-- 04 — tier=low (docs のみ) はレビューを省略
+- 04 — tier=low (床の除外文書のみ) はレビューを省略
 - 05 — tier=high (依存変更) はフルレビュー + ウォークスルー
 - 06 — 分類分岐 (fix-or-issue-or-dismiss の 5 サブケース、reviewer stub 決定化)
 - 07 — user checkpoint 制御フロー (停止 + 副作用ゼロ + 再開)

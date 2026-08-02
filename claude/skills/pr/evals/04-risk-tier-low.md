@@ -1,4 +1,9 @@
-# eval: pr — tier=low (docs のみ) はレビューを省略
+# eval: pr — tier=low (床の除外文書のみ) はレビューを省略
+
+<!-- 「docs のみ」ではない: issue #255 の medium 床により `docs/` は
+     tier=medium になる。low を測れるのは床の除外側 (root の README /
+     LICENSE / .txt) だけで、この eval は README.md を使っている -->
+
 
 ## Setup
 ```bash

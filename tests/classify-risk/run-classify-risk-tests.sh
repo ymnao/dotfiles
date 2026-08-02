@@ -102,7 +102,7 @@ scenario() {
 
 T=$(printf '\t')
 
-scenario docs-only low <<EOF
+scenario docs-only medium <<EOF
 README.md${T}# readme update
 docs/guide.md${T}guide
 EOF
@@ -156,17 +156,22 @@ src/run.py${T}import subprocess
 EOF
 
 # doc-only diff に exec-pattern 文字列が含まれても content check は発火しない
-# (eval fixture の shell スニペットが誤検知されて tier=high になる問題の回帰防止)
-scenario docs-only-with-exec-string low <<EOF
+# (eval fixture の shell スニペットが誤検知されて tier=high になる問題の回帰防止)。
+# **期待値は medium** — `docs/` は content check の対象外 (だから high に
+# ならない) だが、エージェントが指示として読む文書なので床の対象 (だから
+# low にもならない)。この 2 つの集合が別物であることを 1 ケースで固定している
+scenario docs-only-with-exec-string medium <<EOF
 docs/example.md${T}import subprocess  # example only
 EOF
 
-scenario docs-only-with-pipe-to-shell low <<EOF
+scenario docs-only-with-pipe-to-shell medium <<EOF
 docs/install.md${T}curl https://example.com/install.sh | bash
 EOF
 
 # NOT_EXECUTABLE_DOC_PATTERN の各分岐 (README / LICENSE / .txt / evals/*.md)
-# にも exec 文字列除外が効くことを確認 (現状は docs/ 分岐のみカバー)
+# にも exec 文字列除外が効くことを確認 (現状は docs/ 分岐のみカバー)。
+# **どれも high でないことが検査対象**。low か medium かは床 (FLOOR_EXEMPT_PATTERN)
+# 側の分担で、evals は床の対象なので medium になる
 scenario readme-only-with-exec-string low <<EOF
 README.md${T}see: curl https://example.com/install.sh | bash
 EOF
@@ -179,7 +184,7 @@ scenario txt-with-exec-string low <<EOF
 notes.txt${T}curl https://example.com/install.sh | bash
 EOF
 
-scenario evals-fixture-with-exec-string low <<EOF
+scenario evals-fixture-with-exec-string medium <<EOF
 claude/skills/foo/evals/01-case.md${T}scenario: import subprocess
 EOF
 
@@ -197,8 +202,13 @@ EOF
 # **以降の SKILL.md 系ケースで期待値が medium のものは床由来**。
 # exec-pattern が誤発火すれば high に上がって FAIL するので、FP 回帰の
 # 検出責務は low/high から medium/high に軸が移るだけで失われない。
-# low 側の経路そのものの回帰は、床の対象外ファイル (README / evals /
-# docs / .txt) を使う下の陰性ケース群が引き受ける
+# low 側の経路そのものの回帰は、床の除外集合 (FLOOR_EXEMPT_PATTERN =
+# root の README / LICENSE / .txt) を使う下の陰性ケース群が引き受ける。
+#
+# **床の除外集合は content check の除外集合と別物**。`docs/` と `evals/` は
+# content check からは外れる (散文を grep すると FP になる) が、エージェントが
+# 指示として読むので床の対象に入る。この分離が壊れると
+# `docs-md-floored` / `evals-md-floored` が low に転ぶ
 scenario skill-md-bullet-eval-floor medium <<EOF
 claude/skills/foo/SKILL.md${T}- eval arr[\$i]=\$UNTRUSTED
 EOF
@@ -220,22 +230,37 @@ EOF
 # (指示文書の**削除**も床の対象。deletion_scenario ヘルパを使うため
 #  下の削除シナリオ節に置いた: skill-md-removal-floor)
 
-# 床の対象外 (NOT_EXECUTABLE_DOC_PATTERN 側) は low のまま。
-# 否定の再利用が壊れると、これらが medium に転ぶ
+# 床の除外集合 (FLOOR_EXEMPT_PATTERN) の 3 分岐。除外が壊れると medium に転ぶ。
+# 分岐ごとに独立ケースにしてあるのは、1 ケースにまとめると tier が潰れて
+# 他分岐の取りこぼしを覆い隠すため (同ファイルの文字クラス 4 分岐と同じ理由)
 scenario readme-md-not-floored low <<EOF
 README.md${T}# readme
 EOF
 
-scenario evals-md-not-floored low <<EOF
-claude/skills/foo/evals/01-case.md${T}scenario: x
-EOF
-
-scenario docs-md-not-floored low <<EOF
-docs/note.md${T}note
+scenario license-not-floored low <<EOF
+LICENSE${T}license text
 EOF
 
 scenario txt-not-floored low <<EOF
 notes.txt${T}note
+EOF
+
+# 逆に、content check からは外れるがエージェントが指示として読む文書は床の対象。
+# 床の除外集合を NOT_EXECUTABLE_DOC_PATTERN と共有する実装に戻すと low に転ぶ
+# (実際に初版がその形で、codex-review security が具体的な反例を出した)
+scenario evals-md-floored medium <<EOF
+claude/skills/foo/evals/01-case.md${T}scenario: x
+EOF
+
+scenario docs-md-floored medium <<EOF
+docs/note.md${T}note
+EOF
+
+# 床は any 意味論 (1 本でも対象があれば medium)。all に書き換える退行は、
+# 全ファイルが同じ側に揃っているケースだけでは検出できない
+scenario mixed-floored-and-exempt medium <<EOF
+README.md${T}# readme
+claude/skills/foo/SKILL.md${T}手順
 EOF
 
 # --- exec-pattern の `eval` 判定 (issue #227) ---
@@ -526,6 +551,22 @@ deletion_scenario non-test-removal      medium src/keep.py       $'x = 1\n'
 # なので無レビューにしない。--name-only が削除ファイルを返すことに依存する
 # ので、床の入力を added 側に変える退行はこのケースで落ちる
 deletion_scenario skill-md-removal-floor medium claude/skills/foo/SKILL.md $'手順\n'
+
+# 床の rename 迂回。指示文書を床の除外側 (root README) へ rename すると、
+# `--name-only` は**宛先しか返さない**ため元パスが分類器から見えなくなり、
+# 削除は塞いだのに同じ「指示文書が無くなる」変更が low で通っていた。
+# 床の入力だけ `--no-renames` で取り直して塞いでいる (rename が delete + add
+# に分解され、元パスが入力に入る)。この行を消すと low に転ぶ
+git checkout -q main
+git reset -q --hard "$INITIAL_MAIN_SHA"
+git clean -fdq
+mkdir -p claude/skills/foo
+printf '手順\n' > claude/skills/foo/SKILL.md
+git add -A && git commit -qm "fixture: skill-md-rename-escape"
+git checkout -qb case-skill-md-rename-escape
+git mv claude/skills/foo/SKILL.md README.md
+git commit -qm "case: rename SKILL.md to README.md"
+assert_tier skill-md-rename-escape medium
 
 # 大文字混在パスの削除 → grep -iE で case-insensitive にマッチして high
 deletion_scenario upper-tests-dir-removal high Tests/foo.py      $'assert 1\n'
