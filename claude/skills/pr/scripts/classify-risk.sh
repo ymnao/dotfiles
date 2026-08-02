@@ -160,7 +160,10 @@ check_path "infra"        'Dockerfile|docker-compose|\.tf$|\.tfvars$'
 #   `- eval arr[$i]=$X` / `run: eval arr[$i]=$X` — **行頭以外**に置かれた実行形。
 #     Markdown の箇条書き接頭辞 2 文字で CMDPOS の位置集合 (`^\+`) を外せる。
 #     BACKTICK 由来ではなく #227 以前からの穴で、バッククォート形より広い。
-#     経路追加では届かないので下の一般化 trigger の対象 (issue に切り出す)
+#     経路追加では届かないので下の一般化 trigger が発火し、issue #255 で
+#     **検出ではなく結果の側**を直した (下の AGENT_DOC_MD_PATTERN の medium
+#     床)。**この形はいまも high にはならない** — 床で最低 1 観点の
+#     レビューに載るだけなので、非検出の一覧からは外さない
 #   展開も引用も一切含まない静的リテラルの `eval ls -la`
 # (動的展開が無く、このルールが見ているリスクに当たらないため意図的)。
 # 実測 (2026-08-02。測定方法を明記する — 方法が書いてないと別の数え方で
@@ -197,6 +200,13 @@ check_path "infra"        'Dockerfile|docker-compose|\.tf$|\.tfvars$'
 #     - **経路追加では届かない FN を観測する** (上の「行頭以外の実行形」型)。
 #       本数や往復回数だけを trigger にすると、いま既に観測済みのこの穴を
 #       見ても発火しない。停止条件は在庫ではなく FN 側でも測る
+#   **3 つ目は #255 で発火済み**。切り替え先は 2 案のうち後者寄りで、
+#   「`.md` で発火したら medium に落とす」ではなく「エージェント指示文書の
+#   `.md` は low に落とさない」= 床にした (発火しない形が問題だったので、
+#   発火時の重み付けでは閉じない)。前者の案 (コードフェンス内の行だけを
+#   content check する) は未実装で、床とは独立に検出精度を上げる余地として
+#   残っている。**経路 6 本目の trigger は生きている** — 床があっても
+#   exec-pattern に経路を足してよい理由にはならない
 # なお下の例示コメント自身がこのパターンにマッチするため、このファイルを触る
 # PR は tier=high になる。実行構文の具体例を残す方を優先した意図的な結果で、
 # 自ファイル除外は入れない (除外は bypass 経路になる)。
@@ -242,14 +252,53 @@ check_deleted "test-removal" '(^|/)(tests?|__tests__|spec)/|\.(test|spec)\.[a-z]
 # (content check の除外パターン NOT_EXECUTABLE_DOC_PATTERN より広い —
 # 危険文字列がない SKILL.md/CLAUDE.md の tweak も low 扱いにするため)
 LOW_ONLY_PATTERN='\.md$|^docs/|^LICENSE|\.txt$'
+# medium 床: エージェントが指示として解釈する `.md` を含む diff は low に
+# 落とさない (issue #255)。**天井ではなく床**なので high 判定には影響しない。
+#
+# 上の exec-pattern が「実行構文だけを検出する」方向で 3 ラウンド (#227 /
+# #230 / #255) 経路を足してきたが、行単位の grep はコードフェンスの内外も
+# 行をまたぐ構文も見られないため、散文と実行構文を原理的に分離しきれない。
+# 実際 `- eval arr[$i]=$X` は Markdown の箇条書き接頭辞 2 文字で CMDPOS の
+# 位置集合を外れ、SKILL.md 単独 diff が tier=low = **無レビューで merge** に
+# なる。exec-pattern の解説にある「経路追加では届かない FN を観測したら
+# 一般化に切り替える」trigger がこれで発火した。
+#
+# そこで検出精度を上げる方向ではなく、**「無レビュー」という結果の側を消す**。
+# 床なので、パターンが取りこぼしても最低 1 観点 (`/pr` の medium =
+# codex-review security) が必ず走る。取りこぼしを 0 にする必要が無くなる分、
+# exec-pattern 側に経路を足し続ける圧力も下がる。
+#
+# 対象集合は**既存 2 パターンの差**として定義する。床が走るのは既に
+# low-only と判定された後なので、そこから NOT_EXECUTABLE_DOC_PATTERN
+# (= エージェントに指示として解釈されない文書) を引いた残りが、そのまま
+# 「指示として解釈される文書」になる。
+#   LOW_ONLY_PATTERN - NOT_EXECUTABLE_DOC_PATTERN = 床の対象
+# 3 つ目のリテラル (`\.md$` 等) を持たないのは、同じ意味の集合を 2 箇所に
+# 書くと片方に足してもう片方に足し忘れる drift が起きるため。実際 `\.md$`
+# を足した版を mutation check にかけたところ、**広げても狭めても 1 件も
+# FAIL しない** = 検出責務が無いことが分かったので落とした。
+# 副作用として、将来 LOW_ONLY_PATTERN に新しい文書形式が入ると既定で床の
+# 対象になる。これは fail-closed 側なので許容する (レビュー不要と判断する
+# なら NOT_EXECUTABLE_DOC_PATTERN に明示的に足す)。
+#
+# コスト: SKILL.md の些細な変更でも codex-review security が回る。この
+# repo は skill 変更 PR が多いので実際にレビュー時間は増える。「無レビュー
+# で通る経路を残さない」方を優先した意図的なトレードオフ
 # ---- /RULES ----
 
 tier="medium"
 if [ -n "$reasons" ]; then
   tier="high"
 elif [ -n "$files" ] && [ -z "$(printf '%s\n' "$files" | grep -ivE "$LOW_ONLY_PATTERN" || true)" ]; then
-  tier="low"
-  add_reason "low-only: 変更がドキュメント類のみ"
+  # doc-only diff。エージェント指示文書を含むなら medium 床で止める
+  agent_docs=$(printf '%s\n' "$files" | grep -vE "$NOT_EXECUTABLE_DOC_PATTERN" | head -3 || true)
+  if [ -n "$agent_docs" ]; then
+    tier="medium"
+    add_reason "medium-floor: エージェント指示文書の変更を含むため無レビューにしない: $(printf '%s' "$agent_docs" | tr '\n' ' ')"
+  else
+    tier="low"
+    add_reason "low-only: 変更がドキュメント類のみ"
+  fi
 fi
 
 jq -n --arg tier "$tier" --arg reasons "$reasons" \
