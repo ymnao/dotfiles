@@ -204,9 +204,11 @@ check_path "infra"        'Dockerfile|docker-compose|\.tf$|\.tfvars$'
 #     - **経路追加では届かない FN を観測する** (上の「行頭以外の実行形」型)。
 #       本数や往復回数だけを trigger にすると、いま既に観測済みのこの穴を
 #       見ても発火しない。停止条件は在庫ではなく FN 側でも測る
-#   **3 つ目は #255 で発火済み** (対応は LOW_ONLY_PATTERN 直後の medium 床)。
-#   もう 1 案の「コードフェンス内の行だけを content check する」は未実装で、
-#   床とは独立に検出精度を上げる余地として残っている。
+#   **3 つ目は #255 で発火済み**。ただし対応は上の 2 案の**どちらでもない**
+#   (対応は LOW_ONLY_PATTERN 直後の medium 床)。2 案はどちらも未実装のまま:
+#   コードフェンス案は床とは独立に検出精度を上げる余地として残っており、
+#   重み付け案は「high で発火したものを medium に落とす」天井なので、
+#   発火しない形が問題だった #255 には効かない。
 #   **経路 6 本目の trigger は生きている** — 床があっても exec-pattern に
 #   経路を足してよい理由にはならない
 # なお下の例示コメント自身がこのパターンにマッチするため、このファイルを触る
@@ -250,11 +252,17 @@ check_content "exec-pattern"        "${EVAL_ADJACENT}|${EVAL_CMDPOS}|${EVAL_OPEN
 check_content "pipe-to-shell"       '(curl|wget)[^|;]*\|[[:space:]]*(ba|z|da)?sh'
 check_content "permission-widening" 'chmod (777|666)|--dangerously|--no-verify'
 check_deleted "test-removal" '(^|/)(tests?|__tests__|spec)/|\.(test|spec)\.[a-z]+$|_test\.(go|py|rb|ts|tsx|js|jsx)$|\.cases\.jsonl$'
-# 全 diff がこのパターンにマッチする文書だけなら tier=low に落とす
-# (content check の除外パターン NOT_EXECUTABLE_DOC_PATTERN より広い —
-# 危険文字列がない SKILL.md/CLAUDE.md の tweak も low 扱いにするため)
+# 全 diff がこのパターンにマッチする文書だけなら tier=low の候補になる。
+# **#255 の medium 床が入った後は、これ単独では low を決めない** — 実際に
+# low になるのは、さらに全ファイルが NOT_EXECUTABLE_DOC_PATTERN にも入る
+# ときだけ (下の床を参照)。旧コメントは「危険文字列がない SKILL.md /
+# CLAUDE.md の tweak も low 扱いにするため」と幅の広さを正当化していたが、
+# SKILL.md は床で medium になり、CLAUDE.md は check_path "agent-config" で
+# 以前から high なので、その理由はもう成立しない。
+# 現状このパターンが単独で結果を変えるのは、NOT_EXECUTABLE に入って
+# LOW_ONLY に入らない形 (非 root の `sub/LICENSE` 等) だけ
 LOW_ONLY_PATTERN='\.md$|^docs/|^LICENSE|\.txt$'
-# medium 床: エージェントが指示として解釈する `.md` を含む diff は low に
+# medium 床: エージェントが指示として解釈する文書を含む diff は low に
 # 落とさない (issue #255)。**天井ではなく床**なので high 判定には影響しない。
 #
 # 上の exec-pattern が「実行構文だけを検出する」方向で 3 ラウンド (#227 /
@@ -266,9 +274,12 @@ LOW_ONLY_PATTERN='\.md$|^docs/|^LICENSE|\.txt$'
 # 一般化に切り替える」trigger がこれで発火した。
 #
 # そこで検出精度を上げる方向ではなく、**「無レビュー」という結果の側を消す**。
-# 床なので、パターンが取りこぼしても最低 1 観点 (`/pr` の medium =
-# codex-review security) が必ず走る。取りこぼしを 0 にする必要が無くなる分、
-# exec-pattern 側に経路を足し続ける圧力も下がる。
+# 床なので、パターンが取りこぼしても最低 1 観点が走る — ただし**保証の強さは
+# harness で違う**: Claude 側は `/pr` step 4 の medium が codex-review
+# security を実際に走らせるが、codex 側の `/pr` は独立レビュー不可なので
+# 「merge 前に Claude Code 側で回すこと」と PR 本文に記録するところまで。
+# 取りこぼしを 0 にする必要が無くなる分、exec-pattern 側に経路を足し続ける
+# 圧力も下がる。
 #
 # 対象集合は**既存 2 パターンの差**として定義する。床が走るのは既に
 # low-only と判定された後なので、そこから NOT_EXECUTABLE_DOC_PATTERN
@@ -276,9 +287,22 @@ LOW_ONLY_PATTERN='\.md$|^docs/|^LICENSE|\.txt$'
 # 「指示として解釈される文書」になる。
 #   LOW_ONLY_PATTERN - NOT_EXECUTABLE_DOC_PATTERN = 床の対象
 # 3 つ目のリテラル (`\.md$` 等) を持たないのは、同じ意味の集合を 2 箇所に
-# 書くと片方に足してもう片方に足し忘れる drift が起きるため。実際 `\.md$`
-# を足した版を mutation check にかけたところ、**広げても狭めても 1 件も
-# FAIL しない** = 検出責務が無いことが分かったので落とした。
+# 書くと片方に足してもう片方に足し忘れる drift が起きるため。加えて実測でも
+# 不要だった: 一度 `AGENT_DOC_MD_PATTERN='\.md$'` を AND 条件として持つ版を
+# 書き、**その 1 変数だけ** を `'.'` に広げるミュータントを当てたところ
+# 82 ケース中 1 件も FAIL しなかった (2026-08-02)。低くする向き
+# (`SKILL\.md$` 等) は検出されるが、それは床の対象を狭める = 別の変更で
+# あって、この条件が**追加している**判別力ではない。
+#
+# **床の対象は「エージェントが読む文書すべて」ではない**。NOT_EXECUTABLE_DOC_PATTERN
+# に入る文書 — 具体的には `docs/` 配下 (`docs/ai-operations.md` は
+# `agents/AGENTS.md` と `claude/skills/paper-review/SKILL.md` から参照される
+# 運用指示で、§8 は settings.json の手動レビュー手順を命令形で書いている) と
+# `evals/README.md` (`claude/skills/dev/SKILL.md` が契約文書として参照) は
+# **床の外に残っており、いまも tier=low = 無レビューで通る**。
+# ここを塞ぐには NOT_EXECUTABLE_DOC_PATTERN を絞る必要があるが、それは
+# content check の対象範囲 (= 散文の FP 面積) も同時に動かすので、床とは
+# 別に測り直しが要る。**閉じたと読ませないためにここに明記する**
 # 実装は上の `paths` 配列 (content check 対象 = 同じ差集合) をそのまま
 # 使う。同じ絞り込みを 2 度書かないため。**`paths` の作り方を変えるときは
 # 床の対象も一緒に動く** — 両者が同じ集合であることが前提。
@@ -300,7 +324,9 @@ elif [ -n "$files" ] && [ -z "$(printf '%s\n' "$files" | grep -ivE "$LOW_ONLY_PA
   # NOT_EXECUTABLE_DOC_PATTERN での絞り込みを 2 度書かない)
   if [ "${#paths[@]}" -gt 0 ]; then
     tier="medium"
-    add_reason "medium-floor: エージェント指示文書の変更を含むため無レビューにしない: $(printf '%s ' "${paths[@]:0:3}")"
+    # 既存 3 ヘルパと同じく改行を潰す (`-z` 由来の生パスなので、改行を含む
+    # ファイル名があると jq の split("\n") が偽の reason 要素を作る)
+    add_reason "medium-floor: エージェント指示文書の変更を含むため無レビューにしない: $(printf '%s ' "${paths[@]:0:3}" | tr '\n' ' ')"
   else
     tier="low"
     add_reason "low-only: 変更がドキュメント類のみ"

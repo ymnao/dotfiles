@@ -59,6 +59,20 @@ assert_tier() {
   fi
 }
 
+# assert_reason <name> <期待する部分文字列> — 直前のブランチの reasons を assert。
+# assert_tier は `.tier` しか見ないので、reason 文字列は無検査で消せてしまう。
+# この JSON は claude/skills/pr/SKILL.md step 4 で「応答本文に verbatim で
+# 転記する」と規定され PR の evidence に載る出力なので、床が効いた根拠が
+# 本文に残ることまで固定する
+assert_reason() {
+  local name="$1" want="$2" got
+  got=$(bash "$CLASSIFIER" main | jq -r '.reasons | join(" ")')
+  case "$got" in
+    *"$want"*) pass=$((pass + 1)) ;;
+    *) echo "FAIL $name: reasons に '$want' が無い ($got)"; fail=$((fail + 1)) ;;
+  esac
+}
+
 # scenario <name> <expected-tier> — stdin に「作るファイル相対パス<TAB>内容」を行区切りで受ける
 scenario() {
   local name="$1" want="$2" path content line
@@ -188,6 +202,10 @@ EOF
 scenario skill-md-bullet-eval-floor medium <<EOF
 claude/skills/foo/SKILL.md${T}- eval arr[\$i]=\$UNTRUSTED
 EOF
+# 直前のケースの reasons に床の marker と対象パスが載ること (tier だけの
+# assert では add_reason を丸ごと消しても検出できない)
+assert_reason skill-md-bullet-eval-floor-reason "medium-floor:"
+assert_reason skill-md-bullet-eval-floor-path "claude/skills/foo/SKILL.md"
 
 # 同じ穴の別形 (行途中の前置)。issue #255 の再現形 2 つを分岐ごとに固定する
 scenario skill-md-run-eval-floor medium <<EOF
