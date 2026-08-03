@@ -95,9 +95,7 @@
         { "path": "~/.gnupg", "mode": "deny" }
       ],
       "envVars": [
-        { "name": "SSH_AUTH_SOCK", "mode": "deny" },
-        { "name": "CLOUDSDK_PROXY_PASSWORD", "mode": "deny" },
-        { "name": "CLOUDSDK_PROXY_USERNAME", "mode": "deny" }
+        { "name": "SSH_AUTH_SOCK", "mode": "deny" }
       ]
     }
   },
