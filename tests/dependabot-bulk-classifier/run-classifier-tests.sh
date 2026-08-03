@@ -89,6 +89,48 @@ assert_field "semver: pre-release from"       "$SEMVER_JSON" '.[6].semver' 'unkn
 assert_field "semver: no version"    "$SEMVER_JSON" '.[7].semver' 'unknown'
 assert_field "semver: trailing path" "$SEMVER_JSON" '.[8].semver' 'patch'
 
+# ---- commit-message prefix 付き title (issue #266) ----
+# dependabot.yml の commit-message.prefix / include: scope で title 冒頭に
+# 'Chore(deps): ' 等が付くと、以前は全件 semver=unknown / package="" に落ちた
+# (別 repo で open PR 10 件全滅を実測)。実際に起きた事故の pin。
+PREFIX_JSON='[
+  {"number":1,"title":"Chore(deps): Bump actions/checkout from 4.1.1 to 4.2.0","headRefName":"dependabot/github_actions/actions/checkout-4.2.0","url":"u","body":"","labels":[]},
+  {"number":2,"title":"chore: Bump foo from 1.0.0 to 1.0.1","headRefName":"dependabot/npm_and_yarn/foo","url":"u","body":"","labels":[]},
+  {"number":3,"title":"build(deps-dev): Bump @secretlint/secretlint-formatter-sarif from 8.0.0 to 9.0.0","headRefName":"dependabot/npm_and_yarn/x","url":"u","body":"","labels":[]},
+  {"number":4,"title":"chore(deps): Bump foo from v1.2.3 to v1.2.4","headRefName":"dependabot/github_actions/foo","url":"u","body":"","labels":[]},
+  {"number":5,"title":"Chore(deps): Bumps the gh-actions group with 2 updates: bumps foo from 1.0.0 to 1.0.1 and bar from 2.0.0 to 3.0.0","headRefName":"dependabot/github_actions/gh-actions","url":"u","body":"","labels":[]},
+  {"number":6,"title":"chore(deps): Bump foo from 1.0.0 to 2.0.0-beta.1","headRefName":"dependabot/npm_and_yarn/foo","url":"u","body":"","labels":[]}
+]'
+assert_field "prefix: Chore(deps) minor"            "$PREFIX_JSON" '.[0].semver'  'minor'
+assert_field "prefix: Chore(deps) package"          "$PREFIX_JSON" '.[0].package' 'actions/checkout'
+assert_field "prefix: bare 'chore:' patch"          "$PREFIX_JSON" '.[1].semver'  'patch'
+assert_field "prefix: build(deps-dev) major"        "$PREFIX_JSON" '.[2].semver'  'major'
+assert_field "prefix: build(deps-dev) scoped npm package" "$PREFIX_JSON" '.[2].package' '@secretlint/secretlint-formatter-sarif'
+assert_field "prefix: with v prefix versions"       "$PREFIX_JSON" '.[3].semver'  'patch'
+assert_field "prefix + grouped → unknown"           "$PREFIX_JSON" '.[4].semver'  'unknown'
+assert_field "prefix + pre-release to → unknown"    "$PREFIX_JSON" '.[5].semver'  'unknown'
+
+# 受理パターンの広さ検査 (claude/rules/shell.md「fail-closed にしたら、次は
+# 『受理パターンの広さ』を検査する」)。緩めた prefix パターンに
+# **マッチしてしまう / してはいけない** 入力を構成して pin する。
+PREFIX_NEG_JSON='[
+  {"number":1,"title":"a(x): b: Bump foo from 1.0.0 to 2.0.0","headRefName":"dependabot/npm_and_yarn/foo","url":"u","body":"","labels":[]},
+  {"number":2,"title":"Update readme: Bump foo from 1.0.0 to 2.0.0","headRefName":"dependabot/npm_and_yarn/foo","url":"u","body":"","labels":[]},
+  {"number":3,"title":"chore:Bump foo from 1.0.0 to 1.0.1","headRefName":"dependabot/npm_and_yarn/foo","url":"u","body":"","labels":[]},
+  {"number":4,"title":": Bump foo from 1.0.0 to 1.0.1","headRefName":"dependabot/npm_and_yarn/foo","url":"u","body":"","labels":[]},
+  {"number":5,"title":"Note: Bump evil from 1.0.0 to 9.9.9","headRefName":"dependabot/npm_and_yarn/evil","url":"u","body":"","labels":[]}
+]'
+assert_field "prefix-neg: 多段 prefix は 1 回しか剥がれず unknown"  "$PREFIX_NEG_JSON" '.[0].semver'  'unknown'
+assert_field "prefix-neg: 多段 prefix は package も空 (semver と整合)" "$PREFIX_NEG_JSON" '.[0].package' ''
+assert_field "prefix-neg: token 内空白は prefix と認めず unknown"   "$PREFIX_NEG_JSON" '.[1].semver'  'unknown'
+assert_field "prefix-neg: colon 後の空白必須 (chore:Bump) unknown"  "$PREFIX_NEG_JSON" '.[2].semver'  'unknown'
+assert_field "prefix-neg: 空 prefix (': Bump') unknown"             "$PREFIX_NEG_JSON" '.[3].semver'  'unknown'
+# 弁別不能な受理例。title だけでは Dependabot 生成物と区別できないため受理される。
+# 実質のガードは呼び出し側の `gh pr list --author app/dependabot` フィルタ。
+# 隠さず pin しておく (受理されなくなったらここが落ちて意図の変更に気付ける)。
+assert_field "prefix-neg: 人間が書いた 'Note:' も受理される (author フィルタが実質のガード)" \
+  "$PREFIX_NEG_JSON" '.[4].semver' 'major'
+
 # ---- grouped PR 判定 (F3) ----
 GROUP_JSON='[
   {"number":1,"title":"Bumps the all group with 2 updates: bumps foo from 1.0.0 to 1.0.1 and bar from 2.0.0 to 3.0.0","headRefName":"dependabot/github_actions/all","url":"u","body":"","labels":[]},

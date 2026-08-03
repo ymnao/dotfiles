@@ -41,15 +41,37 @@ is_grouped() {
   return 1
 }
 
-# semver 判定: title 冒頭に anchor した 'Bump[s]? <pkg> from [v]X.Y[.Z] to [v]A.B[.C]'
-# パターンで from/to を抜く。v prefix (v4.1.1) を許容。grouped は先に unknown。
+# commit-message prefix 正規化: dependabot.yml の commit-message 設定
+# (prefix / include: scope) で title 冒頭に 'Chore(deps): ' 等の
+# conventional-commit prefix が付くケース (issue #266)。単一の
+# '<token>(<scope>)?: ' だけを 1 回剥がす (anchored・非 global)。
+#
+# 受理を conventional-commit 形に限定するのは fail-closed 方針の維持のため。
+# 多段 prefix ('a(x): b: Bump ...')・空白入り token ('Update readme: ')・
+# colon 直後に空白なし ('chore:Bump')・空 prefix (': Bump') は剥がさず、
+# 後段の semver regex 不一致で unknown に倒れる。
+#
+# 逆に 'Note: Bump evil from 1.0.0 to 9.9.9' のような人間が書いた title は
+# この形にマッチするため受理される。title だけでは Dependabot 生成物と弁別
+# できないので、実質のガードは呼び出し側 (SKILL.md) が
+# `gh pr list --author app/dependabot` で入力を絞っていること。
+strip_commit_prefix() {
+  printf '%s' "$1" | sed -E 's/^[A-Za-z][A-Za-z0-9_-]*(\([^()]*\))?: +//'
+}
+
+# semver 判定: prefix を剥がした title に anchor した
+# 'Bump[s]? <pkg> from [v]X.Y[.Z] to [v]A.B[.C]' パターンで from/to を抜く。
+# v prefix (v4.1.1) を許容。grouped は先に unknown。
 # パース不能は unknown → 統合しない扱いに倒す。
 classify_semver() {
-  local title="$1" from to fmaj fmin tmaj tmin
-  if is_grouped "$title"; then
+  local title from to fmaj fmin tmaj tmin
+  # grouped 判定は prefix 剥がし前の生 title で行う (substring 判定なので
+  # prefix の有無に影響されない。テストで prefix + grouped を pin 済み)
+  if is_grouped "$1"; then
     printf 'unknown'
     return
   fi
+  title=$(strip_commit_prefix "$1")
   # 末尾は空白または EOL でバージョンを閉じる。'to 2.0.0-beta.1' のような
   # pre-release suffix を .* で吸って通常 major/minor/patch と誤分類しないよう、
   # to 側の trailing .* を ( .*)?$ に置換して境界を明示する。
@@ -96,9 +118,13 @@ is_security() {
   printf 'false'
 }
 
-# パッケージ名: title の 'Bump[s]? <pkg> from ...' から抜く
+# パッケージ名: prefix を剥がした title の 'Bump[s]? <pkg> from ...' から抜く。
+# classify_semver と同じ strip_commit_prefix を経由するのは、両者が
+# 「commit-message prefix を読み飛ばした後の Dependabot 生成 title を読む」
+# という同じ問いに答えているため。個別に regex へ埋め込むと drift し、
+# 「semver は unknown なのに package だけ取れる」不整合が構造的に起こりうる。
 extract_package() {
-  printf '%s' "$1" | sed -nE 's/^[Bb]ump[s]? +([^ ]+) +from .*/\1/p'
+  strip_commit_prefix "$1" | sed -nE 's/^[Bb]ump[s]? +([^ ]+) +from .*/\1/p'
 }
 
 # 入力を先に検証してから処理する。壊れた JSON / 非配列 root で
