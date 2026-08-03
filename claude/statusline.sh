@@ -7,13 +7,14 @@
 # 出力: 1 行のステータス文字列
 # 依存: jq (無ければモデル名なしの固定文字列を出す)
 #
-# starship の `starship statusline claude-code` に寄せない (2026-08-04 実測、
-# starship 1.26.0)。claude 系モジュールは claude_model / claude_context /
-# claude_cost の 3 つだけで、バイナリを strings しても rate_limits /
-# five_hour / seven_day / effort の文字列が存在しない。つまり寄せると
-# eff / 5h / 7d の 3 項目を失う (得るのは git ブランチとコスト表示)。
-# 足りない分を別スクリプトで補うと維持対象が 2 つに増えて逆効果。
-# starship 側にレート制限モジュールが入ったら再検討する。
+# starship の `starship statusline claude-code` には寄せない (2026-08-04 実測、
+# starship 1.26.0)。同じ JSON を渡すと eff / 5h / 7d が出ない (claude 系は
+# claude_model / claude_context / claude_cost の 3 モジュールのみ)。得るのは
+# git ブランチ・コスト・ゲージ表示。不足分を別スクリプトで補うと維持対象が
+# 2 つに増えて逆効果なので、部分移行もしない。
+# 再検討 trigger: effort は starship#7614 が 2026-07-26 に merge 済み (次
+# リリースで入る)、レート制限は starship#7442 が open。両方入ったら再検討する。
+# Brewfile は starship を pin していないので `make update` で黙って上がる。
 
 set -uo pipefail
 
