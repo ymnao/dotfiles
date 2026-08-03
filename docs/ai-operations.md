@@ -199,7 +199,8 @@ trust_level 記録)/ `[plugins.*]` / `[notice.*]` / `[tui.*]` /
 
 `~/.codex/config.toml` の `[hooks.state."<hooks.json path>:<event>:<group>:<index>"].trusted_hash`
 は、**hook の設定 identity だけをハッシュしており、参照先スクリプト本体の内容は
-一切含まない**。codex CLI **0.145.0** で実測して確認した(issue #207)。
+一切含まない**。codex CLI **0.145.0** で実測して確認し(issue #207)、
+**0.146.0 で再実測して同じ仕様であることを確認した**(issue #214、2026-08-03)。
 
 根拠は 2 系統:
 
@@ -213,13 +214,37 @@ trust_level 記録)/ `[plugins.*]` / `[notice.*]` / `[tui.*]` /
    identity."*。`version_for_toml()`(`codex-rs/config/src/fingerprint.rs`)は
    その値を canonical JSON(オブジェクト key を再帰ソート)にして sha256 する
 2. 再現実測。上記を再実装して、この機体の `~/.codex/config.toml` に記録済みの
-   `trusted_hash` 6 件のうち **5 件をバイト一致で再現**した(残る 1 件は Stop
-   event の default timeout が未特定なだけ)。再現できた payload の例:
+   `trusted_hash` を再現した。**0.146.0 では 6 件すべてバイト一致**
+   (0.145.0 時点では 5 件で、残る 1 件は Stop event の既定値が未特定だった)。
+   再現できた payload の例:
 
    ```
    {"event_name":"pre_tool_use","hooks":[{"async":false,"command":"bash \"$HOME/.codex/hooks/block-dangerous-commands.sh\"","statusMessage":"コマンド安全性チェック中...","timeout":10,"type":"command"}],"matcher":"^Bash$"}
    → sha256:926d8278e318187e63816360f984fd354cad9dec305d9e7f4154a02377b3f39d
    ```
+
+   payload は次のオブジェクトの canonical JSON(キー再帰ソート・compact・
+   UTF-8 生出力・末尾改行なし)で、その sha256 hex が `sha256:<hex>` として
+   記録される。**未再現だった 1 件の原因は下 2 つの規則**だった:
+
+   | キー | 内容 |
+   |---|---|
+   | `event_name` | event 名の snake_case(`PreToolUse` → `pre_tool_use`) |
+   | `matcher` | その group の matcher。**空文字列のときはキーごと省略される**(`"matcher":""` ではない) |
+   | `hooks` | 要素 1 個の配列。**group 全体ではなくその index の hook だけ**が入る |
+   | `hooks[].type` | 既定 `"command"` |
+   | `hooks[].command` | `hooks.json` のまま |
+   | `hooks[].async` | 既定 `false` |
+   | `hooks[].timeout` | **`hooks.json` に無いときの既定は 600** |
+   | `hooks[].statusMessage` | `hooks.json` に無いときはキーごと省略 |
+
+   この仕様は `tests/integrity/verify-codex-hook-trust.sh` に実装済みで、
+   `make test` / `make gate` のたびに記録値と突き合わせている。**再実測は
+   手順書ではなくテストになった** — codex を upgrade して仕様が変われば
+   計算値が全 entry で外れ、**全件 MISMATCH** として出る(見逃しではなく
+   fail-loud)。回帰は `tests/integrity/run-integrity-selftest.sh` の
+   `trust-hash-*` ケースが固定している(期待 hash は独立した定数として持ち、
+   `hooks.json` 側だけを書き換える mutation で導出関係を測る)。
 
 **帰結**: `~/.codex/hooks/*.sh` の中身を差し替えても codex は再承認を求めず、
 次回起動時に無警告で host 側で実行する。**codex 側の hook 承認機構は
@@ -229,12 +254,11 @@ command 文字列・matcher・timeout・statusMessage を変えると hash が�
 Untrusted となり承認するまで実行されない)。
 
 この結論は codex の実装詳細に依存するため、**codex を upgrade したら再実測する**
-(本節にバージョンを明記してあるのがその trigger)。
-
-**2026-07-31 時点で host は 0.146.0 に上がっており、この trigger は発火済みだが
-trusted_hash の再実測はまだ行っていない**(上の記述は 0.145.0 での測定のまま)。
-再実測は issue #214 が担当する。本節の下流の判断(「承認するまで発火しない」
-「スクリプト本体は hash に入らない」)は 0.145.0 の測定に依存している点に注意。
+(本節にバージョンを明記してあるのがその trigger)。ただし再実測の実体は
+上記のとおり `make test` が自動で行うので、**upgrade 後にやることは
+「`make test` を回して MISMATCH が出ないことを確認する」**に変わった。
+全件 MISMATCH なら payload 仕様が変わっているので、本節の表と
+`verify-codex-hook-trust.sh` のヘッダを実測し直して更新する。
 
 ### hooks 系ファイルの防御層
 
@@ -251,7 +275,7 @@ host 側の実ファイル `~/.codex/config.toml`(これが git 追跡外。repo
 |---|---|---|---|
 | 検知 (session, Claude Code) | `agents/hooks/hooks-integrity-warn.sh` を `claude/settings.json` の SessionStart (`startup\|resume\|clear\|fork`) に配線 | セッション開始時に、監視対象の未コミット改変を警告として context に注入する。**自動で発火する経路**(model の context に入り、人は transcript で確認できる) | 警告のみで遮断はしない(dotfiles 開発中は dirty が正常状態のため意図的に warn-only)。**codex 単体の作業では発火しない**(下の行が担当) |
 | 検知 (session, codex) | 同 hook を `codex/hooks.json` の SessionStart (`startup\|resume\|clear`) に配線(issue #215)。`codex/hooks/hooks-integrity-warn.sh` は正本への相対 symlink | **(codex TUI で承認された後に限り)** codex CLI 単体で作業する経路。本節の脅威モデルの中心は codex 側なので、ここが塞がって初めて主要経路が覆われる | 同上(warn-only)。加えて **承認するまで発火しない** — 新 entry は trusted_hash 未登録で Untrusted 扱いになる(承認は host 側の user 操作で、agent からは行えない)。この「配線済みだが未承認」状態自体は下の承認状態検査が拾う |
-| 承認状態の検査 | `tests/integrity/verify-codex-hook-trust.sh` を `make test` と `tests/run-gate.sh` から呼ぶ(issue #239) | `codex/hooks.json` の各 entry に対応する `[hooks.state."<hooks.json の絶対パス>:<event>:<group>:<index>"]` キーが `~/.codex/config.toml` に無い状態 = **配線済みだが未承認(一度も実行されない)** の検出。新しいマシンにセットアップして承認を忘れた場合も同じ形で出る。監視系 hook は「警告が出ない = 正常」と「そもそも動いていない」が区別できないため、ここを機械が言わないと誰も気付けない | **キー存在しか見ていない** — `trusted_hash` の値そのものは検証しない(検証には codex upstream のハッシュ入力仕様が要る。未調査で、再実測は issue #214 が担当)。したがって「承認後に `hooks.json` の command を書き換えた」ケースで古いキーが残るなら「承認済み」と誤って報告する。**この残存挙動自体は未検証**(再現には承認済みの状態が必要だが、本機の対象 entry は未承認のため作れない)。キー書式は codex-cli 0.146.0 で実測(2026-07-31)。また承認は user 操作でしか行えないので**警告のみ**(全経路 exit 0。agent が直せないものでゲートを落としても手詰まりになる)。**Stop hook 経由では表示されない**のは下の「検知 (手動)」と同じで、人の目に入るのは `make test` / `make gate` を手で叩いたときだけ |
+| 承認状態の検査 | `tests/integrity/verify-codex-hook-trust.sh` を `make test` と `tests/run-gate.sh` から呼ぶ(issue #239 でキー存在、issue #214 で `trusted_hash` の値検証) | `codex/hooks.json` の各 entry に対応する `[hooks.state."<hooks.json の絶対パス>:<event>:<group>:<index>"]` キーが `~/.codex/config.toml` に無い状態 = **配線済みだが未承認(一度も実行されない)** の検出。新しいマシンにセットアップして承認を忘れた場合も同じ形で出る。監視系 hook は「警告が出ない = 正常」と「そもそも動いていない」が区別できないため、ここを機械が言わないと誰も気付けない。加えて記録済み `trusted_hash` を現在の `hooks.json` から計算し直して突き合わせるので、**「承認後に command を書き換えた」= その entry が Untrusted に戻って実行されていない**状態も拾う(キー存在だけを見ていた頃はこれを「承認済み」と誤報告していた) | 承認も再承認も user 操作でしか行えないので**警告のみ**(全経路 exit 0。agent が直せないものでゲートを落としても手詰まりになる)。値検証は codex の payload 仕様に依存するため、仕様が変わると**全 entry が MISMATCH** になる(見逃しではなく fail-loud。原因ヒントは「全件不一致 = 仕様変更」「一部だけ = 承認後の書き換え」で出し分ける)。`jq` と `sha256sum`/`shasum` が無い環境では SKIP。キー書式は codex-cli 0.146.0 で実測(2026-07-31)、payload 仕様も同 0.146.0 で実測(2026-08-03)。**Stop hook 経由では表示されない**のは下の「検知 (手動)」と同じで、人の目に入るのは `make test` / `make gate` を手で叩いたときだけ |
 | 検知 (手動) | `hooks-integrity-warn.sh` を `make test` と `tests/run-gate.sh`(`make gate`)からも呼ぶ | **手で `make test` / `make gate` を叩いたとき**の表示 | **Stop hook 経由では表示されない** — `stop-verify-gate.sh` は gate の出力を変数に capture し、gate が通れば捨て、落ちても `tail -20` しか出さないため。ターンごとの自動検知にはなっていない |
 | 構造検査 | `tests/integrity/run-integrity-check.sh` | symlink が期待どおりの実体を指しているか(置換・実体化の検出)。ズレは異常なので exit 1 | ファイル**内容**の改変 |
 | review | git 追跡 + PR review | push されて PR に載った改変 | 未コミットの改変(検知層が担当)と、**push されないローカル commit**(下記) |
@@ -321,6 +345,8 @@ host 側の実ファイル `~/.codex/config.toml`(これが git 追跡外。repo
 各項目の冒頭に測定日と対象 harness を書いてある):
 
 - **codex を upgrade したら** — 1 / 2 / 3、および §10 冒頭の trusted_hash
+  (trusted_hash は `make test` が自動で突き合わせるので、**回して MISMATCH が
+  出ないことを確認する**だけでよい。全件 MISMATCH なら payload 仕様変更)
 - **Claude Code を upgrade したら** — 2b / 2c
 
 **codex 側の記述**(1 / 2 / 3)はすべて **2026-07-31 に upstream の tag
