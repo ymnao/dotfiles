@@ -46,12 +46,21 @@ set -uo pipefail
 # だった。canonical JSON の生成は jq の insertion order + tojson に依存する
 # (下の JQ_ENTRIES はキーをソート順に構築している)。
 #
-# **これらは codex の実装詳細なので upgrade で変わりうる**。変わった場合は
-# 計算値が全 entry で外れるため **全 entry が MISMATCH** になる (見逃しではなく
-# fail-loud)。全件 MISMATCH になったらまず payload 仕様の変更を疑い、
-# docs/ai-operations.md §10 を再実測して更新すること。一部 entry だけの
-# MISMATCH は意味が違い、「承認後に hooks.json を書き換えた」= その hook は
-# 現在実行されていない、を指す。
+# **これらは codex の実装詳細なので upgrade で変わりうる**。変わったときは
+# MISMATCH として出る (見逃しではなく fail-loud) が、**「仕様が変わったら全 entry が
+# MISMATCH になる」とは限らない** — 既定値や省略規則の変更は**その規則に依存する
+# entry だけ**を外すため、部分不一致になる。実測: `($h.timeout // 600)` を
+# `// 601` に変えた mutant は、この機体の 8 entry のうち timeout を持たない
+# stop:0:0 の 1 件しか外さなかった (残り 7 件は timeout を明示している)。
+#
+# したがって MISMATCH の原因は 2 つあり、件数からは判別できない:
+#   (a) 承認後に hooks.json の当該 entry を書き換えた → その hook は Untrusted に
+#       戻っており実行されていない。codex TUI で再承認すれば直る
+#   (b) codex の payload 仕様が変わった → docs/ai-operations.md §10 と本ヘッダの
+#       再実測が必要
+# **判別は「その entry の hooks.json を変更した覚えがあるか」で行う**。覚えが
+# 無いなら (b) を疑い、**再承認する前に**再実測すること — 再承認すると codex が
+# 新しい hash を書き戻し、仕様が変わったという唯一の証拠が消える。
 #
 # 検知時: **警告のみで exit 0**。承認も再承認も user 操作でしか行えず、agent が
 # 直せないものでゲートを落としても手詰まりになるだけなため
@@ -68,6 +77,12 @@ label="codex-hook-trust"
 # unbound variable となり exit 1 = 全経路 exit 0 の契約が破れる)。空なら
 # $H/.codex が存在せず SKIP に倒れる
 H="${INTEGRITY_HOME:-${HOME:-}}"
+# 末尾スラッシュを落としてから連結する。codex が config.toml に書いたキーは
+# 正規化されたパス (`/…/.codex/hooks.json:`) なので、`//` が入ると prefix が
+# 一致せず**全 entry が「未承認」**になる。`$HOME=/` のような病的ケースまでは
+# 面倒を見ない (その環境なら .codex が無く SKIP に倒れる)。
+# 同型の落とし穴は claude/rules/shell.md に規約化済み (issue #225)
+while [ "${H%/}" != "$H" ]; do H="${H%/}"; done
 hooks_json="$H/.codex/hooks.json"
 cfg="$H/.codex/config.toml"
 
@@ -103,12 +118,18 @@ else
 fi
 
 sha256_hex() {
-  # stdin を sha256 して hex だけ返す
+  # stdin を sha256 して hex だけ返す。hex の切り出しに cut を挟まないのは、
+  # このスクリプトが run-gate.sh 経由で毎ターン走るため (entry ごとに 1 fork 増える)。
+  # ただし起動コストの支配項は cut ではなく **承認済み entry ごとの sha256 fork** と
+  # config.toml 走査の方。実測 (本機・5 回連続、2026-08-03): キー存在のみの旧版
+  # 0.071s / entry ごとに awk を fork した版 0.155s / 現在の 1 パス版 0.111s
+  local out
   if [ "$sha_tool" = "sha256sum" ]; then
-    sha256sum | cut -d' ' -f1
+    out=$(sha256sum)
   else
-    shasum -a 256 | cut -d' ' -f1
+    out=$(shasum -a 256)
   fi
+  printf '%s' "${out%% *}"
 }
 
 # 期待 entry を "<snake_event>:<group>:<index>\t<payload JSON>" 形式で全列挙する。
@@ -147,6 +168,65 @@ if ! entries=$(jq -r "$JQ_ENTRIES" "$hooks_json" 2>/dev/null); then
 fi
 
 tab=$(printf '\t')
+nl='
+'
+
+# config.toml 側の承認記録を **1 パスで**取り出し、"<position>\t<hash>" の行の
+# 集まりにしておく (hash が読めなかった entry は hash 側が空)。
+# entry ごとに awk を fork して config.toml を読み直さないのは、このスクリプトが
+# make test だけでなく run-gate.sh (= make gate、Stop hook 経由で毎ターン) から
+# 走るため — 8 entry なら fork も全読みも 8 倍になる。
+#
+# 照合はキー行の行頭一致。パス部分まで prefix に含めるのは、別ホームの
+# hooks.json に対する承認記録を自ホストの承認と取り違えないため。
+# **行頭への固定を実際に効かせているのは `rest` の固定オフセット**
+# (`substr($0, length(prefix) + 1)`) の方で、`index($0, prefix) == 1` は
+# その前提を明示しているだけ — prefix が行の途中で見つかっても、固定オフセットで
+# 切ると position が prefix の末尾数文字とずれて実 position に一致しない。
+# これにより、コメント行 (`# [hooks.state."..."]`) に同じ文字列があるだけで
+# 承認済みと判定される穴 (検知器が fail-open する方向) が塞がる。
+# **両方を同時に「整理」しないこと** — `== 1` を `> 0` に緩めたうえで
+# オフセットも `index($0, prefix) + length(prefix)` に直すと、コメント行が
+# 承認記録として通る (selftest の trust-commented がその mutant で落ちる)。
+#
+# 照合するのは codex が書き出す basic string 書式ちょうど 1 つ。TOML 自体は
+# literal string やキー周りの空白も許すので、codex が serializer を変えたら
+# **全 entry が未承認扱い**になる (見逃しではなく fail-loud)。
+# index() / match() をバイト単位で効かせるため LC_ALL=C 固定 (BSD awk の
+# 文字境界がロケール依存になるのを避ける。キーは ASCII だがパス部分に
+# 非 ASCII が混じりうる)。prefix は `-v` ではなく ENVIRON 経由で渡す —
+# `-v` は代入値のバックスラッシュエスケープを解釈するため、`\` を含むパスで
+# prefix が壊れて全 entry が「未承認」になる
+cfg_records=""
+if [ -f "$cfg" ]; then
+  cfg_records=$(TRUST_KEY_PREFIX="[hooks.state.\"$hooks_json:" LC_ALL=C awk '
+    BEGIN { prefix = ENVIRON["TRUST_KEY_PREFIX"] }
+    index($0, prefix) == 1 {
+      rest = substr($0, length(prefix) + 1)
+      end = index(rest, "\"]")
+      if (end > 0) {
+        cur = substr(rest, 1, end - 1)
+        if (!(cur in seen)) { seen[cur] = 1; order[++n] = cur; hash[cur] = "" }
+      } else {
+        cur = ""
+      }
+      next
+    }
+    # 次のテーブルヘッダが来たらブロックを閉じる。これが無いと、trusted_hash 行を
+    # 持たないブロックの直後のテーブルに trusted_hash で始まる行があるだけで、
+    # その値を前のブロックのものとして拾う (nohash → hash の fail-open)
+    index($0, "[") == 1 { cur = "" }
+    # `=` まで見るのは、codex が将来 trusted_hash_algo のような別キーを足したとき
+    # に、先に現れたそちらを値として拾わないため
+    cur != "" && hash[cur] == "" && $0 ~ /^trusted_hash[[:space:]]*=/ {
+      if (match($0, /"[^"]*"/)) { hash[cur] = substr($0, RSTART + 1, RLENGTH - 2) }
+    }
+    END { for (i = 1; i <= n; i++) print order[i] "\t" hash[order[i]] }
+  ' "$cfg")
+fi
+# 先頭に改行を足しておくと、1 行目の記録も「改行 + position + TAB」の形で
+# 一様に照合できる (行頭アンカーの代わり)
+cfg_records="$nl$cfg_records"
 
 ok=0
 unapproved=0
@@ -158,61 +238,39 @@ while IFS="$tab" read -r position payload; do
   [ -n "$position" ] || continue
   total=$((total + 1))
 
-  # 照合はキーの行頭一致。パス部分まで含めるのは、別ホームの hooks.json に
-  # 対する承認記録を自ホストの承認と取り違えないため。行頭に固定するのは、
-  # コメント行 (`# [hooks.state."..."]`) に同じ文字列があるだけで承認済みと
-  # 判定されるのを防ぐため (検知器が fail-open する方向の穴になる)。
-  # 照合するのは codex が書き出す basic string 書式ちょうど 1 つ。TOML 自体は
-  # literal string やキー周りの空白も許すので、codex が serializer を変えたら
-  # **全 entry が WARN** になる (見逃しではなく fail-loud)
-  key="[hooks.state.\"$hooks_json:$position\"]"
-
-  # config.toml から当該ブロックの trusted_hash を取り出す。TOML の正規パーサは
-  # 使わず行スキャンなので、結果は 3 値で返す:
-  #   absent — キー行が無い (= 未承認)
-  #   nohash — キー行はあるが trusted_hash 行が読めない (= 判断できない)
-  #   hash:<値> — 読めた
-  # nohash を「承認済み」にも「未承認」にも倒さないのは、読めなかったことを
-  # OK 側に倒すと検知器が fail-open するため。
-  # index() / match() をバイト単位で効かせるため LC_ALL=C 固定 (BSD awk の
-  # 文字境界がロケール依存になるのを避ける。キーは ASCII だがパス部分に
-  # 非 ASCII が混じりうる)
-  if [ -f "$cfg" ]; then
-    recorded=$(LC_ALL=C awk -v key="$key" '
-      index($0, key) == 1 { inblock = 1; found = 1; next }
-      inblock && index($0, "[") == 1 { inblock = 0 }
-      inblock && !got && index($0, "trusted_hash") == 1 {
-        if (match($0, /"[^"]*"/)) { val = substr($0, RSTART + 1, RLENGTH - 2); got = 1 }
-      }
-      END {
-        if (got) print "hash:" val
-        else if (found) print "nohash"
-        else print "absent"
-      }' "$cfg")
-  else
-    # config.toml が無い = 承認記録が 1 件も無い。「配線済みなのに承認記録が
-    # ゼロ」はまさに検知したい状態なので skip ではなく未承認として扱う
-    recorded="absent"
-  fi
-
-  case "$recorded" in
-    absent)
+  # 承認記録を引く。config.toml が無い場合 cfg_records は空なので全 entry が
+  # 未承認に倒れる — 「配線済みなのに承認記録が 1 件も無い」はまさに検知したい
+  # 状態なので skip ではなく未承認として扱う。
+  # `$position$tab` まで含めて照合するので、position が別 position の接頭辞
+  # (0:1 と 0:10 等) でも取り違えない
+  case "$cfg_records" in
+    *"$nl$position$tab"*)
+      recorded="${cfg_records#*"$nl$position$tab"}"
+      recorded="${recorded%%"$nl"*}"
+      ;;
+    *)
       echo "$label: WARN 未承認の codex hook entry: $position (codex TUI で承認するまで実行されない)"
       unapproved=$((unapproved + 1))
       continue
       ;;
-    nohash)
-      echo "$label: WARN trusted_hash を読み取れない entry: $position ($cfg の該当ブロックを確認すること)"
-      parsefail=$((parsefail + 1))
-      continue
-      ;;
   esac
 
+  # キー行はあるが trusted_hash の値が取れなかった場合。「trusted_hash 行が無い」
+  # だけでなく **`trusted_hash = ""` (空の basic string)** もここに入る
+  # (どちらも照合できないという点で同じなので分けない)。「承認済み」にも
+  # 「未承認」にも倒さないのは、読めなかったことを OK 側に倒すと検知器が
+  # fail-open するため
+  if [ -z "$recorded" ]; then
+    echo "$label: WARN trusted_hash を読み取れない entry: $position ($cfg の該当ブロックを確認すること)"
+    parsefail=$((parsefail + 1))
+    continue
+  fi
+
   expected="sha256:$(printf '%s' "$payload" | sha256_hex)"
-  if [ "${recorded#hash:}" = "$expected" ]; then
+  if [ "$recorded" = "$expected" ]; then
     ok=$((ok + 1))
   else
-    echo "$label: WARN trusted_hash 不一致: $position (記録=${recorded#hash:} 期待=$expected)"
+    echo "$label: WARN trusted_hash 不一致: $position (記録=$recorded 期待=$expected)"
     mismatch=$((mismatch + 1))
   fi
 done <<EOF
@@ -231,13 +289,17 @@ else
   if [ "$unapproved" -gt 0 ]; then
     echo "$label: 未承認の entry は codex TUI を開いて承認してください (agent からは実行不可)"
   fi
-  # 不一致が「hash を照合できた entry すべて」に及ぶなら、個々の hooks.json 変更
-  # ではなく payload 仕様そのものが変わった可能性が高い。一部だけなら逆に、
-  # その entry が承認後に書き換えられた = 現在実行されていない、を意味する
-  if [ "$mismatch" -gt 0 ] && [ "$mismatch" = "$((ok + mismatch))" ]; then
-    echo "$label: hash を照合できた entry が全件不一致 — codex の payload 仕様変更を疑い docs/ai-operations.md §10 を再実測すること"
-  elif [ "$mismatch" -gt 0 ]; then
-    echo "$label: 不一致の entry は承認後に hooks.json が変更された可能性 (その hook は現在実行されていない)。codex TUI で再承認してください"
+  # MISMATCH の原因は 2 つあり、**件数からは判別できない** — codex の payload
+  # 仕様が変わっても、変わった規則に依存する entry しか外れないため、
+  # 「仕様変更なら全件不一致」にはならない (実測: timeout の既定値を変えた
+  # mutant はこの機体の 8 entry 中 1 件しか外さなかった)。かつて件数で
+  # 出し分けていたが、その分岐は「再承認せよ」を誤って出す方向に倒れていた。
+  # **再承認は仕様変更の証拠を消す** (codex が新しい hash を書き戻す) ので、
+  # 判別材料を示して user に選ばせる形にする
+  if [ "$mismatch" -gt 0 ]; then
+    echo "$label: 不一致の entry は、(a) 承認後に hooks.json を書き換えた (その hook は現在実行されていない) か、(b) codex の payload 仕様が変わったかのどちらかです"
+    echo "$label: その entry の hooks.json を変更した覚えがあれば (a) — codex TUI で再承認してください"
+    echo "$label: 覚えが無ければ (b) を疑い、**再承認する前に** docs/ai-operations.md §10 と本スクリプトのヘッダを再実測すること (再承認すると新しい hash が書き戻され、仕様変更の証拠が消えます)"
   fi
 fi
 exit 0

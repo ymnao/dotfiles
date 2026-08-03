@@ -238,11 +238,20 @@ trust_level 記録)/ `[plugins.*]` / `[notice.*]` / `[tui.*]` /
    | `hooks[].timeout` | **`hooks.json` に無いときの既定は 600** |
    | `hooks[].statusMessage` | `hooks.json` に無いときはキーごと省略 |
 
-   この仕様は `tests/integrity/verify-codex-hook-trust.sh` に実装済みで、
+   **この表は `tests/integrity/verify-codex-hook-trust.sh` のヘッダと
+   `JQ_ENTRIES` が正本で、ここはその写し**(仕様を直すときは必ず先に
+   スクリプト側を直す。実際に hash を計算しているのはスクリプトなので、
+   食い違ったときに正しいのは常にそちら)。仕様は同スクリプトに実装済みで、
    `make test` / `make gate` のたびに記録値と突き合わせている。**再実測は
    手順書ではなくテストになった** — codex を upgrade して仕様が変われば
-   計算値が全 entry で外れ、**全件 MISMATCH** として出る(見逃しではなく
-   fail-loud)。回帰は `tests/integrity/run-integrity-selftest.sh` の
+   MISMATCH として出る(見逃しではなく fail-loud)。ただし **「仕様変更なら
+   全件 MISMATCH」とは限らない**: 既定値や省略規則の変更は*その規則に依存する
+   entry だけ*を外す(実測: `timeout` 既定値を変えた mutant はこの機体の
+   8 entry 中 1 件しか外さなかった)。MISMATCH を見たら件数で判断せず、
+   **その entry の `hooks.json` を変更した覚えがあるか**で切り分け、覚えが
+   無ければ**再承認する前に**再実測する(再承認すると codex が新しい hash を
+   書き戻し、仕様が変わった証拠が消える)。回帰は
+   `tests/integrity/run-integrity-selftest.sh` の
    `trust-hash-*` ケースが固定している(期待 hash は独立した定数として持ち、
    `hooks.json` 側だけを書き換える mutation で導出関係を測る)。
 
@@ -257,7 +266,8 @@ Untrusted となり承認するまで実行されない)。
 (本節にバージョンを明記してあるのがその trigger)。ただし再実測の実体は
 上記のとおり `make test` が自動で行うので、**upgrade 後にやることは
 「`make test` を回して MISMATCH が出ないことを確認する」**に変わった。
-全件 MISMATCH なら payload 仕様が変わっているので、本節の表と
+MISMATCH が出たら(件数を問わず)、その entry の `hooks.json` を変更した
+覚えが無い限り payload 仕様変更を疑い、本節の表と
 `verify-codex-hook-trust.sh` のヘッダを実測し直して更新する。
 
 ### hooks 系ファイルの防御層
@@ -275,7 +285,7 @@ host 側の実ファイル `~/.codex/config.toml`(これが git 追跡外。repo
 |---|---|---|---|
 | 検知 (session, Claude Code) | `agents/hooks/hooks-integrity-warn.sh` を `claude/settings.json` の SessionStart (`startup\|resume\|clear\|fork`) に配線 | セッション開始時に、監視対象の未コミット改変を警告として context に注入する。**自動で発火する経路**(model の context に入り、人は transcript で確認できる) | 警告のみで遮断はしない(dotfiles 開発中は dirty が正常状態のため意図的に warn-only)。**codex 単体の作業では発火しない**(下の行が担当) |
 | 検知 (session, codex) | 同 hook を `codex/hooks.json` の SessionStart (`startup\|resume\|clear`) に配線(issue #215)。`codex/hooks/hooks-integrity-warn.sh` は正本への相対 symlink | **(codex TUI で承認された後に限り)** codex CLI 単体で作業する経路。本節の脅威モデルの中心は codex 側なので、ここが塞がって初めて主要経路が覆われる | 同上(warn-only)。加えて **承認するまで発火しない** — 新 entry は trusted_hash 未登録で Untrusted 扱いになる(承認は host 側の user 操作で、agent からは行えない)。この「配線済みだが未承認」状態自体は下の承認状態検査が拾う |
-| 承認状態の検査 | `tests/integrity/verify-codex-hook-trust.sh` を `make test` と `tests/run-gate.sh` から呼ぶ(issue #239 でキー存在、issue #214 で `trusted_hash` の値検証) | `codex/hooks.json` の各 entry に対応する `[hooks.state."<hooks.json の絶対パス>:<event>:<group>:<index>"]` キーが `~/.codex/config.toml` に無い状態 = **配線済みだが未承認(一度も実行されない)** の検出。新しいマシンにセットアップして承認を忘れた場合も同じ形で出る。監視系 hook は「警告が出ない = 正常」と「そもそも動いていない」が区別できないため、ここを機械が言わないと誰も気付けない。加えて記録済み `trusted_hash` を現在の `hooks.json` から計算し直して突き合わせるので、**「承認後に command を書き換えた」= その entry が Untrusted に戻って実行されていない**状態も拾う(キー存在だけを見ていた頃はこれを「承認済み」と誤報告していた) | 承認も再承認も user 操作でしか行えないので**警告のみ**(全経路 exit 0。agent が直せないものでゲートを落としても手詰まりになる)。値検証は codex の payload 仕様に依存するため、仕様が変わると**全 entry が MISMATCH** になる(見逃しではなく fail-loud。原因ヒントは「全件不一致 = 仕様変更」「一部だけ = 承認後の書き換え」で出し分ける)。`jq` と `sha256sum`/`shasum` が無い環境では SKIP。キー書式は codex-cli 0.146.0 で実測(2026-07-31)、payload 仕様も同 0.146.0 で実測(2026-08-03)。**Stop hook 経由では表示されない**のは下の「検知 (手動)」と同じで、人の目に入るのは `make test` / `make gate` を手で叩いたときだけ |
+| 承認状態の検査 | `tests/integrity/verify-codex-hook-trust.sh` を `make test` と `tests/run-gate.sh` から呼ぶ(issue #239 でキー存在、issue #214 で `trusted_hash` の値検証) | `codex/hooks.json` の各 entry に対応する `[hooks.state."<hooks.json の絶対パス>:<event>:<group>:<index>"]` キーが `~/.codex/config.toml` に無い状態 = **配線済みだが未承認(一度も実行されない)** の検出。新しいマシンにセットアップして承認を忘れた場合も同じ形で出る。監視系 hook は「警告が出ない = 正常」と「そもそも動いていない」が区別できないため、ここを機械が言わないと誰も気付けない。加えて記録済み `trusted_hash` を現在の `hooks.json` から計算し直して突き合わせるので、**「承認後に command を書き換えた」= その entry が Untrusted に戻って実行されていない**状態も拾う(キー存在だけを見ていた頃はこれを「承認済み」と誤報告していた) | 承認も再承認も user 操作でしか行えないので**警告のみ**(全経路 exit 0。agent が直せないものでゲートを落としても手詰まりになる)。値検証は codex の payload 仕様に依存するため、仕様が変わると MISMATCH になる(見逃しではなく fail-loud)。ただし**外れるのは変わった規則に依存する entry だけ**なので、**件数では原因を判別できない** — 「承認後の書き換え」と「仕様変更」の区別は「その entry の `hooks.json` を変更した覚えがあるか」で行い、覚えが無ければ**再承認する前に**再実測する(再承認は仕様変更の証拠を消す)。`jq` と `sha256sum`/`shasum` が無い環境では SKIP。キー書式は codex-cli 0.146.0 で実測(2026-07-31)、payload 仕様も同 0.146.0 で実測(2026-08-03)。**Stop hook 経由では表示されない**のは下の「検知 (手動)」と同じで、人の目に入るのは `make test` / `make gate` を手で叩いたときだけ |
 | 検知 (手動) | `hooks-integrity-warn.sh` を `make test` と `tests/run-gate.sh`(`make gate`)からも呼ぶ | **手で `make test` / `make gate` を叩いたとき**の表示 | **Stop hook 経由では表示されない** — `stop-verify-gate.sh` は gate の出力を変数に capture し、gate が通れば捨て、落ちても `tail -20` しか出さないため。ターンごとの自動検知にはなっていない |
 | 構造検査 | `tests/integrity/run-integrity-check.sh` | symlink が期待どおりの実体を指しているか(置換・実体化の検出)。ズレは異常なので exit 1 | ファイル**内容**の改変 |
 | review | git 追跡 + PR review | push されて PR に載った改変 | 未コミットの改変(検知層が担当)と、**push されないローカル commit**(下記) |
@@ -346,7 +356,7 @@ host 側の実ファイル `~/.codex/config.toml`(これが git 追跡外。repo
 
 - **codex を upgrade したら** — 1 / 2 / 3、および §10 冒頭の trusted_hash
   (trusted_hash は `make test` が自動で突き合わせるので、**回して MISMATCH が
-  出ないことを確認する**だけでよい。全件 MISMATCH なら payload 仕様変更)
+  出ないことを確認する**だけでよい。出たら件数を問わず仕様変更を疑う)
 - **Claude Code を upgrade したら** — 2b / 2c
 
 **codex 側の記述**(1 / 2 / 3)はすべて **2026-07-31 に upstream の tag

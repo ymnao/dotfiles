@@ -7,10 +7,12 @@ set -uo pipefail
 # 対象: run-integrity-check.sh, verify-settings-codex-domains.sh,
 # verify-codex-hook-trust.sh
 # (issue #189 で 3 項目分、issue #190 で denyWrite 項目分、issue #239 で
-#  codex hook の承認状態検査分を追加)。
+#  codex hook の承認状態検査分、issue #214 で trusted_hash の値検証分を追加)。
 # verify-guard-codex-wiring.sh の selftest は未実装 (別 issue で対応予定)。
 #
-# 依存: bash 3.2+ / jq / git
+# 依存: bash 3.2+ / jq / git / sha256sum または shasum
+# (最後のものは verify-codex-hook-trust.sh の hash 計算が要求する。どちらも
+#  無いホストでは検査器が SKIP を返し、trust-* の stdout assert が全部落ちる)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 CHECKER="${CHECKER_PATH:-$SCRIPT_DIR/run-integrity-check.sh}"
@@ -254,9 +256,22 @@ make_trust_home() {
   : >"$h/.codex/config.toml"
   local e
   for e in "$@"; do
-    printf '[hooks.state."%s/.codex/hooks.json:%s"]\ntrusted_hash = "%s"\n\n' \
-      "$h" "$e" "$(trust_expected_hash "$e")" >>"$h/.codex/config.toml"
+    write_trust_entry "$h/.codex/config.toml" "$h/.codex/hooks.json" "$e" \
+      "$(trust_expected_hash "$e")"
   done
+}
+
+# 承認記録ブロック 1 件を追記する。**検査器が照合しているのは codex が書き出す
+# basic string 書式ちょうど 1 つ**なので、その書式をケースごとに手書きすると
+# 片方だけずれて「なぜか 1 ケースだけ通らない」形で出る。ここ 1 箇所に閉じ込める。
+# $1=出力先 config.toml, $2=キーに埋める hooks.json のパス, $3=entry,
+# $4=trusted_hash の値 (空文字なら **キー行だけ書いて trusted_hash 行を省く**)
+write_trust_entry() {
+  if [ -n "$4" ]; then
+    printf '[hooks.state."%s:%s"]\ntrusted_hash = "%s"\n\n' "$2" "$3" "$4" >>"$1"
+  else
+    printf '[hooks.state."%s:%s"]\n\n' "$2" "$3" >>"$1"
+  fi
 }
 
 # 上の fixture に対する期待 trusted_hash。**リテラル定数として持つ** —
@@ -278,7 +293,13 @@ trust_expected_hash() {
   esac
 }
 
-ALL_TRUST_ENTRIES="pre_tool_use:0:0 pre_tool_use:0:1 pre_tool_use:1:0 session_start:0:0 stop:0:0"
+# 配列で持つ (空白区切り文字列 + unquoted 展開の word splitting は
+# claude/rules/shell.md の「変数展開は常に quote する」に反する。
+# `make test` の shellcheck は -S warning なので SC2086 では止まらない)
+ALL_TRUST_ENTRIES=(
+  "pre_tool_use:0:0" "pre_tool_use:0:1" "pre_tool_use:1:0"
+  "session_start:0:0" "stop:0:0"
+)
 
 run_trust_checker() {
   # $1=HOME。stdout を返す (exit code は check_trust_exit で別に見る)
@@ -317,13 +338,21 @@ check_stdout_lacks() {
 # matcher 空の省略・timeout 既定 600・キーのソート順・非 ASCII の生出力の
 # どれが崩れても該当 entry が MISMATCH になる (fail-loud)
 H="$BASE/trust-all"
-make_trust_home "$H" $ALL_TRUST_ENTRIES
+make_trust_home "$H" "${ALL_TRUST_ENTRIES[@]}"
 out=$(run_trust_checker "$H")
 # entry 件数まで assert する — 「全部承認済み」と「検査対象が 0 件」が同じ OK で
 # 出ると、この層の存在理由 (動いていないことが見えない) を 1 段上で再生産する
 check_stdout_has   "trust-all-approved-ok"    "$out" "codex-hook-trust: OK (5 entry すべて承認済み・hash 一致)"
 check_stdout_lacks "trust-all-approved-nowarn" "$out" "WARN"
 check_trust_exit   "trust-all-approved-exit0" "$H"
+
+# trust-1b. **HOME に末尾スラッシュが付いていても同じ結果**。連結が `//` になると
+# codex が書いた正規化済みパスと prefix が一致せず全 entry が「未承認」に化ける。
+# 同型の落とし穴は claude/rules/shell.md に規約化済み (issue #225)。
+# 直前の trust-1 と同じ fixture を使い、**変える変数は末尾スラッシュだけ**
+out=$(run_trust_checker "$H/")
+check_stdout_has   "trust-trailing-slash-ok"     "$out" "codex-hook-trust: OK (5 entry すべて承認済み・hash 一致)"
+check_stdout_lacks "trust-trailing-slash-nowarn" "$out" "WARN"
 
 # trust-2. session_start だけ未承認 → その entry の WARN が出て、承認済みの
 # entry の WARN は出ない (「全部 WARN する」退行と「何も WARN しない」退行の両方を殺す)
@@ -360,15 +389,15 @@ check_trust_exit "trust-noconfig-exit0" "$H"
 # パス部分を落とす簡略化 (":session_start:0:0" の suffix 一致等) をすると、
 # 他ホストの承認記録を自ホストの承認と取り違えるが、それをここで固定する。
 H="$BASE/trust-otherpath"
-make_trust_home "$H" $ALL_TRUST_ENTRIES
+make_trust_home "$H" "${ALL_TRUST_ENTRIES[@]}"
 # パスを差し替えた config.toml を組み直す (sed で $H を BRE に埋めると、
 # mktemp 由来のパスに含まれるメタ文字で壊れるため文字列連結で作る)。
 # hash は正しい値を入れる — 「パスが違えば hash が合っていても未承認」を
 # 固定するため (hash 一致を承認の代わりに使う退行を殺す)
 : >"$H/.codex/config.toml"
-for e in $ALL_TRUST_ENTRIES; do
-  printf '[hooks.state."/other/home/.codex/hooks.json:%s"]\ntrusted_hash = "%s"\n\n' \
-    "$e" "$(trust_expected_hash "$e")" >>"$H/.codex/config.toml"
+for e in "${ALL_TRUST_ENTRIES[@]}"; do
+  write_trust_entry "$H/.codex/config.toml" "/other/home/.codex/hooks.json" "$e" \
+    "$(trust_expected_hash "$e")"
 done
 out=$(run_trust_checker "$H")
 check_stdout_has "trust-otherpath-warns" "$out" "未承認の codex hook entry: session_start:0:0"
@@ -379,9 +408,9 @@ check_trust_exit "trust-otherpath-exit0" "$H"
 # 照合が「ファイル全体の部分文字列一致」だと、コメントに書いてあるだけで
 # 承認済みと判定される (検知器が fail-open する方向の穴)。行頭アンカーの固定
 H="$BASE/trust-commented"
-make_trust_home "$H" $ALL_TRUST_ENTRIES
+make_trust_home "$H" "${ALL_TRUST_ENTRIES[@]}"
 : >"$H/.codex/config.toml"
-for e in $ALL_TRUST_ENTRIES; do
+for e in "${ALL_TRUST_ENTRIES[@]}"; do
   printf '# [hooks.state."%s/.codex/hooks.json:%s"] あとで承認する\n' \
     "$H" "$e" >>"$H/.codex/config.toml"
 done
@@ -397,35 +426,40 @@ check_trust_exit "trust-commented-exit0" "$H"
 
 # trust-hash-1. 1 entry だけ記録 hash が違う → その entry だけ不一致 WARN。
 # 他 entry は静かなまま (「全部不一致にする」退行と「何も見ない」退行の両方を殺す)
-H="$BASE/trust-hash-one"; make_trust_home "$H" $ALL_TRUST_ENTRIES
+H="$BASE/trust-hash-one"; make_trust_home "$H" "${ALL_TRUST_ENTRIES[@]}"
 : >"$H/.codex/config.toml"
-for e in $ALL_TRUST_ENTRIES; do
+for e in "${ALL_TRUST_ENTRIES[@]}"; do
   hv=$(trust_expected_hash "$e")
   [ "$e" = "pre_tool_use:0:1" ] && hv="sha256:deadbeef"
-  printf '[hooks.state."%s/.codex/hooks.json:%s"]\ntrusted_hash = "%s"\n\n' \
-    "$H" "$e" "$hv" >>"$H/.codex/config.toml"
+  write_trust_entry "$H/.codex/config.toml" "$H/.codex/hooks.json" "$e" "$hv"
 done
 out=$(run_trust_checker "$H")
 check_stdout_has   "trust-hash-one-warns"      "$out" "trusted_hash 不一致: pre_tool_use:0:1"
 check_stdout_lacks "trust-hash-one-quiet-rest" "$out" "trusted_hash 不一致: pre_tool_use:0:0"
 check_stdout_lacks "trust-hash-one-not-ok"     "$out" "codex-hook-trust: OK"
-check_stdout_has   "trust-hash-one-cause"      "$out" "承認後に hooks.json が変更された可能性"
+# 原因ヒントは (a) 承認後の書き換え / (b) codex の payload 仕様変更の**両方**を
+# 出し、判別材料 (「変更した覚えがあるか」) を添える。かつては件数で
+# 出し分けていたが、**仕様変更でも全件不一致になるとは限らない**ため
+# (規則に依存する entry だけが外れる)、1 件不一致に「再承認せよ」だけを出すと
+# 誤誘導になる。再承認すると新しい hash が書き戻され証拠が消えるので、
+# この誤誘導は取り返しがつかない
+check_stdout_has   "trust-hash-one-cause-a"    "$out" "承認後に hooks.json を書き換えた"
+check_stdout_has   "trust-hash-one-cause-b"    "$out" "codex の payload 仕様が変わった"
+check_stdout_has   "trust-hash-one-evidence"   "$out" "再承認する前に"
 check_trust_exit   "trust-hash-one-exit0"      "$H"
 
-# trust-hash-2. **全 entry** の記録 hash が違う → 原因ヒントが「個別の書き換え」
-# ではなく「codex の payload 仕様変更」側に切り替わる。この 2 つは user が取る
-# 行動が違う (再承認 / 再実測) ので、同じ文言で出すと片方が必ず空振りする
-H="$BASE/trust-hash-all"; make_trust_home "$H" $ALL_TRUST_ENTRIES
+# trust-hash-2. **全 entry** の記録 hash が違う → 件数によらず同じ 2 択の
+# ヒントが出る (件数で原因を断定しない)
+H="$BASE/trust-hash-all"; make_trust_home "$H" "${ALL_TRUST_ENTRIES[@]}"
 : >"$H/.codex/config.toml"
-for e in $ALL_TRUST_ENTRIES; do
-  printf '[hooks.state."%s/.codex/hooks.json:%s"]\ntrusted_hash = "sha256:deadbeef"\n\n' \
-    "$H" "$e" >>"$H/.codex/config.toml"
+for e in "${ALL_TRUST_ENTRIES[@]}"; do
+  write_trust_entry "$H/.codex/config.toml" "$H/.codex/hooks.json" "$e" "sha256:deadbeef"
 done
 out=$(run_trust_checker "$H")
 warn_count=$(printf '%s\n' "$out" | LC_ALL=C grep -cF "trusted_hash 不一致:")
 check "trust-hash-all-warn-count" 5 "$warn_count"
-check_stdout_has   "trust-hash-all-cause"    "$out" "codex の payload 仕様変更を疑い"
-check_stdout_lacks "trust-hash-all-nomixed"  "$out" "承認後に hooks.json が変更された可能性"
+check_stdout_has   "trust-hash-all-cause-a"  "$out" "承認後に hooks.json を書き換えた"
+check_stdout_has   "trust-hash-all-cause-b"  "$out" "codex の payload 仕様が変わった"
 check_trust_exit   "trust-hash-all-exit0"    "$H"
 
 # trust-hash-3 (mutation check). 承認記録は正しいまま **hooks.json 側の command を
@@ -435,7 +469,7 @@ check_trust_exit   "trust-hash-all-exit0"    "$H"
 # ずれれば全 pass する)。書き換えた側だけが動く mutation でそこを塞ぐ。
 # **command だけを変える** — 1 mutant 1 変数 (matcher や timeout も同時に変えると
 # どの入力が hash に効いたのか特定できない)
-H="$BASE/trust-hash-mut"; make_trust_home "$H" $ALL_TRUST_ENTRIES
+H="$BASE/trust-hash-mut"; make_trust_home "$H" "${ALL_TRUST_ENTRIES[@]}"
 jq '.hooks.PreToolUse[0].hooks[0].command = "bash evil.sh"' \
   "$H/.codex/hooks.json" >"$H/.codex/hooks.json.tmp"
 mv "$H/.codex/hooks.json.tmp" "$H/.codex/hooks.json"
@@ -449,8 +483,8 @@ check_trust_exit   "trust-hash-mut-exit0"       "$H"
 # 検知器が fail-open する
 H="$BASE/trust-hash-nohash"; make_trust_home "$H"
 : >"$H/.codex/config.toml"
-for e in $ALL_TRUST_ENTRIES; do
-  printf '[hooks.state."%s/.codex/hooks.json:%s"]\n\n' "$H" "$e" >>"$H/.codex/config.toml"
+for e in "${ALL_TRUST_ENTRIES[@]}"; do
+  write_trust_entry "$H/.codex/config.toml" "$H/.codex/hooks.json" "$e" ""
 done
 out=$(run_trust_checker "$H")
 warn_count=$(printf '%s\n' "$out" | LC_ALL=C grep -cF "trusted_hash を読み取れない entry:")
@@ -458,6 +492,60 @@ check "trust-hash-nohash-warn-count" 5 "$warn_count"
 check_stdout_lacks "trust-hash-nohash-not-unapproved" "$out" "未承認の codex hook entry:"
 check_stdout_lacks "trust-hash-nohash-not-ok"         "$out" "codex-hook-trust: OK"
 check_trust_exit   "trust-hash-nohash-exit0"          "$H"
+
+# trust-hash-5. **ブロック境界のリセットが効いているか**。trusted_hash 行を持たない
+# hooks.state ブロックの直後に別テーブルを置き、そのテーブル側に trusted_hash 行を
+# 書く。境界リセット (awk の `index($0, "[") == 1 { cur = "" }`) が無いと、後続
+# テーブルの値を前のブロックのものとして拾う = 読み取り不可が「承認済み」に化ける
+# fail-open。実 config.toml には [projects.*] / [tui.*] が並ぶので仮想の穴ではない。
+# **この形の fixture が 1 本も無かったため、境界行を消した mutant が全 pass していた**
+# (code-reviewer が実測)
+H="$BASE/trust-hash-boundary"; make_trust_home "$H"
+: >"$H/.codex/config.toml"
+for e in "${ALL_TRUST_ENTRIES[@]}"; do
+  write_trust_entry "$H/.codex/config.toml" "$H/.codex/hooks.json" "$e" ""
+  printf '[projects."/x-%s"]\ntrusted_hash = "sha256:deadbeef"\ntrust_level = "trusted"\n\n' \
+    "$e" >>"$H/.codex/config.toml"
+done
+out=$(run_trust_checker "$H")
+warn_count=$(printf '%s\n' "$out" | LC_ALL=C grep -cF "trusted_hash を読み取れない entry:")
+check "trust-hash-boundary-warn-count" 5 "$warn_count"
+check_stdout_lacks "trust-hash-boundary-no-leak" "$out" "trusted_hash 不一致:"
+check_trust_exit   "trust-hash-boundary-exit0"   "$H"
+
+# trust-hash-5b. **キー名が `trusted_hash` の接頭辞になる別キー**が同じブロックに
+# 先に現れるケース。値の抽出を `index($0, "trusted_hash") == 1` (前方一致) で
+# 書くと、そちらを先に拾って正しい記録があるのに不一致と誤報告する。
+# codex が将来 trusted_hash_algo のようなキーを足したときに、原因ヒントが
+# 「承認後に書き換えた」に倒れて **user を再承認へ誤誘導する** (= 証拠が消える)
+H="$BASE/trust-hash-prefixkey"; make_trust_home "$H"
+: >"$H/.codex/config.toml"
+for e in "${ALL_TRUST_ENTRIES[@]}"; do
+  printf '[hooks.state."%s/.codex/hooks.json:%s"]\ntrusted_hash_algo = "sha256:deadbeef"\ntrusted_hash = "%s"\n\n' \
+    "$H" "$e" "$(trust_expected_hash "$e")" >>"$H/.codex/config.toml"
+done
+out=$(run_trust_checker "$H")
+check_stdout_has   "trust-hash-prefixkey-ok"     "$out" "codex-hook-trust: OK (5 entry すべて承認済み・hash 一致)"
+check_stdout_lacks "trust-hash-prefixkey-nowarn" "$out" "WARN"
+check_trust_exit   "trust-hash-prefixkey-exit0"  "$H"
+
+# trust-hash-6. **position が別 position の接頭辞になるケース** (0:1 と 0:10)。
+# 引き当ては "<改行><position><TAB>" で行うので TAB が終端として効いているが、
+# 上の fixture は 1 group 最大 2 hook なので接頭辞関係が発生せず、この性質が
+# 一度も測られていなかった。TAB を落とす退行の向きは fail-open
+# (0:1 が 0:10 の承認記録を引く) なので、専用の hooks.json で固定する。
+# **承認するのは 0:10 だけ** — 0:1 がそれを引いてしまうなら「未承認」が消える
+H="$BASE/trust-prefix"; mkdir -p "$H/.codex"
+jq -n '{ hooks: { PreToolUse: [ { matcher: "^Bash$",
+  hooks: [ range(11) | { type: "command", command: "bash p\(.).sh" } ] } ] } }' \
+  >"$H/.codex/hooks.json"
+: >"$H/.codex/config.toml"
+write_trust_entry "$H/.codex/config.toml" "$H/.codex/hooks.json" "pre_tool_use:0:10" \
+  "sha256:deadbeef"
+out=$(run_trust_checker "$H")
+check_stdout_has "trust-prefix-0-1-unapproved" "$out" "未承認の codex hook entry: pre_tool_use:0:1"
+check_stdout_has "trust-prefix-0-10-compared"  "$out" "trusted_hash 不一致: pre_tool_use:0:10"
+check_trust_exit "trust-prefix-exit0"          "$H"
 
 # trust-5. ~/.codex が無い (codex 未セットアップ機) → SKIP
 H="$BASE/trust-nocodex"; mkdir -p "$H"
