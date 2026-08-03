@@ -8,8 +8,12 @@ set -euo pipefail
 # exit: 0 = 分類成功 (tier がどれでも 0) / 1 = 前提エラー
 #
 # 分類はモデルの判断に任せず path/grep で決定的に行う (下位モデルでも
-# 同一精度にするため)。ルール追加はこのファイルの RULES セクションだけを
-# 編集すればよい構造にしてある。
+# 同一精度にするため)。**high 方向のルール**追加はこのファイルの RULES
+# セクションだけを編集すればよい構造にしてある。
+# 一方 tier の別方向の操作 (medium 床など) は check_path / check_content /
+# check_deleted の 3 プリミティブでは表現できない — いずれも `$reasons` に
+# 積んで high に固定する片方向の装置なので、RULES ではなく下の tier 確定
+# ロジックを直接編集することになる (issue #255 の床が実例)
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "ERROR: jq is not installed" >&2
@@ -160,7 +164,10 @@ check_path "infra"        'Dockerfile|docker-compose|\.tf$|\.tfvars$'
 #   `- eval arr[$i]=$X` / `run: eval arr[$i]=$X` — **行頭以外**に置かれた実行形。
 #     Markdown の箇条書き接頭辞 2 文字で CMDPOS の位置集合 (`^\+`) を外せる。
 #     BACKTICK 由来ではなく #227 以前からの穴で、バッククォート形より広い。
-#     経路追加では届かないので下の一般化 trigger の対象 (issue に切り出す)
+#     経路追加では届かないので下の一般化 trigger が発火した (経緯と対応は
+#     LOW_ONLY_PATTERN 直後の medium 床のコメントに 1 箇所だけ書いてある)。
+#     **この形はいまも high にはならない** — 床で最低 1 観点のレビューに
+#     載るだけなので、非検出の一覧からは外さない
 #   展開も引用も一切含まない静的リテラルの `eval ls -la`
 # (動的展開が無く、このルールが見ているリスクに当たらないため意図的)。
 # 実測 (2026-08-02。測定方法を明記する — 方法が書いてないと別の数え方で
@@ -197,6 +204,13 @@ check_path "infra"        'Dockerfile|docker-compose|\.tf$|\.tfvars$'
 #     - **経路追加では届かない FN を観測する** (上の「行頭以外の実行形」型)。
 #       本数や往復回数だけを trigger にすると、いま既に観測済みのこの穴を
 #       見ても発火しない。停止条件は在庫ではなく FN 側でも測る
+#   **3 つ目は #255 で発火済み**。ただし対応は上の 2 案の**どちらでもない**
+#   (対応は LOW_ONLY_PATTERN 直後の medium 床)。2 案はどちらも未実装のまま:
+#   コードフェンス案は床とは独立に検出精度を上げる余地として残っており、
+#   重み付け案は「high で発火したものを medium に落とす」天井なので、
+#   発火しない形が問題だった #255 には効かない。
+#   **経路 6 本目の trigger は生きている** — 床があっても exec-pattern に
+#   経路を足してよい理由にはならない
 # なお下の例示コメント自身がこのパターンにマッチするため、このファイルを触る
 # PR は tier=high になる。実行構文の具体例を残す方を優先した意図的な結果で、
 # 自ファイル除外は入れない (除外は bypass 経路になる)。
@@ -238,18 +252,100 @@ check_content "exec-pattern"        "${EVAL_ADJACENT}|${EVAL_CMDPOS}|${EVAL_OPEN
 check_content "pipe-to-shell"       '(curl|wget)[^|;]*\|[[:space:]]*(ba|z|da)?sh'
 check_content "permission-widening" 'chmod (777|666)|--dangerously|--no-verify'
 check_deleted "test-removal" '(^|/)(tests?|__tests__|spec)/|\.(test|spec)\.[a-z]+$|_test\.(go|py|rb|ts|tsx|js|jsx)$|\.cases\.jsonl$'
-# 全 diff がこのパターンにマッチする文書だけなら tier=low に落とす
-# (content check の除外パターン NOT_EXECUTABLE_DOC_PATTERN より広い —
-# 危険文字列がない SKILL.md/CLAUDE.md の tweak も low 扱いにするため)
+# 全 diff がこのパターンにマッチする文書だけなら tier=low の候補になる。
+# **#255 の medium 床が入った後は、これ単独では low を決めない** — 実際に
+# low になるのは、さらに全ファイルが NOT_EXECUTABLE_DOC_PATTERN にも入る
+# ときだけ (下の床を参照)。旧コメントは「危険文字列がない SKILL.md /
+# CLAUDE.md の tweak も low 扱いにするため」と幅の広さを正当化していたが、
+# SKILL.md は床で medium になり、CLAUDE.md は check_path "agent-config" で
+# 以前から high なので、その理由はもう成立しない。
+# 現状このパターンが単独で結果を変えるのは、NOT_EXECUTABLE に入って
+# LOW_ONLY に入らない形 (非 root の `sub/LICENSE` 等) だけ
 LOW_ONLY_PATTERN='\.md$|^docs/|^LICENSE|\.txt$'
+# medium 床: エージェントが指示として解釈する文書を含む diff は low に
+# 落とさない (issue #255)。**天井ではなく床**なので high 判定には影響しない。
+#
+# 上の exec-pattern が「実行構文だけを検出する」方向で 3 ラウンド (#227 /
+# #230 / #255) 経路を足してきたが、行単位の grep はコードフェンスの内外も
+# 行をまたぐ構文も見られないため、散文と実行構文を原理的に分離しきれない。
+# 実際 `- eval arr[$i]=$X` は Markdown の箇条書き接頭辞 2 文字で CMDPOS の
+# 位置集合を外れ、SKILL.md 単独 diff が tier=low = **無レビューで merge** に
+# なる。exec-pattern の解説にある「経路追加では届かない FN を観測したら
+# 一般化に切り替える」trigger がこれで発火した。
+#
+# そこで検出精度を上げる方向ではなく、**「無レビュー」という結果の側を消す**。
+# 床なので、パターンが取りこぼしても最低 1 観点が走る — ただし**保証の強さは
+# harness で違う**: Claude 側は `/pr` step 4 の medium が codex-review
+# security を実際に走らせるが、codex 側の `/pr` は独立レビュー不可なので
+# 「merge 前に Claude Code 側で回すこと」と PR 本文に記録するところまで。
+# 取りこぼしを 0 にする必要が無くなる分、exec-pattern 側に経路を足し続ける
+# 圧力も下がる。
+#
+# **床の除外集合は content check の除外集合 (NOT_EXECUTABLE_DOC_PATTERN) とは
+# 別物**。当初は「同じ集合を 2 箇所に書くと drift する」という理由で後者を
+# 再利用したが、レビュー (codex security / code-reviewer) が具体的な反例を
+# 出して覆した。2 つの問いは別だから:
+#   content check の除外 = 「この行を grep して実行構文を探す価値があるか」
+#                          (散文を grep すると FP になるので docs/ を外す)
+#   床の除外           = 「この文書はエージェントが指示として読むか」
+#                          (読むなら、危険文字列が無くてもレビューに載せる)
+# `docs/ai-operations.md` はこの 2 つで答えが割れる典型で、散文だが
+# `agents/AGENTS.md` と `claude/skills/paper-review/SKILL.md` から参照され、
+# §8 は settings.json の手動レビュー手順を命令形で書いている。集合を共有
+# していた版では、この文書の変更が tier=low = 無レビューで通っていた。
+# `evals/` 配下の `.md` も同様 (`claude/skills/dev/SKILL.md` が
+# `evals/README.md` を契約文書として参照する)。
+#
+# よって床は独自の除外パターンを持つ。含めるのは**エージェントが指示として
+# 読まない**ものだけ: repo root の `README*.md` (人間向けの入口) と
+# `LICENSE*`。drift は「集合を 1 つにする」ではなく、両パターンに触れるときの
+# 判断基準を上に書き下すことで防ぐ。
+#
+# `.txt` を除外に入れない理由 (一度入れて codex-review security に覆された):
+# この repo の `.txt` は散文ではなく**制御ファイル**で、
+# `tests/integrity/allowed-mcp.txt` は `~/.claude.json` に存在してよい MCP
+# サーバーの許可リスト、`packages/winget-packages.txt` /
+# `packages/scoop-packages.txt` は `scripts/install.ps1` が読んで実際に
+# パッケージを入れる manifest。**許可リストを広げる変更が無レビューで通る**
+# のは、この床が消そうとしている結果そのもの。「エージェント指示文書ではない」
+# は除外の理由にならない — 床が守るのは「実環境に効く変更を無レビューにしない」
+# ことで、指示文書はその一例にすぎない。
+#
+# **既知の非検出 (床の外に残るもの。閉じたと読ませないために明記する)**:
+#   - 非 root の `README*.md` (`sub/README.md`) — root の入口文書と同じ
+#     パターンで除外される。`claude/skills/dev/evals/README.md` のように
+#     契約文書として参照される README がこれに当たる
+#
+# rename 対策として床の入力だけは `--no-renames` で取り直す。`--name-only` は
+# rename の**宛先しか返さない**ため、`git mv claude/skills/foo/SKILL.md
+# docs/x.md` のように指示文書を床の外へ動かす変更が、元パスを分類器から
+# 見えなくして low で通っていた (削除は `skill-md-removal-floor` で塞いで
+# いたのに、同じ「指示文書が無くなる」変更である rename は素通りしていた)。
+# `--no-renames` にすると rename が delete + add に分解され、元パスも入力に
+# 入る。**`$files` 側は `--name-only` のまま**にする — check_deleted が
+# `--diff-filter=D` で rename を意図的に除外しており、そちらの意味論を
+# 変えないため。
+#
+# コスト: SKILL.md の些細な変更でも codex-review security が回る。この
+# repo は skill 変更 PR が多いので実際にレビュー時間は増える。「無レビュー
+# で通る経路を残さない」方を優先した意図的なトレードオフ
+FLOOR_EXEMPT_PATTERN='^README[^/]*\.md$|(^|/)LICENSE[^/]*$'
 # ---- /RULES ----
 
 tier="medium"
 if [ -n "$reasons" ]; then
   tier="high"
 elif [ -n "$files" ] && [ -z "$(printf '%s\n' "$files" | grep -ivE "$LOW_ONLY_PATTERN" || true)" ]; then
-  tier="low"
-  add_reason "low-only: 変更がドキュメント類のみ"
+  # doc-only diff。エージェント指示文書を含むなら medium 床で止める
+  floor_docs=$(git diff "$REF...HEAD" --name-only --no-renames \
+    | grep -vE "$FLOOR_EXEMPT_PATTERN" | head -3 || true)
+  if [ -n "$floor_docs" ]; then
+    tier="medium"
+    add_reason "medium-floor: エージェント指示文書の変更を含むため無レビューにしない: $(printf '%s' "$floor_docs" | tr '\n' ' ')"
+  else
+    tier="low"
+    add_reason "low-only: 変更がドキュメント類のみ"
+  fi
 fi
 
 jq -n --arg tier "$tier" --arg reasons "$reasons" \

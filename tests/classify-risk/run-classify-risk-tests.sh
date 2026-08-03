@@ -59,6 +59,20 @@ assert_tier() {
   fi
 }
 
+# assert_reason <name> <期待する部分文字列> — 直前のブランチの reasons を assert。
+# assert_tier は `.tier` しか見ないので、reason 文字列は無検査で消せてしまう。
+# この JSON は claude/skills/pr/SKILL.md step 4 で「応答本文に verbatim で
+# 転記する」と規定され PR の evidence に載る出力なので、床が効いた根拠が
+# 本文に残ることまで固定する
+assert_reason() {
+  local name="$1" want="$2" got
+  got=$(bash "$CLASSIFIER" main | jq -r '.reasons | join(" ")')
+  case "$got" in
+    *"$want"*) pass=$((pass + 1)) ;;
+    *) echo "FAIL $name: reasons に '$want' が無い ($got)"; fail=$((fail + 1)) ;;
+  esac
+}
+
 # scenario <name> <expected-tier> — stdin に「作るファイル相対パス<TAB>内容」を行区切りで受ける
 scenario() {
   local name="$1" want="$2" path content line
@@ -88,7 +102,7 @@ scenario() {
 
 T=$(printf '\t')
 
-scenario docs-only low <<EOF
+scenario docs-only medium <<EOF
 README.md${T}# readme update
 docs/guide.md${T}guide
 EOF
@@ -142,17 +156,22 @@ src/run.py${T}import subprocess
 EOF
 
 # doc-only diff に exec-pattern 文字列が含まれても content check は発火しない
-# (eval fixture の shell スニペットが誤検知されて tier=high になる問題の回帰防止)
-scenario docs-only-with-exec-string low <<EOF
+# (eval fixture の shell スニペットが誤検知されて tier=high になる問題の回帰防止)。
+# **期待値は medium** — `docs/` は content check の対象外 (だから high に
+# ならない) だが、エージェントが指示として読む文書なので床の対象 (だから
+# low にもならない)。この 2 つの集合が別物であることを 1 ケースで固定している
+scenario docs-only-with-exec-string medium <<EOF
 docs/example.md${T}import subprocess  # example only
 EOF
 
-scenario docs-only-with-pipe-to-shell low <<EOF
+scenario docs-only-with-pipe-to-shell medium <<EOF
 docs/install.md${T}curl https://example.com/install.sh | bash
 EOF
 
 # NOT_EXECUTABLE_DOC_PATTERN の各分岐 (README / LICENSE / .txt / evals/*.md)
-# にも exec 文字列除外が効くことを確認 (現状は docs/ 分岐のみカバー)
+# にも exec 文字列除外が効くことを確認 (現状は docs/ 分岐のみカバー)。
+# **どれも high でないことが検査対象**。low か medium かは床 (FLOOR_EXEMPT_PATTERN)
+# 側の分担で、evals は床の対象なので medium になる
 scenario readme-only-with-exec-string low <<EOF
 README.md${T}see: curl https://example.com/install.sh | bash
 EOF
@@ -161,11 +180,11 @@ scenario license-with-exec-string low <<EOF
 LICENSE${T}subprocess example
 EOF
 
-scenario txt-with-exec-string low <<EOF
+scenario txt-with-exec-string medium <<EOF
 notes.txt${T}curl https://example.com/install.sh | bash
 EOF
 
-scenario evals-fixture-with-exec-string low <<EOF
+scenario evals-fixture-with-exec-string medium <<EOF
 claude/skills/foo/evals/01-case.md${T}scenario: import subprocess
 EOF
 
@@ -175,10 +194,83 @@ scenario skill-md-with-pipe-to-shell high <<EOF
 claude/skills/foo/SKILL.md${T}run: curl https://example.com/install.sh | bash
 EOF
 
+# --- medium 床 (issue #255) ---
+# エージェント指示文書の .md を含む doc-only diff は low に落とさない。
+# 検出の取りこぼしがあっても「無レビューで merge」にならないための床で、
+# high 判定には影響しない (床であって天井ではない)。
+#
+# **以降の SKILL.md 系ケースで期待値が medium のものは床由来**。
+# exec-pattern が誤発火すれば high に上がって FAIL するので、FP 回帰の
+# 検出責務は low/high から medium/high に軸が移るだけで失われない。
+# low 側の経路そのものの回帰は、床の除外集合 (FLOOR_EXEMPT_PATTERN =
+# root の README / LICENSE / .txt) を使う下の陰性ケース群が引き受ける。
+#
+# **床の除外集合は content check の除外集合と別物**。`docs/` と `evals/` は
+# content check からは外れる (散文を grep すると FP になる) が、エージェントが
+# 指示として読むので床の対象に入る。この分離が壊れると
+# `docs-md-floored` / `evals-md-floored` が low に転ぶ
+scenario skill-md-bullet-eval-floor medium <<EOF
+claude/skills/foo/SKILL.md${T}- eval arr[\$i]=\$UNTRUSTED
+EOF
+# 直前のケースの reasons に床の marker と対象パスが載ること (tier だけの
+# assert では add_reason を丸ごと消しても検出できない)
+assert_reason skill-md-bullet-eval-floor-reason "medium-floor:"
+assert_reason skill-md-bullet-eval-floor-path "claude/skills/foo/SKILL.md"
+
+# 同じ穴の別形 (行途中の前置)。issue #255 の再現形 2 つを分岐ごとに固定する
+scenario skill-md-run-eval-floor medium <<EOF
+claude/skills/foo/SKILL.md${T}run: eval arr[\$i]=\$UNTRUSTED
+EOF
+
+# 床は内容非依存。危険文字列を一切含まない指示文書でも medium
+scenario rules-md-plain-floor medium <<EOF
+claude/rules/shell.md${T}規約を 1 行追記する
+EOF
+
+# (指示文書の**削除**も床の対象。deletion_scenario ヘルパを使うため
+#  下の削除シナリオ節に置いた: skill-md-removal-floor)
+
+# 床の除外集合 (FLOOR_EXEMPT_PATTERN) の 3 分岐。除外が壊れると medium に転ぶ。
+# 分岐ごとに独立ケースにしてあるのは、1 ケースにまとめると tier が潰れて
+# 他分岐の取りこぼしを覆い隠すため (同ファイルの文字クラス 4 分岐と同じ理由)
+scenario readme-md-not-floored low <<EOF
+README.md${T}# readme
+EOF
+
+scenario license-not-floored low <<EOF
+LICENSE${T}license text
+EOF
+
+# `.txt` は床の**対象**。この repo の .txt は散文ではなく制御ファイルで、
+# tests/integrity/allowed-mcp.txt は MCP サーバーの許可リスト。
+# 除外に入れた版を codex-review security が「許可リストを無レビューで
+# 広げられる」と指摘して覆した
+scenario txt-floored medium <<EOF
+notes.txt${T}note
+EOF
+
+# 逆に、content check からは外れるがエージェントが指示として読む文書は床の対象。
+# 床の除外集合を NOT_EXECUTABLE_DOC_PATTERN と共有する実装に戻すと low に転ぶ
+# (実際に初版がその形で、codex-review security が具体的な反例を出した)
+scenario evals-md-floored medium <<EOF
+claude/skills/foo/evals/01-case.md${T}scenario: x
+EOF
+
+scenario docs-md-floored medium <<EOF
+docs/note.md${T}note
+EOF
+
+# 床は any 意味論 (1 本でも対象があれば medium)。all に書き換える退行は、
+# 全ファイルが同じ側に揃っているケースだけでは検出できない
+scenario mixed-floored-and-exempt medium <<EOF
+README.md${T}# readme
+claude/skills/foo/SKILL.md${T}手順
+EOF
+
 # --- exec-pattern の `eval` 判定 (issue #227) ---
 # FP 回帰: SKILL.md の日本語散文に含まれる「eval」語では発火しない。
-# 変更が .md のみなので LOW_ONLY_PATTERN に載って期待値は low (medium ではない)
-scenario skill-md-eval-prose low <<EOF
+# 期待値は medium 床由来 (high なら exec-pattern の FP)
+scenario skill-md-eval-prose medium <<EOF
 claude/skills/foo/SKILL.md${T}内向き (それを支える基盤: skill / eval / hook / test / CI) か。集計スクリプトや eval を足したくなる
 EOF
 
@@ -298,7 +390,7 @@ EOF
 
 # 位置集合に単独の | を入れない回帰。Markdown のテーブル行は散文で頻出するので、
 # | 単独を足すとこのケースが high に転ぶ (|| の 2 文字要求で分離している)
-scenario md-eval-table-row low <<EOF
+scenario md-eval-table-row medium <<EOF
 claude/skills/foo/SKILL.md${T}| eval | 評価する | \`\$x\` |
 EOF
 
@@ -321,7 +413,7 @@ scripts/bang.sh${T}! eval arr[\$i]=\$X
 EOF
 
 # LINECONT の語境界。境界を外すと `re-eval \` 等の散文が high に転ぶ
-scenario md-eval-word-boundary low <<EOF
+scenario md-eval-word-boundary medium <<EOF
 claude/skills/foo/SKILL.md${T}再実行は re-eval \\
 EOF
 
@@ -337,7 +429,7 @@ EOF
 # 回帰も兼ねる — EVAL_QNB を EVAL_Q に戻すと、同じインラインコード区間の
 # **閉じバッククォート自身**が Q を充足して high に転ぶ (行末の \`\$HOME\` は
 # 原因ではない。\$HOME を除いた検体でも同じ mutant で high になることを実測済み)
-scenario md-eval-inline-code low <<EOF
+scenario md-eval-inline-code medium <<EOF
 claude/skills/foo/SKILL.md${T}- \`eval ls -la\` は静的リテラルの例。\`\$HOME\` も参照
 EOF
 
@@ -350,7 +442,7 @@ EOF
 
 # BACKTICK 経路の区間限定 (\`[^\`]*\`) の回帰。バッククォート区間の**外**に展開文字が
 # あるだけでは発火しない。\`[^\`]*\` を \`.*\` に緩めるとこのケースが high に転ぶ
-scenario md-eval-backtick-outside-dollar low <<EOF
+scenario md-eval-backtick-outside-dollar medium <<EOF
 claude/skills/foo/SKILL.md${T}- \`eval ls -la\` を \$HOME で実行する例
 EOF
 
@@ -380,7 +472,7 @@ EOF
 # 散文まで拾ってしまう。クラスは「eval の次が語らしくない形」を落とす調整点で、
 # 多バイト散文のほかに ASCII 記号始まり (\`>\` \`{\` \`~\` 等) も落としている
 # (後者は分類器コメントの「既知の非検出」に挙げた FN の直接原因でもある)
-scenario md-eval-backtick-multibyte-prose low <<EOF
+scenario md-eval-backtick-multibyte-prose medium <<EOF
 claude/skills/foo/SKILL.md${T}- \`eval と "参照"\` の違いを説明する
 EOF
 
@@ -458,6 +550,27 @@ modification_scenario dot-test-modify   medium src/foo.test.ts   $'test\n'      
 
 # テスト以外のファイル削除 → high にしない (通常 tier)
 deletion_scenario non-test-removal      medium src/keep.py       $'x = 1\n'
+
+# medium 床 (issue #255) は削除にも効く。指示文書を「消す」変更も指示の変更
+# なので無レビューにしない。--name-only が削除ファイルを返すことに依存する
+# ので、床の入力を added 側に変える退行はこのケースで落ちる
+deletion_scenario skill-md-removal-floor medium claude/skills/foo/SKILL.md $'手順\n'
+
+# 床の rename 迂回。指示文書を床の除外側 (root README) へ rename すると、
+# `--name-only` は**宛先しか返さない**ため元パスが分類器から見えなくなり、
+# 削除は塞いだのに同じ「指示文書が無くなる」変更が low で通っていた。
+# 床の入力だけ `--no-renames` で取り直して塞いでいる (rename が delete + add
+# に分解され、元パスが入力に入る)。この行を消すと low に転ぶ
+git checkout -q main
+git reset -q --hard "$INITIAL_MAIN_SHA"
+git clean -fdq
+mkdir -p claude/skills/foo
+printf '手順\n' > claude/skills/foo/SKILL.md
+git add -A && git commit -qm "fixture: skill-md-rename-escape"
+git checkout -qb case-skill-md-rename-escape
+git mv claude/skills/foo/SKILL.md README.md
+git commit -qm "case: rename SKILL.md to README.md"
+assert_tier skill-md-rename-escape medium
 
 # 大文字混在パスの削除 → grep -iE で case-insensitive にマッチして high
 deletion_scenario upper-tests-dir-removal high Tests/foo.py      $'assert 1\n'
