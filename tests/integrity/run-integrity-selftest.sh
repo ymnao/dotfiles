@@ -362,6 +362,15 @@ out=$(run_trust_checker "$H")
 check_stdout_has   "trust-partial-warns-missing" "$out" "未承認の codex hook entry: session_start:0:0"
 check_stdout_lacks "trust-partial-quiet-approved" "$out" "未承認の codex hook entry: pre_tool_use:0:0"
 check_stdout_lacks "trust-partial-not-ok"        "$out" "codex-hook-trust: OK"
+# 件数サマリ行の中身を pin する。この行は「件数で原因を断定しない」と決めた結果
+# user が最初に読む行になったが、4 つのカウンタを総入れ替えした mutant が
+# 全 pass していた (= 一度も測られていなかった)
+check_stdout_has   "trust-partial-summary"       "$out" \
+  "承認済み 4 / 未承認 1 / hash 不一致 0 / 読み取り不可 0 (対象 5 entry)"
+# **ヒントの「出さない側」を固定する**。不一致が 0 件なのに不一致ヒントが出ると、
+# 「再承認する前に再実測せよ」が平常状態で常時発火して意味を失う。
+# 条件を `if true` に緩めた退行はこれが無いと全 pass で通る
+check_stdout_lacks "trust-partial-no-mismatch-hint" "$out" "承認後に hooks.json を書き換えた"
 check_trust_exit   "trust-partial-exit0"         "$H"
 
 # trust-2b. **同一 event の 2 つ目の group だけ**が未承認 → その entry の WARN が出る。
@@ -446,6 +455,10 @@ check_stdout_lacks "trust-hash-one-not-ok"     "$out" "codex-hook-trust: OK"
 check_stdout_has   "trust-hash-one-cause-a"    "$out" "承認後に hooks.json を書き換えた"
 check_stdout_has   "trust-hash-one-cause-b"    "$out" "codex の payload 仕様が変わった"
 check_stdout_has   "trust-hash-one-evidence"   "$out" "再承認する前に"
+check_stdout_has   "trust-hash-one-summary"    "$out" \
+  "承認済み 4 / 未承認 0 / hash 不一致 1 / 読み取り不可 0 (対象 5 entry)"
+# 未承認が 0 件なので未承認ヒントは出ない (「出さない側」の固定)
+check_stdout_lacks "trust-hash-one-no-unapproved-hint" "$out" "codex TUI を開いて承認してください"
 check_trust_exit   "trust-hash-one-exit0"      "$H"
 
 # trust-hash-2. **全 entry** の記録 hash が違う → 件数によらず同じ 2 択の
@@ -460,6 +473,9 @@ warn_count=$(printf '%s\n' "$out" | LC_ALL=C grep -cF "trusted_hash 不一致:")
 check "trust-hash-all-warn-count" 5 "$warn_count"
 check_stdout_has   "trust-hash-all-cause-a"  "$out" "承認後に hooks.json を書き換えた"
 check_stdout_has   "trust-hash-all-cause-b"  "$out" "codex の payload 仕様が変わった"
+check_stdout_has   "trust-hash-all-summary"  "$out" \
+  "承認済み 0 / 未承認 0 / hash 不一致 5 / 読み取り不可 0 (対象 5 entry)"
+check_stdout_lacks "trust-hash-all-no-unapproved-hint" "$out" "codex TUI を開いて承認してください"
 check_trust_exit   "trust-hash-all-exit0"    "$H"
 
 # trust-hash-3 (mutation check). 承認記録は正しいまま **hooks.json 側の command を
@@ -543,7 +559,11 @@ jq -n '{ hooks: { PreToolUse: [ { matcher: "^Bash$",
 write_trust_entry "$H/.codex/config.toml" "$H/.codex/hooks.json" "pre_tool_use:0:10" \
   "sha256:deadbeef"
 out=$(run_trust_checker "$H")
-check_stdout_has "trust-prefix-0-1-unapproved" "$out" "未承認の codex hook entry: pre_tool_use:0:1"
+# assert 側でも接頭辞衝突を踏まないよう **区切りまで含めて** pin する
+# ("… pre_tool_use:0:1" だけだと 0:10 の WARN 行にも grep -F がマッチし、
+#  このケースが塞ごうとしている取り違えと同型の罠を assert 側で踏む)
+check_stdout_has "trust-prefix-0-1-unapproved" "$out" \
+  "未承認の codex hook entry: pre_tool_use:0:1 (codex TUI"
 check_stdout_has "trust-prefix-0-10-compared"  "$out" "trusted_hash 不一致: pre_tool_use:0:10"
 check_trust_exit "trust-prefix-exit0"          "$H"
 

@@ -237,6 +237,7 @@ trust_level 記録)/ `[plugins.*]` / `[notice.*]` / `[tui.*]` /
    | `hooks[].async` | 既定 `false` |
    | `hooks[].timeout` | **`hooks.json` に無いときの既定は 600** |
    | `hooks[].statusMessage` | `hooks.json` に無いときはキーごと省略 |
+   | `hooks[].additionalContextLimit` | 同上。ただし**この 1 つだけ実測の裏が無い** — 上の上流実装読解に従って含めているが、この機体の `codex/hooks.json` はどの hook でも使っておらず、記録済み hash 6 件は「キーが無い」側でしか検証できていない。外れても方向は fail-loud(MISMATCH になるだけで、承認済みと誤報告する側には倒れない) |
 
    **この表は `tests/integrity/verify-codex-hook-trust.sh` のヘッダと
    `JQ_ENTRIES` が正本で、ここはその写し**(仕様を直すときは必ず先に

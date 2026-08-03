@@ -34,11 +34,21 @@ set -uo pipefail
 #   event_name — hooks.json の event 名を snake_case 化 (PreToolUse → pre_tool_use)
 #   matcher    — その group の matcher。**空文字列のときはキーごと省略される**
 #   hooks      — 要素 1 個の配列 (group 全体ではなく、その index の hook だけ)
+#     additionalContextLimit — hooks.json に無いときはキーごと省略 (**下記の注意**)
 #     type            — 既定 "command"
 #     command         — hooks.json のまま
 #     async           — 既定 false
 #     timeout         — **hooks.json に無いときの既定は 600**
 #     statusMessage   — hooks.json に無いときはキーごと省略
+#
+# **additionalContextLimit だけは実測で裏が取れていない**。docs/ai-operations.md
+# §10 の上流実装読解 (normalized_handler はこの 5 つの設定値から成る) に従って
+# payload に含めているが、この機体の codex/hooks.json はどの hook でもこのキーを
+# 使っておらず、記録済み hash 6 件はすべて「キーが無い = 省略」の側でしか
+# 検証できていない。キーを実際に付けたときの挙動 (省略しないのが正しいか、
+# 既定値付きで入るのか) は未確認。**外れた場合は当該 entry が MISMATCH に
+# なるだけで、方向は fail-loud** (承認済みと誤報告する側には倒れない)。
+# 実際に使うことになったら、承認後の記録値と突き合わせて確かめること。
 #
 # 根拠: この機体の ~/.codex/config.toml に記録済みの trusted_hash 6 件すべてを
 # バイト一致で再現した (issue #214)。0.145.0 時点では 5/6 で、未再現だった
@@ -153,7 +163,9 @@ JQ_ENTRIES='
   | ($ev | gsub("(?<a>[a-z0-9])(?<b>[A-Z])"; .a + "_" + .b) | ascii_downcase) as $sev
   | .value | to_entries[] | .key as $g | .value as $grp
   | ($grp.hooks // []) | to_entries[] | .key as $i | .value as $h
-  | ( { async: ($h.async // false), command: ($h.command // "") }
+  | ( (if ($h.additionalContextLimit // null) == null then {}
+       else { additionalContextLimit: $h.additionalContextLimit } end)
+      + { async: ($h.async // false), command: ($h.command // "") }
       + (if ($h.statusMessage // null) == null then {} else { statusMessage: $h.statusMessage } end)
       + { timeout: ($h.timeout // 600), type: ($h.type // "command") } ) as $ho
   | ( { event_name: $sev, hooks: [ $ho ] }
