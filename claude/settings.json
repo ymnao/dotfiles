@@ -93,6 +93,9 @@
         { "path": "~/.aws", "mode": "deny" },
         { "path": "~/.config/gcloud", "mode": "deny" },
         { "path": "~/.gnupg", "mode": "deny" }
+      ],
+      "envVars": [
+        { "name": "SSH_AUTH_SOCK", "mode": "deny" }
       ]
     }
   },
