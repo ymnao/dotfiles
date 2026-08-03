@@ -60,6 +60,12 @@ detect→apply の途中で勝手に commit しない — fix は working tree �
 
 再実行してもまだ findings が出るなら、そこで fix を重ねない — 残りを UNRESOLVED として記録して次へ進む。Max runs per perspective: 2 (one detect + one confirm)。
 
+**confirm run が出した finding は、severity / Tier を問わず fix しない**。行き先は `/dev` step 4-0 の三層分類で決め、Tier1 / Tier2 は UNRESOLVED として記録したうえで `$HOME/.claude/skills/pr/SKILL.md` の fix-or-issue-or-dismiss (三択 + user チェックポイント) に載せる。Tier3 は記録もしない。
+
+ここを「Tier1/Tier2 なら fix が既定」(= `/pr` step 4 の (a)) で上書きしないこと。**(a) が既定なのは detect 側の finding に対してで、confirm 側には適用しない**。confirm で fix を重ねると、その fix を確認する confirm がまた必要になり、**停止条件が「指摘が出なくなること」に戻る** — レビュアーは recall 最適化されているので、それは原理的に到達しない。confirm の停止条件は「1 回だけ回して残りを user に返すこと」であって、コードが綺麗になったことではない。
+
+実例: issue #255 の対応で、confirm run が出した MEDIUM/98 (`.txt` の一括除外で MCP 許可リストが無レビューで通る) を「CONFIRMED な Tier2 だから (a) fix が既定」と読んで fix した。指摘自体は正しく修正も妥当だったが、**user チェックポイントを通さずに 2 周目の fix を足した**点でこの節に反していた。前サイクル (issue #230) では同じ状況で fix せず UNRESOLVED にしており、2 サイクルで判断が割れていたため明文化した。
+
 ## Report format
 
 End with this table:
