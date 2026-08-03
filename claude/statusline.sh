@@ -8,13 +8,16 @@
 # 依存: jq (無ければモデル名なしの固定文字列を出す)
 #
 # starship の `starship statusline claude-code` には寄せない (2026-08-04 実測、
-# starship 1.26.0)。同じ JSON を渡すと eff / 5h / 7d が出ない (claude 系は
-# claude_model / claude_context / claude_cost の 3 モジュールのみ)。得るのは
-# git ブランチ・コスト・ゲージ表示。不足分を別スクリプトで補うと維持対象が
-# 2 つに増えて逆効果なので、部分移行もしない。
-# 再検討 trigger: effort は starship#7614 が 2026-07-26 に merge 済み (次
-# リリースで入る)、レート制限は starship#7442 が open。両方入ったら再検討する。
-# Brewfile は starship を pin していないので `make update` で黙って上がる。
+# starship 1.26.0)。同じ JSON を渡すと eff / 5h / 7d が出ない — 1.26.0 は
+# effort と rate_limits をそもそも受け取らない。得るのは git ブランチ・
+# コスト・ゲージ表示。不足分を別スクリプトで補うと維持対象が 2 つに増えるので、
+# 部分移行もしない。
+# 再検討 trigger は「両方がリリース版に入ったら」: effort は starship#7614 が
+# merge 済みで 1.27.0 予定 (ただし変数追加のみで既定 format に入らないため、
+# probe するときは [claude_model] format に $effort を足す — でないと偽陰性)、
+# レート制限は starship#7442 が open (CONFLICTING、2026-06 から停止)。
+# starship は `brew pin` していない (Brewfile 側に版を止める記法は無い) ので
+# `make update` で黙って上がり、上の 1.26.0 という測定値は古くなる。
 
 set -uo pipefail
 
