@@ -111,7 +111,7 @@ plan に沿って実装し、コミットする (コミット規約は CLAUDE.md
 実装中に plan と食い違う事実が見つかったら、乖離が大きい場合は
 user に報告して指示を待つ。
 
-### 4. レビューループ (最大 2 周)
+### 4. レビューループ (既定 最大 2 周 / live 実害があれば user 承認で延長)
 
 #### 4-0. 停止条件と finding の三層分類 (最優先で読む)
 
@@ -131,6 +131,22 @@ user に報告して指示を待つ。
 - **Tier3** — スタイル・好み・将来の網羅性向上 (「今は壊れていないが将来
   こう変更されたら検出できない」型) ・micro-optimization。
   **fix しない。issue にもしない。記録もしない** (分類表にも載せない)
+
+**例外: この変更自体が live 環境に持ち込んだ実害は、周回数に関わらず即 fix
+する。** `claude/hooks/` `claude/settings.json` `claude/skills/` 等は
+`~/.claude/` への symlink 経由で **commit も merge も待たずに有効になる**
+(memory `project_dotfiles_env_quirks`)。したがって「hook が固まる」
+「Bash tool が止まる」型の finding は、**PR を止めても user 環境の問題が
+解決しない**。2 周上限は発散防止のための制限であって、自分が壊した環境を
+放置する根拠ではない。上限を超えて回すときは user 承認を取り、構造化ログの
+`round=` は 3 以降も連番で出す (`applied` は実数)。
+
+実例: issue #267 の対応で、2 周目のレビューが「wrapper のオプション剥がし
+ループが終端せず hook が spin する」finding を出した。規約どおり
+「2 周目の新規指摘は fix せず /pr の三択へ」と読むと、`timeout --help` 等を
+含む compound 行を打つたびに Bash tool が止まる状態のまま PR に進むところ
+だった。実際には user 承認を得て 6 周まで回し、各周で live 実測付きの
+Critical が出続けた。
 
 Tier3 を記録しないのは情報を捨てているのではない。同じ指摘は次のレビューで
 また出るので、実際に問題化したときに改めて拾える。逆に記録すると、消化
@@ -181,7 +197,9 @@ codex-review は step 5 の /pr が risk tier に応じて実行するため
 [dev/review-loop] round=N phase=end applied=N status=<complete|continue|cap-reached> head=<sha> dirty=<0|1>
 ```
 
-- `N` (round) は 1 または 2 の整数
+- `N` (round) は 1 以上の整数。既定は 1 または 2 で、**user 承認で上限を
+  延長した場合 (4-0 の「live 環境に持ち込んだ実害」例外) のみ 3 以降も
+  連番で出す**
 - `head=<sha>` は当該時点の `git rev-parse --short HEAD` (7 文字前後)
 - `dirty=<0|1>` は当該時点で `git status --porcelain` の出力が空なら
   `0`、あれば `1` (uncommitted changes の有無)
@@ -197,9 +215,13 @@ codex-review は step 5 の /pr が risk tier に応じて実行するため
 - **round=2 の判定基準**: 「発散防止のため 2 周目では新規指摘を
   fix しない」規約 (本 step 冒頭) に従い round=2 の `applied` は必ず
   `0`。status は `complete` (残指摘 0) か `cap-reached` (残指摘あり)
-  の 2 択で、`continue` は取らない
+  の 2 択で、`continue` は取らない。
+  **上限を延長した場合はこの限りでない** — 延長後の round は fix を伴う
+  ので `applied` は実数、status も `continue` を取りうる。延長の承認を
+  得た turn がその根拠になる
 - **fix コミットを作らない round の head/dirty 不変**: 「発散防止のため
-  fix しない」規約に従う round (round=2 全般 + round=1 で 0 件完了ケース)
+  fix しない」規約に従う round (上限延長の無い round=2 + round=1 で
+  0 件完了ケース)
   では、`phase=start` と `phase=end` の `head=` と `dirty=` がそれぞれ
   同一でなければならない (両方 `0` または両方 `1`)。Edit / Write tool
   call マーカーでは Bash 経由の変更を取りこぼすため head + dirty の
@@ -257,6 +279,8 @@ merge 後の後続は `/next` skill が担う。
 - レビューループの上限 2 周は発散防止の意図的な制限。上限到達で残った
   finding は /pr の fix-or-issue-or-dismiss ポリシー (fix / issue 起票 / 対応
   しない の三択、user チェックポイントを挟む) で必ず行き先が付くため、
-  黙って消えることはない
+  黙って消えることはない。**ただし「この変更が live 環境に持ち込んだ実害」
+  だけは三択に流さず即 fix する** (step 4-0 の例外)。三択は「PR に載せるか
+  どうか」を決める仕組みで、**既に user 環境で起きている不具合には効かない**
 - PR 作成は明示指示待ちの原則 (memory) の例外: `/dev` の起動自体が
   PR 作成までの明示指示とみなす
