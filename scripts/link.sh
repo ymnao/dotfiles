@@ -113,6 +113,13 @@ if [[ -d "$DOTFILES_DIR/claude" ]]; then
         link_file "$DOTFILES_DIR/claude/settings.json" "$HOME/.claude/settings.json"
     fi
 
+    # claude/managed-settings.json は **意図的にここへ足さない**。
+    # managed (policy) 設定は admin 所有であるべきで、user 書き込み可能な repo へ
+    # symlink すると agent の Edit tool から policy を書き換えられる
+    # (Edit 経路には sandbox の denyWrite が効かない)。配置は user が sudo cp で
+    # 手動で行う。手順と理由は docs/ai-operations.md §10。
+    # 「link が漏れている」と読んで足さないこと。
+
     if [[ -d "$DOTFILES_DIR/claude/skills" ]]; then
         link_file "$DOTFILES_DIR/claude/skills" "$HOME/.claude/skills"
     fi

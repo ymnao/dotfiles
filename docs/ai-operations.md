@@ -439,8 +439,9 @@ TLS 検証も通らない(実測: 上記 OSStatus -26276)ため外せない。�
 - schema の describe に明記 — "Minimum Claude Code version required to start.
   If the running version is older, Claude Code exits at startup with
   instructions to update. **Only enforced from managed (policy) settings.**"
-- 判定関数の呼び出し口は 1 つだけで、読むのは `Hr("policySettings")` のみ。
-  user settings を読む経路はバイナリ内に存在しない
+- 判定関数の呼び出し口は 2 つある(通常経路と fast path)が、**どちらも
+  `Hr("policySettings")` しか読まない**。user settings を読む経路は
+  バイナリ内に存在しない
 
 **つまりこの repo は、この防御層を最初から持っていなかった**。
 `claude/settings.json` には長らく `2.1.195` が入っていたが、それは
@@ -470,20 +471,38 @@ enforce したいなら managed (policy) 設定に置く。この repo は正本
   いるとおり、Edit 経路には sandbox の denyWrite が効かない —
   memory `project_settings_files_sandbox_lock`)。policy を repo に
   symlink するのは権限昇格の経路を自分で作ること
-- macOS の配置先 `/Library/Application Support/ClaudeCode/` は
-  sandbox の allowWrite 外で、そもそも agent からは書けない
+- macOS の配置先 `/Library/Application Support/ClaudeCode/` は agent から
+  書けない。**塞いでいるのは OS の権限**(`root:admin` の `drwxr-xr-x` で
+  group に write bit が無い)であって sandbox ではない — sandbox の
+  filesystem 制約は Bash 経路にしか効かないので、Edit tool 経路まで
+  含めて言うなら根拠は OS 権限のほう。**層を取り違えないこと**
+  (この節が直したのと同型の外し方)
 
-導入する場合は user が手で行う(要 admin パスワード):
+導入する場合は user が手で行う(要 admin パスワード)。
+**cp する前に repo 側の内容を目で見る** — `claude/managed-settings.json` は
+working tree の通常ファイルなので agent が Edit tool で書き換えられる。
+managed 設定は permissions / sandbox を含む全設定を最優先で上書きできるので、
+**改変されたまま昇格させると影響は下限値だけでは済まない**。user の目視が
+実質的な検証ゲートになる:
 
 ```sh
+git status --porcelain claude/managed-settings.json
+git diff main -- claude/managed-settings.json
+cat claude/managed-settings.json
 sudo mkdir -p "/Library/Application Support/ClaudeCode"
 sudo cp claude/managed-settings.json "/Library/Application Support/ClaudeCode/managed-settings.json"
 ```
 
 **入れる前に必ず確認すること**: managed 設定の下限を満たさない CLI では
-Claude Code が**起動しなくなる**(`update` / `install` / `doctor` の 3 つの
-サブコマンドだけは例外として通るので、`claude update` での復旧経路は残る)。
-`claude --version` が下限以上であることを全マシンで確かめてから入れる。
+Claude Code が**起動しなくなる**。`claude --version` が下限以上であることを
+全マシンで確かめてから入れる。ロックアウトからの復旧経路は 2 つ:
+
+- `update` / `install` / `doctor` の 3 サブコマンドだけは下限チェックの例外
+  として通る。ただし **Homebrew cask 管理下ではこの `claude update` は自己更新
+  せず案内を出すだけ**なので、実際に叩くのは `brew upgrade claude-code`
+  (これは `claude` を経由しないので下限に関係なく通る)
+- 直接のロールバックは
+  `sudo rm "/Library/Application Support/ClaudeCode/managed-settings.json"`
 **前提**: user は全マシンで常に最新を使う運用(2026-08-04 に本人確認)。
 `scripts/link.ps1` が配線する Windows 側にも同じ判断が要る(配置先は
 Windows の managed settings パスで、上のコマンドはそのままでは使えない)。
