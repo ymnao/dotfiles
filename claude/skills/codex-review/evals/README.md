@@ -1,7 +1,17 @@
 # skill evals
 
-ワークフロー系 skill(pr / issue / resolve / codex-review)の振る舞いテスト。
-配置先: `claude/skills/<skill>/evals/`(このディレクトリの内容を skill ごとに配る)。
+skill の振る舞いテスト。配置先は `claude/skills/<skill>/evals/`。
+
+**eval を書くのは、実際に事故 (誤った実装・手戻り・防御のすり抜け) が
+起きた挙動を pin するときだけ** (AGENTS.md「コード品質」節)。予防目的の
+カバレッジ網羅は書かない。現存する eval は以下の 3 本のみ:
+
+- `codex-review/evals/04-sandbox-skip.md` — sandbox 起因の failure を
+  「レビュー対象コードの問題」と誤解していた挙動の修正 (e4fbecc) を pin
+- `codex-review/evals/05-rate-limit-skip.md` — rate limit 到達を ERROR と
+  誤検出していた挙動の修正 (6b218aa) を pin
+- `dev/evals/08-doc-only-pr-no-walkthrough.md` — classify-risk が doc-only
+  差分を誤って tier=high にしていた挙動の修正 (91253cf) を pin
 
 ## 実行方法(共通)
 
@@ -11,11 +21,10 @@
   そちらを優先してよい
 - 判定: Pass criteria の各項目を、セッション出力・生成物・`gh` の状態で確認する
 - 各 eval は **3 回実行し 3/3 PASS で合格**(非決定性によるブレの検出)
-- モデル移行時(例: Fable → Sonnet)は全 eval を一括実行して壊れた skill を特定する
 
-## サンドボックスリポジトリ(pr / issue / resolve 用)
+## サンドボックスリポジトリ
 
-実 GitHub 操作を伴うため、専用のダミーリポジトリで実行する。
+実 GitHub 操作を伴う eval (dev/08) は、専用のダミーリポジトリで実行する。
 **実プロジェクトでは絶対に実行しない。**
 
 初回セットアップ:
@@ -37,15 +46,10 @@ bash <dotfiles>/claude/skills/codex-review/evals/seed-sandbox.sh
 ので hook は通すが、上流の excludedCommands にもマッチしない)。この初回
 セットアップは **user が sandbox 外のターミナルで手動実行**すること。
 
-seed-sandbox.sh は初期コミット・ラベル・eval 用 issue を作成する(冪等)。
+seed-sandbox.sh は初期コミットを作成する(冪等)。
 eval が作成した PR / ブランチは各 eval の Cleanup 手順で削除する。
 
 ## codex-review 用の注意
 
-- codex CLI が必要。未インストール環境では 01/02 を SKIP と記録する
-  (03 は codex 不在の挙動自体のテストなので実行できる)
-- 02 の仕込み diff は `fixtures/vuln.patch` を使う。トークン文字列は明白な
-  ダミー(`dummy-eval-fixture-not-real`)で、secretlint に実シークレットと
-  誤検知されないことを確認済みの文字列にしてある
-- 04 は PATH 上の偽 `codex` 実行ファイルで sandbox 制約 (exit 3 SKIP) を
-  再現するので、03 と同様に実 codex CLI の有無に依存せず実行できる
+- 04 / 05 は PATH 上の偽 `codex` 実行ファイルで sandbox 制約 (exit 3) と
+  rate limit (exit 4) を再現するので、実 codex CLI の有無に依存せず実行できる

@@ -100,8 +100,8 @@ vacuous pass する)。世代レベル記述にしたことで**ズレの発生�
 - [ ] `claude/settings.json` の `effortLevel` を見直す(現行 "high"。
       高難度タスクは xhigh が公式推奨。まず high 維持
       + 難所で引き上げの運用から始め、質が足りなければ既定を上げる)
-- [ ] skill eval を全件実行(移行先の世代で pr / issue / resolve /
-      codex-review 各 3 本以上)し、壊れた skill を特定して修正する
+- [ ] 現存する skill eval(事故 pin の 3 本。`claude/skills/codex-review/evals/README.md`
+      に一覧)を実行し、壊れた skill を特定して修正する
 - [ ] `make test`(hook 回帰テスト込み)を実行して基線を確認する
 - [ ] 最初の 1 週間、レビュー指摘の見逃し・skill の手順飛ばしを意識的に
       観察し、気づきを CLAUDE.md / skill に反映する(下記 3)
