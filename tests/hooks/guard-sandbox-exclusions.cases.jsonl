@@ -67,6 +67,18 @@
 {"name":"allow-line-continuation-multi","expect":"allow","command":"gh pr create --title x \\\n  --body-file b.md \\\n  --draft","reason":"複数段の行継続でも単独コマンド扱い"}
 {"name":"block-line-continuation-then-mix","expect":"block","command":"gh pr list \\\n  --limit 5\nls .","reason":"行継続の後に本物の改行区切りがあれば compound として検出する (継続の扱いを緩めすぎない)"}
 
+{"name":"escape-heredoc-quote-flip","expect":"block","command":"cat <<EOF\n\"\nEOF\ntouch {{HOME}}/x.tmp;gh --version\n# \"","reason":"here-document 本文の引用符でクォート状態が反転し、後続の実在する区切りを潰して素通りしていた (codex-review security が実証)。`<<` を含む行は生コマンドで分割する fail-closed に倒す"}
+{"name":"block-heredoc-with-excluded-name","expect":"block","command":"cat > f.txt <<EOF\nrun gh later\nEOF","reason":"here-document を含む行は解析を諦めるので、本文中の言及だけでも止まる (許容した誤ブロック)"}
+{"name":"block-unterminated-single-quote","expect":"block","command":"echo 'unterminated; touch {{HOME}}/x.tmp; gh --version","reason":"閉じていない引用符では解析結果を捨てて生コマンドで分割する (fail-closed) ことの pin"}
+{"name":"block-unterminated-double-quote","expect":"block","command":"echo \"unterminated; touch {{HOME}}/x.tmp; gh --version","reason":"同上 (ダブルクォート)"}
+{"name":"allow-empty-command","expect":"allow","command":"","reason":"command が空なら判定対象が無いので許可 (tool_input.command 欠落と同じ扱い)"}
+# tool_input はあるが command キーが無い → 許可 (Bash 以外の tool 経由で来ても落ちない)
+# raw:missing-command-key-allows|allow
+{"tool_input": {"file_path": "x.txt"}}
+# command が文字列でない (配列) → jq -r が要素を並べた文字列にするため判定は続行し、
+# 区切りが無ければ許可になる。fail-safe が必要なのは「parse できない」入力の側。
+# raw:non-string-command-allows|allow
+{"tool_input": {"command": ["ls", "-la"]}}
 # 壊れた入力は fail-safe でブロックする (判定を持たないまま許可に倒れないこと)
 # raw:broken-json-fails-closed|block
 {"tool_input": {"command": "gh pr list; touch x"

@@ -303,6 +303,18 @@ sandbox 内か外のどちらかで実行する all-or-nothing 設計で、マ�
 方式を切り替えた直後のレビューでも 2 件見つかっている(上表のタブ字下げと
 `ls >""&gh`。どちらも live 実測で sandbox が外れた)。
 
+**この hook の退役条件**: 上流に「excludedCommands を単独コマンドのときだけ
+適用するオプション」が入れば、hook ごと不要になる。要望を出すのが筋なので、
+Claude Code のリリースノートでこの種のオプションを見かけたら §10 のこの節ごと
+畳むこと。
+
+**根治の候補として `gh` を sandbox 内で動かす道は、2026-08-04 時点では塞がって
+いる**。Keychain 依存は `GH_TOKEN` で外せる見込みだが、TLS 側は外せなかった —
+`SSL_CERT_FILE=/etc/ssl/cert.pem` を与えても `tls: failed to verify certificate:
+x509: OSStatus -26276` のまま(実測)。Go は macOS では Security framework を使い、
+`SSL_CERT_FILE` を見ないため。**この経路を再提案する前に、まずこの実測を
+やり直すこと**(Go / gh の更新で変わりうる)。
+
 **ハードニングはここで打ち切る**。探索空間は「非公開・可変」(上流の正規化)から
 「公知・有界」(POSIX シェルの字句規則)に縮んだが、後者も完全には尽くせない。
 以後 bypass が見つかったら **regression ケースを 1 件足して塞ぐだけ**にし、

@@ -222,21 +222,56 @@ fi
 
 # guard-sandbox-exclusions: jq 不在時に exit 2 (フェイルセーフ) となることを検証。
 # 判定を持たないまま許可に倒れる経路が無いことの pin (issue #267)。
+#
+# 入力は **jq がある場合に allow (exit 0) になるもの**を使う。block 入力だと
+# jq の有無に関わらず 2 が返るので、jq を実際に外せていなくてもテストが通ってしまう
+# (codex-review qa-fixture が実証)。PATH も /usr/bin /bin を含めず、
+# 実行に要る最小限だけを空ディレクトリに symlink して jq を確実に外す。
 if [ -z "${HOOK_DIR:-}" ] && [ -f "$REPO_ROOT/claude/hooks/guard-sandbox-exclusions.sh" ]; then
   no_jq_bin="$WORKDIR/no-jq-bin"
   mkdir -p "$no_jq_bin"
+  # hook が要る実行ファイルだけを symlink した PATH を組む。/usr/bin /bin を
+  # 足すと jq がそこにある環境で外し損ねるため、この dir 単独で使う。
+  excl_jq_bin_ok=1
+  for b in bash cat awk tr grep; do
+    b_path=$(command -v "$b" 2>/dev/null) || b_path=""
+    if [ -n "$b_path" ]; then
+      ln -sf "$b_path" "$no_jq_bin/$b"
+    else
+      excl_jq_bin_ok=0
+    fi
+  done
   echo "==> guard-sandbox-exclusions (jq missing fail-safe)"
-  excl_jq_rc=0
-  printf '%s' '{"tool_input":{"command":"touch x; gh --version"}}' \
+  # 制御群: jq がある状態でこの入力が allow になることを先に確かめる
+  excl_ctrl_rc=0
+  printf '%s' '{"tool_input":{"command":"ls -la"}}' \
     | (cd "$WORKDIR" && HOME="$FAKE_HOME" \
         CLAUDE_GUARD_MANAGED_SETTINGS="$BASEDIR/no-managed-settings.json" \
-        PATH="$no_jq_bin:/usr/bin:/bin" \
         bash "$REPO_ROOT/claude/hooks/guard-sandbox-exclusions.sh" >/dev/null 2>&1) \
-    || excl_jq_rc=$?
-  if [ "$excl_jq_rc" = "2" ]; then
+    || excl_ctrl_rc=$?
+  if [ "$excl_ctrl_rc" = "0" ]; then
     pass=$((pass + 1))
   else
-    echo "FAIL guard-sandbox-exclusions jq-missing fail-safe: expected exit 2, got $excl_jq_rc"
+    echo "FAIL guard-sandbox-exclusions jq-missing control: expected exit 0 with jq, got $excl_ctrl_rc"
+    fail=$((fail + 1))
+  fi
+  excl_jq_rc=0
+  excl_jq_err=$(printf '%s' '{"tool_input":{"command":"ls -la"}}' \
+    | (cd "$WORKDIR" && HOME="$FAKE_HOME" \
+        CLAUDE_GUARD_MANAGED_SETTINGS="$BASEDIR/no-managed-settings.json" \
+        PATH="$no_jq_bin" \
+        bash "$REPO_ROOT/claude/hooks/guard-sandbox-exclusions.sh" 2>&1 >/dev/null)) \
+    || excl_jq_rc=$?
+  case "$excl_jq_err" in
+    *'jq 未インストール'*) excl_jq_msg_ok=1 ;;
+    *) excl_jq_msg_ok=0 ;;
+  esac
+  if [ "$excl_jq_bin_ok" = "0" ]; then
+    echo "SKIP guard-sandbox-exclusions jq-missing fail-safe: 必要な実行ファイルを解決できない"
+  elif [ "$excl_jq_rc" = "2" ] && [ "$excl_jq_msg_ok" = "1" ]; then
+    pass=$((pass + 1))
+  else
+    echo "FAIL guard-sandbox-exclusions jq-missing fail-safe: expected exit 2 + jq 未インストール メッセージ, got rc=$excl_jq_rc msg=$excl_jq_err"
     fail=$((fail + 1))
   fi
 fi

@@ -172,7 +172,7 @@ done
 # (`2>&1`) の判定に使う。**クォート文字を読んだ周回でも必ずリセットすること** —
 # 残すと `ls >""&gh` のように `>` とクォートを挟んだ形で、実在の区切りの `&` を
 # 複製子と誤認して潰してしまう (実測で sandbox が外れた)。
-parsed=$(printf '%s' "$command" | awk '
+if ! parsed=$(printf '%s' "$command" | awk '
   function flushsep() {
     if (in_s || in_d) { out = out "_" }
     else { out = out "\n"; raw_ws = 1 }
@@ -210,6 +210,15 @@ parsed=$(printf '%s' "$command" | awk '
         # (シェルはこの `#` を語中として扱うのでコメントではない)。
         out = out " "; prev_raw = ""; raw_ws = 1
         break
+      } else if (c == "<" && substr($0, i + 1, 1) == "<") {
+        # here-document。本文はシェルにとってデータだが、この走査はコード扱いする
+        # ため、本文中の引用符でクォート状態が反転し、後続の実在する区切りを
+        # 潰して素通りしうる (codex-review security が実証)。本文を正しく
+        # 字句解析する代わりに、**解析不能として生コマンドへフォールバック**
+        # する (= 区切りを全部数える fail-closed)。here-document を含む行の
+        # 誤ブロックは許容する — この repo は複数行の内容をファイル経由で渡す。
+        heredoc = 1
+        raw = c
       } else if (c == "$" && (substr($0, i + 1, 1) == "\047" || substr($0, i + 1, 1) == "\042")) {
         # ANSI-C 引用 `$'\''gh'\''` / ロケール引用 `$"gh"` の先頭 `$` は語の一部ではない。
         # 落とさないと `$'\''gh'\'' --version` が `$gh` という語になって語一致を外れる。
@@ -237,8 +246,13 @@ parsed=$(printf '%s' "$command" | awk '
       i++
     }
   }
-  END { if (in_s || in_d) printf "%s", orig; else printf "%s", out }
-')
+  END { if (in_s || in_d || heredoc) printf "%s", orig; else printf "%s", out }
+'); then
+  # awk が落ちたら判定を持たない。exit 1 のまま抜けると PreToolUse は
+  # 「非ブロックのエラー」として扱う = 許可側に倒れるので、明示的に 2 を返す。
+  echo "ブロック: コマンド行の解析に失敗したため混在を確認できません" >&2
+  exit 2
+fi
 
 # --- compound かどうか --------------------------------------------------------
 # 非空の sub-command が 2 つ以上あれば compound。区切りがクォート内にしか
@@ -253,7 +267,14 @@ if ! segments=$(printf '%s' "$parsed" | tr ';|&'"$cr" '[\n*]'); then
   echo "ブロック: コマンド行の分割に失敗したため混在を確認できません" >&2
   exit 2
 fi
-seg_count=$(printf '%s' "$segments" | grep -c '[^[:space:]]') || seg_count=0
+grep_rc=0
+seg_count=$(printf '%s' "$segments" | grep -c '[^[:space:]]') || grep_rc=$?
+if [[ $grep_rc -gt 1 ]]; then
+  # rc=1 は「1 件も無い」の正常系。それ以外 (I/O エラー等) は判定を持たないので
+  # 0 件と読まずにブロックする。
+  echo "ブロック: sub-command の計数に失敗したため混在を確認できません" >&2
+  exit 2
+fi
 [[ ${seg_count:-0} -le 1 ]] && exit 0
 
 if [[ $match_any -eq 1 ]]; then

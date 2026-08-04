@@ -105,19 +105,31 @@ trap 'rm -rf "$GUARD_HOME"' EXIT
 mkdir -p "$GUARD_HOME/.claude"
 
 run_hook_with_settings() {
-  # $1=user settings.json の中身, $2=(任意) project settings の中身。
+  # $1=user settings の中身 ("-" で「ファイルを置かない」),
+  # $2=(任意) project/local settings の中身 ("-" で置かない),
+  # $3=(任意) managed settings の中身 ("-" で置かない)。
   # exit code を echo (cwd も GUARD_HOME にして repo の .claude/settings.json を
-  # 拾わないようにする。managed settings も存在しないパスへ差し替える)
+  # 拾わないようにする)
   local rc=0
-  printf '%s' "$1" > "$GUARD_HOME/.claude/settings.json"
-  if [ "$#" -ge 2 ]; then
-    printf '%s' "$2" > "$GUARD_HOME/.claude/settings.local.json"
+  local managed="$GUARD_HOME/managed-settings.json"
+  if [ "$1" = "-" ]; then
+    rm -f "$GUARD_HOME/.claude/settings.json"
   else
+    printf '%s' "$1" > "$GUARD_HOME/.claude/settings.json"
+  fi
+  if [ "${2:--}" = "-" ]; then
     rm -f "$GUARD_HOME/.claude/settings.local.json"
+  else
+    printf '%s' "$2" > "$GUARD_HOME/.claude/settings.local.json"
+  fi
+  if [ "${3:--}" = "-" ]; then
+    rm -f "$managed"
+  else
+    printf '%s' "$3" > "$managed"
   fi
   printf '{"tool_input":{"command":"touch x; gh --version"}}' \
     | (cd "$GUARD_HOME" && HOME="$GUARD_HOME" \
-        CLAUDE_GUARD_MANAGED_SETTINGS="$GUARD_HOME/no-managed.json" bash "$HOOK") \
+        CLAUDE_GUARD_MANAGED_SETTINGS="$managed" bash "$HOOK") \
         >/dev/null 2>&1 || rc=$?
   printf '%s' "$rc"
 }
@@ -153,6 +165,15 @@ check_hook 2 "不正 JSON のファイルがあると読めた側まで捨てて
 # 一律ブロックする (最も危険な設定のときだけ hook が無効化されるのを防ぐ)
 check_hook 2 'excludedCommands が ["*"] のとき compound 行をブロックしていない' \
   '{"sandbox":{"excludedCommands":["*"]}}'
+
+# managed settings 単独でも読む (組織配布の除外リストを取りこぼさない)
+check_hook 2 "managed settings だけに excludedCommands がある場合に読めていない" \
+  '-' '-' '{"sandbox":{"excludedCommands":["gh *"]}}'
+
+# 存在する settings がすべて不正 JSON なら settings_read=0 → 組み込み既定へ
+# フォールバックする (判定を持たないまま全許可に倒れない)
+check_hook 2 "全 settings が不正 JSON のとき組み込み既定にフォールバックしていない" \
+  '{ broken' '{ also broken'
 
 echo "sandbox exclusion guard: $pass passed, $fail failed"
 [ "$fail" = 0 ] || exit 1

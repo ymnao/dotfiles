@@ -54,6 +54,12 @@ git hash-object <dir>/skill.md <dir>/LICENSE
 #    f1dd2c09108dde1a5f56097cee8461b3ea834499 が出れば改ざん検出されず
 ```
 
+確認できたら作業先を消す:
+
+```bash
+rm -rf <dir>
+```
+
 Git blob は SHA-1 で content-addressed なので、SHA が一致すれば upstream
 公開時点と内容が同一であることの **強い根拠** となります。ただし SHA-1 は
 2017年の SHAttered 攻撃で衝突が実証されており、暗号学的に絶対的な保証では
