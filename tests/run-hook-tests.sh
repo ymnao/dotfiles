@@ -99,11 +99,16 @@ run_hook() {
   # $1=hook path, $2=input (raw stdin content)。exit code を echo する (0/2 以外もそのまま)
   # HOOK_TEST_STRIP_JQ=1 のとき PATH から jq を除外して hook を実行 (fail-safe 検証)。
   # HOME は隔離 HOME に差し替える (実ユーザー環境からの分離)。
+  # CLAUDE_GUARD_MANAGED_SETTINGS は guard-sandbox-exclusions.sh が読む managed
+  # settings のパス。HOME / cwd の隔離ではホスト側の
+  # /Library/Application Support/ClaudeCode/ を外せないため、存在しないパスを
+  # 明示して MDM 管理端末でも CI と同じ結果になるようにする。
   local rc=0
+  local nosettings="$BASEDIR/no-managed-settings.json"
   if [ "${HOOK_TEST_STRIP_JQ:-0}" = "1" ]; then
-    printf '%s' "$2" | (cd "$WORKDIR" && HOME="$FAKE_HOME" PATH="$WORKDIR/no-jq-bin:/usr/bin:/bin" bash "$1" >/dev/null 2>&1) || rc=$?
+    printf '%s' "$2" | (cd "$WORKDIR" && HOME="$FAKE_HOME" CLAUDE_GUARD_MANAGED_SETTINGS="$nosettings" PATH="$WORKDIR/no-jq-bin:/usr/bin:/bin" bash "$1" >/dev/null 2>&1) || rc=$?
   else
-    printf '%s' "$2" | (cd "$WORKDIR" && HOME="$FAKE_HOME" bash "$1" >/dev/null 2>&1) || rc=$?
+    printf '%s' "$2" | (cd "$WORKDIR" && HOME="$FAKE_HOME" CLAUDE_GUARD_MANAGED_SETTINGS="$nosettings" bash "$1" >/dev/null 2>&1) || rc=$?
   fi
   printf '%s' "$rc"
 }
@@ -211,6 +216,62 @@ if [ -z "${HOOK_DIR:-}" ] && [ -f "$REPO_ROOT/agents/hooks/guard-codex-dir.sh" ]
     pass=$((pass + 1))
   else
     echo "FAIL guard-codex-dir jq-missing fail-safe: expected exit 2, got $jq_missing_rc"
+    fail=$((fail + 1))
+  fi
+fi
+
+# guard-sandbox-exclusions: jq 不在時に exit 2 (フェイルセーフ) となることを検証。
+# 判定を持たないまま許可に倒れる経路が無いことの pin (issue #267)。
+#
+# 入力は **jq がある場合に allow (exit 0) になるもの**を使う。block 入力だと
+# jq の有無に関わらず 2 が返るので、jq を実際に外せていなくてもテストが通ってしまう
+# (codex-review qa-fixture が実証)。PATH も /usr/bin /bin を含めず、
+# 実行に要る最小限だけを空ディレクトリに symlink して jq を確実に外す。
+if [ -z "${HOOK_DIR:-}" ] && [ -f "$REPO_ROOT/claude/hooks/guard-sandbox-exclusions.sh" ]; then
+  no_jq_bin="$WORKDIR/no-jq-bin"
+  mkdir -p "$no_jq_bin"
+  # hook が要る実行ファイルだけを symlink した PATH を組む。/usr/bin /bin を
+  # 足すと jq がそこにある環境で外し損ねるため、この dir 単独で使う。
+  excl_jq_bin_ok=1
+  for b in bash cat awk tr grep; do
+    b_path=$(command -v "$b" 2>/dev/null) || b_path=""
+    if [ -n "$b_path" ]; then
+      ln -sf "$b_path" "$no_jq_bin/$b"
+    else
+      excl_jq_bin_ok=0
+    fi
+  done
+  echo "==> guard-sandbox-exclusions (jq missing fail-safe)"
+  # 制御群: jq がある状態でこの入力が allow になることを先に確かめる
+  excl_ctrl_rc=0
+  printf '%s' '{"tool_input":{"command":"ls -la"}}' \
+    | (cd "$WORKDIR" && HOME="$FAKE_HOME" \
+        CLAUDE_GUARD_MANAGED_SETTINGS="$BASEDIR/no-managed-settings.json" \
+        bash "$REPO_ROOT/claude/hooks/guard-sandbox-exclusions.sh" >/dev/null 2>&1) \
+    || excl_ctrl_rc=$?
+  if [ "$excl_ctrl_rc" = "0" ]; then
+    pass=$((pass + 1))
+  else
+    echo "FAIL guard-sandbox-exclusions jq-missing control: expected exit 0 with jq, got $excl_ctrl_rc"
+    fail=$((fail + 1))
+  fi
+  excl_jq_rc=0
+  excl_jq_err=$(printf '%s' '{"tool_input":{"command":"ls -la"}}' \
+    | (cd "$WORKDIR" && HOME="$FAKE_HOME" \
+        CLAUDE_GUARD_MANAGED_SETTINGS="$BASEDIR/no-managed-settings.json" \
+        PATH="$no_jq_bin" \
+        bash "$REPO_ROOT/claude/hooks/guard-sandbox-exclusions.sh" 2>&1 >/dev/null)) \
+    || excl_jq_rc=$?
+  case "$excl_jq_err" in
+    *'jq 未インストール'*) excl_jq_msg_ok=1 ;;
+    *) excl_jq_msg_ok=0 ;;
+  esac
+  if [ "$excl_jq_bin_ok" = "0" ]; then
+    echo "SKIP guard-sandbox-exclusions jq-missing fail-safe: 必要な実行ファイルを解決できない"
+  elif [ "$excl_jq_rc" = "2" ] && [ "$excl_jq_msg_ok" = "1" ]; then
+    pass=$((pass + 1))
+  else
+    echo "FAIL guard-sandbox-exclusions jq-missing fail-safe: expected exit 2 + jq 未インストール メッセージ, got rc=$excl_jq_rc msg=$excl_jq_err"
     fail=$((fail + 1))
   fi
 fi

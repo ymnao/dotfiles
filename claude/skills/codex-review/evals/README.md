@@ -20,11 +20,22 @@
 
 初回セットアップ:
 
+`gh` は **単独の Bash 呼び出し**で実行する（他のコマンドと混ぜると
+`guard-sandbox-exclusions.sh` にブロックされる。issue #267）:
+
 ```bash
 gh repo create <your-account>/skill-eval-sandbox --private --clone
+```
+
+```bash
 cd skill-eval-sandbox
 bash <dotfiles>/claude/skills/codex-review/evals/seed-sandbox.sh
 ```
+
+**`seed-sandbox.sh` は中身が `gh` 呼び出しなので、Claude Code の Bash tool から
+起動すると sandbox 内で走って認証に失敗する**(script 名にはコマンド名が現れない
+ので hook は通すが、上流の excludedCommands にもマッチしない)。この初回
+セットアップは **user が sandbox 外のターミナルで手動実行**すること。
 
 seed-sandbox.sh は初期コミット・ラベル・eval 用 issue を作成する(冪等)。
 eval が作成した PR / ブランチは各 eval の Cleanup 手順で削除する。

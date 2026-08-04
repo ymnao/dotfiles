@@ -12,10 +12,23 @@ branch="feature/eval-next-handoff-notes-$(date +%s)"
 git checkout -b "$branch"
 echo x >> README.md && git commit -am "chore: eval-next handoff-notes fixture"
 git push -u origin HEAD
+```
+
+`gh` は 1 コマンド 1 呼び出しに分ける（issue #267）。merge commit を使うのは
+feature commit を main の祖先にするため（`--squash` だと後段の
+`git branch -d` が拒否される）:
+
+```bash
 gh pr create --fill
-gh pr merge --merge --admin   # feature commit が main の祖先になるよう merge commit を使う
-                              # (--squash だと後段の `git branch -d` が拒否される)
-# `gh pr merge` は local HEAD を動かさないので $branch のまま。
+```
+
+```bash
+gh pr merge --merge --admin
+```
+
+`gh pr merge` は local HEAD を動かさないので作業ブランチのまま。
+
+```bash
 [ -f HANDOFF.md ] && mv HANDOFF.md HANDOFF.md.bak
 cp claude/skills/next/evals/fixtures/handoff-template.md HANDOFF.md
 ```

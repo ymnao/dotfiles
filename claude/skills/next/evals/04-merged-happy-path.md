@@ -11,14 +11,31 @@ branch="feature/eval-next-merged-$(date +%s)"
 git checkout -b "$branch"
 echo x >> README.md && git commit -am "chore: eval-next merged fixture"
 git push -u origin HEAD
+```
+
+`gh` は 1 コマンド 1 呼び出しに分ける（issue #267）:
+
+```bash
 gh pr create --fill
-gh pr merge --merge --admin   # feature commit が main の祖先になるよう merge commit を使う
-                              # (--squash だと `git branch -d` が拒否される)
-# remote が auto-delete していても続行 (local branch は残っている)。
-# `gh pr merge` は local HEAD を動かさないので $branch のまま。
+```
+
+feature commit が main の祖先になるよう merge commit を使う
+（`--squash` だと後段の `git branch -d` が拒否される）:
+
+```bash
+gh pr merge --merge --admin
+```
+
+remote が auto-delete していても続行する（local branch は残っている）。
+`gh pr merge` は local HEAD を動かさないので作業ブランチのまま。
+
+```bash
 git fetch origin main
 git branch -f main "$(git rev-parse origin/main)~1"   # main を 1 コミット戻す
 before_main=$(git rev-parse main)
+```
+
+```bash
 gh pr view --json state,mergedAt -q '.state + " " + (.mergedAt // "null")'
 # -> "MERGED <timestamp>"
 ```

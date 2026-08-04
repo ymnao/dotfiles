@@ -15,13 +15,13 @@ Fetch unresolved review threads for the current PR and address each one.
    - Otherwise fall back: get the branch with `git branch --show-current`, then run `gh pr list --head <branch> --state open --json number,baseRefName,headRepositoryOwner --jq '[.[] | select(.headRepositoryOwner.login == "<owner>")]'` (substituting `<branch>` and `<owner>` literally).
      - 0 matches → report "No PR found for the current branch" and stop.
      - >1 matches → list `PR #<n> -> <baseRefName>` for each, ask the user which one, then proceed.
-2. Fetch unresolved review threads in one Bash invocation that begins with `gh api graphql ...` (the leading command must be `gh api graphql` for the allow-list to match — substitute `<owner>`, `<repo>`, `<pr_number>` literally from step 1):
+2. Fetch unresolved review threads in one Bash invocation containing **only** `gh api graphql ...` — no pipe, no `&&`, no second command (the leading command must be `gh api graphql` for the allow-list to match, and mixing any other command in the same invocation is blocked by `guard-sandbox-exclusions.sh`; see issue #267). Use `gh`'s built-in `--jq` instead of piping to `jq`, and substitute `<owner>`, `<repo>`, `<pr_number>` literally from step 1:
    ```bash
    gh api graphql \
      -F query=@"$HOME/.claude/skills/resolve/queries/unresolved-threads.graphql" \
      -f owner=<owner> -f repo=<repo> -F number=<pr_number> \
-   | jq --argjson pr_number <pr_number> '{
-       pr_number: $pr_number,
+     --jq '{
+       pr_number: <pr_number>,
        unresolved_threads: [
          .data.repository.pullRequest.reviewThreads.nodes[]
          | select(.isResolved == false)

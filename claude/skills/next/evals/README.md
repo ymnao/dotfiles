@@ -29,16 +29,27 @@ after_cksum=$(cksum HANDOFF.md | awk '{print $1"_"$2}')
 では PR state が MERGED にならない)。auto-delete 環境でもローカル
 ブランチは残るので eval は続行できる:
 
+`gh` は **1 コマンド 1 呼び出し**に分ける（他のコマンドと同じ Bash 呼び出しに
+混ぜると `guard-sandbox-exclusions.sh` にブロックされる。issue #267）:
+
 ```bash
 git checkout main && git pull
 branch="feature/eval-next-<name>-$(date +%s)"
 git checkout -b "$branch"
 echo x >> README.md && git commit -am "chore: eval fixture"
 git push -u origin HEAD
-gh pr create --fill
-gh pr merge --merge --admin   # current branch の PR に対して merge commit
-# `gh pr merge` は local HEAD を動かさないので $branch のまま
 ```
+
+```bash
+gh pr create --fill
+```
+
+```bash
+gh pr merge --merge --admin
+```
+
+`gh pr merge` は current branch の PR に対して merge commit を作り、
+local HEAD は動かさないので作業ブランチのままになる。
 
 **--squash と --merge の使い分け**: `/next` は merged 後に `git branch -d`
 (小文字 d) で feature branch を削除する。`--squash` merge では feature

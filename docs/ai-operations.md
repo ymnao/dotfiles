@@ -235,6 +235,170 @@ file 編集 tool 経路は sandbox が効かないので hook が止める。片
 - 二次防御 (file 編集) の regression は `tests/hooks/guard-codex-dir.cases.jsonl` の
   `{{HOME}}/.codex/config.toml` 系ケースが pin する(allow 側のラチェットも含む)
 
+### sandbox の excludedCommands が「一次防御」を丸ごと外す経路
+
+上表の「一次: sandbox」は、**同じ Bash 呼び出しに excludedCommands マッチが
+1 つでも混ざると成立しない**。Claude Code の Bash tool は 1 呼び出しをまるごと
+sandbox 内か外のどちらかで実行する all-or-nothing 設計で、マッチ判定は
+**パース済み sub-command 単位・順序非依存**に行われるため(issue #267)。
+
+実測(2026-08-04 / Claude Code 2.1.212 / macOS Seatbelt。`~/` は allowWrite 外):
+
+| 行 | 結果 |
+|---|---|
+| `touch ~/x.tmp` | `Operation not permitted`(sandbox **内**) |
+| `brew --version > /dev/null && touch ~/x.tmp` | 成功(sandbox **外**) |
+| `touch ~/x.tmp; gh --version` | 成功(sandbox **外**。除外コマンドは後ろでもよい) |
+| `touch ~/x.tmp` / 改行 / `gh --version` | 成功(sandbox **外**。改行区切りでも同じ) |
+| `ls ~/.ssh; command gh --version` | denyRead を突破(上流は wrapper コマンドを剥がして照合する) |
+| `ls ~/.ssh; g"h" --version` | denyRead を突破(上流はコマンド語のクォートを外して照合する) |
+| `ls ~/.aws; FOO='a b' gh --version` | denyRead を突破(クォート付きの代入を前置しても外れる) |
+| `ls ~/.aws; FOO+=x gh --version` | denyRead を突破(append 代入でも外れる) |
+| `ls ~/.aws; command -p gh --version` | denyRead を突破(wrapper のオプション形でも外れる) |
+| `ls ~/.aws; echo ">"& gh --version` | denyRead を突破(クォート内の `>` は複製子ではない) |
+| `ls ~/.aws;<TAB>gh --version` | denyRead を突破(区切りの後がタブでも外れる) |
+| `ls >""&gh --version` | denyRead を突破(`>` とクォートを挟んでも `&` は区切り) |
+| `echo "... gh --version ..."; touch ~/x.tmp` | `Operation not permitted`(文字列言及は非マッチ) |
+| `x=$(brew --version); ls ~/.ssh` | `Operation not permitted`(コマンド置換だけでは外れない) |
+| `ls ~/.aws; (gh --version)` / `ls ~/.aws; if true; then gh --version; fi` | `Operation not permitted`(subshell / if にも降下しない) |
+
+`~/.ssh` `~/.aws` を使う行は `denyRead` で測っている(sandbox 内なら `ls` が非 0)。
+`x=$(brew ...)` の行以外は #267 のレビュー中に code-reviewer が同日 live 実測した。
+
+外れるのは filesystem の `denyRead` / `denyWrite` / `allowWrite` だけでなく、
+`network.allowedDomains` と `credentials.files` / `credentials.envVars` の deny も
+まとめて(sandbox 化されないコマンドにはどの層も適用されないため。ただし直接
+測っているのは上表の filesystem 経路のみ)。**これは Claude Code の仕様**で、
+除外を「単独コマンドのときだけ」に絞る指定方法は上流に存在しない(2.1.212 時点)。
+上流ドキュメントは逆に `docker` / `gh` について excludedCommands の使用を
+推奨しており、compound 行での粒度には言及がない。
+
+上流の判定は tree-sitter の `program` / `list` / `pipeline` /
+`redirected_statement` を降下して sub-command に割り、wrapper コマンド
+(`command` / `builtin` / `noglob` / `nohup` / `nice` / `time` / `stdbuf` /
+`timeout`。`-p` / `--` などのオプション形も含む)と環境変数代入(クォート付きの
+値・`+=`・配列添字を含む)を剥がし、コマンド語のクォートとバックスラッシュを
+外してから prefix 一致を取る(2.1.212 バイナリの `strings` より)。
+**コマンド置換 `$(...)` / subshell `(...)` / `if ... fi` には降下しない**
+(上表の `x=$(brew --version); ls ~/.ssh` の行と `(gh --version)` / `if` の行が実測)。
+
+| 層 | 実装 | 効くもの | 効かないもの |
+|---|---|---|---|
+| 二次: hook (Bash) | `claude/hooks/guard-sandbox-exclusions.sh`(Claude 専用の実体。codex には excludedCommands 相当が無いため symlink しない) | compound な行(`;` `\|` `&` 改行で 2 つ以上に割れる行)に除外コマンド名が**単語として現れたら位置を問わずブロック**し、単独実行を強制する | 除外コマンドの**単独行**そのもの。語一致に失敗する形(`(gh` / `x=$(brew` のように区切り文字以外が直前に付くと 1 語になる) |
+
+語一致に失敗する形が今のところ escape になっていないのは、**上流もそこに降下しない
+から**であって、hook がそれを判定しているからではない。両者は別の理由で一致している
+だけなので、上流が降下し始めると hook 側は無防備になる(下記の「allow 側の前提」参照)。
+
+**判定を「上流の正規化を写す」方式から粗い fail-closed に切り替えた経緯**:
+当初はコマンド位置を判定していたが、レビュー 2 周で毎回「写し漏れ」が見つかり、
+そのたびに実際に sandbox が外れた(上表の wrapper / クォート分割 / クォート付き
+代入 / `+=` 各行)。非公開パーサとの追随になっており、精度を上げるほど写し漏れの
+発見が遅れて危険になる。コマンド位置の判定をやめると**その系統の**写し漏れは
+無くなる代わりに、`echo "gh のこと"; ls` のように**言及しているだけの行**も止まる。
+この誤ブロックは書き方を変えれば解消でき、見逃しとは非対称なので許容する。
+
+**「写し漏れの余地が消えた」とは書かないこと**。語境界判定とクォート走査は
+依然としてシェルのトークナイザの近似で、余地はそちらに移っただけ。実際、
+方式を切り替えた直後のレビューでも 2 件見つかっている(上表のタブ字下げと
+`ls >""&gh`。どちらも live 実測で sandbox が外れた)。
+
+**この hook の退役条件**: 上流に「excludedCommands を単独コマンドのときだけ
+適用するオプション」が入れば、hook ごと不要になる。要望を出すのが筋なので、
+Claude Code のリリースノートでこの種のオプションを見かけたら §10 のこの節ごと
+畳むこと。
+
+**根治の候補として `gh` を sandbox 内で動かす道は、2026-08-04 時点では塞がって
+いる**。Keychain 依存は `GH_TOKEN` で外せる見込みだが、TLS 側は外せなかった —
+`SSL_CERT_FILE=/etc/ssl/cert.pem` を与えても `tls: failed to verify certificate:
+x509: OSStatus -26276` のまま(実測)。Go は macOS では Security framework を使い、
+`SSL_CERT_FILE` を見ないため。**この経路を再提案する前に、まずこの実測を
+やり直すこと**(Go / gh の更新で変わりうる)。
+
+**ハードニングはここで打ち切る**。探索空間は「非公開・可変」(上流の正規化)から
+「公知・有界」(POSIX シェルの字句規則)に縮んだが、後者も完全には尽くせない。
+以後 bypass が見つかったら **regression ケースを 1 件足して塞ぐだけ**にし、
+判定方式の再設計はしないこと。この hook が防いでいるのは「エージェントが習慣で
+`gh ... | jq` と書く」という**偶発的な混在**であって、敵対的な回避ではない —
+敵対モデルでは単独行の `brew install` / `gh extension` が最初から素通りするので、
+難読化を追いかけても得るものが無い。
+
+**allow 側の前提は block 側より危険な腐り方をする**。block 側の写し漏れは
+「hook が止めてくれない」形で live に痛みが出るが、allow 側の前提
+(コマンド置換 `$(...)` / subshell に上流が降下しない = 単独扱いでよい) は
+**上流の更新で黙って false になり、その瞬間この docs が安全と書いている形が
+そのまま escape になる**。`tests/hooks/guard-sandbox-exclusions.cases.jsonl` の
+`allow-command-substitution-in-compound` / `allow-subshell-in-compound` が
+この前提を pin しているが、pin が見ているのは「hook がその判断を変えていないこと」
+だけで、**上流が降下し始めたかどうかは測っていない**(測れない)。
+**Claude Code を更新したら、上表の実測を取り直すこと**
+(§10 末尾の再確認チェックリスト参照)。
+
+クォート解釈とコメント除去は残してある — `gh ... --jq '.[] | .name'` は
+クォート内に区切りを持つ単独コマンドで、既存 skill の主要な使い方だから。
+シェルコメント内の言及も落とす(コメントは実行されないので上流も sub-command
+として数えない)。落とさないと eval / docs の複数行ブロックが軒並みブロック
+され、代償が過大になる。
+
+**これは境界ではなく lint**。hook はコマンド文字列を自前で解釈するので、上流の
+パーサと完全に一致する保証はなく、想定外の書き方ですり抜ける余地は残る。
+OS が強制する sandbox 本体の代わりにはならない — 「回避不能な層が 1 つ増えた」
+とは読まないこと。
+
+残余リスクも「単独行なら安全」ではない。単独行でも `docker run -v /:/host ...` /
+`brew install <formula>`(formula の Ruby が host 側で走る)/ `gh extension` は
+**sandbox 外での任意コード実行**になる。
+
+hook が入ったことで、`gh` を使う手順は次の形が書けなくなる。skill / eval / docs の
+` ```bash ` ブロックを書くときはこれを避けること(ブロックは 1 回の Bash 呼び出しと
+みなされるので、**ブロック単位**で見る):
+
+- `gh ... | jq ...` / `gh ... && other` / 他のコマンドと同じブロックに並べる —
+  混在なのでブロックされる。`gh` 内蔵の `--jq` を使うか、出力をファイルに落として
+  次の呼び出しで処理する
+- `cat body.md | gh ...` — 標準入力を pipe で渡す形。`--body-file` / `-F <file>`
+  のような中間ファイル経由のオプションに書き換える
+- `x=$(gh ...)` — ブロックはされないが、コマンド置換には上流が降下しないので
+  **sandbox 内で走り `gh` 自体が失敗する**(実測: `tls: failed to verify
+  certificate: x509: OSStatus -26276`)。単独で実行して結果を読み、値はリテラルで
+  渡す。**変数は Bash 呼び出しをまたいで保持されない**ので、そもそも
+  `before_head=$(...)` 型の記録は次の呼び出しから参照できない — ファイルに
+  落とすか、値をリテラルで控える
+
+コード中の文字列としての言及(`echo "gh ..."`)も止まる。**日常の調査コマンドが
+これを踏む** — `grep -n 'gh ' <file> | head` のように除外コマンド名を検索語として
+渡し、かつ pipe を繋いだ形はブロックされる。pipe を外して 1 コマンドで実行するか、
+言及をシェルコメントに移せば通る。シェルコメント(`# gh ...`)は止まらない
+(例外: バックスラッシュ行継続の**直後の行**に置いたコメントは止まる。シェルは
+コメントとして扱うが hook は語の途中とみなすため — fail-closed 側の誤差)。
+
+バックスラッシュ行継続(`gh api ... \` + 改行 + 続き)は**区切りとして数えない**ので、
+複数行に折り返した単独の `gh` 呼び出しは通る。
+
+**除外コマンドを間接的に呼ぶ形は、hook も上流も素通りする**。`make install`
+(内部で `brew` を呼ぶ)、`bash seed-sandbox.sh`(中身が `gh`)のように
+**コマンド行に除外コマンド名が現れない**起動は、hook がブロックしない代わりに
+上流の excludedCommands にもマッチせず、**sandbox 内で走って中の `brew` / `gh` が
+失敗する**。手順を書くときは「その script / target が sandbox 内で動くか」を
+別途確かめること。動かないものは user が sandbox 外で手動実行する前提にする。
+
+**除外リストを縮める方向は採っていない**。`gh *` は sandbox 内から macOS
+Keychain が届かず(実測: `gh auth status` が `The token in keyring is invalid`)、
+TLS 検証も通らない(実測: 上記 OSStatus -26276)ため外せない。外すと `/pr`
+`/dev` `/next` `dependabot-bulk` が全滅する。`brew *` は sandbox 内でも動く見込みがあるが
+`brew install` は未実測。`docker *` / `pnpm test:e2e *` はこの repo では未使用だが、
+`claude/settings.json` は**全プロジェクト共通のユーザ設定**なので、この repo での
+未使用は削除根拠にならない。
+
+- regression は `tests/hooks/guard-sandbox-exclusions.cases.jsonl` が pin する。
+  block 側は上表の「sandbox が実際に外れた行」そのものと、粗い判定の代償
+  (コード中の文字列言及)。allow 側は既存 skill が使う bare な呼び方、
+  シェルコメント内の言及、旧実装が hang していた形
+- 上記の hook テストは**隔離 HOME で走る**ため hook 内の組み込み既定リストしか
+  通らない。`excludedCommands` に項目が増えても、また PreToolUse から hook を
+  外しても、hook テストは green のまま(vacuous pass)になる。この 2 点は
+  `tests/integrity/verify-sandbox-exclusion-guard.sh` が assert する
+
 ### codex CLI 自身の config.toml 書き込みと deny の相互作用
 
 **codex CLI は config.toml を動的に書く**。`[projects.*]`(repo の
@@ -416,7 +580,12 @@ host 側の実ファイル `~/.codex/config.toml`(これが git 追跡外。repo
 - **codex を upgrade したら** — 1 / 2 / 3、および §10 冒頭の trusted_hash
   (trusted_hash は `make test` が自動で突き合わせるので、**回して MISMATCH が
   出ないことを確認する**だけでよい。出たら件数を問わず仕様変更を疑う)
-- **Claude Code を upgrade したら** — 2b / 2c
+- **Claude Code を upgrade したら** — 2b / 2c、および
+  「sandbox の excludedCommands が『一次防御』を丸ごと外す経路」節の実測表。
+  とくに **allow 側の 2 行**(`x=$(brew --version); ls ~/.ssh` と subshell / if の行)
+  を測り直すこと — この 2 つは `guard-sandbox-exclusions.sh` が「単独扱いでよい」と
+  判断する根拠で、上流が降下するようになると**黙って escape 経路に変わる**。
+  block 側の写し漏れと違い、live に痛みが出ないまま前提だけが false になる
 
 **codex 側の記述**(1 / 2 / 3)はすべて **2026-07-31 に upstream の tag
 `rust-v0.146.0`(host の codex-cli 0.146.0)のソースを読んで確認**した

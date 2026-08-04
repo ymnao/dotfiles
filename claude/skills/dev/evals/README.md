@@ -206,12 +206,56 @@ sandbox clone は固定 SHA 前提で作成されるため、setup 内で `git p
 の PR 番号セットを setup で記録し、eval 後に diff が空であることを assert
 する(`--head` filter を使わない):
 
+`gh` は **単独の Bash 呼び出し**で実行し、結果はファイルに落とす。他のコマンドと
+同じ呼び出しに混ぜると `guard-sandbox-exclusions.sh` にブロックされ、
+`$(gh ...)` で変数に受ける形は sandbox 内で走るため `gh` 自体が TLS 検証に
+失敗する(issue #267)。ファイル名には eval 名を入れる(並行実行での取り違え防止)。
+
+**変数は Bash 呼び出しをまたいで保持されない。** `before_head=$(git rev-parse HEAD)`
+のような記録は、同じ呼び出し内でしか参照できない。Pass criteria で before 値と
+比較する eval では、値をファイルに落とすか、出力を読んでリテラルで控えること
+(既存の eval には `$before_head` / `$before_main` / `$before_handoff_cksum` を
+別呼び出しから参照している書き方が残っている)。
+
+記録先は **実行ごとに `mktemp -d` で作る**。固定パスにしない理由は 2 つ:
+前回の残骸を baseline と誤認する(cleanup だけ再実行したときに起こる)ことと、
+共有ホストで先回りされた symlink を追って任意のファイルを上書きしうること。
+
+setup(1 呼び出しずつ。1 つ目の出力を `<rundir>` としてリテラルで埋める):
+
 ```bash
-before_prs=$(gh pr list --state all --limit 1000 --json number -q '.[].number' | sort -u)
-# ... eval 実行 ...
-after_prs=$(gh pr list --state all --limit 1000 --json number -q '.[].number' | sort -u)
-# Pass criteria: [ "$after_prs" = "$before_prs" ]
+mktemp -d /tmp/dev-eval.XXXXXX
 ```
+
+```bash
+gh pr list --state all --limit 1000 --json number -q '.[].number' > <rundir>/before-prs.txt
+```
+
+```bash
+sort -u -o <rundir>/before-prs.txt <rundir>/before-prs.txt
+```
+
+eval 実行後(1 呼び出しずつ):
+
+```bash
+gh pr list --state all --limit 1000 --json number -q '.[].number' > <rundir>/after-prs.txt
+```
+
+```bash
+sort -u -o <rundir>/after-prs.txt <rundir>/after-prs.txt
+diff -q <rundir>/before-prs.txt <rundir>/after-prs.txt   # Pass criteria: 差分なし
+```
+
+判定が終わったら `<rundir>` を消す:
+
+```bash
+rm -rf <rundir>
+```
+
+**この判定は repo 全体の PR 集合を比べている**ので、eval 実行中に別の人 /
+並列 eval が PR を作成・close すると、対象 eval が副作用を起こしていなくても
+差分が出る。差分が出たら「eval が作った PR か」を番号から確認してから
+fail と判定すること(単独で回すのが前提)。
 
 前提として PR 総数が 1000 を超えると取りこぼす。現 repo 規模では十分。
 

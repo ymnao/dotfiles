@@ -12,9 +12,30 @@ cap 到達 + 残 finding の /pr 引き渡し経路を必ず実行させる。
 
 ```bash
 git checkout main
-# eval が /pr を呼び issue を起票する可能性があるため、既存 open issue の
-# 番号を記録しておいて cleanup で差分だけ close する
-before_issues=$(gh issue list --state open --limit 100 --json number -q '.[].number' | sort -u)
+```
+
+eval が `/pr` を呼び issue を起票する可能性があるため、既存 open issue の番号を
+記録しておいて cleanup で差分だけ close する。`gh` は **単独の Bash 呼び出し**で
+実行する(混ぜると `guard-sandbox-exclusions.sh` にブロックされ、`$(gh ...)` では
+sandbox 内で TLS 検証に失敗する。issue #267):
+
+記録先は **実行ごとに新しいディレクトリ**を作る。固定パスだと、前回の残骸を
+baseline と誤認して**無関係な issue を close 対象として列挙**しうる
+(cleanup だけ再実行したときに実際に起こる):
+
+```bash
+mktemp -d /tmp/dev-eval-07.XXXXXX
+```
+
+出力されたパスを `<rundir>` として以降にリテラルで埋める(変数は Bash 呼び出しを
+またいで保持されない)。
+
+```bash
+gh issue list --state open --limit 100 --json number -q '.[].number' > <rundir>/before-issues.txt
+```
+
+```bash
+sort -u -o <rundir>/before-issues.txt <rundir>/before-issues.txt
 ```
 
 ## Prompt
@@ -80,24 +101,65 @@ user checkpoint が発火する。以下 3 点を human runner が確認する
       `Finding` の header 行が cap-reached ログ以降に出現)
 - [ ] 分類表提示から user 承認までの間に、`gh issue create` / `gh pr create`
       が実行されていない (cap 引き渡し由来の finding に対する副作用ゼロ):
-      Setup で記録した `before_issues` と、承認前時点の
-      `gh issue list --state open --limit 100 --json number -q '.[].number' | sort -u`
-      が一致すること。PR は `gh pr list --state all` の前後 diff で判定
+      Setup で記録した `<rundir>/before-issues.txt` と、承認前時点に
+      同じ 2 呼び出しで取り直した open issue 番号セットが一致すること。
+      PR は `gh pr list --state all` の前後 diff で判定
       ([`README.md#pr-not-created-check`](README.md#pr-not-created-check))
 - [ ] user 承認後にのみ issue 起票 / PR 作成が進行した (承認応答を
       入れずに終わった eval 実行では PR も issue も作られていない)
 
 ## Cleanup
+
+まず close 対象の PR 番号を控える(**単独呼び出し**。PR が無ければ非 0 で終わる):
+
 ```bash
-pr_number=$(gh pr view --json number -q .number 2>/dev/null)
+gh pr view --json number -q .number
+```
+
+ブランチを片付ける:
+
+```bash
 branch=$(git branch --show-current)
 git checkout main
 [ "$branch" != "main" ] && git branch -D "$branch" 2>/dev/null || true
-[ -n "$pr_number" ] && gh pr close "$pr_number" --delete-branch 2>/dev/null || true
-# eval 中に起票された issue を差分で close
-after_issues=$(gh issue list --state open --limit 100 --json number -q '.[].number' | sort -u)
-new_issues=$(comm -13 <(echo "$before_issues") <(echo "$after_issues"))
-for n in $new_issues; do
-    gh issue close "$n" 2>/dev/null || true
-done
+```
+
+eval 中に起票された issue を差分で洗い出す(**単独呼び出し** → 集合演算):
+
+```bash
+gh issue list --state open --limit 100 --json number -q '.[].number' > <rundir>/after-issues.txt
+```
+
+```bash
+[ -f <rundir>/before-issues.txt ] || { echo "STOP: この実行の baseline が無い。close しない"; exit 1; }
+sort -u -o <rundir>/after-issues.txt <rundir>/after-issues.txt
+comm -13 <rundir>/before-issues.txt <rundir>/after-issues.txt
+```
+
+`comm` が出した番号**だけ**が close 対象。判定は `-s`(非空)ではなく
+`-f`(存在)で行う — **open issue が 0 件だった実行では baseline が正当に空**で、
+`-s` だと「setup 未実行」と誤判定して eval が作った issue を閉じ損ねる。
+baseline が存在しない場合は差分が「全 open issue」に化けるので 1 件も close しない。
+
+**差分は「eval が作った issue」と等しくない。** 実行中に別の人 / 並列 eval が
+起票した issue も入る。close する前に 1 件ずつ `gh issue view <n>` で
+本文とタイトルを確認し、この eval 由来だと確認できたものだけ close すること
+(他人の issue を閉じると取り消しは効くが通知は残る)。
+
+PR と issue の close は、**1 件ずつ別の単独 Bash 呼び出し**で行う
+(番号はリテラルに置き換える。`gh` を他のコマンドと混ぜると
+`guard-sandbox-exclusions.sh` にブロックされる。issue #267):
+
+```bash
+gh pr close <pr_number> --delete-branch
+```
+
+```bash
+gh issue close <issue_number>
+```
+
+GitHub 側の後始末が済んだら `<rundir>` を消す:
+
+```bash
+rm -rf <rundir>
 ```

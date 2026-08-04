@@ -26,7 +26,23 @@ grep -qxF 'HANDOFF.md' .git/info/exclude || echo 'HANDOFF.md' >> .git/info/exclu
 git check-ignore HANDOFF.md >/dev/null || { echo "SKIP: HANDOFF.md not ignored"; exit 77; }
 
 before_head=$(git rev-parse HEAD)
-before_prs=$(gh pr list --state all --limit 1000 --json number -q '.[].number' | sort -u)
+```
+
+PR 番号セットの記録は **別の単独 Bash 呼び出し**で行う(README
+[PR 非作成の検証パターン](README.md#pr-not-created-check) 参照):
+
+```bash
+mktemp -d /tmp/dev-eval-02b.XXXXXX
+```
+
+出力されたパスを `<rundir>` としてリテラルで埋める。
+
+```bash
+gh pr list --state all --limit 1000 --json number -q '.[].number' > <rundir>/before-prs.txt
+```
+
+```bash
+sort -u -o <rundir>/before-prs.txt <rundir>/before-prs.txt
 ```
 
 `git status --porcelain` は空 (HANDOFF.md は gitignored)。
@@ -41,9 +57,9 @@ before_prs=$(gh pr list --state all --limit 1000 --json number -q '.[].number' |
 - [ ] `git rev-parse HEAD` が `$before_head` と一致 (新規コミット 0)
 - [ ] `[ -f HANDOFF.md ] && [ ! -s HANDOFF.md ]` (HANDOFF.md が
       **存在しかつ空のまま** = 追記も削除もされていない)
-- [ ] `gh pr list --state all --limit 1000 --json number -q '.[].number' | sort -u`
-      が `$before_prs` と一致 (PR を作っていない。README
-      [PR 非作成の検証パターン](README.md#pr-not-created-check) 参照)
+- [ ] PR 番号セットが setup 時と一致 (PR を作っていない)。README
+      [PR 非作成の検証パターン](README.md#pr-not-created-check) の
+      after 側 2 呼び出しを実行し、`diff -q` が差分なしで終わること
 
 transcript 判定 (human runner):
 - [ ] `/dev` が「HANDOFF.md が空である」旨を認識した発言をした
@@ -57,6 +73,10 @@ transcript 判定 (human runner):
 rm -f HANDOFF.md
 [ -n "$handoff_backup" ] && mv "$handoff_backup" HANDOFF.md
 mv "$exclude_backup" .git/info/exclude
+```
+
+```bash
+rm -rf <rundir>
 ```
 
 (HANDOFF.md 継続経路の happy path は `02-no-arg-handoff.md` を、

@@ -5,7 +5,7 @@ set -uo pipefail
 # 偽の dotfiles / 偽の HOME / 偽の settings.json を組み立て、正常構成で PASS・
 # 改ざん各種で FAIL になることを検証する (検知器が壊れて常に OK を返す退行の防止)。
 # 対象: run-integrity-check.sh, verify-settings-codex-domains.sh,
-# verify-codex-hook-trust.sh
+# verify-codex-hook-trust.sh, verify-sandbox-exclusion-guard.sh
 # (issue #189 で 3 項目分、issue #190 で denyWrite 項目分、issue #239 で
 #  codex hook の承認状態検査分、issue #214 で trusted_hash の値検証分を追加)。
 # verify-guard-codex-wiring.sh の selftest は未実装 (別 issue で対応予定)。
@@ -637,6 +637,54 @@ check "trust-wired-in-gate" 0 "$?"
 LC_ALL=C grep -vE '^[[:space:]]*(#|@#)' "$TRUST_REPO_ROOT/Makefile" \
   | LC_ALL=C grep -q 'bash tests/integrity/verify-codex-hook-trust.sh'
 check "trust-wired-in-makefile" 0 "$?"
+
+# ---- verify-sandbox-exclusion-guard.sh の selftest (issue #267) ----
+# この検知器は「hook テストが vacuous pass する 3 経路」を assert するもので、
+# 検知器自身が常に PASS を返す退行を防ぐ必要がある (注入口だけあって未検証だと
+# 同じ穴を 1 段上に作ることになる)。
+EXCL_VERIFIER="${EXCL_VERIFIER_PATH:-$SCRIPT_DIR/verify-sandbox-exclusion-guard.sh}"
+
+run_excl_verifier() {
+  # $1=settings.json パス, $2=hook パス, $3=cases パス。exit code を echo
+  local rc=0
+  INTEGRITY_SETTINGS="$1" INTEGRITY_EXCLUSION_HOOK="$2" INTEGRITY_EXCLUSION_CASES="$3" \
+    bash "$EXCL_VERIFIER" >/dev/null 2>&1 || rc=$?
+  printf '%s' "$rc"
+}
+
+EXCL_REPO_ROOT="$(cd "$SCRIPT_DIR" && git rev-parse --show-toplevel)"
+EXCL_HOOK="$EXCL_REPO_ROOT/claude/hooks/guard-sandbox-exclusions.sh"
+EXCL_CASES="$EXCL_REPO_ROOT/tests/hooks/guard-sandbox-exclusions.cases.jsonl"
+EXCL_SETTINGS="$EXCL_REPO_ROOT/claude/settings.json"
+
+check "excl-baseline-ok" 0 "$(run_excl_verifier "$EXCL_SETTINGS" "$EXCL_HOOK" "$EXCL_CASES")"
+
+# fixture 1: PreToolUse から hook の配線を消す → FAIL
+EF="$BASE/excl-settings-unwired.json"
+jq '.hooks.PreToolUse = [(.hooks.PreToolUse[] | .hooks |= map(select(.command | test("guard-sandbox-exclusions") | not)))]' \
+  "$EXCL_SETTINGS" >"$EF"
+check "excl-unwired-detected" 1 "$(run_excl_verifier "$EF" "$EXCL_HOOK" "$EXCL_CASES")"
+
+# fixture 2: excludedCommands に hook の組み込み既定に無い entry を足す → FAIL
+EF="$BASE/excl-settings-extra.json"
+jq '.sandbox.excludedCommands += ["kubectl *"]' "$EXCL_SETTINGS" >"$EF"
+check "excl-builtin-drift-detected" 1 "$(run_excl_verifier "$EF" "$EXCL_HOOK" "$EXCL_CASES")"
+
+# fixture 3: hook から builtin_globs の行が消える (リネーム等) → FAIL
+EF="$BASE/excl-hook-no-globs.sh"
+LC_ALL=C grep -v '^builtin_globs=(' "$EXCL_HOOK" >"$EF"
+check "excl-hook-globs-missing-detected" 1 "$(run_excl_verifier "$EXCL_SETTINGS" "$EF" "$EXCL_CASES")"
+
+# fixture 4: cases ファイルが消える / block ケースを持たない → FAIL
+EF="$BASE/excl-cases-no-block.jsonl"
+LC_ALL=C grep -v '"expect":"block"' "$EXCL_CASES" >"$EF"
+check "excl-cases-no-block-detected" 1 "$(run_excl_verifier "$EXCL_SETTINGS" "$EXCL_HOOK" "$EF")"
+check "excl-cases-missing-detected" 1 "$(run_excl_verifier "$EXCL_SETTINGS" "$EXCL_HOOK" "$BASE/does-not-exist.jsonl")"
+
+# fixture 5: 配線: Makefile の「コメントでない実行行」から呼ばれている
+LC_ALL=C grep -vE '^[[:space:]]*(#|@#)' "$EXCL_REPO_ROOT/Makefile" \
+  | LC_ALL=C grep -q 'bash tests/integrity/verify-sandbox-exclusion-guard.sh'
+check "excl-wired-in-makefile" 0 "$?"
 
 echo "----"
 echo "integrity selftest: $pass passed, $fail failed"

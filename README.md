@@ -17,11 +17,16 @@ make install
 
 または手動で：
 
-```bash
-# シンボリックリンクのみ作成
-make link
+シンボリックリンクのみ作成:
 
-# パッケージインストール
+```bash
+make link
+```
+
+パッケージインストール（`brew` は sandbox 外で走るため、他のコマンドと同じ
+Bash 呼び出しに混ぜない。`docs/ai-operations.md` §10 参照）:
+
+```bash
 brew bundle install
 ```
 
