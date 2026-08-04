@@ -2,9 +2,9 @@
 
 skill の振る舞いテスト。配置先は `claude/skills/<skill>/evals/`。
 
-**eval を書くのは、実際に事故 (誤った実装・手戻り・防御のすり抜け) が
-起きた挙動を pin するときだけ** (AGENTS.md「コード品質」節)。予防目的の
-カバレッジ網羅は書かない。現存する eval は以下の 3 本のみ:
+eval を書く条件は **AGENTS.md「コード品質」節が正本**(事故が起きた挙動を
+pin するときだけ)。予防目的のカバレッジ網羅は書かない。現存する eval は
+以下の 3 本のみ:
 
 - `codex-review/evals/04-sandbox-skip.md` — sandbox 起因の failure を
   「レビュー対象コードの問題」と誤解していた挙動の修正 (e4fbecc) を pin
@@ -24,7 +24,7 @@ skill の振る舞いテスト。配置先は `claude/skills/<skill>/evals/`。
 
 ## サンドボックスリポジトリ
 
-実 GitHub 操作を伴う eval (dev/08) は、専用のダミーリポジトリで実行する。
+実 GitHub 操作を伴う eval は、専用のダミーリポジトリで実行する。
 **実プロジェクトでは絶対に実行しない。**
 
 初回セットアップ:

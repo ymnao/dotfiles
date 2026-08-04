@@ -225,7 +225,10 @@ codex-review は step 5 の /pr が risk tier に応じて実行するため
   同値比較で全経路 (Bash / apply_patch / sed 含む) の変更混入を検出
   する。`dirty=0` を強制しないのは、sandbox の制限で解消できない
   pre-existing な untracked 残存により `dirty=1` スタートが起こり得る
-  ため (start と end で同一であることだけを見る)
+  ため (start と end で同一であることだけを見る)。**既知の非検出**:
+  `dirty` は二値なので、`dirty=1` で始まった round に新規の uncommitted
+  change が加わっても `1 → 1` のまま通る (完全に見るには
+  `git status --porcelain` の checksum 比較が要る)
 
 ### 5. PR 作成
 
