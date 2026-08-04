@@ -33,10 +33,13 @@ fail-loud になる場所の版数固定はこの規約の対象外**(eval 実�
 | 独立第二意見(別モデル系統) | Fable 世代など | - | fresh context のレビュー、難しい設計判断、cascade でメインが疑わしいと判定したときのエスカレーション先 |
 | 探索・情報収集 | Haiku 世代 | - | 軽い調査・ファイル探索 |
 
-**実測 (2026-08-03)**: メインは Opus 5 (`claude-opus-5`)、`code-reviewer`
-サブエージェント(`model: opus`)も Opus 5 に解決された。根拠はどちらもセッションの
+**実測 (2026-08-04 / `claude` 2.1.220)**: メインは Opus 5 (`claude-opus-5`)、
+`code-reviewer` サブエージェント(frontmatter は `model: opus`)も Opus 5 に
+解決された(2026-08-03 の測定から変わらず)。根拠はどちらもセッションの
 システムプロンプトが報告するモデル名で、**alias の解決先を実行基盤の外から検証した
-ものではない**。この表は強制力を持たない — `claude/settings.json` にモデルを指定する
+ものではない**。なお 2.1.219 で `opus` の指す先が Opus 5 になったが、この repo が
+alias 運用を採っているため**設定の変更は不要だった**(下記のとおり alias 運用は
+意図)。この表は強制力を持たない — `claude/settings.json` にモデルを指定する
 フィールドは無く(`effortLevel` のみ)、切り替えは `/model` か CLI 既定に依存する。
 したがって表と実挙動の一致は、この実測でしか確かめられない。
 
@@ -45,22 +48,37 @@ ID 直書きにはしない — alias は上流の世代交代に追随するの
 内側に収まる。逆に ID を固定すると世代が上がったときレビュアーだけが旧世代に
 取り残される(ドリフトの向きが変わるだけ)。
 
-**未解消: 現在レビュアーはメインと同一系統**(どちらも Opus 5)。下の「根拠」節と
-`agents/AGENTS.md` が掲げる「生成者とレビュアーは同一モデル系統にしない」に
-**現に反している**。cross-vendor の `codex-review` が別系統の第二意見を担うことで
-実害は緩和されているが、Claude 側 reviewer だけを見れば規約違反のまま。
-解消するには `code-reviewer` を別系統(Fable 世代)へ寄せる必要があるが、
-frontmatter が完全なモデル ID / 別 alias を受け付けるかが未検証で、外れたときの
-壊れ方(起動失敗か、黙って既定にフォールバックか)も分からない。
+**「生成者とレビュアーは同一モデル系統にしない」への対応 — 呼び出し側で寄せる**。
+下の「根拠」節と `agents/AGENTS.md` が掲げるこの規約に対し、frontmatter の
+`model: opus` のままだとレビュアーがメイン(Opus 5)と同一系統になる。そこで
+`/dev` step 4-1 の `code-reviewer` 起動は **Agent tool の `model: "fable"`
+パラメータで明示的に別系統へ寄せる**。
 
-**確認する機会を 2 つに固定する**(「気づいたら」に委ねない):
+**なぜ frontmatter ではなく呼び出し側か(2026-08-04 実測、`claude` 2.1.220)**:
 
-- **§2 のチェックリストを回すとき** — 受理可否を 1 回試す(`model:` を別 alias に
-  変えた `code-reviewer` を軽いプロンプトで起動し、自分の実行モデル名を報告させる)。
-  受け付けると分かった時点で別系統への移動を再検討する
-- **`codex-review` が恒常的に使えなくなったとき** — 緩和が消えるので即座に見直す。
-  `/pr` は codex 不能時に Fable 系サブエージェントで代替する設計なので、その
-  フォールバックが常態化していたらこれに当たる
+- **Agent tool の `model` パラメータは効く** — `subagent_type: "code-reviewer"`
+  + `model: "fable"` で起動した subagent は `Fable 5 / claude-fable-5` と自己申告した
+- **frontmatter の `model:` はセッション内では検証できない** — `model: fable` に
+  書き換えて起動しても `Opus 5`、対照として確実に有効な alias である
+  `model: sonnet` に変えても `Opus 5` のまま。つまり**agent 定義はセッション開始時に
+  読まれ、同一セッション中の書き換えは反映されない**。よって「`fable` が受理された
+  のか、黙って既定にフォールバックしたのか」は**再起動しないと判別できない**
+- 判別できないまま frontmatter を `fable` にすると、受理されなかった場合に
+  **規約違反が「対応済み」の見た目のまま残る**。呼び出し側パラメータは実測で
+  効くと分かっているので、そちらに倒した(「確認できないなら厳しい側に倒す」
+  — `claude/rules/shell.md`)
+
+frontmatter は `model: opus` のまま据え置く。呼び出し側が指定しなかったときの
+既定として妥当で、alias 運用の方針とも整合するため。
+
+**残っている非対称**: `/dev` 以外の呼び出し口 — `claude/skills/adversarial-review/`
+は `code-reviewer` を 2 体並列で競わせる設計で、両方を同一系統に寄せるか
+片方だけ別系統にするかは競争レビューの設計判断そのもの。ここでは触っていないので
+**adversarial-review 経由のレビュアーは Opus 系のまま**。
+
+**`codex-review` が恒常的に使えなくなったときは即座に見直す** — cross-vendor の
+第二意見という緩和が消えるため。`/pr` は codex 不能時に Fable 系サブエージェントで
+代替する設計なので、そのフォールバックが常態化していたらこれに当たる。
 
 - 切り替え: `/model`、Agent ツールの `model` パラメータ
   (例: `Agent(subagent_type: "general-purpose", model: "sonnet", prompt: ...)`
@@ -110,9 +128,13 @@ vacuous pass する)。世代レベル記述にしたことで**ズレの発生�
       (例: `grep -ri fable claude/ codex/ agents/`)
 - [ ] **§1 の実測注記を更新する**(モデル名・ID・測定日)。ズレに気づく
       唯一の手がかりなので、ここを更新しないと世代レベル記述の意味が薄れる
-- [ ] **agent frontmatter が完全なモデル ID / 別 alias を受け付けるか試す**
-      (§1「未解消」の確認機会。受け付けるなら `code-reviewer` を別系統へ
-      寄せることを再検討し、結果を §1 に反映する)
+- [ ] **agent frontmatter が完全なモデル ID / 別 alias を受け付けるか試す**。
+      **同一セッション内では判定できない** — agent 定義はセッション開始時に
+      読まれるため、`model:` を書き換えても既存セッションでは反映されない
+      (2026-08-04 / 2.1.220 実測)。手順は「`model:` を書き換える →
+      **Claude Code を再起動する** → `code-reviewer` を軽いプロンプトで起動し
+      自分の実行モデル名を報告させる」。受理されると分かったら §1 の
+      「呼び出し側で寄せる」判断を frontmatter 側に戻すか再検討し、結果を §1 に反映する
 
 ## 3. 失敗駆動の設定改善(Boris Cherny 方式)
 
@@ -270,7 +292,9 @@ sandbox 内か外のどちらかで実行する all-or-nothing 設計で、マ�
 `network.allowedDomains` と `credentials.files` / `credentials.envVars` の deny も
 まとめて(sandbox 化されないコマンドにはどの層も適用されないため。ただし直接
 測っているのは上表の filesystem 経路のみ)。**これは Claude Code の仕様**で、
-除外を「単独コマンドのときだけ」に絞る指定方法は上流に存在しない(2.1.212 時点)。
+除外を「単独コマンドのときだけ」に絞る指定方法は上流に存在しない
+(2.1.212 時点。**2.1.220 で再確認しても変わらず** — `excludedCommands` の
+schema は `array(string)` のままで、粒度を指定するフィールドが無い)。
 上流ドキュメントは逆に `docker` / `gh` について excludedCommands の使用を
 推奨しており、compound 行での粒度には言及がない。
 
@@ -399,6 +423,34 @@ TLS 検証も通らない(実測: 上記 OSStatus -26276)ため外せない。�
   通らない。`excludedCommands` に項目が増えても、また PreToolUse から hook を
   外しても、hook テストは green のまま(vacuous pass)になる。この 2 点は
   `tests/integrity/verify-sandbox-exclusion-guard.sh` が assert する
+
+### network.strictAllowlist — 許可外ホストを確認ダイアログ抜きで拒否する
+
+`sandbox.network.strictAllowlist: true`(issue #245 step 5、Claude Code
+2.1.219 以降)。既定では `allowedDomains` に載っていないホストは**確認
+ダイアログ**になるが、この repo は確認を減らす方向に倒しているので、
+**最後の砦がいちばん出したくないダイアログ**という状態だった。有効化すると
+決定的に拒否される。
+
+**適用範囲(2026-08-04 実測、`claude` 2.1.220 のバイナリより)**。判定は
+`deniedDomains` → `allowedDomains` の順に走り、どちらにも当たらなかった
+ときの既定が「user に聞く」から「拒否」に変わるだけ。つまり
+**`allowedDomains` の中身は変えていない** — 締まるのはリスト外の扱い。
+
+| 論点 | 実測 |
+|---|---|
+| どの設定 scope から効くか | **user / managed(policy)/ CLI (`--settings`) のみ**。project の `.claude/settings.json` `.claude/settings.local.json` からは**無視される**(schema の describe に明記。設定 scope の列挙関数も managed + flag + userSettings の 3 つを返す) |
+| symlink 越しでも user scope か | **効く**。`~/.claude/settings.json` は repo への symlink だが、scope は「どの source slot から読んだか」で決まり実体パスは見ないため。ただしこれは実装の読み取りからの推論で、**黒箱の挙動としては未測定** |
+| `allowedDomains` 自体の scope | strictAllowlist と違い **project 設定からもマージされる**。この repo の `.claude/settings.json` が足している `formulae.brew.sh` / `ghcr.io` は有効なまま(実際にセッションの許可ホストが user の 10 件 + project の分になっているのを確認) |
+| WebFetch は締まるか | **締まらない**。schema に "in-process tools such as WebFetch are not gated by this setting" と明記。効くのは **sandbox 化された Bash コマンドだけ** |
+
+**運用上の注意**: これは全プロジェクト共通のユーザ設定なので、
+`allowedDomains` を持たない別 repo で作業すると、user 設定の 10 ドメイン外は
+すべて無言で拒否される。正当なドメインが必要になったら、repo 側の
+`.claude/settings.json` に足すか user 側に足すかを選ぶ(前者のほうが
+影響範囲が狭い)。**拒否は確認ダイアログを出さないので、原因は
+「なぜか通信できない」という形でしか現れない** — 見分けるには
+`No matching config rule, denying` の debug ログを見る。
 
 ### codex CLI 自身の config.toml 書き込みと deny の相互作用
 
@@ -646,6 +698,15 @@ matcher 関数は、**SessionStart を含む一部イベントでは** matcher �
 **配布バイナリの minify 済みバンドル**から読んだもので、版が上がれば黙って
 変わりうる。**Claude Code を upgrade したらここも再確認する**。
 
+**再確認済み(2026-08-04 / `claude` 2.1.220、issue #245 step 2 の更新に伴う)**。
+matcher 関数の構造は 2.1.212 から**変わっていない** — `!matcher` / `"*"` を
+無条件 match とし、許容文字集合(SessionStart 側は `^[a-zA-Z0-9_|, -]+$`、
+狭い側は `^[a-zA-Z0-9_|]+$`)に当たれば `split` → `trim` → `includes` の
+**完全一致**、当たらなければ `new RegExp(matcher)` という 3 分岐のまま。
+唯一の差は完全一致側・regex 側とも**別名展開を経由するようになった**こと
+(tool 名の別表記も突き合わせる)で、`|` 区切りの source 名だけを書いている
+現行の配線には影響しない。
+
 **2c. `fork` を matcher に含めている理由**(2026-08-01、公式 hooks docs
 `code.claude.com/docs/en/hooks` で確認)。SessionStart の source は
 `startup` / `resume` / `clear` / `compact` / `fork` の 5 値で、`fork` は
@@ -655,9 +716,15 @@ matcher 関数は、**SessionStart を含む一部イベントでは** matcher �
 実際 host の 2.1.212 のバイナリ内の source 列挙は
 `["startup","resume","clear","compact"]` で `fork` を含まない。
 
-つまり**今の host では一度も match しない代わりに、足さないまま CLI を
-2.1.214 以上に上げると複製セッションで改変検知が一度も発火しなくなる**。
-先に入れておけば穴が開く瞬間が来ない(issue #245 step 1)。codex 側の
+当時の host(2.1.212)では `fork` は**一度も match しない代わりに、足さない
+まま CLI を 2.1.214 以上に上げると複製セッションで改変検知が一度も発火しなく
+なる**状態だった。先に入れておけば穴が開く瞬間が来ない(issue #245 step 1)。
+
+**その穴は現に閉じた(2026-08-04 実測、`claude` 2.1.220)**。同じ手順で
+バイナリ内の source 列挙を読むと `["startup","resume","clear","compact","fork"]`
+で、zod schema 側の `E.enum([...])` も同じ 5 値。**`fork` は現に報告されうる**
+ので、matcher に足してある `fork` は今や実際に発火する枝である(step 1 を
+step 2 より先にやった意味がここで確定した)。codex 側の
 `SessionStartSource` は 4 値で `fork` を持たないため、`codex/hooks.json` は
 `startup|resume|clear` のまま。
 
