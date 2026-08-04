@@ -21,7 +21,8 @@ open な Dependabot PR を 1 branch に統合し、push を 1 回にして CI �
    - `gh pr list --author app/dependabot --state open --json number,title,headRefName,url,body,labels > "$WORK/prs.json"`
    - `bash "$HOME/.claude/skills/dependabot-bulk/scripts/list-dependabot-prs.sh" < "$WORK/prs.json" > "$WORK/classified.json"`
    - 出力 JSON の各要素: `{number, title, headRefName, url, package, ecosystem, semver, security}`
-   - semver は grouped PR (dependabot.yml `groups` 由来の複合 title) と v prefix (`v4.1.1`) も安全側に判定。判別不能は `unknown`
+   - semver は grouped PR (dependabot.yml `groups` 由来の複合 title)・v prefix (`v4.1.1`)・commit-message prefix (`Chore(deps): Bump ...` のような dependabot.yml `commit-message` 由来の接頭辞) を吸収して判定する。判別不能は `unknown`
+   - semver / package は title のみ、ecosystem は headRefName、security は body と labels から判定する。title は誰でも書ける文字列で、**Dependabot 生成物であることの保証は上の `--author app/dependabot` フィルタが担う**ので、このスクリプトを別経路の PR 一覧に流用しない
 3. **表を提示**
 
    | # | パッケージ | X→Y | semver | ecosystem | ⚠ |
