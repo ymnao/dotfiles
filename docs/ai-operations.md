@@ -235,6 +235,45 @@ file 編集 tool 経路は sandbox が効かないので hook が止める。片
 - 二次防御 (file 編集) の regression は `tests/hooks/guard-codex-dir.cases.jsonl` の
   `{{HOME}}/.codex/config.toml` 系ケースが pin する(allow 側のラチェットも含む)
 
+### sandbox の excludedCommands が「一次防御」を丸ごと外す経路
+
+上表の「一次: sandbox」は、**同じ Bash 呼び出しに excludedCommands マッチが
+1 つでも混ざると成立しない**。Claude Code の Bash tool は 1 呼び出しをまるごと
+sandbox 内か外のどちらかで実行する all-or-nothing 設計で、マッチ判定は
+**パース済み sub-command 単位・順序非依存**に行われるため(issue #267)。
+
+実測(2026-08-04 / Claude Code 2.1.212 / macOS Seatbelt。`~/` は allowWrite 外):
+
+| 行 | 結果 |
+|---|---|
+| `touch ~/x.tmp` | `Operation not permitted`(sandbox **内**) |
+| `brew --version > /dev/null && touch ~/x.tmp` | 成功(sandbox **外**) |
+| `touch ~/x.tmp; gh --version` | 成功(sandbox **外**。除外コマンドは後ろでもよい) |
+| `echo "... gh --version ..."; touch ~/x.tmp` | `Operation not permitted`(文字列言及は非マッチ) |
+
+外れるのは filesystem の `denyRead` / `denyWrite` / `allowWrite` だけでなく、
+`network.allowedDomains` と `credentials.files` / `credentials.envVars` の deny も
+まとめて。**これは Claude Code の仕様**で、除外を「単独コマンドのときだけ」に
+絞る指定方法は上流に存在しない(2.1.212 時点。`strictAllowlist` は 2.1.219+ で
+別機能)。上流ドキュメントは逆に `docker` / `gh` について excludedCommands の
+使用を推奨しており、compound 行での粒度には言及がない。
+
+| 層 | 実装 | 効くもの | 効かないもの |
+|---|---|---|---|
+| 二次: hook (Bash) | `claude/hooks/guard-sandbox-exclusions.sh`(Claude 専用の実体。codex には excludedCommands 相当が無いため symlink しない) | 除外コマンドが制御演算子・コマンド置換で他コマンドと**混在**する行を exit 2 でブロックし、単独実行を強制する | 除外コマンドの**単独行**そのもの(`gh api ... > ~/file` 等)は引き続き sandbox 外で走る |
+
+**除外リストを縮める方向は採っていない**。`gh *` は macOS Keychain が sandbox 内から
+届かないため外せない(実測: sandbox 内で `gh auth status` は
+`The token in keyring is invalid` を返す。外すと `/pr` `/dev` `/next`
+`dependabot-bulk` が全滅する)。`brew *` は sandbox 内でも動く見込みがあるが
+`brew install` は未実測。`docker *` / `pnpm test:e2e *` はこの repo では未使用だが、
+`claude/settings.json` は**全プロジェクト共通のユーザ設定**なので、この repo での
+未使用は削除根拠にならない。
+
+- regression は `tests/hooks/guard-sandbox-exclusions.cases.jsonl` が pin する
+  (block 側は上表の「sandbox が実際に外れた行」そのもの、allow 側は
+  文字列言及のみの行と既存 skill が使う bare な呼び方)
+
 ### codex CLI 自身の config.toml 書き込みと deny の相互作用
 
 **codex CLI は config.toml を動的に書く**。`[projects.*]`(repo の

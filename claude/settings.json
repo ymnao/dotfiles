@@ -120,6 +120,10 @@
           {
             "type": "command",
             "command": "bash \"$HOME/.claude/hooks/guard-codex-dir.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/guard-sandbox-exclusions.sh\""
           }
         ]
       },

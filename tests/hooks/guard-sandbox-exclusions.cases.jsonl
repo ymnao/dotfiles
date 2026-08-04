@@ -1,0 +1,17 @@
+# guard-sandbox-exclusions.sh の回帰ケース (issue #267)
+# block ケースは 2026-08-04 に実測した「sandbox が実際に外れた行」をそのまま pin する。
+# allow ケースは同日実測で sandbox 内に留まった行と、既存 skill が使う呼び方。
+# hook は隔離 HOME で走るため settings.json は読めず、組み込み既定
+# (docker / gh / brew / pnpm test:e2e) が使われる。
+{"name":"escape-brew-prefix","expect":"block","command":"brew --version > /dev/null && touch {{HOME}}/x.tmp","reason":"実測: この行は全体が sandbox 外で走り ~/ への write が通った"}
+{"name":"escape-gh-suffix","expect":"block","command":"touch {{HOME}}/x.tmp; gh --version","reason":"実測: 除外コマンドが後ろでも行全体が sandbox 外になる (順序非依存)"}
+{"name":"escape-docker-pipe","expect":"block","command":"docker ps | grep claude","reason":"パイプ後段と混在した除外コマンド"}
+{"name":"escape-pnpm-e2e","expect":"block","command":"pnpm test:e2e specs/login && touch {{HOME}}/x.tmp","reason":"2 語の除外 glob (pnpm test:e2e *) でも混在を検出する"}
+{"name":"escape-command-substitution","expect":"block","command":"VAR=$(gh api user) && echo \"$VAR\"","reason":"コマンド置換経由でも行全体が sandbox 外になる"}
+{"name":"escape-env-assignment-prefix","expect":"block","command":"GH_PAGER=cat gh pr list; touch {{HOME}}/x.tmp","reason":"先頭の環境変数代入を剥がしてコマンド語に到達する"}
+{"name":"allow-string-mention-only","expect":"allow","command":"echo \"this mentions gh --version only in a string\" > /dev/null; touch {{HOME}}/x.tmp","reason":"実測: 文字列としての言及だけでは sandbox は外れない (誤ブロックさせない)"}
+{"name":"allow-bare-gh","expect":"allow","command":"gh pr list","reason":"除外コマンドの単独実行は本 hook の対象外 (既存 skill の呼び方)"}
+{"name":"allow-bare-gh-with-quoted-jq","expect":"allow","command":"gh issue view 267 --json body --jq '.body | length'","reason":"シングルクォート内のパイプを区切りとみなさない"}
+{"name":"allow-bare-gh-with-redirect","expect":"allow","command":"gh pr view 1 2>&1","reason":"リダイレクト複製子の & を区切りとみなさない"}
+{"name":"allow-no-excluded-command","expect":"allow","command":"touch {{HOME}}/x.tmp && ls {{HOME}}","reason":"除外コマンドを含まない compound 行は素通しする"}
+{"name":"allow-pnpm-install","expect":"allow","command":"pnpm install && make test","reason":"pnpm test:e2e * にマッチしない pnpm サブコマンドは対象外"}
