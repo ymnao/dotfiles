@@ -300,6 +300,45 @@ entry=$(jq -r '
 check_cmd "SessionStart entry が type/timeout/command とも期待どおりであること (got ${entry})" \
   [ "$entry" = 'command|10|bash "$HOME/.claude/hooks/hooks-integrity-warn.sh"' ]
 
+# --- 12c. 配線 (Claude): herdr 統合 hook の SessionStart entry (issue #265) ---
+# この hook は argv (`session`) で挙動が変わる (`case "$action" in session) ;;
+# *) exit 0 ;;` )。上の classify_wired_commands は引数の**形**しか見ないので、
+# argv が書き換わっても clean と判定する。同関数のコメントが「argv で挙動が
+# 変わる hook を新しく配線するときは 12 系の全文 pin に載せること」と要求して
+# いるのはこの穴のためで、その要求は**この hook 自身にも適用される**。
+# 期待値は settings.json から導出せず独立した定数として持つ (claude/rules/shell.md)。
+#
+# matcher は空文字 (= Claude Code の match-all。実測記録は docs/ai-operations.md
+# §10 の 2b)。全 SessionStart source で発火させたいので意図的に空にしている
+# — 綴り違いや `compact` の脱落で静かに片肺になるのを防ぐため全文 pin する。
+# 存在確認は **件数** で行う。matcher が空文字である以上 `-n "$matcher"` では
+# 「entry が無い」と「entry はあるが matcher が空」を区別できず、entry を丸ごと
+# 削除した mutant が全 assert を通る (最初この形で書いて vacuous pass にした)。
+herdr_count=$(jq '
+  [.hooks.SessionStart[]
+   | select([.hooks[].command] | any(test("herdr-agent-state\\.sh")))]
+  | length
+' "$REPO_ROOT/claude/settings.json")
+check_cmd "SessionStart に herdr-agent-state.sh の entry が 1 件だけあること (got: ${herdr_count})" \
+  [ "$herdr_count" = 1 ]
+herdr_matcher=$(jq -r '
+  .hooks.SessionStart[]
+  | select([.hooks[].command] | any(test("herdr-agent-state\\.sh")))
+  | .matcher
+' "$REPO_ROOT/claude/settings.json")
+check_cmd "herdr SessionStart matcher が空文字 (match-all) で pin されていること (got: [${herdr_matcher}])" \
+  [ "$herdr_matcher" = "" ]
+# command は argv (`session`) まで含めて完全一致で pin する。herdr の統合
+# バージョンが上がって呼び出し形が変わった場合、ここが落ちることで気付ける
+# (herdr は ~/.claude/hooks/ = この repo への symlink 経由で上書きしてくる)。
+herdr_entry=$(jq -r '
+  .hooks.SessionStart[].hooks[]
+  | select(.command | test("herdr-agent-state\\.sh"))
+  | "\(.type)|\(.timeout)|\(.command)"
+' "$REPO_ROOT/claude/settings.json")
+check_cmd "herdr SessionStart entry が type/timeout/command とも期待どおりであること (got ${herdr_entry})" \
+  [ "$herdr_entry" = 'command|10|bash "$HOME/.claude/hooks/herdr-agent-state.sh" session' ]
+
 # --- 12b. 配線 (codex): hooks.json の SessionStart entry (issue #215) ---
 # matcher は **全文 pin** で受ける。部分一致で検査すると受理側の口が広いまま
 # fail-closed のつもりになるため (claude/rules/shell.md、実測根拠は §10 の 2)。
@@ -517,9 +556,10 @@ ${chunk}"
     # したがって `--list-watched` のようなフラグを足して hook の挙動を変える改変は
     # この分類器では止まらない (実測: 監視対象内のパスなので clean と判定される。
     # hooks-integrity-warn.sh は --list-watched で一覧を出して即 exit するため、
-    # これは警告機能の無効化にあたる)。**それを止めているのはケース 12 / 12b の
-    # command 全文 pin であって、ここではない**。argv で挙動が変わる hook を
-    # 新しく配線するときは 12 系の全文 pin に載せること。
+    # これは警告機能の無効化にあたる)。**それを止めているのはケース 12 / 12b /
+    # 12c の command 全文 pin であって、ここではない**。argv で挙動が変わる hook を
+    # 新しく配線するときは 12 系の全文 pin に載せること (herdr-agent-state.sh は
+    # まさにこの条件に当たるので 12c で pin してある)。
     argpath=$(
       printf '%s\n' "$cmd" |
         sed -nE 's#^(bash|sh|zsh|python3|node) "?((\$\{?HOME\}?|~)(/[A-Za-z0-9._-]+)+)"?( [A-Za-z0-9._-]+)*$#\2#p'
