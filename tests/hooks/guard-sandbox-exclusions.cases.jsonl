@@ -54,6 +54,12 @@
 {"name":"allow-mention-in-shell-comment","expect":"allow","command":"git branch -D b 2>/dev/null || true       # gh pr close が消せなかった場合の保険\nrm -f HANDOFF.md","reason":"シェルコメント内の言及は落とす。落とさないと docs / eval の複数行ブロックが軒並みブロックされ、粗い判定の代償が過大になる"}
 {"name":"allow-mention-in-leading-comment","expect":"allow","command":"# gh を使う手順はここには無い\nls /etc/hosts && echo ok","reason":"行頭コメントも同様"}
 {"name":"block-hash-inside-word","expect":"block","command":"ls /etc/hosts; echo a#gh --version; gh --version","reason":"語中の # はコメント開始ではない (コメント除去を緩めすぎない)"}
+{"name":"block-hash-after-quoted-space","expect":"block","command":"echo \"x \"#foo; gh --version","reason":"クォート由来の空白の直後の # はシェルでは語中扱いでコメントではない。デクォート後の文字で語頭判定すると、実在する `; gh --version` ごと捨てて素通りする"}
+{"name":"block-hash-after-escaped-space","expect":"block","command":"echo a\\ #foo; gh --version","reason":"同上 (エスケープされた空白)"}
+{"name":"block-hash-after-escaped-semicolon","expect":"block","command":"ls \\;#x; gh --version","reason":"同上 (エスケープされた区切り)"}
+{"name":"allow-line-continuation-single-gh","expect":"allow","command":"gh api graphql -F query=@q.graphql -f owner=o \\\n  --jq '{ pr_number: 1 }'","reason":"バックスラッシュ行継続は区切りではない。数えると resolve skill の gh api graphql が起動即ブロックされる"}
+{"name":"allow-line-continuation-multi","expect":"allow","command":"gh pr create --title x \\\n  --body-file b.md \\\n  --draft","reason":"複数段の行継続でも単独コマンド扱い"}
+{"name":"block-line-continuation-then-mix","expect":"block","command":"gh pr list \\\n  --limit 5\nls .","reason":"行継続の後に本物の改行区切りがあれば compound として検出する (継続の扱いを緩めすぎない)"}
 
 # 壊れた入力は fail-safe でブロックする (判定を持たないまま許可に倒れないこと)
 # raw:broken-json-fails-closed|block

@@ -29,8 +29,11 @@ gh issue create --title 'eval fixture (dev/01)' --body 'seeded by dev/01 eval'
 この create を実行したときだけ、その番号が cleanup の close 対象になる
 (既存 issue を拾った実行では close しない)。
 
+main の HEAD を控える(変数は Bash 呼び出しをまたいで保持されないのでファイルに
+落とす。README [PR 非作成の検証パターン](README.md#pr-not-created-check) と同じ理由):
+
 ```bash
-before_head=$(git rev-parse HEAD)
+git rev-parse HEAD > /tmp/dev-eval-01-before-head.txt
 ```
 
 ## Prompt
@@ -42,8 +45,10 @@ before_head=$(git rev-parse HEAD)
 - [ ] `feature/` / `fix/` / `refactor/` / `docs/` のいずれかで英語小文字ハイフンの
       新規ブランチを作成した
 - [ ] 実装 plan を提示し、step 2 の判定 (非自明なら承認待ち) に合流した
-- [ ] main へ直接コミットしていない (`git checkout main && git rev-parse HEAD`
-      が `$before_head` と同じ)
+- [ ] main へ直接コミットしていない
+      (`git checkout main; git rev-parse HEAD > /tmp/dev-eval-01-after-head.txt`
+      のあと `diff -q /tmp/dev-eval-01-before-head.txt /tmp/dev-eval-01-after-head.txt`
+      が差分なし)
 
 ## Cleanup
 ```bash

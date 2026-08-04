@@ -111,14 +111,16 @@ managed="/Library/Application Support/ClaudeCode/managed-settings.json"
 
 globs=()
 settings_read=0
-if [[ ${#settings_files[@]} -gt 0 ]]; then
-  if raw_globs=$(jq -r '.sandbox.excludedCommands // [] | .[]' "${settings_files[@]}" 2>/dev/null); then
+# ファイル単位で読む。1 発でまとめて渡すと、どれか 1 つが不正 JSON のときに
+# jq 全体が非 0 になり、読めていた分まで捨てて組み込み既定に落ちてしまう。
+for sf in ${settings_files[@]+"${settings_files[@]}"}; do
+  if raw_globs=$(jq -r '.sandbox.excludedCommands // [] | .[]' "$sf" 2>/dev/null); then
     settings_read=1
     while IFS= read -r g; do
       [[ -n "$g" ]] && globs+=("$g")
     done <<< "$raw_globs"
   fi
-fi
+done
 if [[ $settings_read -eq 0 ]]; then
   globs=("${builtin_globs[@]}")
 fi
@@ -157,7 +159,8 @@ done
 #
 # 実装は awk の 1 パス。bash の 1 文字ずつのループでも同じことはできるが、この hook は
 # **全 Bash tool 呼び出し**で走るので長い入力で無視できない (実測 2026-08-04 /
-# bash 3.2.57 / macOS: 20000 文字で 0.58s/call。awk なら同じ入力が 0.02s/call)。
+# bash 3.2.57 / macOS: hook 全体で 20000 文字が 0.58s/call。awk 版は同じ入力が
+# 0.045s/call、単独コマンドの早期 exit は 0.007s/call)。
 # 長さで打ち切る分岐 (打ち切った側が誤ブロックする) も要らなくなる。
 #
 # `prev_raw` は「直前に積んだ文字がクォート外の生の文字か」。リダイレクト複製子
@@ -166,13 +169,22 @@ done
 # 複製子と誤認して潰してしまう (実測で sandbox が外れた)。
 parsed=$(printf '%s' "$command" | awk '
   function flushsep() {
-    if (in_s || in_d) { out = out "_"; prev_out = "_" }
-    else { out = out "\n"; prev_out = "\n" }
+    if (in_s || in_d) { out = out "_" }
+    else { out = out "\n"; raw_ws = 1 }
     prev_raw = ""
   }
-  BEGIN { bs = "\\"; out = ""; orig = ""; in_s = 0; in_d = 0; prev_raw = ""; prev_out = "" }
+  BEGIN {
+    bs = "\\"; out = ""; orig = ""
+    in_s = 0; in_d = 0; cont = 0; prev_raw = ""; raw_ws = 1
+  }
   {
-    if (NR > 1) { orig = orig "\n"; flushsep() }
+    if (NR > 1) {
+      orig = orig "\n"
+      # 直前の行が「クォート外のバックスラッシュ + 行末」で終わっていたら行継続。
+      # シェルはバックスラッシュと改行をまとめて消すので、区切りを入れてはいけない
+      # (入れると `gh api ... \` で折り返した単独コマンドが compound に見える)。
+      if (cont) { cont = 0; raw_ws = 0 } else flushsep()
+    }
     orig = orig $0
     n = length($0)
     i = 1
@@ -180,29 +192,37 @@ parsed=$(printf '%s' "$command" | awk '
       c = substr($0, i, 1)
       lit = ""; raw = ""
       if (in_s) {
-        if (c == "\047") { in_s = 0; prev_raw = "" } else lit = c
+        if (c == "\047") { in_s = 0; prev_raw = ""; raw_ws = 0 } else lit = c
       } else if (in_d) {
-        if (c == "\042") { in_d = 0; prev_raw = "" }
-        else if (c == bs) { i++; lit = substr($0, i, 1) }
+        if (c == "\042") { in_d = 0; prev_raw = ""; raw_ws = 0 }
+        else if (c == bs) { i++; if (i > n) cont = 1; else lit = substr($0, i, 1) }
         else lit = c
-      } else if (c == "#" && (prev_out == "" || prev_out == " " || prev_out == "\t" || \
-                              prev_out == "\n" || prev_out == "_" || prev_out == ";" || \
-                              prev_out == "|" || prev_out == "&")) {
-        out = out " "; prev_out = " "; prev_raw = ""
-        break            # ここから行末までコメント
-      } else if (c == "\047") { in_s = 1; prev_raw = "" }
-      else if (c == "\042") { in_d = 1; prev_raw = "" }
-      else if (c == bs) { i++; lit = substr($0, i, 1) }
+      } else if (c == "#" && raw_ws) {
+        # 語頭の `#` から行末までコメント。語頭判定は **クォート外の空白 / 区切り /
+        # 行頭の直後か** で行う。デクォート後の文字で判定すると、
+        # `echo "x "#foo; gh --version` のようにクォート由来の空白の後ろを
+        # コメントとみなし、実在する `; gh --version` ごと捨てて素通りする
+        # (シェルはこの `#` を語中として扱うのでコメントではない)。
+        out = out " "; prev_raw = ""; raw_ws = 1
+        break
+      } else if (c == "\047") { in_s = 1; prev_raw = ""; raw_ws = 0 }
+      else if (c == "\042") { in_d = 1; prev_raw = ""; raw_ws = 0 }
+      else if (c == bs) { i++; if (i > n) cont = 1; else lit = substr($0, i, 1) }
       else if (c == "&") {
         nxt = substr($0, i + 1, 1)
         if (prev_raw == ">" || prev_raw == "<" || nxt == ">") lit = "&"
         else raw = "&"
       } else raw = c
-      if (raw != "") { out = out raw; prev_raw = raw; prev_out = raw }
-      else if (lit != "") {
-        if (lit == ";" || lit == "|" || lit == "&" || lit == "\r") { out = out "_"; prev_out = "_" }
-        else { out = out lit; prev_out = lit }
+      if (raw != "") {
+        out = out raw
+        prev_raw = raw
+        raw_ws = (raw == " " || raw == "\t" || raw == ";" || raw == "|" || raw == "&") ? 1 : 0
+      } else if (lit != "") {
+        # クォート内 / エスケープされた文字。語の途中なので raw_ws は必ず 0。
+        if (lit == ";" || lit == "|" || lit == "&" || lit == "\r") out = out "_"
+        else out = out lit
         prev_raw = ""
+        raw_ws = 0
       }
       i++
     }
@@ -260,8 +280,8 @@ sandbox 外で走ります (順序は問わない。issue #267)。
   いったんファイルに落として次の呼び出しで処理してください
 - 出力を変数に受ける形 (x=\$($matched ...)) — コマンド置換は sandbox 内で走るため
   $matched 自体が失敗します。単独で実行して結果を読み、値はリテラルで渡してください
-- コード中の文字列として "$matched" に言及しているだけの場合 — 判定は粗い
-  fail-closed なので止まります。pipe を外して別呼び出しにするか、語を分割して
-  書いてください (シェルのコメント `#` 内の言及はブロックされません)
+- コード中の文字列として "$matched" に言及しているだけの場合 (grep のパターン等) —
+  判定は粗い fail-closed なので止まります。pipe を外して 1 コマンドで実行するか、
+  言及をシェルのコメントに移してください (コメント内の言及は対象外です)
 EOF
 exit 2

@@ -256,6 +256,8 @@ sandbox 内か外のどちらかで実行する all-or-nothing 設計で、マ�
 | `ls ~/.aws; FOO+=x gh --version` | denyRead を突破(append 代入でも外れる) |
 | `ls ~/.aws; command -p gh --version` | denyRead を突破(wrapper のオプション形でも外れる) |
 | `ls ~/.aws; echo ">"& gh --version` | denyRead を突破(クォート内の `>` は複製子ではない) |
+| `ls ~/.aws;<TAB>gh --version` | denyRead を突破(区切りの後がタブでも外れる) |
+| `ls >""&gh --version` | denyRead を突破(`>` とクォートを挟んでも `&` は区切り) |
 | `echo "... gh --version ..."; touch ~/x.tmp` | `Operation not permitted`(文字列言及は非マッチ) |
 | `x=$(brew --version); ls ~/.ssh` | `Operation not permitted`(コマンド置換だけでは外れない) |
 | `ls ~/.aws; (gh --version)` / `ls ~/.aws; if true; then gh --version; fi` | `Operation not permitted`(subshell / if にも降下しない) |
@@ -297,6 +299,23 @@ sandbox 内か外のどちらかで実行する all-or-nothing 設計で、マ�
 方式を切り替えた直後のレビューでも 2 件見つかっている(上表のタブ字下げと
 `ls >""&gh`。どちらも live 実測で sandbox が外れた)。
 
+**ハードニングはここで打ち切る**。探索空間は「非公開・可変」(上流の正規化)から
+「公知・有界」(POSIX シェルの字句規則)に縮んだが、後者も完全には尽くせない。
+以後 bypass が見つかったら **regression ケースを 1 件足して塞ぐだけ**にし、
+判定方式の再設計はしないこと。この hook が防いでいるのは「エージェントが習慣で
+`gh ... | jq` と書く」という**偶発的な混在**であって、敵対的な回避ではない —
+敵対モデルでは単独行の `brew install` / `gh extension` が最初から素通りするので、
+難読化を追いかけても得るものが無い。
+
+**allow 側の前提は block 側より危険な腐り方をする**。block 側の写し漏れは
+「hook が止めてくれない」形で live に痛みが出るが、allow 側の前提
+(コマンド置換 `$(...)` / subshell に上流が降下しない = 単独扱いでよい) は
+**上流の更新で黙って false になり、その瞬間この docs が安全と書いている形が
+そのまま escape になる**。`tests/hooks/guard-sandbox-exclusions.cases.jsonl` の
+`allow-command-substitution-argument` はこの前提を pin しているが、pin は
+「hook がその判断を変えていないこと」しか見ていない。**Claude Code を更新したら、
+上表の実測を取り直すこと**(§10 末尾の再確認チェックリスト参照)。
+
 クォート解釈とコメント除去は残してある — `gh ... --jq '.[] | .name'` は
 クォート内に区切りを持つ単独コマンドで、既存 skill の主要な使い方だから。
 シェルコメント内の言及も落とす(コメントは実行されないので上流も sub-command
@@ -328,8 +347,13 @@ hook が入ったことで、`gh` を使う手順は次の形が書けなくな�
   `before_head=$(...)` 型の記録は次の呼び出しから参照できない — ファイルに
   落とすか、値をリテラルで控える
 
-コード中の文字列としての言及(`echo "gh ..."`)も止まる。シェルコメント
-(`# gh ...`)は止まらない。
+コード中の文字列としての言及(`echo "gh ..."`)も止まる。**日常の調査コマンドが
+これを踏む** — `grep -n 'gh ' <file> | head` のように除外コマンド名を検索語として
+渡し、かつ pipe を繋いだ形はブロックされる。pipe を外して 1 コマンドで実行するか、
+言及をシェルコメントに移せば通る。シェルコメント(`# gh ...`)は止まらない。
+
+バックスラッシュ行継続(`gh api ... \` + 改行 + 続き)は**区切りとして数えない**ので、
+複数行に折り返した単独の `gh` 呼び出しは通る。
 
 **除外リストを縮める方向は採っていない**。`gh *` は sandbox 内から macOS
 Keychain が届かず(実測: `gh auth status` が `The token in keyring is invalid`)、
@@ -529,7 +553,12 @@ host 側の実ファイル `~/.codex/config.toml`(これが git 追跡外。repo
 - **codex を upgrade したら** — 1 / 2 / 3、および §10 冒頭の trusted_hash
   (trusted_hash は `make test` が自動で突き合わせるので、**回して MISMATCH が
   出ないことを確認する**だけでよい。出たら件数を問わず仕様変更を疑う)
-- **Claude Code を upgrade したら** — 2b / 2c
+- **Claude Code を upgrade したら** — 2b / 2c、および
+  「sandbox の excludedCommands が『一次防御』を丸ごと外す経路」節の実測表。
+  とくに **allow 側の 2 行**(`x=$(brew --version); ls ~/.ssh` と subshell / if の行)
+  を測り直すこと — この 2 つは `guard-sandbox-exclusions.sh` が「単独扱いでよい」と
+  判断する根拠で、上流が降下するようになると**黙って escape 経路に変わる**。
+  block 側の写し漏れと違い、live に痛みが出ないまま前提だけが false になる
 
 **codex 側の記述**(1 / 2 / 3)はすべて **2026-07-31 に upstream の tag
 `rust-v0.146.0`(host の codex-cli 0.146.0)のソースを読んで確認**した
