@@ -10,10 +10,18 @@
 # ディレクトリを symlink するとこのリポジトリ内に socket が生成される
 # (2026-08-04 に実測: `herdr status server` が `socket: <configdir>/herdr.sock` を返す)。
 
-# herdr が config.toml へ書き戻す唯一の経路が onboarding フラグの保存
-# (公式 docs: 初回セットアップを完了すると `onboarding = false` を書き込む)。
-# このファイルは symlink 配線なので、書き戻しが起きると working tree が汚れる。
-# 最初から false を置いてその経路を塞ぐ。
+# herdr が **こちらの操作なしに** config.toml を書き戻す経路は、公式 docs の
+# 記述ではこの onboarding フラグの保存だけ (初回セットアップを完了すると
+# `onboarding = false` を書き込む)。このファイルは symlink 配線なので、
+# 書き戻しが起きると working tree が汚れる。最初から false を置いて塞ぐ。
+#
+# 明示コマンドで config.toml を書く経路は別にあるので、**使わないこと**:
+#   herdr config reset-keys — config.toml をバックアップしてキーバインドを消す。
+#     symlink をどう扱うか (実体を書き換えるか、symlink をファイルで置き換えて
+#     repo から静かに切り離すか) は未検証。キーバインドを変えるときは
+#     このファイルを直接編集する
+# なお `herdr channel set` は Homebrew 導入では拒否され config を書かない
+# (2026-08-04 実測: 実行前後で config.toml の SHA-256 が不変)。
 onboarding = false
 
 [theme]
@@ -35,8 +43,11 @@ default_shell = "/opt/homebrew/bin/fish"
 # 利用時に ctrl+b を 2 回押すよう案内しており、herdr も同じ 2 回押し透過を
 # 実装している (バイナリに "pressing the prefix twice sends a literal prefix key")
 # ので運用は可能だが、常時 2 回押しになるのを避けて衝突しないキーに寄せる。
-# ctrl+alt 系は herdr のドキュメントが「安全な既定の推奨」としている帯で、
-# wezterm の leader (ctrl+;) とも Claude Code のどのショートカットとも重ならない。
+# ctrl+alt+b を選ぶ根拠は `herdr --default-config` 自身の記述
+# 「Most reliable direct bindings are ctrl+letter, function keys, and explicit
+# modified chords」— ctrl+alt+b はこの explicit modified chord にあたる。
+# wezterm の leader (ctrl+;) とも Claude Code のどのショートカットとも重ならず、
+# wezterm は send_composed_key_when_left_alt_is_pressed = false なので届く。
 prefix = "ctrl+alt+b"
 
 [ui.toast]
