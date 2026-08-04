@@ -39,7 +39,17 @@ before_handoff_cksum=$(cksum HANDOFF.md | awk '{print $1"_"$2}')
 ```bash
 pr_number=$(gh pr view --json number -q .number 2>/dev/null)
 git checkout main
-[ -n "$pr_number" ] && gh pr close "$pr_number" --delete-branch 2>/dev/null || true
+```
+
+`pr_number` が取れていたら、**別の単独 Bash 呼び出し**で PR を close する
+(番号はリテラルに置き換える。`gh` を他のコマンドと混ぜると
+`guard-sandbox-exclusions.sh` にブロックされる。issue #267):
+
+```bash
+gh pr close <pr_number> --delete-branch
+```
+
+```bash
 git branch -D "$branch" 2>/dev/null || true       # gh pr close が local を消せなかった場合の保険
 rm -f HANDOFF.md
 [ -f HANDOFF.md.bak ] && mv HANDOFF.md.bak HANDOFF.md

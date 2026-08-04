@@ -8,12 +8,19 @@ git checkout main && git pull
 branch="feature/eval-next-no-pr-$(date +%s)"
 git checkout -b "$branch"
 echo y >> README.md && git commit -am "chore: eval-next no-pr fixture"
-gh pr view --json state; echo "gh pr view exit=$?"   # -> non-zero / "no pull requests found for branch"
 before_main=$(git rev-parse main)
 before_branch=$(git branch --show-current)
 [ -f HANDOFF.md ] && mv HANDOFF.md HANDOFF.md.bak
 cp claude/skills/next/evals/fixtures/handoff-template.md HANDOFF.md
 before_handoff_cksum=$(cksum HANDOFF.md | awk '{print $1"_"$2}')
+```
+
+fixture の前提(このブランチに PR が無いこと)は、**別の単独 Bash 呼び出し**で確認する。
+`gh` を他のコマンドと同じ呼び出しに混ぜると `guard-sandbox-exclusions.sh` に
+ブロックされる(issue #267)。非 0 終了か "no pull requests found for branch" が出れば前提を満たす。
+
+```bash
+gh pr view --json state
 ```
 
 ## Prompt

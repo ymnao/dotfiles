@@ -1,17 +1,33 @@
 # guard-sandbox-exclusions.sh の回帰ケース (issue #267)
-# block ケースは 2026-08-04 に実測した「sandbox が実際に外れた行」をそのまま pin する。
-# allow ケースは同日実測で sandbox 内に留まった行と、既存 skill が使う呼び方。
+#
 # hook は隔離 HOME で走るため settings.json は読めず、組み込み既定
 # (docker / gh / brew / pnpm test:e2e) が使われる。
+#
+# reason に「実測」と書いたケースだけが、実 sandbox で境界が外れる / 外れないことを
+# 直接測ったもの (2026-08-04 / Claude Code 2.1.212)。それ以外は上流の sub-command
+# 分割・正規化の仕様に対する判定ロジックの pin であり、sandbox の挙動そのものは
+# 測っていない。docs/ai-operations.md §10 の実測表を参照。
 {"name":"escape-brew-prefix","expect":"block","command":"brew --version > /dev/null && touch {{HOME}}/x.tmp","reason":"実測: この行は全体が sandbox 外で走り ~/ への write が通った"}
 {"name":"escape-gh-suffix","expect":"block","command":"touch {{HOME}}/x.tmp; gh --version","reason":"実測: 除外コマンドが後ろでも行全体が sandbox 外になる (順序非依存)"}
-{"name":"escape-docker-pipe","expect":"block","command":"docker ps | grep claude","reason":"パイプ後段と混在した除外コマンド"}
-{"name":"escape-pnpm-e2e","expect":"block","command":"pnpm test:e2e specs/login && touch {{HOME}}/x.tmp","reason":"2 語の除外 glob (pnpm test:e2e *) でも混在を検出する"}
-{"name":"escape-command-substitution","expect":"block","command":"VAR=$(gh api user) && echo \"$VAR\"","reason":"コマンド置換経由でも行全体が sandbox 外になる"}
-{"name":"escape-env-assignment-prefix","expect":"block","command":"GH_PAGER=cat gh pr list; touch {{HOME}}/x.tmp","reason":"先頭の環境変数代入を剥がしてコマンド語に到達する"}
+{"name":"escape-newline-separator","expect":"block","command":"touch {{HOME}}/x.tmp\ngh --version","reason":"実測: 改行区切りでも行全体が sandbox 外になる。区切り集合から改行が漏れると 3 行に分けるだけで素通りする (code-reviewer が live 実証)"}
+{"name":"escape-wrapper-command","expect":"block","command":"touch {{HOME}}/x.tmp; command gh --version","reason":"実測: 上流は wrapper コマンド (command 等) を剥がしてから照合するため sandbox は外れる"}
+{"name":"escape-quote-split-word","expect":"block","command":"touch {{HOME}}/x.tmp; g\"h\" --version","reason":"実測: 上流はコマンド語のクォートを外してから照合するため sandbox は外れる"}
+{"name":"escape-backslash-split-word","expect":"block","command":"touch {{HOME}}/x.tmp; g\\h --version","reason":"上流はコマンド語のバックスラッシュも外して照合することの pin"}
+{"name":"escape-wrapper-nohup","expect":"block","command":"nohup brew list && touch {{HOME}}/x.tmp","reason":"nohup wrapper の剥がしの pin"}
+{"name":"escape-wrapper-timeout","expect":"block","command":"timeout 60 gh pr list && touch {{HOME}}/x.tmp","reason":"timeout のオプション・duration を剥がしてコマンド語に到達することの pin"}
+{"name":"escape-apostrophe-in-double-quotes","expect":"block","command":"echo \"don't\" > /dev/null; touch {{HOME}}/x.tmp; gh --version; echo \"it's\"","reason":"実測: 対にならないシングルクォートを含む行でも sandbox は外れる。クォート span を正規表現で削除する実装だと区切りごと消えて素通りする (code-reviewer が live 実証)"}
+{"name":"escape-docker-pipe","expect":"block","command":"docker ps | grep claude","reason":"パイプ後段と混在した除外コマンドの pin"}
+{"name":"escape-pnpm-e2e","expect":"block","command":"pnpm test:e2e specs/login && touch {{HOME}}/x.tmp","reason":"2 語の除外 glob (pnpm test:e2e *) でも混在を検出することの pin"}
+{"name":"escape-env-assignment-prefix","expect":"block","command":"GH_PAGER=cat gh pr list; touch {{HOME}}/x.tmp","reason":"先頭の環境変数代入を剥がしてコマンド語に到達することの pin"}
 {"name":"allow-string-mention-only","expect":"allow","command":"echo \"this mentions gh --version only in a string\" > /dev/null; touch {{HOME}}/x.tmp","reason":"実測: 文字列としての言及だけでは sandbox は外れない (誤ブロックさせない)"}
+{"name":"allow-string-mention-with-dollar","expect":"allow","command":"echo \"home is $HOME; gh pr list is a command\" > /dev/null; touch {{HOME}}/x.tmp","reason":"$ を含むダブルクォート span でも誤ブロックしない (クォート内の ; を区切りとみなさない)"}
 {"name":"allow-bare-gh","expect":"allow","command":"gh pr list","reason":"除外コマンドの単独実行は本 hook の対象外 (既存 skill の呼び方)"}
 {"name":"allow-bare-gh-with-quoted-jq","expect":"allow","command":"gh issue view 267 --json body --jq '.body | length'","reason":"シングルクォート内のパイプを区切りとみなさない"}
 {"name":"allow-bare-gh-with-redirect","expect":"allow","command":"gh pr view 1 2>&1","reason":"リダイレクト複製子の & を区切りとみなさない"}
+{"name":"allow-command-substitution-assignment","expect":"allow","command":"pr_number=$(gh pr view --json number -q .number)","reason":"上流は command_substitution へ降下しないため単体では sandbox が外れない。誤ブロックさせない (next skill の eval が使う形)"}
+{"name":"allow-command-substitution-argument","expect":"allow","command":"gh pr close \"$(gh pr view --json number -q .number)\"","reason":"同上。実行されるのが除外コマンドだけの行を誤ブロックさせない"}
 {"name":"allow-no-excluded-command","expect":"allow","command":"touch {{HOME}}/x.tmp && ls {{HOME}}","reason":"除外コマンドを含まない compound 行は素通しする"}
 {"name":"allow-pnpm-install","expect":"allow","command":"pnpm install && make test","reason":"pnpm test:e2e * にマッチしない pnpm サブコマンドは対象外"}
+# 壊れた入力は fail-safe でブロックする (判定を持たないまま許可に倒れないこと)
+# raw:broken-json-fails-closed|block
+{"tool_input": {"command": "gh pr list; touch x"

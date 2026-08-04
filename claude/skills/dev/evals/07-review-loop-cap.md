@@ -93,11 +93,20 @@ pr_number=$(gh pr view --json number -q .number 2>/dev/null)
 branch=$(git branch --show-current)
 git checkout main
 [ "$branch" != "main" ] && git branch -D "$branch" 2>/dev/null || true
-[ -n "$pr_number" ] && gh pr close "$pr_number" --delete-branch 2>/dev/null || true
-# eval 中に起票された issue を差分で close
+# eval 中に起票された issue を差分で洗い出す
 after_issues=$(gh issue list --state open --limit 100 --json number -q '.[].number' | sort -u)
 new_issues=$(comm -13 <(echo "$before_issues") <(echo "$after_issues"))
-for n in $new_issues; do
-    gh issue close "$n" 2>/dev/null || true
-done
+echo "close 対象: pr=$pr_number issues=$new_issues"
+```
+
+PR と issue の close は、**1 件ずつ別の単独 Bash 呼び出し**で行う
+(番号はリテラルに置き換える。`gh` を他のコマンドと混ぜると
+`guard-sandbox-exclusions.sh` にブロックされる。issue #267):
+
+```bash
+gh pr close <pr_number> --delete-branch
+```
+
+```bash
+gh issue close <issue_number>
 ```

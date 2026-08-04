@@ -249,18 +249,42 @@ sandbox 内か外のどちらかで実行する all-or-nothing 設計で、マ�
 | `touch ~/x.tmp` | `Operation not permitted`(sandbox **内**) |
 | `brew --version > /dev/null && touch ~/x.tmp` | 成功(sandbox **外**) |
 | `touch ~/x.tmp; gh --version` | 成功(sandbox **外**。除外コマンドは後ろでもよい) |
+| `touch ~/x.tmp` / 改行 / `gh --version` | 成功(sandbox **外**。改行区切りでも同じ) |
+| `ls ~/.ssh; command gh --version` | denyRead を突破(上流は wrapper コマンドを剥がして照合する) |
+| `ls ~/.ssh; g"h" --version` | denyRead を突破(上流はコマンド語のクォートを外して照合する) |
 | `echo "... gh --version ..."; touch ~/x.tmp` | `Operation not permitted`(文字列言及は非マッチ) |
+| `x=$(brew --version); ls ~/.ssh` | `Operation not permitted`(コマンド置換だけでは外れない) |
+
+`~/.ssh` を使う行は `denyRead` で測っている(sandbox 内なら `ls` が非 0)。
+wrapper / クォート分割 / 改行の 3 行は #267 のレビュー中に code-reviewer が
+同日 live 実測したもの。
 
 外れるのは filesystem の `denyRead` / `denyWrite` / `allowWrite` だけでなく、
 `network.allowedDomains` と `credentials.files` / `credentials.envVars` の deny も
-まとめて。**これは Claude Code の仕様**で、除外を「単独コマンドのときだけ」に
-絞る指定方法は上流に存在しない(2.1.212 時点。`strictAllowlist` は 2.1.219+ で
-別機能)。上流ドキュメントは逆に `docker` / `gh` について excludedCommands の
-使用を推奨しており、compound 行での粒度には言及がない。
+まとめて(sandbox 化されないコマンドにはどの層も適用されないため。ただし直接
+測っているのは上表の filesystem 経路のみ)。**これは Claude Code の仕様**で、
+除外を「単独コマンドのときだけ」に絞る指定方法は上流に存在しない(2.1.212 時点)。
+上流ドキュメントは逆に `docker` / `gh` について excludedCommands の使用を
+推奨しており、compound 行での粒度には言及がない。
+
+上流の判定は tree-sitter の `program` / `list` / `pipeline` を降下して
+sub-command に割り、wrapper コマンド(`command` / `builtin` / `noglob` / `nohup` /
+`nice` / `time` / `stdbuf` / `timeout`)と環境変数代入を剥がし、コマンド語の
+クォートとバックスラッシュを外してから prefix 一致を取る。**コマンド置換
+`$(...)` / バックティック / subshell には降下しない**(上表の最終行が実測)。
 
 | 層 | 実装 | 効くもの | 効かないもの |
 |---|---|---|---|
-| 二次: hook (Bash) | `claude/hooks/guard-sandbox-exclusions.sh`(Claude 専用の実体。codex には excludedCommands 相当が無いため symlink しない) | 除外コマンドが制御演算子・コマンド置換で他コマンドと**混在**する行を exit 2 でブロックし、単独実行を強制する | 除外コマンドの**単独行**そのもの(`gh api ... > ~/file` 等)は引き続き sandbox 外で走る |
+| 二次: hook (Bash) | `claude/hooks/guard-sandbox-exclusions.sh`(Claude 専用の実体。codex には excludedCommands 相当が無いため symlink しない) | 除外コマンドが `;` `\|` `&` 改行で他コマンドと**混在**する行を exit 2 でブロックし、単独実行を強制する。上流の分割・正規化(wrapper 剥がし / クォート除去)を写している | 除外コマンドの**単独行**そのもの。上流の解釈と写しがずれる書き方 |
+
+**これは境界ではなく lint**。hook はコマンド文字列を自前で解釈するので、上流の
+パーサと完全に一致する保証はなく、想定外の書き方ですり抜ける余地は残る。
+OS が強制する sandbox 本体の代わりにはならない — 「回避不能な層が 1 つ増えた」
+とは読まないこと。
+
+残余リスクも「単独行なら安全」ではない。単独行でも `docker run -v /:/host ...` /
+`brew install <formula>`(formula の Ruby が host 側で走る)/ `gh extension` は
+**sandbox 外での任意コード実行**になる。
 
 **除外リストを縮める方向は採っていない**。`gh *` は macOS Keychain が sandbox 内から
 届かないため外せない(実測: sandbox 内で `gh auth status` は

@@ -37,5 +37,12 @@ before_head=$(git rev-parse HEAD)
 branch=$(git branch --show-current)
 git checkout main
 [ "$branch" != "main" ] && git branch -D "$branch" 2>/dev/null || true
-[ -n "$created_issue" ] && gh issue close "$created_issue" 2>/dev/null || true
+```
+
+eval 中に issue が起票されていたら、**別の単独 Bash 呼び出し**で close する
+(番号はリテラルに置き換える。`gh` を他のコマンドと混ぜると
+`guard-sandbox-exclusions.sh` にブロックされる。issue #267):
+
+```bash
+gh issue close <created_issue>
 ```

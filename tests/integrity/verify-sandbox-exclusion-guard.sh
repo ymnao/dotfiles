@@ -40,15 +40,22 @@ else
 fi
 
 # 2. hook の組み込み既定リストが settings の excludedCommands を網羅しているか。
-#    hook 側の配列リテラルをそのまま取り出して評価する (hook 全体は source しない
-#    — stdin 読み込みで固まるため)。
+#    hook 側の配列リテラルから要素を抽出する。eval は使わない — 配列が複数行に
+#    折り返された瞬間に構文エラーで落ち、診断が出ないまま終わるため。
 builtin_line=$(grep -m1 '^builtin_globs=(' "$HOOK" || true)
 if [ -z "$builtin_line" ]; then
   echo "FAIL: $HOOK に builtin_globs=( の行が無い (リネームされた?)"
   fail=$((fail + 1))
 else
   builtin_globs=()
-  eval "$builtin_line"
+  while IFS= read -r item; do
+    [ -n "$item" ] || continue
+    builtin_globs+=("$item")
+  done < <(printf '%s\n' "$builtin_line" | grep -o "'[^']*'" | sed -e "s/^'//" -e "s/'\$//")
+  if [ ${#builtin_globs[@]} -eq 0 ]; then
+    echo "FAIL: $HOOK の builtin_globs から要素を取り出せない (書式が変わった?)"
+    fail=$((fail + 1))
+  fi
   while IFS= read -r want; do
     [ -n "$want" ] || continue
     found=0
@@ -66,6 +73,17 @@ else
       fail=$((fail + 1))
     fi
   done < <(jq -r '.sandbox.excludedCommands // [] | .[]' "$SETTINGS")
+fi
+
+# 3. 回帰ケースファイルが実在し block ケースを持つか。
+#    tests/run-hook-tests.sh は存在する cases.jsonl を glob するだけなので、
+#    ファイルごと消えても make test は green のまま (これも同じ vacuous pass)。
+CASES="${INTEGRITY_EXCLUSION_CASES:-$REPO_ROOT/tests/hooks/guard-sandbox-exclusions.cases.jsonl}"
+if [ -r "$CASES" ] && grep -q '"expect":"block"' "$CASES"; then
+  pass=$((pass + 1))
+else
+  echo "FAIL: $CASES が無い / block ケースを持たない (hook が無効化されても検出できない)"
+  fail=$((fail + 1))
 fi
 
 echo "sandbox exclusion guard: $pass passed, $fail failed"
