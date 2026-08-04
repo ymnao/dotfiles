@@ -91,12 +91,15 @@ make_fake_root "$c1_root"
 make_fake_home "$c1_home"
 mkdir -p "$c1_root/wezterm" "$c1_root/nvim"
 mkdir -p "$c1_root/starship"; printf 'x\n' > "$c1_root/starship/starship.toml"
+mkdir -p "$c1_root/herdr"; printf 'x\n' > "$c1_root/herdr/config.toml"
 rc=$(run_link "$c1_root" "$c1_home" "$c1_home/out" "$c1_home/err")
 ok=1
 [ "$rc" = 0 ] || { echo "FAIL c1: rc=$rc"; ok=0; }
 assert_symlink "$c1_home/.config/wezterm" "$c1_root/wezterm" "c1: wezterm symlink"
 assert_symlink "$c1_home/.config/nvim" "$c1_root/nvim" "c1: nvim symlink"
 assert_symlink "$c1_home/.config/starship.toml" "$c1_root/starship/starship.toml" "c1: starship symlink"
+# herdr は config.toml 単体を張る (ディレクトリを張ると socket が repo 内に作られる)
+assert_symlink "$c1_home/.config/herdr/config.toml" "$c1_root/herdr/config.toml" "c1: herdr symlink"
 if [ "$ok" = 1 ]; then pass=$((pass+1)); else fail=$((fail+1)); sed 's/^/  /' "$c1_home/err"; fi
 
 # ---- case 2: 既存 regular file → .backup にリネーム、symlink 新規作成
@@ -140,12 +143,12 @@ c4_root="$WORKDIR/c4_root"
 c4_home="$WORKDIR/c4_home"
 make_fake_root "$c4_root"
 make_fake_home "$c4_home"
-mkdir -p "$c4_root/wezterm"  # nvim / fish / karabiner / starship は無い
+mkdir -p "$c4_root/wezterm"  # nvim / fish / karabiner / starship / herdr は無い
 rc=$(run_link "$c4_root" "$c4_home" "$c4_home/out" "$c4_home/err")
 ok=1
 [ "$rc" = 0 ] || { echo "FAIL c4: rc=$rc"; ok=0; }
 assert_symlink "$c4_home/.config/wezterm" "$c4_root/wezterm" "c4: wezterm should exist"
-for missing in nvim karabiner fish starship.toml; do
+for missing in nvim karabiner fish starship.toml herdr; do
   if [ -e "$c4_home/.config/$missing" ] || [ -L "$c4_home/.config/$missing" ]; then
     echo "FAIL c4: unexpected $missing"; ok=0
   fi

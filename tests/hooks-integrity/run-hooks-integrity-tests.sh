@@ -502,9 +502,19 @@ ${chunk}"
     # 通ってしまう (実測で素通りを確認した)。
     # 副作用として空白やメタ文字を含むパスの配線は受理されなくなるが、
     # 2026-07-31 時点の実配線 19 件はいずれも該当しない (実測)。
+    #
+    # **末尾の引数トークンも受理する** (2026-08-04 に追加。herdr の Claude 統合
+    # hook が `bash "<パス>" session` の形を要求するため)。引数側も同じ理由で
+    # allowlist にする — `[A-Za-z0-9._-]+` のみで、`/` も含めない。除外リスト方式に
+    # すると「引数の位置なら安全」という思い込みのまま `&&` や `$(...)` を通し、
+    # **パスは監視対象内なのに後続で別のものを実行する** 形が clean 判定になる
+    # (それが単一起動形に絞った元々の理由)。`/` を弾くのは、第 2 のパスを
+    # 引数として渡す形を「監視対象内の 1 パスだけ照合して pass」にしないため。
+    # 受理が広がったぶんの回帰ケースは 15l (受理される形) と 15m/15n/15o
+    # (受理してはいけない形) で受ける。
     argpath=$(
       printf '%s\n' "$cmd" |
-        sed -nE 's#^(bash|sh|zsh|python3|node) "?((\$\{?HOME\}?|~)(/[A-Za-z0-9._-]+)+)"?$#\2#p'
+        sed -nE 's#^(bash|sh|zsh|python3|node) "?((\$\{?HOME\}?|~)(/[A-Za-z0-9._-]+)+)"?( [A-Za-z0-9._-]+)*$#\2#p'
     )
     if [ -z "$argpath" ]; then
       # 単一起動形でない → 全文 pin と突合する側に回す。
@@ -708,6 +718,26 @@ assert_case15 "case15j-metachar-no-space" \
 assert_case15 "case15k-var-expansion-in-path" \
   'bash $HOME/.claude/hooks/$EVIL' expect-violation \
   '未分類 command (NON_REPO_EXPECTED に無い): bash $HOME/.claude/hooks/$EVIL'
+# 15l: **引数付きの単一起動形** → 通ること (受理パターンを広げた分の positive)。
+#      herdr の Claude 統合 hook (`... herdr-agent-state.sh session`) がこの形。
+assert_case15 "case15l-arg-watched" \
+  'bash "$HOME/.claude/hooks/post-format.sh" session' expect-clean
+# 15m〜15o: 15l で広げた受理口が **危険な形まで飲み込まないこと**。
+#      「マッチしない入力を試すだけでは足りない — 受理パターンに
+#      マッチしてしまう危険な入力を自分で構成する」(claude/rules/shell.md)。
+# 15m: 引数の後ろに別の実行を連結 (15g の引数付き版)。
+assert_case15 "case15m-arg-extra-invocation" \
+  'bash "$HOME/.claude/hooks/post-format.sh" session && bash /tmp/evil.sh' expect-violation \
+  '未分類 command (NON_REPO_EXPECTED に無い): bash "$HOME/.claude/hooks/post-format.sh" session && bash /tmp/evil.sh'
+# 15n: 第 2 のパスを引数として渡す形。監視対象内のパス 1 個だけを照合して
+#      pass させないため、引数の allowlist から `/` を外してある。
+assert_case15 "case15n-arg-second-path" \
+  'bash "$HOME/.claude/hooks/post-format.sh" /tmp/evil.sh' expect-violation \
+  '未分類 command (NON_REPO_EXPECTED に無い): bash "$HOME/.claude/hooks/post-format.sh" /tmp/evil.sh'
+# 15o: 引数側の変数展開 (15k のパス後半と同じ理由。実行時に何になるか読めない)。
+assert_case15 "case15o-arg-var-expansion" \
+  'bash "$HOME/.claude/hooks/post-format.sh" "$EVIL"' expect-violation \
+  '未分類 command (NON_REPO_EXPECTED に無い): bash "$HOME/.claude/hooks/post-format.sh" "$EVIL"'
 
 # 15i: NON_REPO_EXPECTED の **missing 方向** (pin にあるのに配線から消えた) を守る。
 # assert_case15 は「1 件足す」mutation しか作れないので、ここだけ「1 件消す」

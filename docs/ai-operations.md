@@ -228,6 +228,7 @@ MEMORY.md 先頭 200 行が自動ロードされる。
 | Superpowers(obra/superpowers) | 公式マーケットプレイス外で全文監査が必要。既存 skill 群と思想が重複。更新追従がない | 同種の困りごとが 3 回起きたとき、または公式マーケットプレイス入りしたとき(その skill だけ監査して取り込む) |
 | keybindings カスタマイズ | 現時点で困っている操作がない | 操作の不満が具体化したとき |
 | Stop hook 駆動の review 強制ループ(claude-review-loop 系) | /dev 内の有界レビューループ(上限 2 周)で足りる。無限ループ対策(`stop_hook_active` guard)が必要になり、停止タイミングの監視性も下がる | /dev 運用でレビュー飛ばしが実際に起きたとき |
+| herdr の agent skill(`herdr --skill`)/ plugin 機構 / codex 統合 | herdr 本体は導入したが(#265)、**エージェントに herdr を操作させる**部分は審査していない。socket API は認証が無く、公式 docs 自身が「socket にアクセスできる = そのセッション内の shell アクセスと同等」としている。`herdr pane run <id> "<cmd>"` は Bash tool の sandbox の外で走るため、`permissions.deny` と guard hook が内側のコマンドに当たるかは**未実測**。なお **skill を入れないことは境界ではない** — ペイン内の Claude Code には `HERDR_ENV` / `HERDR_SOCKET_PATH` が入るので、指示書が無いだけで能力は残る | #276 で実測(sandbox が socket 接続を止めるか / deny が `herdr pane run` の内側を拾うか)してから §5 の審査を通す |
 | Ralph loop 型の外側無人ループ(`while true; claude -p` 系) | merge ゲート・plan ゲートの人間監視を放棄することになる。2026-07-19 の検討で「パイプライン圧縮 + 人間ゲート再配置」(/dev + /next)を採用 | 完全無人で回してよい種類の反復タスク(大量 migration 等)が実際に発生したとき |
 
 ## 10. codex / Claude Code の host 実行面の防御層

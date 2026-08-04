@@ -24,6 +24,11 @@ brew "fzf"  # 対話型ファジー検索 (fish 統合は `fzf --fish | source`�
 brew "zoxide"  # frecency 学習型 cd。`zoxide init fish --cmd cd` で cd を置き換え
 brew "eza"  # modern ls (git status 統合、tree、group-directories-first)
 brew "bat"  # cat + syntax highlight (sharkdp 製、fzf preview で使用)
+# herdr = コーディングエージェント用のターミナル multiplexer (agent 版 tmux)。
+# 設定は herdr/config.toml、Claude Code 統合は claude/hooks/herdr-agent-state.sh。
+# issue #265 で評価中 — 定着しなければこの行と herdr/ ごと revert する。
+# 常駐化 (brew services start herdr) は意図的に有効化していない。
+brew "herdr"
 
 # ========================================
 # Development Languages & Tools

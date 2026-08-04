@@ -75,6 +75,14 @@ if [[ -f "$DOTFILES_DIR/starship/starship.toml" ]]; then
     link_file "$DOTFILES_DIR/starship/starship.toml" "$HOME/.config/starship.toml"
 fi
 
+# Link herdr configuration
+# ディレクトリではなく config.toml 単体を張る。herdr は socket (herdr.sock) を
+# config と同じディレクトリに作るため、ディレクトリを symlink すると
+# dotfiles リポジトリ内に socket が生成される (herdr/config.toml 冒頭参照)。
+if [[ -f "$DOTFILES_DIR/herdr/config.toml" ]]; then
+    link_file "$DOTFILES_DIR/herdr/config.toml" "$HOME/.config/herdr/config.toml"
+fi
+
 # Git configuration
 mkdir -p "$HOME/.config/git"
 

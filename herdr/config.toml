@@ -1,0 +1,59 @@
+# herdr (エージェント用ターミナル multiplexer) の設定。
+#
+# 全項目のデフォルトは `herdr --default-config` が出力する (0.8.0 で 324 行)。
+# ここには **既定から変える項目だけ** を書く。稼働中のサーバへの反映は
+# `herdr server reload-config`。UI 系はそれで効くが、起動時のみ読む項目は再起動が要る。
+#
+# 配線: このファイルは scripts/link.sh が ~/.config/herdr/config.toml へ
+# **ファイル単位で** symlink する。ディレクトリごと symlink してはいけない —
+# herdr は socket (herdr.sock) を config と同じディレクトリに作るため、
+# ディレクトリを symlink するとこのリポジトリ内に socket が生成される
+# (2026-08-04 に実測: `herdr status server` が `socket: <configdir>/herdr.sock` を返す)。
+
+# herdr が config.toml へ書き戻す唯一の経路が onboarding フラグの保存
+# (公式 docs: 初回セットアップを完了すると `onboarding = false` を書き込む)。
+# このファイルは symlink 配線なので、書き戻しが起きると working tree が汚れる。
+# 最初から false を置いてその経路を塞ぐ。
+onboarding = false
+
+[theme]
+# wezterm 側 (wezterm/colors/kanagawa_dragon.lua) と系統を揃える。
+name = "kanagawa"
+
+[terminal]
+# login shell は /bin/zsh で、fish は wezterm の default_prog が起動している
+# (wezterm/wezterm.lua)。herdr は $SHELL からペインの shell を決めるため、
+# 明示しないと **herdr のペインだけ zsh になる**。
+# パスは Apple Silicon の Homebrew 前提 (wezterm 側は Intel 用の
+# /usr/local/bin/fish もフォールバックで探すが、herdr の設定は静的な文字列
+# しか取れないので分岐できない)。
+default_shell = "/opt/homebrew/bin/fish"
+
+[keys]
+# 既定の prefix は ctrl+b だが、これは **Claude Code の「タスクをバックグラウンド
+# 化する」ショートカットと同じキー**。Claude Code の公式ドキュメントは tmux
+# 利用時に ctrl+b を 2 回押すよう案内しており、herdr も同じ 2 回押し透過を
+# 実装している (バイナリに "pressing the prefix twice sends a literal prefix key")
+# ので運用は可能だが、常時 2 回押しになるのを避けて衝突しないキーに寄せる。
+# ctrl+alt 系は herdr のドキュメントが「安全な既定の推奨」としている帯で、
+# wezterm の leader (ctrl+;) とも Claude Code のどのショートカットとも重ならない。
+prefix = "ctrl+alt+b"
+
+[ui.toast]
+# エージェントが blocked (承認待ち・質問待ち) になったことを、席を外していても
+# 拾えるようにする。"system" は OS の通知センターに直接出す。
+delivery = "system"
+
+[experimental]
+# Claude Code のように自前でカーソルを描く TUI では、macOS の IME 候補ウィンドウが
+# カーソル位置を追従できなくなる。herdr 側でフォーカス中ペインのカーソルを外側の
+# 端末に見せて追従させる。トレードオフとして、カーソルを隠したまま代替を描かない
+# アプリ (vim の normal mode 等) で余分なカーソルが見えるため、
+# cjk_ime_agents で Claude のペインだけに限定する。
+reveal_hidden_cursor_for_cjk_ime = true
+cjk_ime_agents = ["claude"]
+
+# IME が有効なままでも prefix コマンドが届くよう、prefix モード中だけ
+# ASCII 入力ソースへ一時的に切り替え、抜けるときに元へ戻す (macOS/Windows のみ、
+# best-effort)。日本語入力を常用するため有効にする。
+switch_ascii_input_source_in_prefix = true
