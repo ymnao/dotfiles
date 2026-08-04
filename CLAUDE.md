@@ -19,7 +19,7 @@ skill / hook / テスト / CI は、この目的を安全に達成するため�
 - `claude/settings.json` → `~/.claude/settings.json` にシンボリックリンク
 - `claude/skills/` → `~/.claude/skills/` にシンボリックリンク
 - harness 間で内容が同一のスキルの SKILL.md は `codex/skills/` → `claude/skills/` の repo 内シンボリックリンクで drift を防止（pr / resolve は独立ファイルのまま）
-- harness 共通の hook 実装は `agents/hooks/` に正本を置き、`claude/hooks/` と `codex/hooks/` からは相対 symlink で参照する（drift を構造的に防止）。codex 固有 hook（redact-secrets / notify-stop）は `codex/hooks/` に実体のまま置く
+- harness 共通の hook 実装は `agents/hooks/` に正本を置き、`claude/hooks/` と `codex/hooks/` からは相対 symlink で参照する（drift を構造的に防止）。codex 固有 hook（redact-secrets / notify-stop）は `codex/hooks/` に実体のまま置く。同じ理由で **Claude 固有 hook は `claude/hooks/` に実体のまま置く**（guard-sandbox-exclusions は Claude Code の `sandbox.excludedCommands` 専用で、codex には相当機構が無い）
 - `claude/agents/` → `~/.claude/agents/` にシンボリックリンク（Claude Code サブエージェント定義）
 - `claude/rules/` → `~/.claude/rules/` にシンボリックリンク（path-scoped rules、frontmatter の `paths` glob にマッチしたときだけ lazy load）
 - `claude/statusline.sh` → `~/.claude/statusline.sh` にシンボリックリンク（Claude Code の statusline スクリプト）

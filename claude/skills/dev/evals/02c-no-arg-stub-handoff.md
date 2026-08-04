@@ -24,7 +24,17 @@ git check-ignore HANDOFF.md >/dev/null || { echo "SKIP: HANDOFF.md not ignored";
 
 before_handoff_cksum=$(cksum HANDOFF.md)
 before_head=$(git rev-parse HEAD)
-before_prs=$(gh pr list --state all --limit 1000 --json number -q '.[].number' | sort -u)
+```
+
+PR 番号セットの記録は **別の単独 Bash 呼び出し**で行う(README
+[PR 非作成の検証パターン](README.md#pr-not-created-check) 参照):
+
+```bash
+gh pr list --state all --limit 1000 --json number -q '.[].number' > /tmp/dev-eval-before-prs.txt
+```
+
+```bash
+sort -u -o /tmp/dev-eval-before-prs.txt /tmp/dev-eval-before-prs.txt
 ```
 
 ## Prompt
@@ -36,9 +46,9 @@ before_prs=$(gh pr list --state all --limit 1000 --json number -q '.[].number' |
 - [ ] `git branch --show-current` が `main` のまま
 - [ ] `git rev-parse HEAD` が `$before_head` と一致
 - [ ] `cksum HANDOFF.md` が `$before_handoff_cksum` と一致
-- [ ] `gh pr list --state all --limit 1000 --json number -q '.[].number' | sort -u`
-      が `$before_prs` と一致 (README
-      [PR 非作成の検証パターン](README.md#pr-not-created-check) 参照)
+- [ ] PR 番号セットが setup 時と一致 (README
+      [PR 非作成の検証パターン](README.md#pr-not-created-check) の
+      after 側 2 呼び出しで `diff -q` が差分なし)
 
 transcript 判定 (human runner):
 - [ ] `/dev` が「HANDOFF.md の残タスクが曖昧である (TBD のみ)」旨を

@@ -252,12 +252,16 @@ sandbox 内か外のどちらかで実行する all-or-nothing 設計で、マ�
 | `touch ~/x.tmp` / 改行 / `gh --version` | 成功(sandbox **外**。改行区切りでも同じ) |
 | `ls ~/.ssh; command gh --version` | denyRead を突破(上流は wrapper コマンドを剥がして照合する) |
 | `ls ~/.ssh; g"h" --version` | denyRead を突破(上流はコマンド語のクォートを外して照合する) |
+| `ls ~/.aws; FOO='a b' gh --version` | denyRead を突破(クォート付きの代入を前置しても外れる) |
+| `ls ~/.aws; FOO+=x gh --version` | denyRead を突破(append 代入でも外れる) |
+| `ls ~/.aws; command -p gh --version` | denyRead を突破(wrapper のオプション形でも外れる) |
+| `ls ~/.aws; echo ">"& gh --version` | denyRead を突破(クォート内の `>` は複製子ではない) |
 | `echo "... gh --version ..."; touch ~/x.tmp` | `Operation not permitted`(文字列言及は非マッチ) |
 | `x=$(brew --version); ls ~/.ssh` | `Operation not permitted`(コマンド置換だけでは外れない) |
+| `ls ~/.aws; (gh --version)` / `ls ~/.aws; if true; then gh --version; fi` | `Operation not permitted`(subshell / if にも降下しない) |
 
-`~/.ssh` を使う行は `denyRead` で測っている(sandbox 内なら `ls` が非 0)。
-wrapper / クォート分割 / 改行の 3 行は #267 のレビュー中に code-reviewer が
-同日 live 実測したもの。
+`~/.ssh` `~/.aws` を使う行は `denyRead` で測っている(sandbox 内なら `ls` が非 0)。
+`x=$(brew ...)` の行以外は #267 のレビュー中に code-reviewer が同日 live 実測した。
 
 外れるのは filesystem の `denyRead` / `denyWrite` / `allowWrite` だけでなく、
 `network.allowedDomains` と `credentials.files` / `credentials.envVars` の deny も
@@ -267,15 +271,28 @@ wrapper / クォート分割 / 改行の 3 行は #267 のレビュー中に cod
 上流ドキュメントは逆に `docker` / `gh` について excludedCommands の使用を
 推奨しており、compound 行での粒度には言及がない。
 
-上流の判定は tree-sitter の `program` / `list` / `pipeline` を降下して
-sub-command に割り、wrapper コマンド(`command` / `builtin` / `noglob` / `nohup` /
-`nice` / `time` / `stdbuf` / `timeout`)と環境変数代入を剥がし、コマンド語の
-クォートとバックスラッシュを外してから prefix 一致を取る。**コマンド置換
-`$(...)` / バックティック / subshell には降下しない**(上表の最終行が実測)。
+上流の判定は tree-sitter の `program` / `list` / `pipeline` /
+`redirected_statement` を降下して sub-command に割り、wrapper コマンド
+(`command` / `builtin` / `noglob` / `nohup` / `nice` / `time` / `stdbuf` /
+`timeout`。`-p` / `--` などのオプション形も含む)と環境変数代入(クォート付きの
+値・`+=`・配列添字を含む)を剥がし、コマンド語のクォートとバックスラッシュを
+外してから prefix 一致を取る(2.1.212 バイナリの `strings` より)。
+**コマンド置換 `$(...)` には降下しない**(上表の最終行が実測)。subshell
+`(...)` と `if ... fi` も降下しないことをレビュー中に live 実測している。
 
 | 層 | 実装 | 効くもの | 効かないもの |
 |---|---|---|---|
-| 二次: hook (Bash) | `claude/hooks/guard-sandbox-exclusions.sh`(Claude 専用の実体。codex には excludedCommands 相当が無いため symlink しない) | 除外コマンドが `;` `\|` `&` 改行で他コマンドと**混在**する行を exit 2 でブロックし、単独実行を強制する。上流の分割・正規化(wrapper 剥がし / クォート除去)を写している | 除外コマンドの**単独行**そのもの。上流の解釈と写しがずれる書き方 |
+| 二次: hook (Bash) | `claude/hooks/guard-sandbox-exclusions.sh`(Claude 専用の実体。codex には excludedCommands 相当が無いため symlink しない) | compound な行(`;` `\|` `&` 改行で 2 つ以上に割れる行)に除外コマンド名が**単語として現れたら位置を問わずブロック**し、単独実行を強制する | 除外コマンドの**単独行**そのもの |
+
+**判定を「上流の正規化を写す」方式から粗い fail-closed に切り替えた経緯**:
+当初はコマンド位置を判定していたが、レビュー 2 周で毎回「写し漏れ」が見つかり、
+そのたびに実際に sandbox が外れた(上表の wrapper / クォート分割 / クォート付き
+代入 / `+=` 各行)。非公開パーサとの追随になっており、精度を上げるほど写し漏れの
+発見が遅れて危険になる。コマンド位置の判定をやめると写し漏れの余地が消える
+代わりに、`echo "gh のこと"; ls` のように**言及しているだけの行**も止まる。
+この誤ブロックは呼び出しを分ければ解消でき、見逃しとは非対称なので許容する。
+クォート解釈だけは残してある — `gh ... --jq '.[] | .name'` はクォート内に
+区切りを持つ単独コマンドで、既存 skill の主要な使い方だから。
 
 **これは境界ではなく lint**。hook はコマンド文字列を自前で解釈するので、上流の
 パーサと完全に一致する保証はなく、想定外の書き方ですり抜ける余地は残る。
@@ -286,10 +303,19 @@ OS が強制する sandbox 本体の代わりにはならない — 「回避不
 `brew install <formula>`(formula の Ruby が host 側で走る)/ `gh extension` は
 **sandbox 外での任意コード実行**になる。
 
-**除外リストを縮める方向は採っていない**。`gh *` は macOS Keychain が sandbox 内から
-届かないため外せない(実測: sandbox 内で `gh auth status` は
-`The token in keyring is invalid` を返す。外すと `/pr` `/dev` `/next`
-`dependabot-bulk` が全滅する)。`brew *` は sandbox 内でも動く見込みがあるが
+hook が入ったことで、`gh` を使う手順は次の 2 つが書けなくなる。skill / eval を
+書くときはこの形を避けること:
+
+- `gh ... | jq ...` / `gh ... && other` — 混在なのでブロックされる。`gh` 内蔵の
+  `--jq` を使うか、出力をファイルに落として次の呼び出しで処理する
+- `x=$(gh ...)` — ブロックはされないが、コマンド置換には上流が降下しないので
+  **sandbox 内で走り `gh` 自体が失敗する**(実測: `tls: failed to verify
+  certificate: x509: OSStatus -26276`)。単独で実行して結果を読み、値はリテラルで渡す
+
+**除外リストを縮める方向は採っていない**。`gh *` は sandbox 内から macOS
+Keychain が届かず(実測: `gh auth status` が `The token in keyring is invalid`)、
+TLS 検証も通らない(実測: 上記 OSStatus -26276)ため外せない。外すと `/pr`
+`/dev` `/next` `dependabot-bulk` が全滅する。`brew *` は sandbox 内でも動く見込みがあるが
 `brew install` は未実測。`docker *` / `pnpm test:e2e *` はこの repo では未使用だが、
 `claude/settings.json` は**全プロジェクト共通のユーザ設定**なので、この repo での
 未使用は削除根拠にならない。

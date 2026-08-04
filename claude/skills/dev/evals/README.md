@@ -206,11 +206,30 @@ sandbox clone は固定 SHA 前提で作成されるため、setup 内で `git p
 の PR 番号セットを setup で記録し、eval 後に diff が空であることを assert
 する(`--head` filter を使わない):
 
+`gh` は **単独の Bash 呼び出し**で実行し、結果はファイルに落とす。他のコマンドと
+同じ呼び出しに混ぜると `guard-sandbox-exclusions.sh` にブロックされ、
+`$(gh ...)` で変数に受ける形は sandbox 内で走るため `gh` 自体が TLS 検証に
+失敗する(issue #267)。変数はそもそも Bash 呼び出しをまたいで保持されない。
+
+setup(1 呼び出しずつ):
+
 ```bash
-before_prs=$(gh pr list --state all --limit 1000 --json number -q '.[].number' | sort -u)
-# ... eval 実行 ...
-after_prs=$(gh pr list --state all --limit 1000 --json number -q '.[].number' | sort -u)
-# Pass criteria: [ "$after_prs" = "$before_prs" ]
+gh pr list --state all --limit 1000 --json number -q '.[].number' > /tmp/dev-eval-before-prs.txt
+```
+
+```bash
+sort -u -o /tmp/dev-eval-before-prs.txt /tmp/dev-eval-before-prs.txt
+```
+
+eval 実行後(1 呼び出しずつ):
+
+```bash
+gh pr list --state all --limit 1000 --json number -q '.[].number' > /tmp/dev-eval-after-prs.txt
+```
+
+```bash
+sort -u -o /tmp/dev-eval-after-prs.txt /tmp/dev-eval-after-prs.txt
+diff -q /tmp/dev-eval-before-prs.txt /tmp/dev-eval-after-prs.txt   # Pass criteria: 差分なし
 ```
 
 前提として PR 総数が 1000 を超えると取りこぼす。現 repo 規模では十分。

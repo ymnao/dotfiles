@@ -36,14 +36,21 @@ before_handoff_cksum=$(cksum HANDOFF.md | awk '{print $1"_"$2}')
       と一致)
 
 ## Cleanup
+
+close 対象の PR 番号を控える。`gh` は **単独の Bash 呼び出し**で実行する
+(混ぜると `guard-sandbox-exclusions.sh` にブロックされ、`$(gh ...)` で変数に
+受ける形は sandbox 内で走るため TLS 検証に失敗する。issue #267)。
+PR が無ければ非 0 で終わるので、その場合は close を飛ばす:
+
 ```bash
-pr_number=$(gh pr view --json number -q .number 2>/dev/null)
+gh pr view --json number -q .number
+```
+
+```bash
 git checkout main
 ```
 
-`pr_number` が取れていたら、**別の単独 Bash 呼び出し**で PR を close する
-(番号はリテラルに置き換える。`gh` を他のコマンドと混ぜると
-`guard-sandbox-exclusions.sh` にブロックされる。issue #267):
+番号が取れていたら、リテラルに置き換えて close する:
 
 ```bash
 gh pr close <pr_number> --delete-branch

@@ -40,6 +40,10 @@ else
 fi
 
 # 2. hook の組み込み既定リストが settings の excludedCommands を網羅しているか。
+#    `.sandbox.excludedCommands` が存在すること自体は assert しない — 除外リストを
+#    空にする / キーごと消すのは issue #267 の望ましい着地の 1 つで、そのとき hook は
+#    「除外が無い」と読んで早期 exit する (組み込み既定にはフォールバックしない)。
+#    リストが空なら組み込み既定との照合対象も無いので、ループ 0 回は正しい。
 #    hook 側の配列リテラルから要素を抽出する。eval は使わない — 配列が複数行に
 #    折り返された瞬間に構文エラーで落ち、診断が出ないまま終わるため。
 builtin_line=$(grep -m1 '^builtin_globs=(' "$HOOK" || true)

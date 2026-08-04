@@ -12,9 +12,19 @@ cap 到達 + 残 finding の /pr 引き渡し経路を必ず実行させる。
 
 ```bash
 git checkout main
-# eval が /pr を呼び issue を起票する可能性があるため、既存 open issue の
-# 番号を記録しておいて cleanup で差分だけ close する
-before_issues=$(gh issue list --state open --limit 100 --json number -q '.[].number' | sort -u)
+```
+
+eval が `/pr` を呼び issue を起票する可能性があるため、既存 open issue の番号を
+記録しておいて cleanup で差分だけ close する。`gh` は **単独の Bash 呼び出し**で
+実行する(混ぜると `guard-sandbox-exclusions.sh` にブロックされ、`$(gh ...)` では
+sandbox 内で TLS 検証に失敗する。issue #267):
+
+```bash
+gh issue list --state open --limit 100 --json number -q '.[].number' > /tmp/dev-eval-before-issues.txt
+```
+
+```bash
+sort -u -o /tmp/dev-eval-before-issues.txt /tmp/dev-eval-before-issues.txt
 ```
 
 ## Prompt
@@ -80,24 +90,43 @@ user checkpoint が発火する。以下 3 点を human runner が確認する
       `Finding` の header 行が cap-reached ログ以降に出現)
 - [ ] 分類表提示から user 承認までの間に、`gh issue create` / `gh pr create`
       が実行されていない (cap 引き渡し由来の finding に対する副作用ゼロ):
-      Setup で記録した `before_issues` と、承認前時点の
-      `gh issue list --state open --limit 100 --json number -q '.[].number' | sort -u`
-      が一致すること。PR は `gh pr list --state all` の前後 diff で判定
+      Setup で記録した `/tmp/dev-eval-before-issues.txt` と、承認前時点に
+      同じ 2 呼び出しで取り直した open issue 番号セットが一致すること。
+      PR は `gh pr list --state all` の前後 diff で判定
       ([`README.md#pr-not-created-check`](README.md#pr-not-created-check))
 - [ ] user 承認後にのみ issue 起票 / PR 作成が進行した (承認応答を
       入れずに終わった eval 実行では PR も issue も作られていない)
 
 ## Cleanup
+
+まず close 対象の PR 番号を控える(**単独呼び出し**。PR が無ければ非 0 で終わる):
+
 ```bash
-pr_number=$(gh pr view --json number -q .number 2>/dev/null)
+gh pr view --json number -q .number
+```
+
+ブランチを片付ける:
+
+```bash
 branch=$(git branch --show-current)
 git checkout main
 [ "$branch" != "main" ] && git branch -D "$branch" 2>/dev/null || true
-# eval 中に起票された issue を差分で洗い出す
-after_issues=$(gh issue list --state open --limit 100 --json number -q '.[].number' | sort -u)
-new_issues=$(comm -13 <(echo "$before_issues") <(echo "$after_issues"))
-echo "close 対象: pr=$pr_number issues=$new_issues"
 ```
+
+eval 中に起票された issue を差分で洗い出す(**単独呼び出し** → 集合演算):
+
+```bash
+gh issue list --state open --limit 100 --json number -q '.[].number' > /tmp/dev-eval-after-issues.txt
+```
+
+```bash
+sort -u -o /tmp/dev-eval-after-issues.txt /tmp/dev-eval-after-issues.txt
+comm -13 /tmp/dev-eval-before-issues.txt /tmp/dev-eval-after-issues.txt
+```
+
+`comm` が出した番号**だけ**が close 対象。`/tmp/dev-eval-before-issues.txt` が
+無い / 空の場合は差分が「全 open issue」に化けるので、**その状態では 1 件も
+close しない**(setup を実行していないということなので、手で確認する)。
 
 PR と issue の close は、**1 件ずつ別の単独 Bash 呼び出し**で行う
 (番号はリテラルに置き換える。`gh` を他のコマンドと混ぜると
