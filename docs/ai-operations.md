@@ -74,7 +74,8 @@ frontmatter は `model: opus` のまま据え置く。呼び出し側が指定�
 既定として妥当で、alias 運用の方針とも整合するため。
 
 **一般則: `model` を指定しない呼び出しは frontmatter 既定の `opus` に落ちる**。
-つまり別系統に寄っているのは `/dev` step 4-1 経由だけで、それ以外
+つまり **`code-reviewer` の呼び出し口のうち**別系統に寄っているのは
+`/dev` step 4-1 経由だけで、それ以外
 — `claude/skills/adversarial-review/`(2 体を競わせる設計。SKILL.md 自身が
 「同一モデル内で網羅性を上げる」道具と位置づけているので Opus 系のままで整合)、
 `claude/skills/dependabot-bulk/`、`codex/skills/pr/` が指示する Claude 側
@@ -427,22 +428,65 @@ TLS 検証も通らない(実測: 上記 OSStatus -26276)ため外せない。�
   外しても、hook テストは green のまま(vacuous pass)になる。この 2 点は
   `tests/integrity/verify-sandbox-exclusion-guard.sh` が assert する
 
-### requiredMinimumVersion をどこに置くか
+### requiredMinimumVersion — user 設定に書いても enforce されない
 
-`claude/settings.json` の `requiredMinimumVersion` は 2026-08-04 に
-`2.1.195` → **`2.1.220`** へ引き上げた(issue #245 step 4)。
+**まずこれを読むこと**: `requiredMinimumVersion` は **managed (policy) 設定
+からしか enforce されない**。`~/.claude/settings.json`(user scope)に書いた
+値は**一度も参照されない**。
 
-**下限を「依存する挙動がある最小の版」ではなく host の実バージョンに
-合わせている**。根拠となる修正の下限だけなら 2.1.219(strictAllowlist の追加)
-で足り、symlink 系の修正は 2.1.217 までに入っている。それでも 2.1.220 にした
-のは、**この repo で実際に検証した版に固定する**ため — 下限は「これ未満は
-未検証」を宣言する場所であって、機能の最小要件表ではない。
+**根拠(2026-08-04 実測、`claude` 2.1.220 のバイナリより)**:
 
+- schema の describe に明記 — "Minimum Claude Code version required to start.
+  If the running version is older, Claude Code exits at startup with
+  instructions to update. **Only enforced from managed (policy) settings.**"
+- 判定関数の呼び出し口は 1 つだけで、読むのは `Hr("policySettings")` のみ。
+  user settings を読む経路はバイナリ内に存在しない
+
+**つまりこの repo は、この防御層を最初から持っていなかった**。
+`claude/settings.json` には長らく `2.1.195` が入っていたが、それは
+**起動を止めたことが一度も無い**。issue #245 step 4 が前提していた
+「下限を host の実バージョンより上に設定すると Claude Code が起動しなく
+なる」は、user scope では成立しない。**「設定してあるから効いている」と
+読まないこと** — これは正本ドキュメントが実際に一度間違えた箇所で、
+`claude/rules/shell.md` の「確認できないことを検査を緩める根拠に使わない」
+と同型の外し方(schema の describe を読めば分かった)。
+
+**それでも値は 2.1.220 に上げてある**(2026-08-04、issue #245 step 4)。
+enforce されないので実効は無いが、**下記の managed 設定を導入したときに
+そのまま使える正しい値**として置いてある。「依存する挙動がある最小の版」
+(strictAllowlist の 2.1.219、symlink 系修正の 2.1.217)ではなく host の
+実バージョンに合わせているのは、下限を「これ未満は未検証」の宣言として
+使うため。
+
+### managed settings で実際に enforce する(user 操作)
+
+enforce したいなら managed (policy) 設定に置く。この repo は正本を
+`claude/managed-settings.json` に持つが、**symlink では配線しない**
+(`scripts/link.sh` の対象外)。理由は 2 つ:
+
+- managed 設定は**この repo の設定群のうち唯一 admin 所有であるべきもの**。
+  user 書き込み可能な repo への symlink にすると、**agent が Edit tool で
+  policy を書き換えられる**(`~/.claude/settings.json` が実際にそうなって
+  いるとおり、Edit 経路には sandbox の denyWrite が効かない —
+  memory `project_settings_files_sandbox_lock`)。policy を repo に
+  symlink するのは権限昇格の経路を自分で作ること
+- macOS の配置先 `/Library/Application Support/ClaudeCode/` は
+  sandbox の allowWrite 外で、そもそも agent からは書けない
+
+導入する場合は user が手で行う(要 admin パスワード):
+
+```sh
+sudo mkdir -p "/Library/Application Support/ClaudeCode"
+sudo cp claude/managed-settings.json "/Library/Application Support/ClaudeCode/managed-settings.json"
+```
+
+**入れる前に必ず確認すること**: managed 設定の下限を満たさない CLI では
+Claude Code が**起動しなくなる**(`update` / `install` / `doctor` の 3 つの
+サブコマンドだけは例外として通るので、`claude update` での復旧経路は残る)。
+`claude --version` が下限以上であることを全マシンで確かめてから入れる。
 **前提**: user は全マシンで常に最新を使う運用(2026-08-04 に本人確認)。
-`scripts/link.ps1` も同じ `claude/settings.json` を配線するので、下限より
-古い CLI のマシンがあると **そのマシンで Claude Code が起動しなくなる**。
-外れ方は fail-loud で、復旧経路(CLI の更新)は Claude Code 無しで通るため
-握り潰されはしない。更新運用が変わったらこの下限も見直すこと。
+`scripts/link.ps1` が配線する Windows 側にも同じ判断が要る(配置先は
+Windows の managed settings パスで、上のコマンドはそのままでは使えない)。
 
 ### network.strictAllowlist — 許可外ホストを確認ダイアログ抜きで拒否する
 
@@ -460,8 +504,8 @@ TLS 検証も通らない(実測: 上記 OSStatus -26276)ため外せない。�
 | 論点 | 実測 |
 |---|---|
 | どの設定 scope から効くか | **user / managed(policy)/ CLI (`--settings`) のみ**。project の `.claude/settings.json` `.claude/settings.local.json` からは**無視される**(schema の describe に明記。設定 scope の列挙関数も managed + flag + userSettings の 3 つを返す) |
-| symlink 越しでも user scope か | **効く(挙動で確認済み)**。`~/.claude/settings.json` は repo への symlink だが、scope は「どの source slot から読んだか」で決まり実体パスは見ない。実装の読み取りだけでなく **live probe でも裏が取れた** — 有効化後、許可外の `gitlab.com` への接続が `CONNECT tunnel failed, response 403` で即座に落ちた。ただし非対話 subagent からの観測なので「確認プロンプトが自動 deny された」形と厳密には区別できない。判別まで取るなら対話セッションでプロンプトが出ないことを見る |
-| `allowedDomains` 自体の scope | strictAllowlist と違い **project 設定からもマージされる**。この repo の `.claude/settings.json` が足している `formulae.brew.sh` / `ghcr.io` は有効なまま。**加えて CLI 組み込みの許可ホストがある**(実測: `www.anthropic.com` はどの settings にも無いが到達する)。つまり許可ホストの集合を「user + project の列挙」として完全に書き下すことはできない |
+| symlink 越しでも user scope か | **効く(根拠は実装の読み取り)**。`~/.claude/settings.json` は repo への symlink だが、scope は「どの source slot から読んだか」で決まり実体パスは見ないため。live probe(許可外の `gitlab.com` が `CONNECT tunnel failed, response 403` で即落ち)は**この仮説と整合するが判別力は無い** — 非対話セッションでは strictAllowlist が無くても確認プロンプトが自動 deny されて同じ結果になる。判別まで取るなら対話セッションでプロンプトが出ないことを見る |
+| `allowedDomains` 自体の scope | strictAllowlist と違い **project 設定からもマージされる**。この repo の `.claude/settings.json` が足している `formulae.brew.sh` / `ghcr.io` は有効なまま。さらに **`permissions.allow` の `WebFetch(domain:X)` ルールも同じ allowlist にマージされる**(実測: allowlist 構築関数が `permissions.allow` を走査して `domain:` 接頭辞を剥がし `allowedDomains` に push する)。この repo で `www.anthropic.com` に到達できるのはこの経路 — gitignore 済みの `.claude/settings.local.json` の `WebFetch(domain:www.anthropic.com)` が由来で、settings に無い組み込みホストがあるわけではない。**「WebFetch を許可すると sandbox 化された Bash の egress も開く」** という非自明な結合なので、`WebFetch(domain:...)` を足すときは egress を開けてよい相手かで判断する。加えてセッション中に承認したホストも合流するため、許可ホストの集合を設定ファイルの列挙だけで書き下すことはできない |
 | WebFetch は締まるか | **締まらない**。schema に "in-process tools such as WebFetch are not gated by this setting" と明記。効くのは **sandbox 化された Bash コマンドだけ** |
 | `excludedCommands` は締まるか | **締まらない**。上の「excludedCommands が『一次防御』を丸ごと外す経路」節のとおり、除外コマンド(`gh` / `brew` / `docker` / `pnpm test:e2e`)を含む行は sandbox 外で走るので `allowedDomains` ごと素通りする。**`gh` は任意ホストへ通る** — 「許可外は決定的に拒否」と要約して読むとここが盲点になる |
 
