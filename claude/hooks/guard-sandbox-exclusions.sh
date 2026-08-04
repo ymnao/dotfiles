@@ -47,6 +47,15 @@ if [[ -z "$command" ]]; then
   exit 0
 fi
 
+# 早期スクリーニング: 区切り文字・コマンド置換・グループ化の文字が 1 つも無ければ
+# 混在は起こりえないので即許可する。この hook は **全 Bash tool 呼び出し**で走るため、
+# 大多数を占める単独コマンドが settings 読み込み以降のプロセス起動を踏まないようにする
+# (シェル組み込みのみで判定し、ここでは外部プロセスを起動しない)。
+case "$command" in
+  *[\;\|\&\(\)\{\}\`]*) ;;
+  *) exit 0 ;;
+esac
+
 # --- 除外コマンドのリスト取得 -------------------------------------------------
 # 正本は実際に効いている設定 ($HOME/.claude/settings.json)。読めない / 壊れている
 # 場合だけ組み込み既定にフォールバックする。フォールバックが必要なのは
@@ -85,27 +94,24 @@ done
 #    - ダブルクォート内は `$` / バックティックを含まないものだけ除去する
 #      (`"$(gh x)"` は実際にコマンドを起動するので区切りとして残す)
 # 3) 制御演算子・コマンド置換・グループ化の文字を改行に変え、segment に割る。
-sanitized=$(printf '%s' "$command" \
-  | sed -e 's/[0-9]*>&[0-9-]*//g' -e 's/&>>*//g' \
-  | sed -e "s/'[^']*'//g" \
-  | sed -e 's/"[^"$`]*"//g')
+sanitized=$(printf '%s' "$command" | sed \
+  -e 's/[0-9]*>&[0-9-]*//g' -e 's/&>>*//g' \
+  -e "s/'[^']*'//g" \
+  -e 's/"[^"$`]*"//g')
 
 segments=$(printf '%s' "$sanitized" | tr ';|&(){}`' '\n')
 
-seg_count=0
-while IFS= read -r seg; do
-  seg=${seg#"${seg%%[![:space:]]*}"}
-  [[ -n "$seg" ]] && seg_count=$((seg_count + 1))
-done <<< "$segments"
-
-# 単独コマンド (区切りが無い) はブロック対象外。除外コマンド自体はこの形で使う。
-[[ $seg_count -le 1 ]] && exit 0
-
 # --- segment ごとの照合 -------------------------------------------------------
+# 1 パスで「非空 segment の数」と「除外コマンドとの一致」を同時に取る。数が必要なのは、
+# 区切り文字が引用符の中にしか無かった場合(sanitize 後に単独 segment へ戻る)を
+# ブロック対象から外すため。
+seg_count=0
 matched=""
 while IFS= read -r seg; do
   seg=${seg#"${seg%%[![:space:]]*}"}
   [[ -z "$seg" ]] && continue
+  seg_count=$((seg_count + 1))
+  [[ -n "$matched" ]] && continue
   # 先頭の `!` と 環境変数代入 (VAR=value) を剥がしてコマンド語に到達する
   seg=${seg#!}
   seg=${seg#"${seg%%[![:space:]]*}"}
@@ -115,11 +121,13 @@ while IFS= read -r seg; do
   for p in "${prefixes[@]}"; do
     if [[ "$seg" == "$p" || "$seg" == "$p "* ]]; then
       matched="$p"
-      break 2
+      break
     fi
   done
 done <<< "$segments"
 
+# 単独コマンド (区切りが無い) はブロック対象外。除外コマンド自体はこの形で使う。
+[[ $seg_count -le 1 ]] && exit 0
 [[ -z "$matched" ]] && exit 0
 
 cat >&2 <<EOF

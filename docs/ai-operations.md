@@ -273,6 +273,10 @@ sandbox 内か外のどちらかで実行する all-or-nothing 設計で、マ�
 - regression は `tests/hooks/guard-sandbox-exclusions.cases.jsonl` が pin する
   (block 側は上表の「sandbox が実際に外れた行」そのもの、allow 側は
   文字列言及のみの行と既存 skill が使う bare な呼び方)
+- 上記の hook テストは**隔離 HOME で走る**ため hook 内の組み込み既定リストしか
+  通らない。`excludedCommands` に項目が増えても、また PreToolUse から hook を
+  外しても、hook テストは green のまま(vacuous pass)になる。この 2 点は
+  `tests/integrity/verify-sandbox-exclusion-guard.sh` が assert する
 
 ### codex CLI 自身の config.toml 書き込みと deny の相互作用
 
