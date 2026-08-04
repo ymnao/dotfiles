@@ -174,13 +174,12 @@ fix-or-issue-or-dismiss ポリシーに委ねる (発散防止)。
 1. `/simplify` — 指摘を apply (skip 判断は理由を記録)
 2. `code-reviewer` サブエージェントを Agent tool (`subagent_type:
    "code-reviewer"`, **`model: "fable"`**, `run_in_background: false`) で
-   起動する。`model` を明示するのは「生成者とレビュアーは同一モデル系統に
-   しない」規約のため — メインは Opus 世代なのでレビュアーは別系統へ寄せる
-   (frontmatter ではなく呼び出し側で指定する理由は
-   `docs/ai-operations.md` §1)。返る
-   `[Critical|Warning|Suggestion]` 指摘をメインが fix (Agent は
-   read-only)。fix しない判断をした finding は理由を記録 (step 5 の
-   /pr の fix-or-issue-or-dismiss ポリシー対象になる)
+   起動する。返る `[Critical|Warning|Suggestion]` 指摘をメインが fix
+   (Agent は read-only)。fix しない判断をした finding は理由を記録
+   (step 5 の /pr の fix-or-issue-or-dismiss ポリシー対象になる)。
+   `model` を明示するのはメイン (Opus 世代) と別系統に寄せるため
+   — 規約と、frontmatter ではなく呼び出し側で指定する理由は
+   `docs/ai-operations.md` §1
 3. プロジェクトのテストスイート (`make test` 等) — fail したら直す
 4. コミット (レビュー修正分)
 

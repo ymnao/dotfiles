@@ -37,7 +37,9 @@ fail-loud になる場所の版数固定はこの規約の対象外**(eval 実�
 `code-reviewer` サブエージェント(frontmatter は `model: opus`)も Opus 5 に
 解決された(2026-08-03 の測定から変わらず)。根拠はどちらもセッションの
 システムプロンプトが報告するモデル名で、**alias の解決先を実行基盤の外から検証した
-ものではない**。なお 2.1.219 で `opus` の指す先が Opus 5 になったが、この repo が
+ものではない**。なお `opus` の指す先が Opus 5 になったのは 2.1.219(公式
+CHANGELOG の "Added Claude Opus 5 (`claude-opus-5`), now the default Opus
+model" より。バイナリからは観測できないので出所は CHANGELOG)。この repo は
 alias 運用を採っているため**設定の変更は不要だった**(下記のとおり alias 運用は
 意図)。この表は強制力を持たない — `claude/settings.json` にモデルを指定する
 フィールドは無く(`effortLevel` のみ)、切り替えは `/model` か CLI 既定に依存する。
@@ -71,10 +73,13 @@ ID 直書きにはしない — alias は上流の世代交代に追随するの
 frontmatter は `model: opus` のまま据え置く。呼び出し側が指定しなかったときの
 既定として妥当で、alias 運用の方針とも整合するため。
 
-**残っている非対称**: `/dev` 以外の呼び出し口 — `claude/skills/adversarial-review/`
-は `code-reviewer` を 2 体並列で競わせる設計で、両方を同一系統に寄せるか
-片方だけ別系統にするかは競争レビューの設計判断そのもの。ここでは触っていないので
-**adversarial-review 経由のレビュアーは Opus 系のまま**。
+**一般則: `model` を指定しない呼び出しは frontmatter 既定の `opus` に落ちる**。
+つまり別系統に寄っているのは `/dev` step 4-1 経由だけで、それ以外
+— `claude/skills/adversarial-review/`(2 体を競わせる設計。SKILL.md 自身が
+「同一モデル内で網羅性を上げる」道具と位置づけているので Opus 系のままで整合)、
+`claude/skills/dependabot-bulk/`、`codex/skills/pr/` が指示する Claude 側
+レビュー、および skill を経由しない ad-hoc 起動 — は**すべて Opus 系のまま**。
+呼び出し口を増やすときは `model` 指定の要否をその場で決める。
 
 **`codex-review` が恒常的に使えなくなったときは即座に見直す** — cross-vendor の
 第二意見という緩和が消えるため。`/pr` は codex 不能時に Fable 系サブエージェントで
@@ -128,13 +133,11 @@ vacuous pass する)。世代レベル記述にしたことで**ズレの発生�
       (例: `grep -ri fable claude/ codex/ agents/`)
 - [ ] **§1 の実測注記を更新する**(モデル名・ID・測定日)。ズレに気づく
       唯一の手がかりなので、ここを更新しないと世代レベル記述の意味が薄れる
-- [ ] **agent frontmatter が完全なモデル ID / 別 alias を受け付けるか試す**。
-      **同一セッション内では判定できない** — agent 定義はセッション開始時に
-      読まれるため、`model:` を書き換えても既存セッションでは反映されない
-      (2026-08-04 / 2.1.220 実測)。手順は「`model:` を書き換える →
-      **Claude Code を再起動する** → `code-reviewer` を軽いプロンプトで起動し
-      自分の実行モデル名を報告させる」。受理されると分かったら §1 の
-      「呼び出し側で寄せる」判断を frontmatter 側に戻すか再検討し、結果を §1 に反映する
+- [ ] **agent frontmatter が完全なモデル ID / 別 alias を受け付けるか試す**
+      (実測根拠は §1)。`model:` を書き換える → **Claude Code を再起動する**
+      → `code-reviewer` に自分の実行モデル名を報告させる。**再起動が要る** —
+      同一セッション中の書き換えは反映されない。受理されると分かったら §1 の
+      「呼び出し側で寄せる」判断を再検討し、結果を §1 に反映する
 
 ## 3. 失敗駆動の設定改善(Boris Cherny 方式)
 
@@ -293,7 +296,7 @@ sandbox 内か外のどちらかで実行する all-or-nothing 設計で、マ�
 まとめて(sandbox 化されないコマンドにはどの層も適用されないため。ただし直接
 測っているのは上表の filesystem 経路のみ)。**これは Claude Code の仕様**で、
 除外を「単独コマンドのときだけ」に絞る指定方法は上流に存在しない
-(2.1.212 時点。**2.1.220 で再確認しても変わらず** — `excludedCommands` の
+(2.1.220 時点、2.1.212 から変化なし。2026-08-04 実測 — `excludedCommands` の
 schema は `array(string)` のままで、粒度を指定するフィールドが無い)。
 上流ドキュメントは逆に `docker` / `gh` について excludedCommands の使用を
 推奨しており、compound 行での粒度には言及がない。
@@ -424,6 +427,23 @@ TLS 検証も通らない(実測: 上記 OSStatus -26276)ため外せない。�
   外しても、hook テストは green のまま(vacuous pass)になる。この 2 点は
   `tests/integrity/verify-sandbox-exclusion-guard.sh` が assert する
 
+### requiredMinimumVersion をどこに置くか
+
+`claude/settings.json` の `requiredMinimumVersion` は 2026-08-04 に
+`2.1.195` → **`2.1.220`** へ引き上げた(issue #245 step 4)。
+
+**下限を「依存する挙動がある最小の版」ではなく host の実バージョンに
+合わせている**。根拠となる修正の下限だけなら 2.1.219(strictAllowlist の追加)
+で足り、symlink 系の修正は 2.1.217 までに入っている。それでも 2.1.220 にした
+のは、**この repo で実際に検証した版に固定する**ため — 下限は「これ未満は
+未検証」を宣言する場所であって、機能の最小要件表ではない。
+
+**前提**: user は全マシンで常に最新を使う運用(2026-08-04 に本人確認)。
+`scripts/link.ps1` も同じ `claude/settings.json` を配線するので、下限より
+古い CLI のマシンがあると **そのマシンで Claude Code が起動しなくなる**。
+外れ方は fail-loud で、復旧経路(CLI の更新)は Claude Code 無しで通るため
+握り潰されはしない。更新運用が変わったらこの下限も見直すこと。
+
 ### network.strictAllowlist — 許可外ホストを確認ダイアログ抜きで拒否する
 
 `sandbox.network.strictAllowlist: true`(issue #245 step 5、Claude Code
@@ -440,17 +460,24 @@ TLS 検証も通らない(実測: 上記 OSStatus -26276)ため外せない。�
 | 論点 | 実測 |
 |---|---|
 | どの設定 scope から効くか | **user / managed(policy)/ CLI (`--settings`) のみ**。project の `.claude/settings.json` `.claude/settings.local.json` からは**無視される**(schema の describe に明記。設定 scope の列挙関数も managed + flag + userSettings の 3 つを返す) |
-| symlink 越しでも user scope か | **効く**。`~/.claude/settings.json` は repo への symlink だが、scope は「どの source slot から読んだか」で決まり実体パスは見ないため。ただしこれは実装の読み取りからの推論で、**黒箱の挙動としては未測定** |
-| `allowedDomains` 自体の scope | strictAllowlist と違い **project 設定からもマージされる**。この repo の `.claude/settings.json` が足している `formulae.brew.sh` / `ghcr.io` は有効なまま(実際にセッションの許可ホストが user の 10 件 + project の分になっているのを確認) |
+| symlink 越しでも user scope か | **効く(挙動で確認済み)**。`~/.claude/settings.json` は repo への symlink だが、scope は「どの source slot から読んだか」で決まり実体パスは見ない。実装の読み取りだけでなく **live probe でも裏が取れた** — 有効化後、許可外の `gitlab.com` への接続が `CONNECT tunnel failed, response 403` で即座に落ちた。ただし非対話 subagent からの観測なので「確認プロンプトが自動 deny された」形と厳密には区別できない。判別まで取るなら対話セッションでプロンプトが出ないことを見る |
+| `allowedDomains` 自体の scope | strictAllowlist と違い **project 設定からもマージされる**。この repo の `.claude/settings.json` が足している `formulae.brew.sh` / `ghcr.io` は有効なまま。**加えて CLI 組み込みの許可ホストがある**(実測: `www.anthropic.com` はどの settings にも無いが到達する)。つまり許可ホストの集合を「user + project の列挙」として完全に書き下すことはできない |
 | WebFetch は締まるか | **締まらない**。schema に "in-process tools such as WebFetch are not gated by this setting" と明記。効くのは **sandbox 化された Bash コマンドだけ** |
+| `excludedCommands` は締まるか | **締まらない**。上の「excludedCommands が『一次防御』を丸ごと外す経路」節のとおり、除外コマンド(`gh` / `brew` / `docker` / `pnpm test:e2e`)を含む行は sandbox 外で走るので `allowedDomains` ごと素通りする。**`gh` は任意ホストへ通る** — 「許可外は決定的に拒否」と要約して読むとここが盲点になる |
 
-**運用上の注意**: これは全プロジェクト共通のユーザ設定なので、
-`allowedDomains` を持たない別 repo で作業すると、user 設定の 10 ドメイン外は
-すべて無言で拒否される。正当なドメインが必要になったら、repo 側の
-`.claude/settings.json` に足すか user 側に足すかを選ぶ(前者のほうが
-影響範囲が狭い)。**拒否は確認ダイアログを出さないので、原因は
-「なぜか通信できない」という形でしか現れない** — 見分けるには
-`No matching config rule, denying` の debug ログを見る。
+**運用上の注意**: 拒否は確認ダイアログを出さないので、症状は
+「なぜか通信できない」という形でしか現れない。見分けるには
+`No matching config rule, denying` の debug ログを見る。これは全プロジェクト
+共通のユーザ設定なので、`allowedDomains` を持たない別 repo で作業すると
+user 設定の 10 ドメイン外はこの形で落ちる。正当なドメインが必要に
+なったら、repo 側の `.claude/settings.json` に足すか user 側に足すかを選ぶ
+(前者のほうが影響範囲が狭い)。
+
+**導入直後は能動的に観察する**(issue #245 step 5)。拒否が無言である以上、
+「足りないドメインがあること」は待っていても報告されない。有効化から数
+セッションは、通信が理由不明で落ちたときに `No matching config rule, denying`
+の debug ログを確認する習慣を意識的に持ち、出てきた正当なドメインを
+`allowedDomains` に足す。
 
 ### codex CLI 自身の config.toml 書き込みと deny の相互作用
 
@@ -716,9 +743,9 @@ matcher 関数の構造は 2.1.212 から**変わっていない** — `!matcher
 実際 host の 2.1.212 のバイナリ内の source 列挙は
 `["startup","resume","clear","compact"]` で `fork` を含まない。
 
-当時の host(2.1.212)では `fork` は**一度も match しない代わりに、足さない
+当時の host(2.1.212)では `fork` は一度も match しない代わりに、**足さない
 まま CLI を 2.1.214 以上に上げると複製セッションで改変検知が一度も発火しなく
-なる**状態だった。先に入れておけば穴が開く瞬間が来ない(issue #245 step 1)。
+なる**状態だった(先に入れておけば穴が開く瞬間が来ない。issue #245 step 1)。
 
 **その穴は現に閉じた(2026-08-04 実測、`claude` 2.1.220)**。同じ手順で
 バイナリ内の source 列挙を読むと `["startup","resume","clear","compact","fork"]`
