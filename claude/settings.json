@@ -78,7 +78,8 @@
         "files.pythonhosted.org",
         "chatgpt.com",
         "auth.openai.com"
-      ]
+      ],
+      "strictAllowlist": true
     },
     "excludedCommands": [
       "docker *",
@@ -99,7 +100,7 @@
       ]
     }
   },
-  "requiredMinimumVersion": "2.1.195",
+  "requiredMinimumVersion": "2.1.220",
   "hooks": {
     "PreToolUse": [
       {
