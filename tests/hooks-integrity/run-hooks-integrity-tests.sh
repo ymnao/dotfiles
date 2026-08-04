@@ -770,6 +770,11 @@ assert_case15 "case15k-var-expansion-in-path" \
 #      herdr の Claude 統合 hook (`... herdr-agent-state.sh session`) がこの形。
 assert_case15 "case15l-arg-watched" \
   'bash "$HOME/.claude/hooks/post-format.sh" session' expect-clean
+# 15p: 引数 **2 個以上** も受理されること。受理パターンは `( [A-Za-z0-9._-]+)*` と
+#      0 個以上の反復にしたので、1 引数の 15l だけでは反復部分を通らない
+#      (反復を `?` に縮めた mutant が 15l では落ちない)。
+assert_case15 "case15p-two-args-watched" \
+  'bash "$HOME/.claude/hooks/post-format.sh" session extra_arg-1.2' expect-clean
 # 15m〜15o: 15l で広げた受理口が **危険な形まで飲み込まないこと**。
 #      「マッチしない入力を試すだけでは足りない — 受理パターンに
 #      マッチしてしまう危険な入力を自分で構成する」(claude/rules/shell.md)。
