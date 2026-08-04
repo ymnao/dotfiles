@@ -14,12 +14,27 @@ branch="feature/eval-next-delete-fail-$(date +%s)"
 git checkout -b "$branch"
 echo x >> README.md && git commit -am "chore: eval-next delete-fail fixture (merged part)"
 git push -u origin HEAD
+```
+
+`gh` は 1 コマンド 1 呼び出しに分ける（issue #267）:
+
+```bash
 gh pr create --fill
+```
+
+```bash
 gh pr merge --merge --admin   # merge commit で main の祖先にする
-# `gh pr merge` は local HEAD を動かさないので $branch のまま。
-# この時点で `git branch -d` は本来成功する状態。次で未 merge commit を追加。
+```
+
+`gh pr merge` は local HEAD を動かさないので作業ブランチのまま。この時点で
+`git branch -d` は本来成功する状態。次で未 merge commit を追加する:
+
+```bash
 echo "extra local commit not merged into main" >> README.md
 git commit -am "chore: eval next branch-delete-fail fixture (unmerged part)"
+```
+
+```bash
 gh pr view --json state,mergedAt -q '.state + " " + (.mergedAt // "null")'
 # -> "MERGED <timestamp>" (PR 自体は merged 判定になる)
 ```

@@ -10,8 +10,17 @@ branch="feature/eval-next-open-pr-$(date +%s)"
 git checkout -b "$branch"
 echo x >> README.md && git commit -am "chore: eval-next open-pr fixture"
 git push -u origin HEAD
+```
+
+```bash
 gh pr create --fill --draft
+```
+
+```bash
 gh pr view --json state -q .state   # -> "OPEN"
+```
+
+```bash
 before_branch=$(git branch --show-current)
 before_head=$(git rev-parse HEAD)
 before_main=$(git rev-parse main)

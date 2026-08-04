@@ -9,9 +9,29 @@ branch="feature/eval-next-closed-$(date +%s)"
 git checkout -b "$branch"
 echo x >> README.md && git commit -am "chore: eval-next closed-unmerged fixture"
 git push -u origin HEAD
+```
+
+`gh` は 1 コマンド 1 呼び出しに分ける。番号は `gh pr view` の出力を見て
+リテラルに置き換える（`$(gh ...)` はコマンド置換なので sandbox 内で走り、
+`gh` 自体が TLS 検証に失敗する。issue #267）:
+
+```bash
 gh pr create --fill --draft
-gh pr close "$(gh pr view --json number -q .number)"
+```
+
+```bash
+gh pr view --json number -q .number
+```
+
+```bash
+gh pr close <pr_number>
+```
+
+```bash
 gh pr view --json state -q .state   # -> "CLOSED"
+```
+
+```bash
 before_branch=$(git branch --show-current)
 before_head=$(git rev-parse HEAD)
 before_main=$(git rev-parse main)

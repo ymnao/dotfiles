@@ -209,27 +209,33 @@ sandbox clone は固定 SHA 前提で作成されるため、setup 内で `git p
 `gh` は **単独の Bash 呼び出し**で実行し、結果はファイルに落とす。他のコマンドと
 同じ呼び出しに混ぜると `guard-sandbox-exclusions.sh` にブロックされ、
 `$(gh ...)` で変数に受ける形は sandbox 内で走るため `gh` 自体が TLS 検証に
-失敗する(issue #267)。変数はそもそも Bash 呼び出しをまたいで保持されない。
+失敗する(issue #267)。ファイル名には eval 名を入れる(並行実行での取り違え防止)。
+
+**変数は Bash 呼び出しをまたいで保持されない。** `before_head=$(git rev-parse HEAD)`
+のような記録は、同じ呼び出し内でしか参照できない。Pass criteria で before 値と
+比較する eval では、値をファイルに落とすか、出力を読んでリテラルで控えること
+(既存の eval には `$before_head` / `$before_main` / `$before_handoff_cksum` を
+別呼び出しから参照している書き方が残っている)。
 
 setup(1 呼び出しずつ):
 
 ```bash
-gh pr list --state all --limit 1000 --json number -q '.[].number' > /tmp/dev-eval-before-prs.txt
+gh pr list --state all --limit 1000 --json number -q '.[].number' > /tmp/dev-eval-<eval>-before-prs.txt
 ```
 
 ```bash
-sort -u -o /tmp/dev-eval-before-prs.txt /tmp/dev-eval-before-prs.txt
+sort -u -o /tmp/dev-eval-<eval>-before-prs.txt /tmp/dev-eval-<eval>-before-prs.txt
 ```
 
 eval 実行後(1 呼び出しずつ):
 
 ```bash
-gh pr list --state all --limit 1000 --json number -q '.[].number' > /tmp/dev-eval-after-prs.txt
+gh pr list --state all --limit 1000 --json number -q '.[].number' > /tmp/dev-eval-<eval>-after-prs.txt
 ```
 
 ```bash
-sort -u -o /tmp/dev-eval-after-prs.txt /tmp/dev-eval-after-prs.txt
-diff -q /tmp/dev-eval-before-prs.txt /tmp/dev-eval-after-prs.txt   # Pass criteria: 差分なし
+sort -u -o /tmp/dev-eval-<eval>-after-prs.txt /tmp/dev-eval-<eval>-after-prs.txt
+diff -q /tmp/dev-eval-<eval>-before-prs.txt /tmp/dev-eval-<eval>-after-prs.txt   # Pass criteria: 差分なし
 ```
 
 前提として PR 総数が 1000 を超えると取りこぼす。現 repo 規模では十分。

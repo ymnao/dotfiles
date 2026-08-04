@@ -22,10 +22,16 @@
 
 ## 検証手順 (再現可能)
 
+`gh` は **単独の Bash 呼び出し**で実行する。他のコマンドと混ぜると
+`guard-sandbox-exclusions.sh` にブロックされ、`gh ... | base64` のように
+出力を pipe する形も対象になる（issue #267）。
+
 ```bash
-# SKILL.md
-gh api repos/anthropics/claude-code/git/blobs/600b6db41fac7e2081c7528ec6982960892c819d \
-  --jq '.content' | base64 --decode > /tmp/frontend-design-skill.md
+gh api repos/anthropics/claude-code/git/blobs/600b6db41fac7e2081c7528ec6982960892c819d --jq '.content' > /tmp/frontend-design-skill.b64
+```
+
+```bash
+base64 --decode < /tmp/frontend-design-skill.b64 > /tmp/frontend-design-skill.md
 git hash-object /tmp/frontend-design-skill.md
 # => 600b6db41fac7e2081c7528ec6982960892c819d が出れば改ざん検出されず
 ```

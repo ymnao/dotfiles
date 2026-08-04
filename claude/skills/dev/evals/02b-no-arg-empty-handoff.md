@@ -32,11 +32,11 @@ PR 番号セットの記録は **別の単独 Bash 呼び出し**で行う(READM
 [PR 非作成の検証パターン](README.md#pr-not-created-check) 参照):
 
 ```bash
-gh pr list --state all --limit 1000 --json number -q '.[].number' > /tmp/dev-eval-before-prs.txt
+gh pr list --state all --limit 1000 --json number -q '.[].number' > /tmp/dev-eval-02b-before-prs.txt
 ```
 
 ```bash
-sort -u -o /tmp/dev-eval-before-prs.txt /tmp/dev-eval-before-prs.txt
+sort -u -o /tmp/dev-eval-02b-before-prs.txt /tmp/dev-eval-02b-before-prs.txt
 ```
 
 `git status --porcelain` は空 (HANDOFF.md は gitignored)。

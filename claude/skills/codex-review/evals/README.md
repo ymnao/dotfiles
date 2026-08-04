@@ -20,8 +20,14 @@
 
 初回セットアップ:
 
+`gh` は **単独の Bash 呼び出し**で実行する（他のコマンドと混ぜると
+`guard-sandbox-exclusions.sh` にブロックされる。issue #267）:
+
 ```bash
 gh repo create <your-account>/skill-eval-sandbox --private --clone
+```
+
+```bash
 cd skill-eval-sandbox
 bash <dotfiles>/claude/skills/codex-review/evals/seed-sandbox.sh
 ```

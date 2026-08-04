@@ -23,6 +23,10 @@
 {"name":"escape-assignment-quoted-value","expect":"block","command":"ls {{HOME}}/.aws; FOO='a b' gh --version","reason":"実測: クォート付きの環境変数代入を前置しても外れる"}
 {"name":"escape-assignment-append","expect":"block","command":"ls {{HOME}}/.aws; FOO+=x gh --version","reason":"実測: append 代入 (+=) を前置しても外れる"}
 {"name":"escape-quoted-redirect-char","expect":"block","command":"ls {{HOME}}/.aws; echo \">\"& gh --version","reason":"実測: クォート内の > を直前に置いても外れる。複製子判定がクォート状態を見ないと区切りの & を潰して素通りする"}
+{"name":"escape-tab-after-separator","expect":"block","command":"ls {{HOME}}/.aws;\tgh --version","reason":"実測: 区切りの後がタブでも外れる。語境界判定が空白しか畳まないと素通りする"}
+{"name":"escape-tab-indent-newline","expect":"block","command":"ls {{HOME}}/.aws\n\tgh --version","reason":"実測: 複数行ブロックのタブ字下げで素通りしていた形"}
+{"name":"escape-tab-two-word-glob","expect":"block","command":"ls {{HOME}}; pnpm test:e2e\tspecs","reason":"2 語 glob の語間がタブでも検出することの pin"}
+{"name":"escape-quote-between-redirect-and-amp","expect":"block","command":"ls >\"\"&gh --version","reason":"実測: > とクォートを挟むと区切りの & を複製子と誤認して素通りしていた (prev_raw をクォート読み取り時にリセットしないと再発する)"}
 {"name":"escape-apostrophe-in-double-quotes","expect":"block","command":"echo \"don't\" > /dev/null; touch {{HOME}}/x.tmp; gh --version; echo \"it's\"","reason":"実測: 対にならないシングルクォートを含む行でも外れる。クォート span を正規表現で削除する実装だと区切りごと消えて素通りする"}
 
 # --- 判定ロジックの pin (sandbox の挙動そのものは測っていない) ---
@@ -47,6 +51,9 @@
 {"name":"allow-wrapper-without-excluded-command","expect":"allow","command":"touch {{HOME}}/x.tmp; timeout --help","reason":"除外コマンドを含まない wrapper。旧実装ではオプション剥がしループが終端せず hook が hang していた形"}
 {"name":"allow-stdbuf-no-operand","expect":"allow","command":"touch {{HOME}}/x.tmp; stdbuf -o0","reason":"同上 (hang していた形)"}
 {"name":"allow-nice-no-operand","expect":"allow","command":"touch {{HOME}}/x.tmp; nice -n","reason":"同上 (hang していた形)"}
+{"name":"allow-mention-in-shell-comment","expect":"allow","command":"git branch -D b 2>/dev/null || true       # gh pr close が消せなかった場合の保険\nrm -f HANDOFF.md","reason":"シェルコメント内の言及は落とす。落とさないと docs / eval の複数行ブロックが軒並みブロックされ、粗い判定の代償が過大になる"}
+{"name":"allow-mention-in-leading-comment","expect":"allow","command":"# gh を使う手順はここには無い\nls /etc/hosts && echo ok","reason":"行頭コメントも同様"}
+{"name":"block-hash-inside-word","expect":"block","command":"ls /etc/hosts; echo a#gh --version; gh --version","reason":"語中の # はコメント開始ではない (コメント除去を緩めすぎない)"}
 
 # 壊れた入力は fail-safe でブロックする (判定を持たないまま許可に倒れないこと)
 # raw:broken-json-fails-closed|block

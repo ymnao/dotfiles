@@ -27,18 +27,24 @@
 `base64 --decode` は GNU / macOS(BSD) どちらでも動作するため、OS差分を
 吸収するために `-d` ではなく `--decode` を使っています。
 
-```bash
-# SKILL.md
-gh api repos/mattpocock/skills/git/blobs/bd04394c675ee54173a093c50eb74da01a2940fa \
-  --jq '.content' | base64 --decode > /tmp/grill-me-skill.md
-git hash-object /tmp/grill-me-skill.md
-# => bd04394c675ee54173a093c50eb74da01a2940fa が出れば改ざん検出されず
+`gh` は **単独の Bash 呼び出し**で実行する。他のコマンドと混ぜると
+`guard-sandbox-exclusions.sh` にブロックされ、`gh ... | base64` のように
+出力を pipe する形も対象になる（issue #267）。
 
-# LICENSE
-gh api repos/mattpocock/skills/git/blobs/f1dd2c09108dde1a5f56097cee8461b3ea834499 \
-  --jq '.content' | base64 --decode > /tmp/grill-me-LICENSE
-git hash-object /tmp/grill-me-LICENSE
-# => f1dd2c09108dde1a5f56097cee8461b3ea834499 が出れば改ざん検出されず
+```bash
+gh api repos/mattpocock/skills/git/blobs/bd04394c675ee54173a093c50eb74da01a2940fa --jq '.content' > /tmp/grill-me-skill.b64
+```
+
+```bash
+gh api repos/mattpocock/skills/git/blobs/f1dd2c09108dde1a5f56097cee8461b3ea834499 --jq '.content' > /tmp/grill-me-LICENSE.b64
+```
+
+```bash
+base64 --decode < /tmp/grill-me-skill.b64 > /tmp/grill-me-skill.md
+base64 --decode < /tmp/grill-me-LICENSE.b64 > /tmp/grill-me-LICENSE
+git hash-object /tmp/grill-me-skill.md /tmp/grill-me-LICENSE
+# => bd04394c675ee54173a093c50eb74da01a2940fa
+#    f1dd2c09108dde1a5f56097cee8461b3ea834499 が出れば改ざん検出されず
 ```
 
 Git blob は SHA-1 で content-addressed なので、SHA が一致すれば upstream
