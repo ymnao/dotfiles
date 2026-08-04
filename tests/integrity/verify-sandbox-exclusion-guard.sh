@@ -90,6 +90,42 @@ else
   fail=$((fail + 1))
 fi
 
+# 4. settings 経由で除外リストを読む経路が実際に効くか。**hook を実行して**確かめる。
+#    tests/run-hook-tests.sh は隔離 HOME + 一時 cwd で走るので settings ファイルが
+#    1 つも無く、hook の組み込み既定フォールバックしか通らない。つまり settings 読み取り
+#    (jq フィルタのパス等) が壊れても全ケース green のまま、本番では「除外なし」と
+#    読んで **全許可に倒れる**。verify 側が防ごうとした vacuous pass と同型なので、
+#    ここで実行して塞ぐ。
+GUARD_HOME=$(mktemp -d "${TMPDIR:-/tmp}/excl-home.XXXXXX")
+trap 'rm -rf "$GUARD_HOME"' EXIT
+mkdir -p "$GUARD_HOME/.claude"
+
+run_hook_with_settings() {
+  # $1=settings.json の中身。exit code を echo (cwd も GUARD_HOME にして
+  # repo の .claude/settings.json を拾わないようにする)
+  local rc=0
+  printf '%s' "$1" > "$GUARD_HOME/.claude/settings.json"
+  printf '{"tool_input":{"command":"touch x; gh --version"}}' \
+    | (cd "$GUARD_HOME" && HOME="$GUARD_HOME" bash "$HOOK") >/dev/null 2>&1 || rc=$?
+  printf '%s' "$rc"
+}
+
+if [ "$(run_hook_with_settings '{"sandbox":{"excludedCommands":["gh *"]}}')" = 2 ]; then
+  pass=$((pass + 1))
+else
+  echo "FAIL: settings の excludedCommands を読む経路が効いていない (混在行がブロックされない)"
+  echo "      この経路はフック回帰テストでは一度も通らないため、壊れると全許可に倒れる"
+  fail=$((fail + 1))
+fi
+
+# 「読めた上で空」は除外なしと読む (組み込み既定にフォールバックしない)
+if [ "$(run_hook_with_settings '{"sandbox":{"excludedCommands":[]}}')" = 0 ]; then
+  pass=$((pass + 1))
+else
+  echo "FAIL: excludedCommands が空の settings で誤ブロックしている (組み込み既定に落ちている)"
+  fail=$((fail + 1))
+fi
+
 echo "sandbox exclusion guard: $pass passed, $fail failed"
 [ "$fail" = 0 ] || exit 1
 exit 0

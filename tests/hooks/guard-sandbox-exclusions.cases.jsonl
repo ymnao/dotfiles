@@ -45,7 +45,9 @@
 {"name":"allow-bare-gh","expect":"allow","command":"gh pr list","reason":"除外コマンドの単独実行は本 hook の対象外 (既存 skill の呼び方)"}
 {"name":"allow-bare-gh-with-quoted-jq","expect":"allow","command":"gh issue view 267 --json body --jq '.body | length'","reason":"シングルクォート内のパイプを区切りとみなさない (skills/pr / skills/resolve が使う形)"}
 {"name":"allow-bare-gh-with-redirect","expect":"allow","command":"gh pr view 1 2>&1","reason":"リダイレクト複製子の & を区切りとみなさない"}
-{"name":"allow-command-substitution-argument","expect":"allow","command":"gh pr close \"$(gh pr view --json number -q .number)\"","reason":"上流は command_substitution へ降下せず、区切りも無いので単独扱い"}
+{"name":"allow-command-substitution-argument","expect":"allow","command":"gh pr close \"$(gh pr view --json number -q .number)\"","reason":"区切り文字が 1 つも無いので早期スクリーニングで抜ける (判定本体には到達しない)"}
+{"name":"allow-command-substitution-in-compound","expect":"allow","command":"x=$(brew --version); ls /etc","reason":"実測: 上流は command_substitution へ降下しないので sandbox は外れない。hook 側がこれを通すのは `$(brew` が 1 語になって語一致しないためで、理由は別物。**上流が降下し始めるとここが escape になる** — Claude Code upgrade 時に docs §10 の実測表を取り直すこと"}
+{"name":"allow-subshell-in-compound","expect":"allow","command":"ls /etc; (gh --version)","reason":"実測: subshell にも降下しない。hook 側が通す理由は同上 (`(gh` が 1 語)。同じく上流更新で腐る前提"}
 {"name":"allow-no-excluded-command","expect":"allow","command":"touch {{HOME}}/x.tmp && ls {{HOME}}","reason":"除外コマンドを含まない compound 行は素通しする"}
 {"name":"allow-pnpm-install","expect":"allow","command":"pnpm install && make test","reason":"pnpm test:e2e * にマッチしない pnpm サブコマンドは対象外"}
 {"name":"allow-wrapper-without-excluded-command","expect":"allow","command":"touch {{HOME}}/x.tmp; timeout --help","reason":"除外コマンドを含まない wrapper。旧実装ではオプション剥がしループが終端せず hook が hang していた形"}
