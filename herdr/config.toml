@@ -1,0 +1,76 @@
+# herdr (エージェント用ターミナル multiplexer) の設定。
+#
+# 全項目のデフォルトは `herdr --default-config` が出力する (0.8.0 で 324 行)。
+# ここには **既定から変える項目だけ** を書く。稼働中のサーバへの反映は
+# `herdr server reload-config`。UI 系はそれで効くが、起動時のみ読む項目は再起動が要る。
+#
+# 配線: このファイルは scripts/link.sh が ~/.config/herdr/config.toml へ
+# **ファイル単位で** symlink する。ディレクトリごと symlink してはいけない —
+# herdr は socket (herdr.sock) を config と同じディレクトリに作るため、
+# ディレクトリを symlink するとこのリポジトリ内に socket が生成される
+# (2026-08-04 に実測: `herdr status server` が `socket: <configdir>/herdr.sock` を返す)。
+
+# herdr が **こちらの操作なしに** config.toml を書き戻す経路は、公式 docs の
+# 記述ではこの onboarding フラグの保存だけ (初回セットアップを完了すると
+# `onboarding = false` を書き込む)。このファイルは symlink 配線なので、
+# 書き戻しが起きると working tree が汚れる。最初から false を置いて塞ぐ。
+#
+# 明示コマンドで config.toml を書く経路は別にあるので、**使わないこと**:
+#   herdr config reset-keys — config.toml をバックアップしてキーバインドを消す。
+#     symlink をどう扱うか (実体を書き換えるか、symlink をファイルで置き換えて
+#     repo から静かに切り離すか) は未検証。キーバインドを変えるときは
+#     このファイルを直接編集する
+# なお `herdr channel set` は Homebrew 導入では拒否され config を書かない
+# (2026-08-04 実測: 実行前後で config.toml の SHA-256 が不変)。
+onboarding = false
+
+[theme]
+# wezterm 側 (wezterm/colors/kanagawa_dragon.lua) と系統を揃える。
+name = "kanagawa"
+
+[terminal]
+# login shell は /bin/zsh で、fish は wezterm の default_prog が起動している
+# (wezterm/wezterm.lua)。herdr は $SHELL からペインの shell を決めるため、
+# 明示しないと **herdr のペインだけ zsh になる**。
+# パスは Apple Silicon の Homebrew 前提 (wezterm 側は Intel 用の
+# /usr/local/bin/fish もフォールバックで探すが、herdr の設定は静的な文字列
+# しか取れないので分岐できない)。
+default_shell = "/opt/homebrew/bin/fish"
+
+# [keys]
+# prefix は **既定の ctrl+b** をそのまま使う (ここで上書きしない)。
+#
+# ctrl+b は Claude Code の「実行中タスクをバックグラウンド化する」ショートカットと
+# 同じキーだが、herdr は tmux と同じ 2 回押し透過を実装しているので
+# (バイナリに "pressing the prefix twice sends a literal prefix key")、
+# Claude Code 側で背景化したいときは ctrl+b を 2 回押す。これは Claude Code の
+# 公式ドキュメントが tmux 利用者向けに案内しているのと同じ作法で、
+# **2026-08-05 にこの環境 (macOS + wezterm) で実際に動作を確認済み**。
+#
+# prefix を変えたくなったときは、**その端末で実際に prefix モードに入れることを
+# 確かめてから commit すること**。`herdr --default-config` は
+# "Most reliable direct bindings are ctrl+letter, function keys, and explicit
+# modified chords" と書く一方、同じ段落で "alt+..., cmd/super, and
+# punctuation-with-modifiers may depend on your terminal/tmux setup" と
+# alt 系・修飾つき記号に条件を付けている。加えて設定変更の反映には
+# `herdr server reload-config` (項目によっては再起動) が要るので、
+# 「効かない」と判断する前に反映されているかを先に確かめること。
+
+[ui.toast]
+# エージェントが blocked (承認待ち・質問待ち) になったことを、席を外していても
+# 拾えるようにする。"system" は OS の通知センターに直接出す。
+delivery = "system"
+
+[experimental]
+# Claude Code のように自前でカーソルを描く TUI では、macOS の IME 候補ウィンドウが
+# カーソル位置を追従できなくなる。herdr 側でフォーカス中ペインのカーソルを外側の
+# 端末に見せて追従させる。トレードオフとして、カーソルを隠したまま代替を描かない
+# アプリ (vim の normal mode 等) で余分なカーソルが見えるため、
+# cjk_ime_agents で Claude のペインだけに限定する。
+reveal_hidden_cursor_for_cjk_ime = true
+cjk_ime_agents = ["claude"]
+
+# IME が有効なままでも prefix コマンドが届くよう、prefix モード中だけ
+# ASCII 入力ソースへ一時的に切り替え、抜けるときに元へ戻す (macOS/Windows のみ、
+# best-effort)。日本語入力を常用するため有効にする。
+switch_ascii_input_source_in_prefix = true

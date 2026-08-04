@@ -25,6 +25,7 @@ skill / hook / テスト / CI は、この目的を安全に達成するため�
 - `claude/rules/` → `~/.claude/rules/` にシンボリックリンク（path-scoped rules、frontmatter の `paths` glob にマッチしたときだけ lazy load）
 - `claude/statusline.sh` → `~/.claude/statusline.sh` にシンボリックリンク（Claude Code の statusline スクリプト）
 - `starship/starship.toml` → `~/.config/starship.toml` にシンボリックリンク（Starship プロンプト設定、fish から init される）
+- `herdr/config.toml` → `~/.config/herdr/config.toml` にシンボリックリンク（herdr = エージェント用ターミナル multiplexer。**ディレクトリごと symlink しない** — socket が config と同じディレクトリに作られるため）
 - `.claude/stop-gate.conf` はリポジトリごとの Stop hook 検証ゲート設定（`claude/hooks/stop-verify-gate.sh` が参照するオプトインファイル）
 - `.claude/backlog.conf` はリポジトリごとの backlog 観測設定（`/dev` と `/next` が参照するオプトインファイル。`BACKLOG_CAP` は起票ゲートの煙探知機）
 - `tests/` — hook・スクリプトの回帰テスト群（make test で全実行）

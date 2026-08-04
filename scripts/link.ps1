@@ -247,6 +247,10 @@ if (Test-Path $starshipSource) {
     New-FileLink -Source $starshipSource -Destination $starshipDest
 }
 
+# herdr は Windows 版では意図的にスキップ (herdr の Windows ビルドは beta で未検証。
+# 設定パスも %APPDATA%\herdr\config.toml と macOS/Linux の ~/.config/herdr/ から
+# 変わるため単純移植不可。必要になったら別 PR で対応する)
+
 # PowerShell Profile
 Write-Info "`nLinking PowerShell profile..."
 $profileSource = Join-Path $DOTFILES_DIR "shell\powershell\profile.ps1"

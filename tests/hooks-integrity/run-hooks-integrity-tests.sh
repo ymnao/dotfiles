@@ -300,6 +300,45 @@ entry=$(jq -r '
 check_cmd "SessionStart entry が type/timeout/command とも期待どおりであること (got ${entry})" \
   [ "$entry" = 'command|10|bash "$HOME/.claude/hooks/hooks-integrity-warn.sh"' ]
 
+# --- 12c. 配線 (Claude): herdr 統合 hook の SessionStart entry (issue #265) ---
+# この hook は argv (`session`) で挙動が変わる (`case "$action" in session) ;;
+# *) exit 0 ;;` )。上の classify_wired_commands は引数の**形**しか見ないので、
+# argv が書き換わっても clean と判定する。同関数のコメントが「argv で挙動が
+# 変わる hook を新しく配線するときは 12 系の全文 pin に載せること」と要求して
+# いるのはこの穴のためで、その要求は**この hook 自身にも適用される**。
+# 期待値は settings.json から導出せず独立した定数として持つ (claude/rules/shell.md)。
+#
+# matcher は空文字 (= Claude Code の match-all。実測記録は docs/ai-operations.md
+# §10 の 2b)。全 SessionStart source で発火させたいので意図的に空にしている
+# — 綴り違いや `compact` の脱落で静かに片肺になるのを防ぐため全文 pin する。
+# 存在確認は **件数** で行う。matcher が空文字である以上 `-n "$matcher"` では
+# 「entry が無い」と「entry はあるが matcher が空」を区別できず、entry を丸ごと
+# 削除した mutant が全 assert を通る (最初この形で書いて vacuous pass にした)。
+herdr_count=$(jq '
+  [.hooks.SessionStart[]
+   | select([.hooks[].command] | any(test("herdr-agent-state\\.sh")))]
+  | length
+' "$REPO_ROOT/claude/settings.json")
+check_cmd "SessionStart に herdr-agent-state.sh の entry が 1 件だけあること (got: ${herdr_count})" \
+  [ "$herdr_count" = 1 ]
+herdr_matcher=$(jq -r '
+  .hooks.SessionStart[]
+  | select([.hooks[].command] | any(test("herdr-agent-state\\.sh")))
+  | .matcher
+' "$REPO_ROOT/claude/settings.json")
+check_cmd "herdr SessionStart matcher が空文字 (match-all) で pin されていること (got: [${herdr_matcher}])" \
+  [ "$herdr_matcher" = "" ]
+# command は argv (`session`) まで含めて完全一致で pin する。herdr の統合
+# バージョンが上がって呼び出し形が変わった場合、ここが落ちることで気付ける
+# (herdr は ~/.claude/hooks/ = この repo への symlink 経由で上書きしてくる)。
+herdr_entry=$(jq -r '
+  .hooks.SessionStart[].hooks[]
+  | select(.command | test("herdr-agent-state\\.sh"))
+  | "\(.type)|\(.timeout)|\(.command)"
+' "$REPO_ROOT/claude/settings.json")
+check_cmd "herdr SessionStart entry が type/timeout/command とも期待どおりであること (got ${herdr_entry})" \
+  [ "$herdr_entry" = 'command|10|bash "$HOME/.claude/hooks/herdr-agent-state.sh" session' ]
+
 # --- 12b. 配線 (codex): hooks.json の SessionStart entry (issue #215) ---
 # matcher は **全文 pin** で受ける。部分一致で検査すると受理側の口が広いまま
 # fail-closed のつもりになるため (claude/rules/shell.md、実測根拠は §10 の 2)。
@@ -502,9 +541,28 @@ ${chunk}"
     # 通ってしまう (実測で素通りを確認した)。
     # 副作用として空白やメタ文字を含むパスの配線は受理されなくなるが、
     # 2026-07-31 時点の実配線 19 件はいずれも該当しない (実測)。
+    #
+    # **末尾の引数トークンも受理する** (2026-08-04 に追加。herdr の Claude 統合
+    # hook が `bash "<パス>" session` の形を要求するため)。引数側も同じ理由で
+    # allowlist にする — `[A-Za-z0-9._-]+` のみで、`/` も含めない。除外リスト方式に
+    # すると「引数の位置なら安全」という思い込みのまま `&&` や `$(...)` を通し、
+    # **パスは監視対象内なのに後続で別のものを実行する** 形が clean 判定になる
+    # (それが単一起動形に絞った元々の理由)。`/` を弾くのは、第 2 のパスを
+    # 引数として渡す形を「監視対象内の 1 パスだけ照合して pass」にしないため。
+    # 受理が広がったぶんの回帰ケースは 15l (受理される形) と 15m/15n/15o
+    # (受理してはいけない形) で受ける。
+    #
+    # **引数の「意味」は検査しない** — 受理するのは形だけで、個数も内容も見ない。
+    # したがって `--list-watched` のようなフラグを足して hook の挙動を変える改変は
+    # この分類器では止まらない (実測: 監視対象内のパスなので clean と判定される。
+    # hooks-integrity-warn.sh は --list-watched で一覧を出して即 exit するため、
+    # これは警告機能の無効化にあたる)。**それを止めているのはケース 12 / 12b /
+    # 12c の command 全文 pin であって、ここではない**。argv で挙動が変わる hook を
+    # 新しく配線するときは 12 系の全文 pin に載せること (herdr-agent-state.sh は
+    # まさにこの条件に当たるので 12c で pin してある)。
     argpath=$(
       printf '%s\n' "$cmd" |
-        sed -nE 's#^(bash|sh|zsh|python3|node) "?((\$\{?HOME\}?|~)(/[A-Za-z0-9._-]+)+)"?$#\2#p'
+        sed -nE 's#^(bash|sh|zsh|python3|node) "?((\$\{?HOME\}?|~)(/[A-Za-z0-9._-]+)+)"?( [A-Za-z0-9._-]+)*$#\2#p'
     )
     if [ -z "$argpath" ]; then
       # 単一起動形でない → 全文 pin と突合する側に回す。
@@ -708,6 +766,31 @@ assert_case15 "case15j-metachar-no-space" \
 assert_case15 "case15k-var-expansion-in-path" \
   'bash $HOME/.claude/hooks/$EVIL' expect-violation \
   '未分類 command (NON_REPO_EXPECTED に無い): bash $HOME/.claude/hooks/$EVIL'
+# 15l: **引数付きの単一起動形** → 通ること (受理パターンを広げた分の positive)。
+#      herdr の Claude 統合 hook (`... herdr-agent-state.sh session`) がこの形。
+assert_case15 "case15l-arg-watched" \
+  'bash "$HOME/.claude/hooks/post-format.sh" session' expect-clean
+# 15p: 引数 **2 個以上** も受理されること。受理パターンは `( [A-Za-z0-9._-]+)*` と
+#      0 個以上の反復にしたので、1 引数の 15l だけでは反復部分を通らない
+#      (反復を `?` に縮めた mutant が 15l では落ちない)。
+assert_case15 "case15p-two-args-watched" \
+  'bash "$HOME/.claude/hooks/post-format.sh" session extra_arg-1.2' expect-clean
+# 15m〜15o: 15l で広げた受理口が **危険な形まで飲み込まないこと**。
+#      「マッチしない入力を試すだけでは足りない — 受理パターンに
+#      マッチしてしまう危険な入力を自分で構成する」(claude/rules/shell.md)。
+# 15m: 引数の後ろに別の実行を連結 (15g の引数付き版)。
+assert_case15 "case15m-arg-extra-invocation" \
+  'bash "$HOME/.claude/hooks/post-format.sh" session && bash /tmp/evil.sh' expect-violation \
+  '未分類 command (NON_REPO_EXPECTED に無い): bash "$HOME/.claude/hooks/post-format.sh" session && bash /tmp/evil.sh'
+# 15n: 第 2 のパスを引数として渡す形。監視対象内のパス 1 個だけを照合して
+#      pass させないため、引数の allowlist から `/` を外してある。
+assert_case15 "case15n-arg-second-path" \
+  'bash "$HOME/.claude/hooks/post-format.sh" /tmp/evil.sh' expect-violation \
+  '未分類 command (NON_REPO_EXPECTED に無い): bash "$HOME/.claude/hooks/post-format.sh" /tmp/evil.sh'
+# 15o: 引数側の変数展開 (15k のパス後半と同じ理由。実行時に何になるか読めない)。
+assert_case15 "case15o-arg-var-expansion" \
+  'bash "$HOME/.claude/hooks/post-format.sh" "$EVIL"' expect-violation \
+  '未分類 command (NON_REPO_EXPECTED に無い): bash "$HOME/.claude/hooks/post-format.sh" "$EVIL"'
 
 # 15i: NON_REPO_EXPECTED の **missing 方向** (pin にあるのに配線から消えた) を守る。
 # assert_case15 は「1 件足す」mutation しか作れないので、ここだけ「1 件消す」
