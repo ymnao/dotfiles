@@ -26,13 +26,20 @@
 `guard-sandbox-exclusions.sh` にブロックされ、`gh ... | base64` のように
 出力を pipe する形も対象になる（issue #267）。
 
+作業先は実行ごとに作る(共有ホストで先回りされた symlink を追って任意のファイルを
+上書きしないため)。出力されたパスを `<dir>` としてリテラルで埋める。
+
 ```bash
-gh api repos/anthropics/claude-code/git/blobs/600b6db41fac7e2081c7528ec6982960892c819d --jq '.content' > /tmp/frontend-design-skill.b64
+mktemp -d /tmp/provenance.XXXXXX
 ```
 
 ```bash
-base64 --decode < /tmp/frontend-design-skill.b64 > /tmp/frontend-design-skill.md
-git hash-object /tmp/frontend-design-skill.md
+gh api repos/anthropics/claude-code/git/blobs/600b6db41fac7e2081c7528ec6982960892c819d --jq '.content' > <dir>/skill.b64
+```
+
+```bash
+base64 --decode < <dir>/skill.b64 > <dir>/skill.md
+git hash-object <dir>/skill.md
 # => 600b6db41fac7e2081c7528ec6982960892c819d が出れば改ざん検出されず
 ```
 

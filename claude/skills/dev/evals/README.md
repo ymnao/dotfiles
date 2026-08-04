@@ -217,25 +217,33 @@ sandbox clone は固定 SHA 前提で作成されるため、setup 内で `git p
 (既存の eval には `$before_head` / `$before_main` / `$before_handoff_cksum` を
 別呼び出しから参照している書き方が残っている)。
 
-setup(1 呼び出しずつ):
+記録先は **実行ごとに `mktemp -d` で作る**。固定パスにしない理由は 2 つ:
+前回の残骸を baseline と誤認する(cleanup だけ再実行したときに起こる)ことと、
+共有ホストで先回りされた symlink を追って任意のファイルを上書きしうること。
+
+setup(1 呼び出しずつ。1 つ目の出力を `<rundir>` としてリテラルで埋める):
 
 ```bash
-gh pr list --state all --limit 1000 --json number -q '.[].number' > /tmp/dev-eval-<eval>-before-prs.txt
+mktemp -d /tmp/dev-eval.XXXXXX
 ```
 
 ```bash
-sort -u -o /tmp/dev-eval-<eval>-before-prs.txt /tmp/dev-eval-<eval>-before-prs.txt
+gh pr list --state all --limit 1000 --json number -q '.[].number' > <rundir>/before-prs.txt
+```
+
+```bash
+sort -u -o <rundir>/before-prs.txt <rundir>/before-prs.txt
 ```
 
 eval 実行後(1 呼び出しずつ):
 
 ```bash
-gh pr list --state all --limit 1000 --json number -q '.[].number' > /tmp/dev-eval-<eval>-after-prs.txt
+gh pr list --state all --limit 1000 --json number -q '.[].number' > <rundir>/after-prs.txt
 ```
 
 ```bash
-sort -u -o /tmp/dev-eval-<eval>-after-prs.txt /tmp/dev-eval-<eval>-after-prs.txt
-diff -q /tmp/dev-eval-<eval>-before-prs.txt /tmp/dev-eval-<eval>-after-prs.txt   # Pass criteria: 差分なし
+sort -u -o <rundir>/after-prs.txt <rundir>/after-prs.txt
+diff -q <rundir>/before-prs.txt <rundir>/after-prs.txt   # Pass criteria: 差分なし
 ```
 
 前提として PR 総数が 1000 を超えると取りこぼす。現 repo 規模では十分。

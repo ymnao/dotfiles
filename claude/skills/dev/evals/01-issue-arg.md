@@ -30,10 +30,17 @@ gh issue create --title 'eval fixture (dev/01)' --body 'seeded by dev/01 eval'
 (既存 issue を拾った実行では close しない)。
 
 main の HEAD を控える(変数は Bash 呼び出しをまたいで保持されないのでファイルに
-落とす。README [PR 非作成の検証パターン](README.md#pr-not-created-check) と同じ理由):
+落とす。記録先は実行ごとに `mktemp -d` で作る — 理由は README
+[PR 非作成の検証パターン](README.md#pr-not-created-check) と同じ):
 
 ```bash
-git rev-parse HEAD > /tmp/dev-eval-01-before-head.txt
+mktemp -d /tmp/dev-eval-01.XXXXXX
+```
+
+出力されたパスを `<rundir>` としてリテラルで埋める。
+
+```bash
+git rev-parse HEAD > <rundir>/before-head.txt
 ```
 
 ## Prompt
@@ -46,8 +53,8 @@ git rev-parse HEAD > /tmp/dev-eval-01-before-head.txt
       新規ブランチを作成した
 - [ ] 実装 plan を提示し、step 2 の判定 (非自明なら承認待ち) に合流した
 - [ ] main へ直接コミットしていない
-      (`git checkout main; git rev-parse HEAD > /tmp/dev-eval-01-after-head.txt`
-      のあと `diff -q /tmp/dev-eval-01-before-head.txt /tmp/dev-eval-01-after-head.txt`
+      (`git checkout main; git rev-parse HEAD > <rundir>/after-head.txt`
+      のあと `diff -q <rundir>/before-head.txt <rundir>/after-head.txt`
       が差分なし)
 
 ## Cleanup
