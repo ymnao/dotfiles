@@ -1,24 +1,14 @@
 <!--
-  html-brief テンプレート — 人間が「どれを見るか」を先に決められる 1 枚ページ。
-
-  使い方
-  1. このファイルを scratchpad にコピーし、この「使い方」コメントごと削除する
-     (公開ページにこの説明を残さない)。repo 側のこのファイルは編集しない。
-  2. `FILL:` タグの付いたスロットと {{...}} プレースホルダだけを埋める。
-  3. 本文ブロックは A / B / C の 3 型。**使う型だけ残して他は丸ごと削除する**。
-     同じ型を複数回使ってよい (判断表を 2 つ並べる等)。
-  4. <style> は変更しない。色・フォント・余白・レイアウトの調整は禁止
-     (この skill の目的は出力を固定してぶれを消すこと)。
-  5. 図が要るときは <pre class="mermaid">…</pre> を使う (Artifact がネイティブ対応)。
-
-  制約: 外部ホストへの参照は CSP で全てブロックされる。
-  リンク・フォント・画像・スクリプトを外から読み込まないこと。
+  html-brief テンプレート。手順は SKILL.md が正本。
+  埋めるのは FILL: と {{...}} だけ、<style> は変更しない、使う型 (A/B/C) だけ残す。
+  **コピーしたらこのコメントブロックごと削除する** (公開ページに残さない)。
 -->
 
 <title>{{TITLE}}</title>
 
 <style>
-  :root {
+  /* light を既定にし、viewer のテーマトグル (data-theme) を media query より優先させる */
+  :root, :root[data-theme="light"] {
     color-scheme: light dark;
     --bg: #fbfaf7;
     --surface: #ffffff;
@@ -51,13 +41,6 @@
     }
   }
 
-  /* viewer のテーマトグルは media query より優先させる */
-  :root[data-theme="light"] {
-    --bg: #fbfaf7; --surface: #ffffff; --ink: #1c1b19; --ink-soft: #5c584f;
-    --ink-faint: #8b867a; --line: #e3dfd5; --accent: #1f6f6b; --accent-soft: #e6f0ef;
-    --ok-bg: #e4efe2; --ok-fg: #2f5d2a; --warn-bg: #f6ecd8; --warn-fg: #7a5713;
-    --stop-bg: #f5e2df; --stop-fg: #8a2f26; --info-bg: #e5eaf1; --info-fg: #37506e;
-  }
   :root[data-theme="dark"] {
     --bg: #17171a; --surface: #1f1f23; --ink: #ece9e3; --ink-soft: #b3aea4;
     --ink-faint: #837e75; --line: #33333a; --accent: #6fc0b8; --accent-soft: #1d2f2e;

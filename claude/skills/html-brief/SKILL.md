@@ -37,14 +37,15 @@ HANDOFF.md。これらは Markdown のままにする。**指示が無いのに 
 
 ## 制約
 
+この skill 固有:
+
 - **CSS・レイアウト・色・フォントを変更しない**。差し替えるのは中身だけ
-- **外部ホストへの参照を書かない** — Artifact の CSP が CDN・外部フォント・
-  画像・fetch を全てブロックする。テンプレートは外部参照ゼロで作ってある
-- 図が要るときは `<pre class="mermaid">…</pre>` を使う (Artifact がネイティブ対応)。
-  画像を外から読み込む代わりに使う
+- **テンプレートに外部ホストへの参照を持ち込まない** — 外部参照ゼロで作ってある。
+  画像を外から読み込む代わりに `<pre class="mermaid">…</pre>` を使う
 - HTML ソースは scratchpad に置く。**repo にコミットしない**
-- publish は claude.ai 上に既定 private なページを作る。実在の組織・人物を
-  騙るページや、第三者に見せる前提の対外文書には使わない
+
+Artifact ツール共通の制約 (CSP・self-contained・theme-aware・favicon など) は
+ツール定義と `artifact-design` skill が正本。ここには写さない。
 
 ## 注意
 
