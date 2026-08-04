@@ -219,5 +219,6 @@
   "alwaysThinkingEnabled": true,
   "effortLevel": "high",
   "skipAutoPermissionPrompt": true,
-  "skipWorkflowUsageWarning": true
+  "skipWorkflowUsageWarning": true,
+  "tui": "fullscreen"
 }
