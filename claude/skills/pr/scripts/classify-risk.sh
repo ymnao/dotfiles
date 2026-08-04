@@ -293,8 +293,8 @@ LOW_ONLY_PATTERN='\.md$|^docs/|^LICENSE|\.txt$'
 # `agents/AGENTS.md` と `claude/skills/paper-review/SKILL.md` から参照され、
 # §8 は settings.json の手動レビュー手順を命令形で書いている。集合を共有
 # していた版では、この文書の変更が tier=low = 無レビューで通っていた。
-# `evals/` 配下の `.md` も同様 (`claude/skills/dev/SKILL.md` が
-# `evals/README.md` を契約文書として参照する)。
+# `evals/` 配下の `.md` も同様 (Setup / Prompt / Pass criteria を
+# エージェントが手順として読んで実行する)。
 #
 # よって床は独自の除外パターンを持つ。含めるのは**エージェントが指示として
 # 読まない**ものだけ: repo root の `README*.md` (人間向けの入口) と
@@ -313,8 +313,8 @@ LOW_ONLY_PATTERN='\.md$|^docs/|^LICENSE|\.txt$'
 #
 # **既知の非検出 (床の外に残るもの。閉じたと読ませないために明記する)**:
 #   - 非 root の `README*.md` (`sub/README.md`) — root の入口文書と同じ
-#     パターンで除外される。`claude/skills/dev/evals/README.md` のように
-#     契約文書として参照される README がこれに当たる
+#     パターンで除外される。`claude/skills/codex-review/evals/README.md` の
+#     ように eval の実行手順を書いた README がこれに当たる
 #
 # rename 対策として床の入力だけは `--no-renames` で取り直す。`--name-only` は
 # rename の**宛先しか返さない**ため、`git mv claude/skills/foo/SKILL.md

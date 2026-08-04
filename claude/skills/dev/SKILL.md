@@ -223,12 +223,12 @@ codex-review は step 5 の /pr が risk tier に応じて実行するため
   同一でなければならない (両方 `0` または両方 `1`)。Edit / Write tool
   call マーカーでは Bash 経由の変更を取りこぼすため head + dirty の
   同値比較で全経路 (Bash / apply_patch / sed 含む) の変更混入を検出
-  する。共通検証ロジック + `dirty=0` 強制しない rationale とトレード
-  オフは [evals/README.md#review-loop-head-dirty-invariant](evals/README.md#review-loop-head-dirty-invariant) 参照
-
-reviewer stub 契約を適用する eval では、上記に加えて stub 読込ログ
-(`phase=stub-loaded`) の出力義務がある。詳細は
-[`evals/README.md` の reviewer-stub-contract](evals/README.md#reviewer-stub-contract) 節を参照。
+  する。`dirty=0` を強制しないのは、sandbox の制限で解消できない
+  pre-existing な untracked 残存により `dirty=1` スタートが起こり得る
+  ため (start と end で同一であることだけを見る)。**既知の非検出**:
+  `dirty` は二値なので、`dirty=1` で始まった round に新規の uncommitted
+  change が加わっても `1 → 1` のまま通る (完全に見るには
+  `git status --porcelain` の checksum 比較が要る)
 
 ### 5. PR 作成
 
