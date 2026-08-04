@@ -205,6 +205,11 @@ parsed=$(printf '%s' "$command" | awk '
         # (シェルはこの `#` を語中として扱うのでコメントではない)。
         out = out " "; prev_raw = ""; raw_ws = 1
         break
+      } else if (c == "$" && (substr($0, i + 1, 1) == "\047" || substr($0, i + 1, 1) == "\042")) {
+        # ANSI-C 引用 `$'\''gh'\''` / ロケール引用 `$"gh"` の先頭 `$` は語の一部ではない。
+        # 落とさないと `$'\''gh'\'' --version` が `$gh` という語になって語一致を外れる。
+        # `$(` は落とさない (コマンド置換は別扱い。上流も降下しない)。
+        prev_raw = ""; raw_ws = 0
       } else if (c == "\047") { in_s = 1; prev_raw = ""; raw_ws = 0 }
       else if (c == "\042") { in_d = 1; prev_raw = ""; raw_ws = 0 }
       else if (c == bs) { i++; if (i > n) cont = 1; else lit = substr($0, i, 1) }
@@ -233,10 +238,17 @@ parsed=$(printf '%s' "$command" | awk '
 # --- compound かどうか --------------------------------------------------------
 # 非空の sub-command が 2 つ以上あれば compound。区切りがクォート内にしか
 # 無かった行はここで 1 に戻り、対象から外れる。
-# set2 が 1 文字なのは意図的。POSIX では「set2 が短い場合」は unspecified だが、
-# BSD tr / GNU tr とも最後の文字で埋める (実測済み)。長さを揃えて書くと
-# SC2020 (set2 の重複) の指摘が出るため、揃えずにこのコメントで補う。
-seg_count=$(printf '%s' "$parsed" | tr ';|&'"$cr" '\n' | grep -c '[^[:space:]]' || true)
+# set2 の `[\n*]` は POSIX tr の「必要な数だけ繰り返す」記法。set2 を 1 文字にして
+# 実装依存の補完に頼らず、かつ長さを揃えたときの SC2020 も踏まない。
+#
+# `tr` と `grep` の失敗は区別する。まとめて `|| true` で潰すと、`tr` が落ちたときに
+# 空結果を「区切り 0 個」と読んで **許可側に倒れる**。`grep -c` の rc=1 は
+# 「1 件も無い」の正常系なので、そこだけ 0 件として扱う。
+if ! segments=$(printf '%s' "$parsed" | tr ';|&'"$cr" '[\n*]'); then
+  echo "ブロック: コマンド行の分割に失敗したため混在を確認できません" >&2
+  exit 2
+fi
+seg_count=$(printf '%s' "$segments" | grep -c '[^[:space:]]') || seg_count=0
 [[ ${seg_count:-0} -le 1 ]] && exit 0
 
 if [[ $match_any -eq 1 ]]; then

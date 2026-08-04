@@ -19,6 +19,8 @@
 {"name":"escape-wrapper-command-p","expect":"block","command":"ls {{HOME}}/.ssh; command -p gh --version","reason":"実測: wrapper のオプション形 (command -p) でも外れる"}
 {"name":"escape-wrapper-time-dashdash","expect":"block","command":"ls {{HOME}}/.ssh; time -- gh --version","reason":"実測: wrapper のオプション形 (time --) でも外れる"}
 {"name":"escape-quote-split-word","expect":"block","command":"touch {{HOME}}/x.tmp; g\"h\" --version","reason":"実測: 上流はコマンド語のクォートを外して照合するため外れる"}
+{"name":"escape-ansi-c-quoted-word","expect":"block","command":"touch {{HOME}}/x.tmp; $'gh' --version","reason":"ANSI-C 引用の先頭 $ を落とさないと `$gh` という語になって語一致を外れる (codex-review shell-senior 指摘)"}
+{"name":"escape-locale-quoted-word","expect":"block","command":"touch {{HOME}}/x.tmp; $\"gh\" --version","reason":"ロケール引用も同様"}
 {"name":"escape-backslash-split-word","expect":"block","command":"touch {{HOME}}/x.tmp; g\\h --version","reason":"上流はコマンド語のバックスラッシュも外して照合することの pin"}
 {"name":"escape-assignment-quoted-value","expect":"block","command":"ls {{HOME}}/.aws; FOO='a b' gh --version","reason":"実測: クォート付きの環境変数代入を前置しても外れる"}
 {"name":"escape-assignment-append","expect":"block","command":"ls {{HOME}}/.aws; FOO+=x gh --version","reason":"実測: append 代入 (+=) を前置しても外れる"}
