@@ -28,10 +28,14 @@ if [ ! -f "$HOOK" ]; then
   exit 1
 fi
 
-# 1. PreToolUse (Bash) に配線されているか
-if jq -e '
+# 1. PreToolUse (Bash) に配線されているか。
+#    **コマンド文字列を完全一致で見る** — 部分一致だと
+#    `true # guard-sandbox-exclusions.sh` や `...sh.disabled` のように
+#    hook を起動しない設定でも通ってしまう。
+EXPECTED_CMD='bash "$HOME/.claude/hooks/guard-sandbox-exclusions.sh"'
+if jq -e --arg want "$EXPECTED_CMD" '
       [.hooks.PreToolUse[]? | select(.matcher == "Bash") | .hooks[]?.command]
-      | any(. | test("guard-sandbox-exclusions\\.sh"))
+      | any(. == $want)
     ' "$SETTINGS" >/dev/null; then
   pass=$((pass + 1))
 else
@@ -101,30 +105,54 @@ trap 'rm -rf "$GUARD_HOME"' EXIT
 mkdir -p "$GUARD_HOME/.claude"
 
 run_hook_with_settings() {
-  # $1=settings.json の中身。exit code を echo (cwd も GUARD_HOME にして
-  # repo の .claude/settings.json を拾わないようにする)
+  # $1=user settings.json の中身, $2=(任意) project settings の中身。
+  # exit code を echo (cwd も GUARD_HOME にして repo の .claude/settings.json を
+  # 拾わないようにする。managed settings も存在しないパスへ差し替える)
   local rc=0
   printf '%s' "$1" > "$GUARD_HOME/.claude/settings.json"
+  if [ "$#" -ge 2 ]; then
+    printf '%s' "$2" > "$GUARD_HOME/.claude/settings.local.json"
+  else
+    rm -f "$GUARD_HOME/.claude/settings.local.json"
+  fi
   printf '{"tool_input":{"command":"touch x; gh --version"}}' \
-    | (cd "$GUARD_HOME" && HOME="$GUARD_HOME" bash "$HOOK") >/dev/null 2>&1 || rc=$?
+    | (cd "$GUARD_HOME" && HOME="$GUARD_HOME" \
+        CLAUDE_GUARD_MANAGED_SETTINGS="$GUARD_HOME/no-managed.json" bash "$HOOK") \
+        >/dev/null 2>&1 || rc=$?
   printf '%s' "$rc"
 }
 
-if [ "$(run_hook_with_settings '{"sandbox":{"excludedCommands":["gh *"]}}')" = 2 ]; then
-  pass=$((pass + 1))
-else
-  echo "FAIL: settings の excludedCommands を読む経路が効いていない (混在行がブロックされない)"
-  echo "      この経路はフック回帰テストでは一度も通らないため、壊れると全許可に倒れる"
-  fail=$((fail + 1))
-fi
+check_hook() {
+  # $1=期待 exit code, $2=説明, $3.. = run_hook_with_settings への引数
+  local want="$1" desc="$2"
+  shift 2
+  if [ "$(run_hook_with_settings "$@")" = "$want" ]; then
+    pass=$((pass + 1))
+  else
+    echo "FAIL: $desc"
+    fail=$((fail + 1))
+  fi
+}
+
+check_hook 2 "settings の excludedCommands を読む経路が効いていない (混在行がブロックされない)" \
+  '{"sandbox":{"excludedCommands":["gh *"]}}'
 
 # 「読めた上で空」は除外なしと読む (組み込み既定にフォールバックしない)
-if [ "$(run_hook_with_settings '{"sandbox":{"excludedCommands":[]}}')" = 0 ]; then
-  pass=$((pass + 1))
-else
-  echo "FAIL: excludedCommands が空の settings で誤ブロックしている (組み込み既定に落ちている)"
-  fail=$((fail + 1))
-fi
+check_hook 0 "excludedCommands が空の settings で誤ブロックしている (組み込み既定に落ちている)" \
+  '{"sandbox":{"excludedCommands":[]}}'
+
+# user + project/local の merge。片方にしか無い entry でも効くこと
+check_hook 2 "user 側が空でも project/local 側の excludedCommands が効いていない (merge されていない)" \
+  '{"sandbox":{"excludedCommands":[]}}' '{"sandbox":{"excludedCommands":["gh *"]}}'
+
+# 片方が不正 JSON でも、読めた側の entry は使う (ファイル単位で読む)
+check_hook 2 "不正 JSON のファイルがあると読めた側まで捨てている" \
+  '{"sandbox":{"excludedCommands":["gh *"]}}' '{ this is not json'
+
+# 先頭が glob メタ文字の entry ("*") は「全コマンドが除外対象」。compound 行を
+# 一律ブロックする (最も危険な設定のときだけ hook が無効化されるのを防ぐ)
+check_hook 2 'excludedCommands が ["*"] のとき compound 行をブロックしていない' \
+  '{"sandbox":{"excludedCommands":["*"]}}'
 
 echo "sandbox exclusion guard: $pass passed, $fail failed"
 [ "$fail" = 0 ] || exit 1

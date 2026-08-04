@@ -71,3 +71,9 @@ Setup で `gh issue create` を実行した場合**のみ**、その番号を
 ```bash
 gh issue close <created_issue>
 ```
+
+最後に `<rundir>` を消す:
+
+```bash
+rm -rf <rundir>
+```

@@ -99,11 +99,16 @@ run_hook() {
   # $1=hook path, $2=input (raw stdin content)。exit code を echo する (0/2 以外もそのまま)
   # HOOK_TEST_STRIP_JQ=1 のとき PATH から jq を除外して hook を実行 (fail-safe 検証)。
   # HOME は隔離 HOME に差し替える (実ユーザー環境からの分離)。
+  # CLAUDE_GUARD_MANAGED_SETTINGS は guard-sandbox-exclusions.sh が読む managed
+  # settings のパス。HOME / cwd の隔離ではホスト側の
+  # /Library/Application Support/ClaudeCode/ を外せないため、存在しないパスを
+  # 明示して MDM 管理端末でも CI と同じ結果になるようにする。
   local rc=0
+  local nosettings="$BASEDIR/no-managed-settings.json"
   if [ "${HOOK_TEST_STRIP_JQ:-0}" = "1" ]; then
-    printf '%s' "$2" | (cd "$WORKDIR" && HOME="$FAKE_HOME" PATH="$WORKDIR/no-jq-bin:/usr/bin:/bin" bash "$1" >/dev/null 2>&1) || rc=$?
+    printf '%s' "$2" | (cd "$WORKDIR" && HOME="$FAKE_HOME" CLAUDE_GUARD_MANAGED_SETTINGS="$nosettings" PATH="$WORKDIR/no-jq-bin:/usr/bin:/bin" bash "$1" >/dev/null 2>&1) || rc=$?
   else
-    printf '%s' "$2" | (cd "$WORKDIR" && HOME="$FAKE_HOME" bash "$1" >/dev/null 2>&1) || rc=$?
+    printf '%s' "$2" | (cd "$WORKDIR" && HOME="$FAKE_HOME" CLAUDE_GUARD_MANAGED_SETTINGS="$nosettings" bash "$1" >/dev/null 2>&1) || rc=$?
   fi
   printf '%s' "$rc"
 }
@@ -211,6 +216,27 @@ if [ -z "${HOOK_DIR:-}" ] && [ -f "$REPO_ROOT/agents/hooks/guard-codex-dir.sh" ]
     pass=$((pass + 1))
   else
     echo "FAIL guard-codex-dir jq-missing fail-safe: expected exit 2, got $jq_missing_rc"
+    fail=$((fail + 1))
+  fi
+fi
+
+# guard-sandbox-exclusions: jq 不在時に exit 2 (フェイルセーフ) となることを検証。
+# 判定を持たないまま許可に倒れる経路が無いことの pin (issue #267)。
+if [ -z "${HOOK_DIR:-}" ] && [ -f "$REPO_ROOT/claude/hooks/guard-sandbox-exclusions.sh" ]; then
+  no_jq_bin="$WORKDIR/no-jq-bin"
+  mkdir -p "$no_jq_bin"
+  echo "==> guard-sandbox-exclusions (jq missing fail-safe)"
+  excl_jq_rc=0
+  printf '%s' '{"tool_input":{"command":"touch x; gh --version"}}' \
+    | (cd "$WORKDIR" && HOME="$FAKE_HOME" \
+        CLAUDE_GUARD_MANAGED_SETTINGS="$BASEDIR/no-managed-settings.json" \
+        PATH="$no_jq_bin:/usr/bin:/bin" \
+        bash "$REPO_ROOT/claude/hooks/guard-sandbox-exclusions.sh" >/dev/null 2>&1) \
+    || excl_jq_rc=$?
+  if [ "$excl_jq_rc" = "2" ]; then
+    pass=$((pass + 1))
+  else
+    echo "FAIL guard-sandbox-exclusions jq-missing fail-safe: expected exit 2, got $excl_jq_rc"
     fail=$((fail + 1))
   fi
 fi

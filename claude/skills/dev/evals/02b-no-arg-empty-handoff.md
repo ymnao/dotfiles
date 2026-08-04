@@ -75,6 +75,10 @@ rm -f HANDOFF.md
 mv "$exclude_backup" .git/info/exclude
 ```
 
+```bash
+rm -rf <rundir>
+```
+
 (HANDOFF.md 継続経路の happy path は `02-no-arg-handoff.md` を、
 「TBD のみの曖昧 HANDOFF」経路は `02c-no-arg-stub-handoff.md` を参照。
 本 eval は「空 HANDOFF で停止すべき経路」だけを検証する。)

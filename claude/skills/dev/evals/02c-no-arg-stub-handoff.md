@@ -70,6 +70,10 @@ rm -f HANDOFF.md
 mv "$exclude_backup" .git/info/exclude
 ```
 
+```bash
+rm -rf <rundir>
+```
+
 (空 HANDOFF 経路は `02b-no-arg-empty-handoff.md`、happy path は
 `02-no-arg-handoff.md` を参照。本 eval は「曖昧な残タスクで停止すべき
 経路」だけを検証する。)

@@ -25,6 +25,8 @@
 {"name":"escape-assignment-quoted-value","expect":"block","command":"ls {{HOME}}/.aws; FOO='a b' gh --version","reason":"実測: クォート付きの環境変数代入を前置しても外れる"}
 {"name":"escape-assignment-append","expect":"block","command":"ls {{HOME}}/.aws; FOO+=x gh --version","reason":"実測: append 代入 (+=) を前置しても外れる"}
 {"name":"escape-quoted-redirect-char","expect":"block","command":"ls {{HOME}}/.aws; echo \">\"& gh --version","reason":"実測: クォート内の > を直前に置いても外れる。複製子判定がクォート状態を見ないと区切りの & を潰して素通りする"}
+{"name":"escape-crlf-separator","expect":"block","command":"touch {{HOME}}/x.tmp\r\ngh --version","reason":"CRLF 改行でも区切りとして数える (実装は CR を明示的に区切り扱いしている)"}
+{"name":"escape-cr-only-separator","expect":"block","command":"touch {{HOME}}/x.tmp\rgh --version","reason":"CR 単独 (旧 Mac 改行) でも同様"}
 {"name":"escape-tab-after-separator","expect":"block","command":"ls {{HOME}}/.aws;\tgh --version","reason":"実測: 区切りの後がタブでも外れる。語境界判定が空白しか畳まないと素通りする"}
 {"name":"escape-tab-indent-newline","expect":"block","command":"ls {{HOME}}/.aws\n\tgh --version","reason":"実測: 複数行ブロックのタブ字下げで素通りしていた形"}
 {"name":"escape-tab-two-word-glob","expect":"block","command":"ls {{HOME}}; pnpm test:e2e\tspecs","reason":"2 語 glob の語間がタブでも検出することの pin"}

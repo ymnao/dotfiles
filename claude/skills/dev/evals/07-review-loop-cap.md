@@ -141,6 +141,11 @@ comm -13 <rundir>/before-issues.txt <rundir>/after-issues.txt
 `-s` だと「setup 未実行」と誤判定して eval が作った issue を閉じ損ねる。
 baseline が存在しない場合は差分が「全 open issue」に化けるので 1 件も close しない。
 
+**差分は「eval が作った issue」と等しくない。** 実行中に別の人 / 並列 eval が
+起票した issue も入る。close する前に 1 件ずつ `gh issue view <n>` で
+本文とタイトルを確認し、この eval 由来だと確認できたものだけ close すること
+(他人の issue を閉じると取り消しは効くが通知は残る)。
+
 PR と issue の close は、**1 件ずつ別の単独 Bash 呼び出し**で行う
 (番号はリテラルに置き換える。`gh` を他のコマンドと混ぜると
 `guard-sandbox-exclusions.sh` にブロックされる。issue #267):
@@ -151,4 +156,10 @@ gh pr close <pr_number> --delete-branch
 
 ```bash
 gh issue close <issue_number>
+```
+
+GitHub 側の後始末が済んだら `<rundir>` を消す:
+
+```bash
+rm -rf <rundir>
 ```

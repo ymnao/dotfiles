@@ -106,7 +106,12 @@ settings_files=()
 [[ -n "${HOME:-}" && -r "$HOME/.claude/settings.json" ]] && settings_files+=("$HOME/.claude/settings.json")
 [[ -r ".claude/settings.json" ]] && settings_files+=(".claude/settings.json")
 [[ -r ".claude/settings.local.json" ]] && settings_files+=(".claude/settings.local.json")
-managed="/Library/Application Support/ClaudeCode/managed-settings.json"
+# managed settings のパスは env で差し替えられる。回帰テストは HOME と cwd しか
+# 隔離できないため、この 1 本だけホスト側の実ファイルを読んでしまい、MDM 管理端末
+# では結果が CI と食い違う (存在すると settings_read=1 になり組み込み既定に
+# 落ちなくなる)。security 上の緩和にはならない — hook の環境変数を握れる相手は
+# すでに hook 自体を差し替えられる。
+managed="${CLAUDE_GUARD_MANAGED_SETTINGS:-/Library/Application Support/ClaudeCode/managed-settings.json}"
 [[ -r "$managed" ]] && settings_files+=("$managed")
 
 globs=()

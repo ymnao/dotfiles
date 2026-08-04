@@ -246,6 +246,17 @@ sort -u -o <rundir>/after-prs.txt <rundir>/after-prs.txt
 diff -q <rundir>/before-prs.txt <rundir>/after-prs.txt   # Pass criteria: 差分なし
 ```
 
+判定が終わったら `<rundir>` を消す:
+
+```bash
+rm -rf <rundir>
+```
+
+**この判定は repo 全体の PR 集合を比べている**ので、eval 実行中に別の人 /
+並列 eval が PR を作成・close すると、対象 eval が副作用を起こしていなくても
+差分が出る。差分が出たら「eval が作った PR か」を番号から確認してから
+fail と判定すること(単独で回すのが前提)。
+
 前提として PR 総数が 1000 を超えると取りこぼす。現 repo 規模では十分。
 
 ### reviewer stub 契約(dev/06, dev/07 決定化) <a id="reviewer-stub-contract"></a>
