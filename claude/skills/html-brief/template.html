@@ -1,0 +1,286 @@
+<!--
+  html-brief テンプレート — 人間が「どれを見るか」を先に決められる 1 枚ページ。
+
+  使い方
+  1. このファイルを scratchpad にコピーし、この「使い方」コメントごと削除する
+     (公開ページにこの説明を残さない)。repo 側のこのファイルは編集しない。
+  2. `FILL:` タグの付いたスロットと {{...}} プレースホルダだけを埋める。
+  3. 本文ブロックは A / B / C の 3 型。**使う型だけ残して他は丸ごと削除する**。
+     同じ型を複数回使ってよい (判断表を 2 つ並べる等)。
+  4. <style> は変更しない。色・フォント・余白・レイアウトの調整は禁止
+     (この skill の目的は出力を固定してぶれを消すこと)。
+  5. 図が要るときは <pre class="mermaid">…</pre> を使う (Artifact がネイティブ対応)。
+
+  制約: 外部ホストへの参照は CSP で全てブロックされる。
+  リンク・フォント・画像・スクリプトを外から読み込まないこと。
+-->
+
+<title>{{TITLE}}</title>
+
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #fbfaf7;
+    --surface: #ffffff;
+    --ink: #1c1b19;
+    --ink-soft: #5c584f;
+    --ink-faint: #8b867a;
+    --line: #e3dfd5;
+    --accent: #1f6f6b;
+    --accent-soft: #e6f0ef;
+    --ok-bg: #e4efe2; --ok-fg: #2f5d2a;
+    --warn-bg: #f6ecd8; --warn-fg: #7a5713;
+    --stop-bg: #f5e2df; --stop-fg: #8a2f26;
+    --info-bg: #e5eaf1; --info-fg: #37506e;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #17171a;
+      --surface: #1f1f23;
+      --ink: #ece9e3;
+      --ink-soft: #b3aea4;
+      --ink-faint: #837e75;
+      --line: #33333a;
+      --accent: #6fc0b8;
+      --accent-soft: #1d2f2e;
+      --ok-bg: #1f3320; --ok-fg: #9ed49a;
+      --warn-bg: #362c17; --warn-fg: #e0bd6d;
+      --stop-bg: #3a1f1c; --stop-fg: #e79c92;
+      --info-bg: #1e2733; --info-fg: #9fbbdc;
+    }
+  }
+
+  /* viewer のテーマトグルは media query より優先させる */
+  :root[data-theme="light"] {
+    --bg: #fbfaf7; --surface: #ffffff; --ink: #1c1b19; --ink-soft: #5c584f;
+    --ink-faint: #8b867a; --line: #e3dfd5; --accent: #1f6f6b; --accent-soft: #e6f0ef;
+    --ok-bg: #e4efe2; --ok-fg: #2f5d2a; --warn-bg: #f6ecd8; --warn-fg: #7a5713;
+    --stop-bg: #f5e2df; --stop-fg: #8a2f26; --info-bg: #e5eaf1; --info-fg: #37506e;
+  }
+  :root[data-theme="dark"] {
+    --bg: #17171a; --surface: #1f1f23; --ink: #ece9e3; --ink-soft: #b3aea4;
+    --ink-faint: #837e75; --line: #33333a; --accent: #6fc0b8; --accent-soft: #1d2f2e;
+    --ok-bg: #1f3320; --ok-fg: #9ed49a; --warn-bg: #362c17; --warn-fg: #e0bd6d;
+    --stop-bg: #3a1f1c; --stop-fg: #e79c92; --info-bg: #1e2733; --info-fg: #9fbbdc;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Hiragino Sans", "Noto Sans JP", ui-sans-serif, system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+    margin: 0;
+  }
+  .wrap { max-width: 54rem; margin: 0 auto; padding: 3rem 1.25rem 5rem; }
+
+  h1 { font-size: 1.75rem; line-height: 1.35; margin: 0 0 .5rem; letter-spacing: .01em; }
+  h2 {
+    font-size: 1.05rem; margin: 3rem 0 .75rem; padding-bottom: .4rem;
+    border-bottom: 1px solid var(--line); letter-spacing: .04em;
+  }
+  h3 { font-size: .95rem; margin: 1.75rem 0 .4rem; }
+  p { margin: .75rem 0; }
+  .meta { color: var(--ink-faint); font-size: .82rem; letter-spacing: .03em; margin: 0 0 2rem; }
+  .lead { color: var(--ink-soft); font-size: 1.02rem; margin-bottom: 2rem; }
+
+  /* 結論ボックス — 冒頭に置き、読み返さずに判断できる形にする */
+  .verdict {
+    background: var(--surface); border: 1px solid var(--line);
+    border-left: 3px solid var(--accent); border-radius: 3px;
+    padding: 1.1rem 1.25rem; margin: 0 0 2.5rem;
+  }
+  .verdict-label {
+    font-size: .72rem; letter-spacing: .12em; color: var(--accent);
+    margin: 0 0 .35rem; font-weight: 700;
+  }
+  .verdict p:last-child { margin-bottom: 0; }
+
+  .badge {
+    display: inline-block; padding: .1rem .55rem; border-radius: 999px;
+    font-size: .75rem; font-weight: 700; letter-spacing: .02em; white-space: nowrap;
+    background: var(--info-bg); color: var(--info-fg);
+  }
+  .badge.ok { background: var(--ok-bg); color: var(--ok-fg); }
+  .badge.warn { background: var(--warn-bg); color: var(--warn-fg); }
+  .badge.stop { background: var(--stop-bg); color: var(--stop-fg); }
+
+  /* 横長の要素はページ全体ではなくコンテナ内でスクロールさせる */
+  .scroll { overflow-x: auto; margin: 1rem 0; }
+  table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+  th, td {
+    border-bottom: 1px solid var(--line); padding: .6rem .7rem;
+    text-align: left; vertical-align: top;
+  }
+  th { color: var(--ink-faint); font-size: .76rem; letter-spacing: .06em; font-weight: 700; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  /* 時系列の値をセル内で可視化する (画像を使わない) */
+  .bar { display: block; height: .45rem; border-radius: 2px; background: var(--accent); min-width: 2px; }
+
+  ol.steps { list-style: none; counter-reset: step; padding: 0; margin: 1rem 0; }
+  ol.steps > li {
+    counter-increment: step; position: relative;
+    padding: 0 0 1.4rem 2.4rem; border-left: 1px solid var(--line); margin-left: .7rem;
+  }
+  ol.steps > li:last-child { border-left-color: transparent; padding-bottom: 0; }
+  ol.steps > li::before {
+    content: counter(step); position: absolute; left: -.72rem; top: .15rem;
+    width: 1.45rem; height: 1.45rem; border-radius: 999px;
+    background: var(--accent-soft); color: var(--accent);
+    font-size: .78rem; font-weight: 700; line-height: 1.45rem; text-align: center;
+  }
+  ol.steps .step-title { font-weight: 700; }
+
+  code, pre {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: .84rem;
+  }
+  code { background: var(--accent-soft); padding: .1rem .3rem; border-radius: 3px; }
+  pre {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 3px;
+    padding: .85rem 1rem; overflow-x: auto; line-height: 1.6;
+  }
+  pre code { background: none; padding: 0; }
+
+  details {
+    border-top: 1px solid var(--line); padding: .7rem 0;
+  }
+  summary { cursor: pointer; color: var(--ink-soft); font-size: .9rem; }
+  summary::marker { color: var(--ink-faint); }
+
+  footer {
+    margin-top: 4rem; padding-top: 1rem; border-top: 1px solid var(--line);
+    color: var(--ink-faint); font-size: .78rem;
+  }
+
+  img, pre.mermaid svg { max-width: 100%; }
+</style>
+
+<div class="wrap">
+
+  <!-- FILL: 見出し。{{TITLE}} は <title> と同じ文字列にする -->
+  <h1>{{TITLE}}</h1>
+  <!-- FILL: 日付・対象 (repo 名 / PR 番号 / issue 番号など)。無ければこの行ごと削除 -->
+  <p class="meta">{{DATE}} · {{SUBJECT}}</p>
+
+  <!-- FILL: このページが何を判断させるためのものか 1-2 文。不要なら削除 -->
+  <p class="lead">{{LEAD}}</p>
+
+  <!-- 結論ボックス: 必ず残す。読み返さずに済むよう、ここだけで判断が付く粒度で書く -->
+  <div class="verdict">
+    <p class="verdict-label">結論</p>
+    <p>{{VERDICT}}</p>
+  </div>
+
+
+  <!-- ============================================================
+       ブロック A — 判断ボード (比較・分類・調査結果の行き先)
+       選択肢が 3 つ以上あるとき、または各行に判定が付くときに使う。
+       使わないならこの <section> ごと削除する。
+       ============================================================ -->
+  <section>
+    <h2>{{SECTION_A_TITLE}}</h2>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>{{COL_1}}</th>
+            <th>判定</th>
+            <th>{{COL_3}}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- FILL: 1 行 1 選択肢。badge は ok / warn / stop / (無指定=情報) の 4 種のみ -->
+          <tr>
+            <td>{{ITEM}}</td>
+            <td><span class="badge ok">{{採用}}</span></td>
+            <td>{{根拠を 1 文で}}</td>
+          </tr>
+          <tr>
+            <td>{{ITEM}}</td>
+            <td><span class="badge warn">{{保留}}</span></td>
+            <td>{{根拠を 1 文で}}</td>
+          </tr>
+          <tr>
+            <td>{{ITEM}}</td>
+            <td><span class="badge stop">{{却下}}</span></td>
+            <td>{{根拠を 1 文で}}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 長い根拠はここに畳む。表の中に押し込まない。不要なら削除 -->
+    <details>
+      <summary>{{畳む内容の見出し}}</summary>
+      <p>{{詳細}}</p>
+    </details>
+  </section>
+
+
+  <!-- ============================================================
+       ブロック B — ウォークスルー (diff / 設計変更を順に説明する)
+       使わないならこの <section> ごと削除する。
+       ============================================================ -->
+  <section>
+    <h2>{{SECTION_B_TITLE}}</h2>
+    <ol class="steps">
+      <!-- FILL: 1 ステップ = 「何を変えたか」+「なぜ」。ファイルパスは <code> で囲む -->
+      <li>
+        <p class="step-title">{{ステップの見出し}}</p>
+        <p>{{何をしたか / なぜそうしたか}}</p>
+        <pre><code>{{コードや diff の抜粋 (長いなら details に畳む)}}</code></pre>
+      </li>
+      <li>
+        <p class="step-title">{{ステップの見出し}}</p>
+        <p>{{何をしたか / なぜそうしたか}}</p>
+      </li>
+    </ol>
+  </section>
+
+
+  <!-- ============================================================
+       ブロック C — 実測データ (時系列・件数の推移)
+       .bar の width は style 属性で最大値を 100% にした相対値を入れる。
+       使わないならこの <section> ごと削除する。
+       ============================================================ -->
+  <section>
+    <h2>{{SECTION_C_TITLE}}</h2>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>{{時点}}</th>
+            <th>{{指標名}}</th>
+            <th>推移</th>
+            <th>{{備考}}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- FILL: 1 行 1 時点 -->
+          <tr>
+            <td>{{2026-01-01}}</td>
+            <td class="num">{{123}}</td>
+            <td><span class="bar" style="width: 60%"></span></td>
+            <td>{{何が起きたか}}</td>
+          </tr>
+          <tr>
+            <td>{{2026-02-01}}</td>
+            <td class="num">{{456}}</td>
+            <td><span class="bar" style="width: 100%"></span></td>
+            <td>{{何が起きたか}}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <!-- FILL: 数字から何が言えるか 1-2 文。表だけで終わらせない -->
+    <p>{{読み取れること}}</p>
+  </section>
+
+
+  <!-- FILL: 出典・測定条件・未確認事項。「未確認」は未確認と書く -->
+  <footer>{{出典 / 測定条件 / 未確認の項目}}</footer>
+
+</div>
