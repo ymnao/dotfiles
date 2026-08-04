@@ -37,18 +37,24 @@ name = "kanagawa"
 # しか取れないので分岐できない)。
 default_shell = "/opt/homebrew/bin/fish"
 
-[keys]
-# 既定の prefix は ctrl+b だが、これは **Claude Code の「タスクをバックグラウンド
-# 化する」ショートカットと同じキー**。Claude Code の公式ドキュメントは tmux
-# 利用時に ctrl+b を 2 回押すよう案内しており、herdr も同じ 2 回押し透過を
-# 実装している (バイナリに "pressing the prefix twice sends a literal prefix key")
-# ので運用は可能だが、常時 2 回押しになるのを避けて衝突しないキーに寄せる。
-# ctrl+alt+b を選ぶ根拠は `herdr --default-config` 自身の記述
-# 「Most reliable direct bindings are ctrl+letter, function keys, and explicit
-# modified chords」— ctrl+alt+b はこの explicit modified chord にあたる。
-# wezterm の leader (ctrl+;) とも Claude Code のどのショートカットとも重ならず、
-# wezterm は send_composed_key_when_left_alt_is_pressed = false なので届く。
-prefix = "ctrl+alt+b"
+# [keys]
+# prefix は **既定の ctrl+b** をそのまま使う (ここで上書きしない)。
+#
+# ctrl+b は Claude Code の「実行中タスクをバックグラウンド化する」ショートカットと
+# 同じキーだが、herdr は tmux と同じ 2 回押し透過を実装しているので
+# (バイナリに "pressing the prefix twice sends a literal prefix key")、
+# Claude Code 側で背景化したいときは ctrl+b を 2 回押す。これは Claude Code の
+# 公式ドキュメントが tmux 利用者向けに案内しているのと同じ作法で、
+# **2026-08-05 にこの環境 (macOS + wezterm) で実際に動作を確認済み**。
+#
+# prefix を変えたくなったときは、**その端末で実際に prefix モードに入れることを
+# 確かめてから commit すること**。`herdr --default-config` は
+# "Most reliable direct bindings are ctrl+letter, function keys, and explicit
+# modified chords" と書く一方、同じ段落で "alt+..., cmd/super, and
+# punctuation-with-modifiers may depend on your terminal/tmux setup" と
+# alt 系・修飾つき記号に条件を付けている。加えて設定変更の反映には
+# `herdr server reload-config` (項目によっては再起動) が要るので、
+# 「効かない」と判断する前に反映されているかを先に確かめること。
 
 [ui.toast]
 # エージェントが blocked (承認待ち・質問待ち) になったことを、席を外していても
