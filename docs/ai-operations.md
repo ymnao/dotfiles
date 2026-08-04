@@ -454,7 +454,11 @@ TLS 検証も通らない(実測: 上記 OSStatus -26276)ため外せない。�
 
 **それでも値は 2.1.220 に上げてある**(2026-08-04、issue #245 step 4)。
 enforce されないので実効は無いが、**下記の managed 設定を導入したときに
-そのまま使える正しい値**として置いてある。「依存する挙動がある最小の版」
+そのまま使える正しい値**として置いてある。したがって下限の値は
+`claude/settings.json`(宣言・無効)と `claude/managed-settings.json`
+(実効・下記の手順で配置したときのみ)の **2 箇所にある。上げるときは両方**
+— 実際に効くのは managed 側なので、片方だけ更新すると「settings.json に
+書いてある値」と「強制されている値」が食い違う。「依存する挙動がある最小の版」
 (strictAllowlist の 2.1.219、symlink 系修正の 2.1.217)ではなく host の
 実バージョンに合わせているのは、下限を「これ未満は未検証」の宣言として
 使うため。
@@ -478,20 +482,31 @@ enforce したいなら managed (policy) 設定に置く。この repo は正本
   含めて言うなら根拠は OS 権限のほう。**層を取り違えないこと**
   (この節が直したのと同型の外し方)
 
-導入する場合は user が手で行う(要 admin パスワード)。
-**cp する前に repo 側の内容を目で見る** — `claude/managed-settings.json` は
-working tree の通常ファイルなので agent が Edit tool で書き換えられる。
-managed 設定は permissions / sandbox を含む全設定を最優先で上書きできるので、
-**改変されたまま昇格させると影響は下限値だけでは済まない**。user の目視が
-実質的な検証ゲートになる:
+導入する場合は user が手で行う(要 admin パスワード)。**内容の確認は
+repo 側のファイルではなく、root 所有にコピーした後の実体に対して行う** —
+`claude/managed-settings.json` は working tree の通常ファイルなので agent が
+Edit tool で書き換えられ、**「確認 → cp」の順だと確認した内容とコピーされる
+内容が別になりうる**(確認とコピーの間に書き換えられる)。managed 設定は
+permissions / sandbox を含む全設定を最優先で上書きできるので、改変されたまま
+昇格させると影響は下限値だけでは済まない。
+
+配置先ディレクトリは `root:admin` の `drwxr-xr-x` で **user には write bit が
+無い**。したがって一度 `sudo cp` でそこへ置いたファイルは agent には触れない。
+これを使って「書き換え不能にしてから確認し、確認したものをそのまま昇格する」
+順にする:
 
 ```sh
-git status --porcelain claude/managed-settings.json
-git diff main -- claude/managed-settings.json
-cat claude/managed-settings.json
 sudo mkdir -p "/Library/Application Support/ClaudeCode"
-sudo cp claude/managed-settings.json "/Library/Application Support/ClaudeCode/managed-settings.json"
+sudo cp claude/managed-settings.json "/Library/Application Support/ClaudeCode/managed-settings.json.staged"
+sudo cat "/Library/Application Support/ClaudeCode/managed-settings.json.staged"
+sudo mv "/Library/Application Support/ClaudeCode/managed-settings.json.staged" "/Library/Application Support/ClaudeCode/managed-settings.json"
 ```
+
+3 行目で目視し、内容が意図どおりのときだけ 4 行目を実行する。`mv` は同一
+ファイルシステム内の rename なので atomic で、**確認した実体がそのまま
+managed-settings.json になる**。意図しない内容だったら
+`sudo rm "/Library/Application Support/ClaudeCode/managed-settings.json.staged"`
+で捨てる(この時点ではまだ policy として読まれていない)。
 
 **入れる前に必ず確認すること**: managed 設定の下限を満たさない CLI では
 Claude Code が**起動しなくなる**。`claude --version` が下限以上であることを
