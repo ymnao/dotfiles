@@ -28,7 +28,7 @@ local keys = {
 	{ key = "K", mods = "CMD|SHIFT", action = act.AdjustPaneSize({ "Up", 5 }) },
 	{ key = "L", mods = "CMD|SHIFT", action = act.AdjustPaneSize({ "Right", 5 }) },
 
-	-- herdr prefix (see herdr/config.toml): Karabiner swaps CMD/CTRL, so this is
+	-- herdr prefix (see herdr/config.toml): Karabiner swaps the left CMD/CTRL, so this is
 	-- physically ctrl+b. On Linux this file is reused and CMD is Super (no Karabiner).
 	{ key = "b", mods = "CMD", action = act.SendKey({ key = "b", mods = "CTRL" }) },
 
