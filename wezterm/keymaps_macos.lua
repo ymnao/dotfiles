@@ -28,9 +28,8 @@ local keys = {
 	{ key = "K", mods = "CMD|SHIFT", action = act.AdjustPaneSize({ "Up", 5 }) },
 	{ key = "L", mods = "CMD|SHIFT", action = act.AdjustPaneSize({ "Right", 5 }) },
 
-	-- herdr prefix: translate CMD+b to ctrl+b (Karabiner swaps CMD/CTRL, so this is
-	-- physically ctrl+b -- same modifier as the CMD+hjkl pane keys above).
-	-- Done in wezterm so herdr's own prefix stays the default ctrl+b (see herdr/config.toml).
+	-- herdr prefix (see herdr/config.toml): Karabiner swaps CMD/CTRL, so this is
+	-- physically ctrl+b. On Linux this file is reused and CMD is Super (no Karabiner).
 	{ key = "b", mods = "CMD", action = act.SendKey({ key = "b", mods = "CTRL" }) },
 
 	-- Visual effects

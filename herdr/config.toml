@@ -39,6 +39,8 @@ default_shell = "/opt/homebrew/bin/fish"
 
 # [keys]
 # prefix は **既定の ctrl+b** をそのまま使う (ここで上書きしない)。
+# wezterm 側 (wezterm/keymaps_macos.lua) が CMD+b を ctrl+b に翻訳しているので、
+# ここを変えるときは向こうも一緒に直す。
 #
 # ctrl+b は Claude Code の「実行中タスクをバックグラウンド化する」ショートカットと
 # 同じキーだが、herdr は tmux と同じ 2 回押し透過を実装しているので
