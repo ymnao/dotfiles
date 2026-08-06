@@ -23,7 +23,7 @@ RENDERER="${RENDERER:-$REPO_ROOT/claude/skills/html-brief/render.mjs}"
 
 # 実行ケース数の独立した期待値。ケースを増減したらここも直す
 # (pass 数ではなく実行数を数える — ケースが黙って消えたときに気付くため)。
-EXPECTED_CASES=41
+EXPECTED_CASES=45
 
 if [ ! -f "$RENDERER" ]; then
   echo "ERROR: renderer not found: $RENDERER" >&2
@@ -53,7 +53,8 @@ for tmp_root in "${TMPDIR:-/tmp}" /tmp; do
 done
 cleanup() {
   [ -n "${WORKDIR:-}" ] && rm -rf "$WORKDIR"
-  rm -f "$OUTSIDE_TMP"
+  rm -f "$OUTSIDE_TMP" "$REPO_ROOT/.html-brief-tmpdir-probe.html" \
+    "$REPO_ROOT/.html-brief-escape-victim.html"
 }
 trap cleanup EXIT
 
@@ -177,6 +178,15 @@ expect_reject "non-string optional field rejected" \
 expect_reject "non-string top-level optional rejected" \
   '{"title": "T", "verdict": "V", "date": ["2026-08-06"],
     "sections": [{"type": "notes", "body": "B"}]}'
+
+expect_reject "non-string column rejected" \
+  '{"title": "T", "verdict": "V", "sections": [{"type": "decision",
+    "columns": ["a", {"b": 1}],
+    "rows": [{"label": "x", "cells": []}]}]}'
+expect_reject "non-string cell rejected" \
+  '{"title": "T", "verdict": "V", "sections": [{"type": "decision",
+    "columns": ["a", "判定", "c"],
+    "rows": [{"label": "x", "cells": [{"b": 1}]}]}]}'
 
 expect_reject "bad badge kind rejected" \
   '{"title": "T", "verdict": "V", "sections": [{"type": "decision",
@@ -322,6 +332,30 @@ rc=$?
 set -e
 if [ "$rc" -ne 0 ] && stderr_is_clean "$WORKDIR/err.txt"; then
   ok; else ng "missing parent dir rejected cleanly (rc=$rc)"; fi
+
+# 一時ディレクトリの候補は TMPDIR と /tmp の 2 つ。**両方**が受理側に効いている
+# ことを測る (片方に戻す変更が全 pass で通らないように)。動機は「harness が渡す
+# scratchpad と対話 shell の TMPDIR が別物の環境で、正常な出力先が拒否される」退行。
+
+# (a) TMPDIR が /tmp の外を指していても、/tmp 配下への出力は受理される
+set +e
+TMPDIR="$REPO_ROOT" node "$RENDERER" "$WORKDIR/guard.json" "$WORKDIR/root-tmp.html" \
+  >/dev/null 2>"$WORKDIR/err.txt"
+rc=$?
+set -e
+if [ "$rc" -eq 0 ] && grep -q '<title>T</title>' "$WORKDIR/root-tmp.html"; then
+  ok; else ng "/tmp accepted as root when TMPDIR points elsewhere (rc=$rc)"; fi
+
+# (b) TMPDIR 側も受理側に効く (TMPDIR 配下なら /tmp の外でも書ける)
+TMPDIR_PROBE="$REPO_ROOT/.html-brief-tmpdir-probe.html"
+set +e
+TMPDIR="$REPO_ROOT" node "$RENDERER" "$WORKDIR/guard.json" "$TMPDIR_PROBE" \
+  >/dev/null 2>"$WORKDIR/err.txt"
+rc=$?
+set -e
+if [ "$rc" -eq 0 ] && grep -q '<title>T</title>' "$TMPDIR_PROBE"; then
+  ok; else ng "TMPDIR accepted as root (rc=$rc)"; fi
+rm -f "$TMPDIR_PROBE"
 
 # TMPDIR が解決できない場所を指していても stack trace にしない
 set +e
