@@ -137,23 +137,31 @@ function requireStringArray(value, where) {
 // CSP が止めるのは subresource の読み込みで、ハイパーリンク自体は対象外。
 function requireHttpUrl(value, where) {
   requireString(value, where);
-  if (!/^https?:\/\/[^\s<>"'`]+$/i.test(value)) {
+  if (!/^https?:\/\/[^\s<>"'`\x00-\x1f\x7f]+$/i.test(value)) {
     fail(`${where} は http(s) の URL が必要です: ${value}`);
   }
   return value;
 }
 
-// コードブロック。`codeLang: "diff"` のときだけ行頭 1 文字で色を分ける
-// (構文解析はしない — 決定的に決まる範囲に留める)。
-function codeBlock(code, lang, where) {
+// `codeLang` の検証は code の有無と独立に行う。`code` が無いときだけ typo を
+// 黙殺すると、未知キーを落とす方針 (checkKeys) と食い違う。
+function checkCodeLang(lang, where) {
   optionalString(lang, `${where}.codeLang`);
   if (lang !== undefined && !CODE_LANGS.has(lang)) {
     fail(`${where}.codeLang が不正です: ${lang} (使えるのは ${[...CODE_LANGS].join(" / ")})`);
   }
+}
+
+// コードブロック。`codeLang: "diff"` のときだけ行頭 1 文字で色を分ける
+// (構文解析はしない — 決定的に決まる範囲に留める)。
+function codeBlock(code, lang, where) {
+  checkCodeLang(lang, where);
   if (lang !== "diff") {
     return `<pre><code>${esc(code)}</code></pre>`;
   }
   const lines = String(code)
+    // CRLF を先に潰す。潰さないと \r が span の中に残る
+    .replaceAll(/\r\n?/g, "\n")
     .split("\n")
     .map((line) => {
       let kind = "ctx";
@@ -163,7 +171,8 @@ function codeBlock(code, lang, where) {
       else if (line.startsWith("-")) kind = "del";
       return `<span class="d-${kind}">${esc(line)}</span>`;
     });
-  return `<pre class="diff"><code>${lines.join("\n")}</code></pre>`;
+  // span は display:block なので改行文字は入れない (入れると行間に空行が出る)
+  return `<pre class="diff"><code>${lines.join("")}</code></pre>`;
 }
 
 function checkKeys(object, allowed, where) {
@@ -237,6 +246,7 @@ function renderWalkthrough(section, where) {
       requireString(step.title, `${at}.title`);
       optionalString(step.body, `${at}.body`);
       optionalString(step.code, `${at}.code`);
+      checkCodeLang(step.codeLang, at);
       const body = step.body ? paragraphs(step.body) : "";
       const code = step.code ? codeBlock(step.code, step.codeLang, at) : "";
       return `<li><p class="step-title">${inline(step.title)}</p>${body}${code}</li>`;
@@ -276,11 +286,18 @@ function renderSeries(section, where) {
         if (!BADGE_KINDS.has(kind)) {
           fail(`${pat}.kind が不正です: ${kind} (使えるのは ${[...BADGE_KINDS].join(" / ")})`);
         }
+        // 同じ label に別の kind を許すと、凡例が片方の色しか示さないのに
+        // バーには両方の色が出て、読者が凡例から誤った対応を読む
+        if (legend.has(part.label) && legend.get(part.label) !== kind) {
+          fail(`${pat}: 同じ label "${part.label}" に別の kind (${legend.get(part.label)} と ${kind}) が付いています`);
+        }
         if (!legend.has(part.label)) legend.set(part.label, kind);
         sum += part.value;
       });
-      // 合計が合わない内訳は「一部だけ見せている」のか誤りなのか読者に分からない
-      if (sum !== point.value) {
+      // 合計が合わない内訳は「一部だけ見せている」のか誤りなのか読者に分からない。
+      // 浮動小数の丸め (0.1 + 0.2) で正しい入力を落とさないよう許容差を持たせる
+      const tolerance = Math.max(1, Math.abs(point.value)) * 1e-9;
+      if (Math.abs(sum - point.value) > tolerance) {
         fail(`${at}.parts の合計 (${sum}) が value (${point.value}) と一致しません`);
       }
     }
@@ -338,6 +355,7 @@ function renderCompare(section, where) {
     requireString(obj.label, `${at}.label`);
     optionalString(obj.body, `${at}.body`);
     optionalString(obj.code, `${at}.code`);
+    checkCodeLang(obj.codeLang, at);
     const body = obj.body ? paragraphs(obj.body) : "";
     const code = obj.code ? codeBlock(obj.code, obj.codeLang, at) : "";
     return `<div class="compare-side"><p class="compare-label">${inline(obj.label)}</p>${body}${code}</div>`;

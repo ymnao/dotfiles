@@ -25,7 +25,7 @@ RENDERER="${RENDERER:-$REPO_ROOT/claude/skills/html-brief/render.mjs}"
 
 # 実行ケース数の独立した期待値。ケースを増減したらここも直す
 # (pass 数ではなく実行数を数える — ケースが黙って消えたときに気付くため)。
-EXPECTED_CASES=72
+EXPECTED_CASES=74
 
 if [ ! -f "$RENDERER" ]; then
   echo "ERROR: renderer not found: $RENDERER" >&2
@@ -49,7 +49,8 @@ cleanup() {
   [ -n "${OUTSIDE_ROOT:-}" ] && rm -rf "$OUTSIDE_ROOT"
   rm -f "$WORLD_WRITABLE_PROBE"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT TERM
 
 # 「一時ディレクトリ外」のケース用の作業場所。**固定名を使わない** — repo 直下に
 # 固定名のファイルを作ると、同名の既存ファイルを上書きして壊しうる。
@@ -220,13 +221,30 @@ if [ "$RC" -eq 0 ] \
 
 # --- 9. 外部ホストへの参照がゼロ (CSP 準拠) ---
 # 全 section 型を含む入力に対して検査する (型ごとに経路が違うため)
+# **12 型すべてを入れる**。型が増えたらここにも足すこと — 覆っていない型の
+# renderer が subresource や生の href を出しても検出できなくなる
+# (実際 5 型のままだったとき、tiles に href を出す mutant が全 pass で通った)。
 ALL_TYPES='{"title": "T", "verdict": "V", "sections": [
   {"type": "notes", "body": "B"},
   {"type": "decision", "columns": ["a", "判定"], "rows": [{"label": "x", "cells": []}]},
-  {"type": "walkthrough", "steps": [{"title": "s", "code": "c"}]},
-  {"type": "series", "points": [{"label": "p", "value": 1}]},
-  {"type": "diagram", "mermaid": "graph TD;A-->B;"}
+  {"type": "walkthrough", "steps": [{"title": "s", "code": "c", "codeLang": "diff"}]},
+  {"type": "series", "points": [{"label": "p", "value": 2,
+    "parts": [{"label": "L", "value": 2, "kind": "warn"}]}]},
+  {"type": "diagram", "mermaid": "graph TD;A-->B;"},
+  {"type": "compare", "left": {"label": "l", "code": "x"}, "right": {"label": "r", "body": "y"}},
+  {"type": "links", "items": [{"label": "PR", "url": "https://github.com/ymnao/dotfiles/pull/279", "note": "n"}]},
+  {"type": "callout", "kind": "warn", "body": "c"},
+  {"type": "definitions", "items": [{"term": "t", "body": "d"}]},
+  {"type": "checklist", "items": [{"label": "c1", "checked": true, "note": "n"}]},
+  {"type": "tiles", "items": [{"label": "tl", "value": 1, "note": "n"}]},
+  {"type": "timeline", "items": [{"when": "2026-08-06", "title": "tt", "body": "tb"}]}
 ]}'
+
+# ALL_TYPES が本当に 12 型を覆っているか (型を足して fixture を忘れる事故の検出)
+all_types_count="$(printf '%s' "$ALL_TYPES" | grep -oE '"type": "[a-z]+"' | sort -u | wc -l | tr -d ' ')"
+renderer_types="$(grep -cE '^  [a-z]+: render[A-Z]' "$RENDERER" | tr -d ' ')"
+if [ "$all_types_count" = "$renderer_types" ]; then ok; else
+  ng "ALL_TYPES covers every section type (fixture=$all_types_count renderer=$renderer_types)"; fi
 # **subresource の読み込み**だけを拒否する。CSP が止めるのはこちらで、
 # `<a href>` のハイパーリンクは対象外 (止まらないし、ページも壊れない)。
 # scheme に依存しない形にする (相対パスの @import / srcset も拒否)。
@@ -242,14 +260,17 @@ if printf '<link href="x.css">' | grep -qE "$SUBRESOURCE_RE" \
   && printf 'background: url(x.png)' | grep -qE "$SUBRESOURCE_RE"; then
   ok; else ng "subresource pattern detects known positives"; fi
 
-# href が出るのは <a> だけ (数を突き合わせる)。links 型を含む入力で測る
-render '{"title": "T", "verdict": "V", "sections": [{"type": "links",
-  "items": [{"label": "PR", "url": "https://github.com/ymnao/dotfiles/pull/279"}]}]}'
+# href が出るのは <a> だけ (数を突き合わせる)。**12 型すべてを含む出力で測る** —
+# links 型だけで測ると、他の renderer が href を出しても素通りする
+render "$ALL_TYPES"
 href_all="$(printf '%s' "$OUT" | grep -oE 'href="' | wc -l | tr -d ' ')"
 href_anchor="$(printf '%s' "$OUT" | grep -oE '<a href="' | wc -l | tr -d ' ')"
-if [ "$RC" -eq 0 ] && [ "$href_all" = "$href_anchor" ] && [ "$href_all" = "1" ] \
-  && ! printf '%s' "$OUT" | grep -qE "$SUBRESOURCE_RE"; then
+if [ "$RC" -eq 0 ] && [ "$href_all" = "$href_anchor" ] && [ "$href_all" = "1" ]; then
   ok; else ng "href only inside <a> (rc=$RC, all=$href_all anchor=$href_anchor)"; fi
+
+# <a> の URL は http(s) だけ
+if [ "$RC" -eq 0 ] && [ "$(printf '%s' "$OUT" | grep -oE '<a href="https?://' | wc -l | tr -d ' ')" = "1" ]; then
+  ok; else ng "anchor urls are http(s)"; fi
 
 # --- 10. series: バーの幅を最大値から算出する ---
 render '{"title": "T", "verdict": "V", "sections": [{"type": "series",

@@ -110,6 +110,9 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: now
 
 /* 対比 — 狭い画面では 1 カラムに落とす */
 .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin: 1rem 0; }
+/* min-width: 0 が無いと、折り返せない長い 1 行が track の下限を押し広げて
+   ページ幅を突き破る (grid blowout)。pre 側の overflow-x はこれを抑えない */
+.compare-side { min-width: 0; }
 .compare-side > :first-child { margin-top: 0; }
 .compare-label {
   font-size: .74rem; letter-spacing: .08em; font-weight: 700;
