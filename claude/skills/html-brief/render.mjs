@@ -296,7 +296,9 @@ function renderSeries(section, where) {
       });
       // 合計が合わない内訳は「一部だけ見せている」のか誤りなのか読者に分からない。
       // 浮動小数の丸め (0.1 + 0.2) で正しい入力を落とさないよう許容差を持たせる
-      const tolerance = Math.max(1, Math.abs(point.value)) * 1e-9;
+      // 0.1 + 0.2 の相対誤差は ~1.5e-16 なので 1e-12 で足りる。これ以上緩めると
+      // 大きな整数カウントの off-by-one (2e9 で 1 のずれ) が素通りする
+      const tolerance = Math.max(1, Math.abs(point.value)) * 1e-12;
       if (Math.abs(sum - point.value) > tolerance) {
         fail(`${at}.parts の合計 (${sum}) が value (${point.value}) と一致しません`);
       }

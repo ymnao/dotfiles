@@ -122,7 +122,9 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: now
 
 /* diff — 行頭 1 文字だけで分ける (構文解析はしない) */
 pre.diff code { display: block; }
-pre.diff span { display: block; margin: 0 -1rem; padding: 0 1rem; }
+/* min-height が無いと、中身が空の行 (span:empty) が高さ 0 になって消える。
+   行を span で包んで join("") しているので、改行文字では高さを作れない */
+pre.diff span { display: block; min-height: 1.6em; margin: 0 -1rem; padding: 0 1rem; }
 .d-add { background: var(--ok-bg); color: var(--ok-fg); }
 .d-del { background: var(--stop-bg); color: var(--stop-fg); }
 .d-hunk { color: var(--accent); }

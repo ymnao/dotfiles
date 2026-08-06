@@ -25,7 +25,7 @@ RENDERER="${RENDERER:-$REPO_ROOT/claude/skills/html-brief/render.mjs}"
 
 # 実行ケース数の独立した期待値。ケースを増減したらここも直す
 # (pass 数ではなく実行数を数える — ケースが黙って消えたときに気付くため)。
-EXPECTED_CASES=74
+EXPECTED_CASES=80
 
 if [ ! -f "$RENDERER" ]; then
   echo "ERROR: renderer not found: $RENDERER" >&2
@@ -50,7 +50,8 @@ cleanup() {
   rm -f "$WORLD_WRITABLE_PROBE"
 }
 trap cleanup EXIT
-trap 'exit 130' INT TERM
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # 「一時ディレクトリ外」のケース用の作業場所。**固定名を使わない** — repo 直下に
 # 固定名のファイルを作ると、同名の既存ファイルを上書きして壊しうる。
@@ -242,7 +243,10 @@ ALL_TYPES='{"title": "T", "verdict": "V", "sections": [
 
 # ALL_TYPES が本当に 12 型を覆っているか (型を足して fixture を忘れる事故の検出)
 all_types_count="$(printf '%s' "$ALL_TYPES" | grep -oE '"type": "[a-z]+"' | sort -u | wc -l | tr -d ' ')"
-renderer_types="$(grep -cE '^  [a-z]+: render[A-Z]' "$RENDERER" | tr -d ' ')"
+# grep -c は 0 マッチで exit 1 を返す。set -e でスイートが理由不明に abort するのを
+# 避けるため、|| true で受けてから数を比較する (0 なら下の比較が FAIL を出す)
+renderer_types="$(grep -cE '^  [a-z]+: render[A-Z]' "$RENDERER" || true)"
+renderer_types="$(printf '%s' "$renderer_types" | tr -d ' ')"
 if [ "$all_types_count" = "$renderer_types" ]; then ok; else
   ng "ALL_TYPES covers every section type (fixture=$all_types_count renderer=$renderer_types)"; fi
 # **subresource の読み込み**だけを拒否する。CSP が止めるのはこちらで、
@@ -430,6 +434,45 @@ if [ "$RC" -eq 0 ] \
 expect_reject "parts sum mismatch rejected" \
   '{"title": "T", "verdict": "V", "sections": [{"type": "series",
     "points": [{"label": "a", "value": 4, "parts": [{"label": "x", "value": 1}]}]}]}'
+
+# 合計の比較は浮動小数の丸めを許容する (0.1 + 0.2 !== 0.3 で落とさない)
+render '{"title": "T", "verdict": "V", "sections": [{"type": "series",
+  "points": [{"label": "a", "value": 0.3, "parts": [
+    {"label": "x", "value": 0.1}, {"label": "y", "value": 0.2}]}]}]}'
+if [ "$RC" -eq 0 ]; then ok; else ng "float rounding tolerated (rc=$RC, err=$(printf '%s' "$ERR" | head -1))"; fi
+
+# ただし許容差は大きな整数の off-by-one を通すほど緩めない
+expect_reject "large integer off-by-one rejected" \
+  '{"title": "T", "verdict": "V", "sections": [{"type": "series",
+    "points": [{"label": "a", "value": 2000000000, "parts": [
+      {"label": "x", "value": 1000000000}, {"label": "y", "value": 1000000001}]}]}]}'
+
+# 同じ label に別の kind を付けると凡例が誤った色対応を示すので落とす
+expect_reject "legend kind conflict rejected" \
+  '{"title": "T", "verdict": "V", "sections": [{"type": "series",
+    "points": [{"label": "a", "value": 1, "parts": [{"label": "L", "value": 1, "kind": "stop"}]},
+               {"label": "b", "value": 1, "parts": [{"label": "L", "value": 1, "kind": "warn"}]}]}]}'
+
+# 同じ label に同じ kind なら通る (kind 省略と "info" 明示の混在も含む)
+render '{"title": "T", "verdict": "V", "sections": [{"type": "series",
+  "points": [{"label": "a", "value": 1, "parts": [{"label": "L", "value": 1}]},
+             {"label": "b", "value": 1, "parts": [{"label": "L", "value": 1, "kind": "info"}]}]}]}'
+if [ "$RC" -eq 0 ] && [ "$(printf '%s' "$OUT" | grep -oE 'class="badge info">L<' | wc -l | tr -d ' ')" = "1" ]; then
+  ok; else ng "same label same kind accepted (rc=$RC)"; fi
+
+# code が無くても codeLang の typo を落とす (未知キーを黙殺しない方針と揃える)
+expect_reject "codeLang typo without code rejected" \
+  '{"title": "T", "verdict": "V", "sections": [{"type": "walkthrough",
+    "steps": [{"title": "s", "codeLang": "typescript"}]}]}'
+
+# CRLF は span の中に残さない。空行も 1 行として残す (消さない)
+render '{"title": "T", "verdict": "V", "sections": [{"type": "walkthrough",
+  "steps": [{"title": "s", "code": "-old\r\n\r\n+new", "codeLang": "diff"}]}]}'
+if [ "$RC" -eq 0 ] \
+  && ! printf '%s' "$OUT" | grep -q "$(printf '\r')" \
+  && printf '%s' "$OUT" | grep -q '<span class="d-ctx"></span>' \
+  && printf '%s' "$OUT" | grep -q '<span class="d-add">+new</span>'; then
+  ok; else ng "diff CRLF normalized and blank line kept (rc=$RC)"; fi
 
 # --- 13. 出力先ガード ---
 # argv の指すファイルを誤って壊さないことを測る。
