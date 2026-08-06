@@ -103,6 +103,22 @@ function requireArray(value, where) {
   return value;
 }
 
+// 任意フィールドも型を見る。素通しにすると非文字列が esc() を通って
+// `[object Object]` としてページに出る (rc=0 のまま誤った成果物が publish される)。
+function optionalString(value, where) {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") fail(`${where} は文字列が必要です`);
+  return value;
+}
+
+function requireStringArray(value, where) {
+  requireArray(value, where);
+  value.forEach((item, i) => {
+    if (typeof item !== "string") fail(`${where}[${i}] は文字列が必要です`);
+  });
+  return value;
+}
+
 function checkKeys(object, allowed, where) {
   for (const key of Object.keys(object)) {
     if (!allowed.includes(key)) {
@@ -126,7 +142,7 @@ function renderBadge(badge, where) {
 }
 
 function renderDecision(section, where) {
-  const columns = requireArray(section.columns, `${where}.columns`);
+  const columns = requireStringArray(section.columns, `${where}.columns`);
   if (columns.length < 2) fail(`${where}.columns は 2 列以上が必要です (1 列目=対象, 2 列目=判定)`);
   const rows = requireArray(section.rows, `${where}.rows`);
   const head = columns.map((c) => `<th>${esc(c)}</th>`).join("");
@@ -136,7 +152,17 @@ function renderDecision(section, where) {
       requireObject(row, at);
       checkKeys(row, ["label", "badge", "cells"], at);
       requireString(row.label, `${at}.label`);
-      const cells = Array.isArray(row.cells) ? row.cells : [];
+      // 配列でないときに空配列へ落とさない。落とすと「書いた内容が rc=0 のまま
+      // 消える」経路になり、未知キー拒否で塞いだのと同じ事故が別経路で残る。
+      // (2 列構成では cells が空になるので requireStringArray は使えない)
+      let cells = [];
+      if (row.cells !== undefined) {
+        if (!Array.isArray(row.cells)) fail(`${at}.cells は配列が必要です`);
+        row.cells.forEach((cell, j) => {
+          if (typeof cell !== "string") fail(`${at}.cells[${j}] は文字列が必要です`);
+        });
+        cells = row.cells;
+      }
       if (cells.length !== columns.length - 2) {
         fail(
           `${at}.cells の数が列数と合いません (columns=${columns.length} なので cells=${columns.length - 2} 件が必要、実際は ${cells.length} 件)`,
@@ -162,6 +188,8 @@ function renderWalkthrough(section, where) {
       requireObject(step, at);
       checkKeys(step, ["title", "body", "code"], at);
       requireString(step.title, `${at}.title`);
+      optionalString(step.body, `${at}.body`);
+      optionalString(step.code, `${at}.code`);
       const body = step.body ? paragraphs(step.body) : "";
       const code = step.code ? `<pre><code>${esc(step.code)}</code></pre>` : "";
       return `<li><p class="step-title">${inline(step.title)}</p>${body}${code}</li>`;
@@ -171,19 +199,24 @@ function renderWalkthrough(section, where) {
 }
 
 function renderSeries(section, where) {
+  for (const key of ["unit", "labelHeader", "valueHeader", "noteHeader", "takeaway"]) {
+    optionalString(section[key], `${where}.${key}`);
+  }
   const points = requireArray(section.points, `${where}.points`);
   const values = points.map((point, i) => {
     const at = `${where}.points[${i}]`;
     requireObject(point, at);
     checkKeys(point, ["label", "value", "note"], at);
     requireString(point.label, `${at}.label`);
+    optionalString(point.note, `${at}.note`);
     if (typeof point.value !== "number" || !Number.isFinite(point.value) || point.value < 0) {
       fail(`${at}.value は 0 以上の数値が必要です`);
     }
     return point.value;
   });
-  // バーの幅は最大値からこちらが決める (agent に割合を推測させない)
-  const max = Math.max(...values);
+  // バーの幅は最大値からこちらが決める (agent に割合を推測させない)。
+  // Math.max(...values) は点数が多いと spread で RangeError になるので畳み込む
+  const max = values.reduce((a, b) => (b > a ? b : a), 0);
   const unit = section.unit ? esc(section.unit) : "";
   const rows = points
     .map((point, i) => {
@@ -225,6 +258,7 @@ function renderSection(section, i) {
     fail(`${where}.type が不正です: ${section.type} (使えるのは ${Object.keys(SECTION_KEYS).join(" / ")})`);
   }
   checkKeys(section, [...COMMON_SECTION_KEYS, ...SECTION_KEYS[section.type]], where);
+  optionalString(section.title, `${where}.title`);
   const heading = section.title ? `<h2>${inline(section.title)}</h2>` : "";
   const body = RENDERERS[section.type](section, where);
   let details = "";
@@ -254,6 +288,9 @@ function render(data, css) {
   checkKeys(data, TOP_KEYS, "トップレベル");
   requireString(data.title, "title");
   requireString(data.verdict, "verdict");
+  for (const key of ["date", "subject", "lead", "footer"]) {
+    optionalString(data[key], key);
+  }
   const sections = requireArray(data.sections, "sections");
 
   const metaParts = [data.date, data.subject].filter(Boolean).map(esc);
@@ -285,22 +322,50 @@ ${footer}
 /* ---------- 出力 ---------- */
 
 /*
- * このレンダラは claude/settings.json の allow リストに載っていて確認プロンプト
- * 無しで走る。argv 経由で任意のファイルを上書きできる状態にしないため、書き込みは
- * 3 つの条件を全て満たすときだけ行う:
+ * 出力先のガード。書き込みは 4 条件を全て満たすときだけ行う:
  *
  *   1. 拡張子が .html
- *   2. 親ディレクトリの realpath が一時ディレクトリ配下 (作業中 repo のファイルを
+ *   2. パスに `..` セグメントを含まない
+ *   3. 親ディレクトリの realpath が一時ディレクトリ配下 (作業中 repo のファイルを
  *      沈黙のうちに壊さない。realpath を取るのでディレクトリ symlink 越しの
  *      迂回も塞がる)
- *   3. 最終要素が symlink でも hardlink でもない (O_NOFOLLOW + nlink 検査。
+ *   4. 最終要素が symlink でも hardlink でもない (O_NOFOLLOW + nlink 検査。
  *      hardlink は拡張子チェックを迂回して任意 inode を truncate できるため)
  *
- * それ以外の場所に出したいときは出力先を省略して stdout を使う。
+ * 2 が要るのは、`resolve()` が `..` を**字句的に**畳むのに対しカーネルは
+ * **symlink を辿ってから** `..` を解決するため。`<tmp>/dirlink/../x.html` は
+ * ガードからは `<tmp>/x.html` に見えるが、実際には dirlink の実体の親に書かれる。
+ * `realpathSync` も内部で `path.resolve()` を掛けるので、この差は realpath では
+ * 埋まらない (Node と POSIX realpath(3) で結果が割れる)。
+ *
+ * これは**誤爆防止のガードであってセキュリティ境界ではない**。settings.json の
+ * allow は argv を無制限に許すので、stdout をリダイレクトする形の書き込みまでは
+ * 塞げない (matcher がリダイレクト付きコマンドをどう扱うかは未実測)。
  */
+const OUTPUT_ROOTS_NOTE = "scratchpad などの一時ディレクトリ配下";
+
+function tempRoots() {
+  const roots = new Set();
+  // プロセスの TMPDIR と /tmp の両方を許す。harness が渡す scratchpad と
+  // 対話 shell の TMPDIR (macOS は /var/folders/.../T) が別物になる環境で、
+  // 正常な出力先が拒否されるのを避けるため。
+  for (const candidate of [tmpdir(), "/tmp"]) {
+    try {
+      roots.add(realpathSync(candidate));
+    } catch {
+      // 解決できない候補は単に使わない
+    }
+  }
+  return [...roots];
+}
+
 function writeOutput(outputPath, html) {
   if (!outputPath.endsWith(".html")) {
     fail(`出力先は .html で終わるパスにしてください: ${outputPath}`);
+  }
+
+  if (outputPath.split(/[/\\]/).includes("..")) {
+    fail(`出力先に .. を含めないでください: ${outputPath}`);
   }
 
   const parent = dirname(resolve(outputPath));
@@ -310,12 +375,14 @@ function writeOutput(outputPath, html) {
   } catch (error) {
     fail(`出力先のディレクトリを解決できません: ${parent} (${error.code ?? error.message})`);
   }
-  const realTmp = realpathSync(tmpdir());
-  if (realParent !== realTmp && !realParent.startsWith(realTmp + sep)) {
-    fail(
-      `出力先は一時ディレクトリ配下にしてください (${realTmp}): ${outputPath}\n` +
-        `html-brief: 別の場所に出すときは出力先を省略して stdout を使ってください`,
-    );
+
+  const roots = tempRoots();
+  if (roots.length === 0) {
+    fail("一時ディレクトリを解決できません (TMPDIR を確認してください)");
+  }
+  const inside = roots.some((root) => realParent === root || realParent.startsWith(root + sep));
+  if (!inside) {
+    fail(`出力先は ${OUTPUT_ROOTS_NOTE} にしてください (${roots.join(" / ")}): ${outputPath}`);
   }
 
   let fd;
@@ -358,8 +425,10 @@ try {
 let data;
 try {
   data = JSON.parse(raw);
-} catch (error) {
-  fail(`JSON として解析できません: ${error.message}`);
+} catch {
+  // error.message は入力の先頭数文字を含むので出さない
+  // (入力パスは無制約なので、JSON でないファイルの中身が stderr に漏れる)
+  fail(`JSON として解析できません: ${inputPath}`);
 }
 
 let css;

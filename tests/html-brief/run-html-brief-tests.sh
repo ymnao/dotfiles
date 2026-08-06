@@ -23,7 +23,7 @@ RENDERER="${RENDERER:-$REPO_ROOT/claude/skills/html-brief/render.mjs}"
 
 # 実行ケース数の独立した期待値。ケースを増減したらここも直す
 # (pass 数ではなく実行数を数える — ケースが黙って消えたときに気付くため)。
-EXPECTED_CASES=35
+EXPECTED_CASES=41
 
 if [ ! -f "$RENDERER" ]; then
   echo "ERROR: renderer not found: $RENDERER" >&2
@@ -36,7 +36,21 @@ if ! command -v node >/dev/null 2>&1; then
 fi
 
 WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/html-brief.XXXXXX")"
+
+# 「一時ディレクトリ外」のケースに使う。repo 自体が一時ディレクトリ配下にあると
+# レンダラが正しく受理してしまい、ケースが誤 FAIL する。前提が崩れたら
+# skip ではなく明示的に落とす (skip はケース数の下限検査を素通しにするため)。
 OUTSIDE_TMP="$REPO_ROOT/.html-brief-outside-tmp.html"
+for tmp_root in "${TMPDIR:-/tmp}" /tmp; do
+  real_root="$(cd "$tmp_root" 2>/dev/null && pwd -P || true)"
+  real_repo="$(cd "$REPO_ROOT" && pwd -P)"
+  case "$real_repo/" in
+    "$real_root"/*)
+      echo "ERROR: repo が一時ディレクトリ配下 ($real_root) にあるため outside-tmp ケースを実行できません" >&2
+      exit 1
+      ;;
+  esac
+done
 cleanup() {
   [ -n "${WORKDIR:-}" ] && rm -rf "$WORKDIR"
   rm -f "$OUTSIDE_TMP"
@@ -149,6 +163,21 @@ render '{"title": "T", "verdict": "V", "sections": [{"type": "decision",
 if [ "$RC" -eq 0 ] && printf '%s' "$OUT" | grep -q 'class="badge ok"'; then ok; else ng "decision renders (rc=$RC)"; fi
 
 # --- 7. 不正な badge.kind を落とす ---
+# cells が配列でないとき、空配列に落とさず落とす
+# (落とすと「書いた内容が rc=0 のまま消える」経路になる)
+expect_reject "non-array cells rejected" \
+  '{"title": "T", "verdict": "V", "sections": [{"type": "decision",
+    "columns": ["a", "判定"],
+    "rows": [{"label": "x", "cells": "書いたつもりの根拠"}]}]}'
+
+# 任意フィールドの型も見る ([object Object] がページに出るのを防ぐ)
+expect_reject "non-string optional field rejected" \
+  '{"title": "T", "verdict": "V", "sections": [{"type": "series",
+    "unit": {"a": 1}, "points": [{"label": "p", "value": 1}]}]}'
+expect_reject "non-string top-level optional rejected" \
+  '{"title": "T", "verdict": "V", "date": ["2026-08-06"],
+    "sections": [{"type": "notes", "body": "B"}]}'
+
 expect_reject "bad badge kind rejected" \
   '{"title": "T", "verdict": "V", "sections": [{"type": "decision",
     "columns": ["a", "判定"],
@@ -262,17 +291,47 @@ set +e
 node "$RENDERER" "$WORKDIR/guard.json" "$OUTSIDE_TMP" >/dev/null 2>"$WORKDIR/err.txt"
 rc=$?
 set -e
-if [ "$rc" -ne 0 ] \
-  && head -1 "$WORKDIR/err.txt" | grep -q '^html-brief: ' \
-  && [ ! -e "$OUTSIDE_TMP" ]; then ok; else ng "outside-tmp output rejected (rc=$rc)"; fi
+if [ "$rc" -ne 0 ] && stderr_is_clean "$WORKDIR/err.txt" && [ ! -e "$OUTSIDE_TMP" ]; then
+  ok; else ng "outside-tmp output rejected (rc=$rc)"; fi
+
+# `..` で一時ディレクトリ制限を迂回できない。
+# resolve() は `..` を字句的に畳むが、カーネルは symlink を辿ってから `..` を
+# 解決するので、`<tmp>/dirlink/../x.html` はガードから見える場所とは別の場所に
+# 書かれる。dirlink の実体を repo 内に置いて、実際に書かれないことを確かめる。
+# `..` が symlink 自身を打ち消す形にするのが要点。lexical には
+# `$WORKDIR/<victim>` (= 一時ディレクトリ配下、ガードは通す) に見えるが、
+# カーネルは repo-link を辿ってから `..` を解決するので repo 直下に書かれる。
+ln -s "$REPO_ROOT/tests" "$WORKDIR/repo-link"
+ESCAPE_VICTIM="$REPO_ROOT/.html-brief-escape-victim.html"
+printf 'ORIGINAL' > "$ESCAPE_VICTIM"
+set +e
+node "$RENDERER" "$WORKDIR/guard.json" \
+  "$WORKDIR/repo-link/../.html-brief-escape-victim.html" \
+  >/dev/null 2>"$WORKDIR/err.txt"
+rc=$?
+set -e
+if [ "$rc" -ne 0 ] && stderr_is_clean "$WORKDIR/err.txt" \
+  && [ "$(cat "$ESCAPE_VICTIM")" = "ORIGINAL" ]; then
+  ok; else ng "dotdot escape rejected (rc=$rc)"; fi
+rm -f "$ESCAPE_VICTIM"
 
 # 親ディレクトリが無いときも stack trace にしない
 set +e
 node "$RENDERER" "$WORKDIR/guard.json" "$WORKDIR/nodir/out.html" >/dev/null 2>"$WORKDIR/err.txt"
 rc=$?
 set -e
-if [ "$rc" -ne 0 ] && head -1 "$WORKDIR/err.txt" | grep -q '^html-brief: '; then
+if [ "$rc" -ne 0 ] && stderr_is_clean "$WORKDIR/err.txt"; then
   ok; else ng "missing parent dir rejected cleanly (rc=$rc)"; fi
+
+# TMPDIR が解決できない場所を指していても stack trace にしない
+set +e
+TMPDIR="$WORKDIR/does-not-exist" node "$RENDERER" "$WORKDIR/guard.json" "$WORKDIR/tmpdir-probe.html" \
+  >/dev/null 2>"$WORKDIR/err.txt"
+rc=$?
+set -e
+# /tmp が候補に残るので成功しうる。落ちる場合でも stack trace であってはならない
+if [ "$rc" -eq 0 ] || stderr_is_clean "$WORKDIR/err.txt"; then
+  ok; else ng "broken TMPDIR handled cleanly (rc=$rc)"; fi
 
 # 正常な .html には書ける / 同じパスへの再書き込み (再 deploy) もできる
 set +e
@@ -289,8 +348,18 @@ set +e
 node "$RENDERER" "$WORKDIR/does-not-exist.json" >/dev/null 2>"$WORKDIR/err.txt"
 rc=$?
 set -e
-if [ "$rc" -ne 0 ] && head -1 "$WORKDIR/err.txt" | grep -q '^html-brief: '; then
+if [ "$rc" -ne 0 ] && stderr_is_clean "$WORKDIR/err.txt"; then
   ok; else ng "missing input rejected cleanly (rc=$rc)"; fi
+
+# JSON でないファイルを渡しても、その中身を stderr に出さない
+printf 'AWS_SECRET_ACCESS_KEY=leak-me\n' > "$WORKDIR/not-json.env"
+set +e
+node "$RENDERER" "$WORKDIR/not-json.env" >/dev/null 2>"$WORKDIR/err.txt"
+rc=$?
+set -e
+if [ "$rc" -ne 0 ] && stderr_is_clean "$WORKDIR/err.txt" \
+  && ! grep -q 'AWS_SECRET' "$WORKDIR/err.txt"; then
+  ok; else ng "input content not echoed on parse error (rc=$rc)"; fi
 
 # style.css の隣に置いたコピーを、css 無しの状態で実行する
 cp "$RENDERER" "$WORKDIR/lonely-render.mjs"
@@ -298,7 +367,7 @@ set +e
 node "$WORKDIR/lonely-render.mjs" "$WORKDIR/guard.json" >/dev/null 2>"$WORKDIR/err.txt"
 rc=$?
 set -e
-if [ "$rc" -ne 0 ] && head -1 "$WORKDIR/err.txt" | grep -q '^html-brief: '; then
+if [ "$rc" -ne 0 ] && stderr_is_clean "$WORKDIR/err.txt"; then
   ok; else ng "missing style.css rejected cleanly (rc=$rc)"; fi
 
 # --- ケース数の下限検査 ---
