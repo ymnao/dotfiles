@@ -4,25 +4,49 @@
  *
  *   node render.mjs <brief.json> [out.html]
  *
- * 出力先を省略すると stdout に書く。検証に失敗したら stderr にメッセージを出して exit 1。
+ * 出力先を省略すると stdout に書く。検証に失敗したら stderr に
+ * `html-brief: <理由>` を出して exit 1 する (stack trace を出さない —
+ * 呼び出し側の agent が直すべき JSON の場所を特定できるようにするため)。
  *
  * 設計の意図: agent に書かせるのは「意味」だけにし、「見せ方」(CSS・エスケープ・
  * バーの幅・表の整合) は全てこちらが決定的に行う。これにより
  *   - 出力トークンが中身の量だけで決まる (CSS が毎回出力に乗らない)
  *   - ページ間で見た目がぶれない
- *   - 型の誤り (列数不一致・未知の section) が publish 前に落ちる
+ *   - 型の誤り (列数不一致・未知の section・キーの typo) が publish 前に落ちる
  * Node の標準ライブラリだけで動く (依存追加なし)。
  *
  * データモデルの正本は reference/data-model.md。
  */
 
-import { lstatSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  constants as fsConstants,
+  fstatSync,
+  ftruncateSync,
+  openSync,
+  readFileSync,
+  realpathSync,
+  writeSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BADGE_KINDS = new Set(["ok", "warn", "stop", "info"]);
-const SECTION_TYPES = new Set(["decision", "walkthrough", "series", "notes", "diagram"]);
+
+// 許可キーの正本。未知のキーは黙って無視せず落とす — `takeaways` のような
+// 1 文字違いが黙殺されると、書いたはずの内容が消えたことに publish 後まで
+// 気付けないため (reference/data-model.md と対で維持する)。
+const TOP_KEYS = ["title", "verdict", "sections", "date", "subject", "lead", "footer"];
+const COMMON_SECTION_KEYS = ["type", "title", "details"];
+const SECTION_KEYS = {
+  decision: ["columns", "rows"],
+  walkthrough: ["steps"],
+  series: ["points", "unit", "labelHeader", "valueHeader", "noteHeader", "takeaway"],
+  notes: ["body"],
+  diagram: ["mermaid"],
+};
 
 function fail(message) {
   process.stderr.write(`html-brief: ${message}\n`);
@@ -36,10 +60,12 @@ function esc(value) {
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 // 本文で使えるインライン記法は `code` だけ。増やさない (増やすほど md 実装になる)。
+// esc() を先に通すので、キャプチャした中身に生のタグは入らない。
 function inline(value) {
   return esc(value).replaceAll(/`([^`]+)`/g, "<code>$1</code>");
 }
@@ -56,6 +82,13 @@ function paragraphs(value) {
 
 /* ---------- 検証 ---------- */
 
+function requireObject(value, where) {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    fail(`${where} はオブジェクトが必要です`);
+  }
+  return value;
+}
+
 function requireString(value, where) {
   if (typeof value !== "string" || value.trim() === "") {
     fail(`${where} は空でない文字列が必要です`);
@@ -70,14 +103,23 @@ function requireArray(value, where) {
   return value;
 }
 
+function checkKeys(object, allowed, where) {
+  for (const key of Object.keys(object)) {
+    if (!allowed.includes(key)) {
+      fail(`${where} に未知のキーがあります: ${key} (使えるのは ${allowed.join(" / ")})`);
+    }
+  }
+}
+
 /* ---------- section ごとの描画 ---------- */
 
 function renderBadge(badge, where) {
   if (badge === undefined) return "";
-  if (typeof badge !== "object" || badge === null) fail(`${where}.badge はオブジェクトが必要です`);
+  requireObject(badge, `${where}.badge`);
+  checkKeys(badge, ["kind", "text"], `${where}.badge`);
   const kind = badge.kind ?? "info";
   if (!BADGE_KINDS.has(kind)) {
-    fail(`${where}.badge.kind が不正です: ${kind} (ok / warn / stop / info)`);
+    fail(`${where}.badge.kind が不正です: ${kind} (使えるのは ${[...BADGE_KINDS].join(" / ")})`);
   }
   requireString(badge.text, `${where}.badge.text`);
   return `<span class="badge ${kind}">${esc(badge.text)}</span>`;
@@ -91,6 +133,8 @@ function renderDecision(section, where) {
   const body = rows
     .map((row, i) => {
       const at = `${where}.rows[${i}]`;
+      requireObject(row, at);
+      checkKeys(row, ["label", "badge", "cells"], at);
       requireString(row.label, `${at}.label`);
       const cells = Array.isArray(row.cells) ? row.cells : [];
       if (cells.length !== columns.length - 2) {
@@ -115,6 +159,8 @@ function renderWalkthrough(section, where) {
   const items = steps
     .map((step, i) => {
       const at = `${where}.steps[${i}]`;
+      requireObject(step, at);
+      checkKeys(step, ["title", "body", "code"], at);
       requireString(step.title, `${at}.title`);
       const body = step.body ? paragraphs(step.body) : "";
       const code = step.code ? `<pre><code>${esc(step.code)}</code></pre>` : "";
@@ -128,6 +174,8 @@ function renderSeries(section, where) {
   const points = requireArray(section.points, `${where}.points`);
   const values = points.map((point, i) => {
     const at = `${where}.points[${i}]`;
+    requireObject(point, at);
+    checkKeys(point, ["label", "value", "note"], at);
     requireString(point.label, `${at}.label`);
     if (typeof point.value !== "number" || !Number.isFinite(point.value) || point.value < 0) {
       fail(`${at}.value は 0 以上の数値が必要です`);
@@ -172,14 +220,17 @@ const RENDERERS = {
 
 function renderSection(section, i) {
   const where = `sections[${i}]`;
-  if (typeof section !== "object" || section === null) fail(`${where} はオブジェクトが必要です`);
-  if (!SECTION_TYPES.has(section.type)) {
-    fail(`${where}.type が不正です: ${section.type} (使えるのは ${[...SECTION_TYPES].join(" / ")})`);
+  requireObject(section, where);
+  if (!Object.hasOwn(SECTION_KEYS, section.type)) {
+    fail(`${where}.type が不正です: ${section.type} (使えるのは ${Object.keys(SECTION_KEYS).join(" / ")})`);
   }
+  checkKeys(section, [...COMMON_SECTION_KEYS, ...SECTION_KEYS[section.type]], where);
   const heading = section.title ? `<h2>${inline(section.title)}</h2>` : "";
   const body = RENDERERS[section.type](section, where);
   let details = "";
   if (section.details !== undefined) {
+    requireObject(section.details, `${where}.details`);
+    checkKeys(section.details, ["summary", "body"], `${where}.details`);
     requireString(section.details.summary, `${where}.details.summary`);
     requireString(section.details.body, `${where}.details.body`);
     details = `<details><summary>${inline(section.details.summary)}</summary>${paragraphs(section.details.body)}</details>`;
@@ -199,9 +250,8 @@ function stripCssComments(css) {
 }
 
 function render(data, css) {
-  if (typeof data !== "object" || data === null || Array.isArray(data)) {
-    fail("トップレベルはオブジェクトが必要です");
-  }
+  requireObject(data, "トップレベル");
+  checkKeys(data, TOP_KEYS, "トップレベル");
   requireString(data.title, "title");
   requireString(data.verdict, "verdict");
   const sections = requireArray(data.sections, "sections");
@@ -211,12 +261,15 @@ function render(data, css) {
   const lead = data.lead ? `<p class="lead">${inline(data.lead)}</p>` : "";
   const footer = data.footer ? `<footer>${inline(data.footer)}</footer>` : "";
 
-  return `<title>${esc(data.title)}</title>
+  // <title> はマークアップを解釈しないので、h1 と文言をずらさないため
+  // 両方 esc() で描く (title だけ `code` が生の backtick で残るのを避ける)。
+  return `<meta charset="utf-8">
+<title>${esc(data.title)}</title>
 <style>
 ${stripCssComments(css)}
 </style>
 <div class="wrap">
-<h1>${inline(data.title)}</h1>
+<h1>${esc(data.title)}</h1>
 ${meta}
 ${lead}
 <div class="verdict">
@@ -227,6 +280,65 @@ ${sections.map(renderSection).join("\n\n")}
 ${footer}
 </div>
 `;
+}
+
+/* ---------- 出力 ---------- */
+
+/*
+ * このレンダラは claude/settings.json の allow リストに載っていて確認プロンプト
+ * 無しで走る。argv 経由で任意のファイルを上書きできる状態にしないため、書き込みは
+ * 3 つの条件を全て満たすときだけ行う:
+ *
+ *   1. 拡張子が .html
+ *   2. 親ディレクトリの realpath が一時ディレクトリ配下 (作業中 repo のファイルを
+ *      沈黙のうちに壊さない。realpath を取るのでディレクトリ symlink 越しの
+ *      迂回も塞がる)
+ *   3. 最終要素が symlink でも hardlink でもない (O_NOFOLLOW + nlink 検査。
+ *      hardlink は拡張子チェックを迂回して任意 inode を truncate できるため)
+ *
+ * それ以外の場所に出したいときは出力先を省略して stdout を使う。
+ */
+function writeOutput(outputPath, html) {
+  if (!outputPath.endsWith(".html")) {
+    fail(`出力先は .html で終わるパスにしてください: ${outputPath}`);
+  }
+
+  const parent = dirname(resolve(outputPath));
+  let realParent;
+  try {
+    realParent = realpathSync(parent);
+  } catch (error) {
+    fail(`出力先のディレクトリを解決できません: ${parent} (${error.code ?? error.message})`);
+  }
+  const realTmp = realpathSync(tmpdir());
+  if (realParent !== realTmp && !realParent.startsWith(realTmp + sep)) {
+    fail(
+      `出力先は一時ディレクトリ配下にしてください (${realTmp}): ${outputPath}\n` +
+        `html-brief: 別の場所に出すときは出力先を省略して stdout を使ってください`,
+    );
+  }
+
+  let fd;
+  try {
+    // O_TRUNC はここでは付けない。nlink を検査してから truncate する
+    fd = openSync(outputPath, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_NOFOLLOW, 0o644);
+  } catch (error) {
+    if (error.code === "ELOOP") fail(`出力先が symlink です: ${outputPath}`);
+    fail(`出力先を開けません: ${outputPath} (${error.code ?? error.message})`);
+  }
+
+  try {
+    const stat = fstatSync(fd);
+    if (stat.nlink > 1) {
+      fail(`出力先が hardlink です (nlink=${stat.nlink}): ${outputPath}`);
+    }
+    ftruncateSync(fd, 0);
+    writeSync(fd, html);
+  } catch (error) {
+    fail(`出力先に書けません: ${outputPath} (${error.code ?? error.message})`);
+  } finally {
+    closeSync(fd);
+  }
 }
 
 /* ---------- CLI ---------- */
@@ -250,27 +362,17 @@ try {
   fail(`JSON として解析できません: ${error.message}`);
 }
 
-const css = readFileSync(join(HERE, "style.css"), "utf8");
+let css;
+try {
+  css = readFileSync(join(HERE, "style.css"), "utf8");
+} catch (error) {
+  fail(`style.css を読めません (make link は済んでいますか): ${error.code ?? error.message}`);
+}
+
 const html = render(data, css);
 
 if (outputPath) {
-  // 出力先のガード。この renderer は settings.json の allow リストに入っていて
-  // 確認プロンプト無しで走るため、argv 経由で任意のファイルを上書きできる状態に
-  // しない。拡張子を .html に限り、symlink 越しの書き込みを拒否する
-  // (~/.zshrc 等を指す symlink を作られると拡張子チェックを迂回できるため)。
-  if (!outputPath.endsWith(".html")) {
-    fail(`出力先は .html で終わるパスにしてください: ${outputPath}`);
-  }
-  let stat = null;
-  try {
-    stat = lstatSync(outputPath);
-  } catch {
-    stat = null; // 未作成なら新規作成する
-  }
-  if (stat && stat.isSymbolicLink()) {
-    fail(`出力先が symlink です: ${outputPath}`);
-  }
-  writeFileSync(outputPath, html);
+  writeOutput(outputPath, html);
 } else {
   process.stdout.write(html);
 }

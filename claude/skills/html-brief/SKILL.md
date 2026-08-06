@@ -30,8 +30,11 @@ HANDOFF.md。これらは Markdown のままにする。**指示が無いのに 
    git も参照しない):
 
    ```
-   node "$HOME/.claude/skills/html-brief/render.mjs" brief.json out.html
+   node "$HOME/.claude/skills/html-brief/render.mjs" <scratchpad>/brief.json <scratchpad>/out.html
    ```
+
+   出力先は **scratchpad などの一時ディレクトリ配下**を指定する。作業中の repo の
+   ファイルを壊さないよう、レンダラが一時ディレクトリ外への書き込みを拒否する
 4. 検証エラーが出たら **JSON を直す**。HTML を直接いじって回避しない
 5. `Artifact` ツールで `out.html` を publish し、URL を user に渡す。
    同じページを更新するときは**同じファイルパスで再 deploy**する (パスを変えると別 URL)
@@ -42,8 +45,10 @@ HANDOFF.md。これらは Markdown のままにする。**指示が無いのに 
   それでも足りなければ skill 側の PR として `style.css` / `render.mjs` を直す
 - `style.css` と `render.mjs` は **repo の正本**。ページごとに書き換えない
 - `brief.json` と生成した HTML は scratchpad に置く。**repo にコミットしない**。
-  出力先は `.html` で終わるパスに限られ、symlink 越しの書き込みは拒否される
-  (このレンダラは確認プロンプト無しで走るため)
+  このレンダラは確認プロンプト無しで走るので、出力先は 3 条件を満たすときだけ
+  受け付ける: 拡張子が `.html` / 親ディレクトリが一時ディレクトリ配下 /
+  symlink でも hardlink でもない。別の場所に出したいときは出力先を省略して
+  stdout にリダイレクトする
 - 図は `diagram` 型 (mermaid)。画像を外部から読み込まない
 
 ## 注意
