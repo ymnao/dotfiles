@@ -64,10 +64,14 @@ function esc(value) {
     .replaceAll("'", "&#39;");
 }
 
-// 本文で使えるインライン記法は `code` だけ。増やさない (増やすほど md 実装になる)。
+// 本文で使えるインライン記法は `code` と **bold** の 2 つだけ。ここから増やさない
+// (増やすほど md 実装になる)。bold を入れているのは、agent が md の癖でそのまま
+// 書くため — 実際に最初の実使用で結論ボックスに `**...**` が literal で出た。
 // esc() を先に通すので、キャプチャした中身に生のタグは入らない。
 function inline(value) {
-  return esc(value).replaceAll(/`([^`]+)`/g, "<code>$1</code>");
+  return esc(value)
+    .replaceAll(/`([^`]+)`/g, "<code>$1</code>")
+    .replaceAll(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
 }
 
 // 空行区切りを段落にする

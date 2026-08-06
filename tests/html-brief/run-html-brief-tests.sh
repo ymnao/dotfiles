@@ -232,13 +232,15 @@ expect_reject "negative series value rejected" \
   '{"title": "T", "verdict": "V", "sections": [{"type": "series",
     "points": [{"label": "a", "value": -1}]}]}'
 
-# --- 11. インライン記法は `code` だけ ---
+# --- 11. インライン記法は `code` と **bold** の 2 つだけ ---
 # backtick はシェルのコマンド置換と衝突するので printf で組み立てる (SC2016 回避)
 BT='\140'
-render "$(printf '{"title": "T", "verdict": "%bx%b と **y**", "sections": [{"type": "notes", "body": "B"}]}' "$BT" "$BT")"
+render "$(printf '{"title": "T", "verdict": "%bx%b と **y** と _z_", "sections": [{"type": "notes", "body": "B"}]}' "$BT" "$BT")"
 if [ "$RC" -eq 0 ] \
   && printf '%s' "$OUT" | grep -q '<code>x</code>' \
-  && printf '%s' "$OUT" | grep -q '\*\*y\*\*'; then ok; else ng "inline code only (rc=$RC)"; fi
+  && printf '%s' "$OUT" | grep -q '<strong>y</strong>' \
+  && ! printf '%s' "$OUT" | grep -q '\*\*y\*\*' \
+  && printf '%s' "$OUT" | grep -q '_z_'; then ok; else ng "inline code and bold only (rc=$RC)"; fi
 
 # --- 12. diagram / walkthrough の描画 ---
 render '{"title": "T", "verdict": "V", "sections": [{"type": "diagram", "mermaid": "graph TD;A-->B;"}]}'
