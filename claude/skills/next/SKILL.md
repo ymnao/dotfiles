@@ -35,10 +35,22 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
    - **既に main checkout 済みで `git pull` が unlink 失敗**:
      この状況は origin/main が locked file を書き換えている場合に発生
      するため、local main の working tree は古い locked file が残った
-     まま。安全な自動復旧手順は無いので **user Terminal で `git pull`
-     を実行してもらう**フォールバックにする (Claude から
-     `git reset --mixed origin/main` を打つと index/HEAD だけ進み
-     working tree の locked file が silent に stale 化するため禁止)
+     まま。**`git reset --mixed origin/main` を盲目的に打つのは禁止**
+     (index/HEAD だけ進み、working tree の locked file が silent に
+     stale 化する)。ただし locked file が数個なら、**stale 化しない
+     ことを先に実測してから ref を進める**手順が使える:
+     1. `git diff --name-only <old> <new>` で変更ファイルを出す
+        (locked path が数個に収まらないなら user Terminal に依頼する)
+     2. 各 locked path の目的内容を `git show <new>:<path>` で取り出し、
+        **Write / Edit tool で working tree に反映**する
+        (Bash 経路は unlink できないが file 編集 tool は通る)
+     3. **`git diff <new>` が空**であることを確認する
+        — これが「working tree が stale でない」ことの実測で、
+        この確認を飛ばすと上記の禁止手順と同じ事故になる
+     4. `git update-ref refs/heads/main <new>` → `git reset` (mixed)
+     5. `git status --porcelain` が空になることを確認する
+     実測: 2026-08-06 に PR #278 (skills 2 ファイル) の pull でこの手順を
+     使い、`git diff` 空 → ref 前進 → clean を確認した
 3. **ブランチ削除**: merge 済みの作業ブランチを `git branch -d` で削除する
    (`-D` は使わない。-d が拒否されたら未 merge コミットがある異常なので
    報告して停止)。これも config lock の警告を出しながら削除には成功する

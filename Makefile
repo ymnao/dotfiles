@@ -120,6 +120,7 @@ test: lint-locale-pin ## Verify shell scripts (shellcheck), JSON files (jq), and
 	@bash tests/lint-locale-pin/run-lint-locale-pin-tests.sh
 	@bash tests/lint-hook-stdout/run-lint-hook-stdout-tests.sh
 	@bash tests/install-shellcheck/run-install-shellcheck-tests.sh
+	@bash tests/html-brief/run-html-brief-tests.sh
 	@echo "OK: all checks passed"
 
 test-hooks: ## Run hook regression tests

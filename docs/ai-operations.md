@@ -235,6 +235,7 @@ MEMORY.md 先頭 200 行が自動ロードされる。
 | Stop hook 駆動の review 強制ループ(claude-review-loop 系) | /dev 内の有界レビューループ(上限 2 周)で足りる。無限ループ対策(`stop_hook_active` guard)が必要になり、停止タイミングの監視性も下がる | /dev 運用でレビュー飛ばしが実際に起きたとき |
 | herdr の agent skill(`herdr --skill`)/ plugin 機構 / codex 統合 | (2026-08-04)herdr 本体は導入したが(#265)、**エージェントに herdr を操作させる**部分は審査していない。socket API は認証が無く、公式 docs 自身が「socket にアクセスできる = そのセッション内の shell アクセスと同等」としている。`herdr pane run <id> "<cmd>"` は Bash tool の sandbox の外で走るため、`permissions.deny` と guard hook が内側のコマンドに当たるかは**未実測**。なお **skill を入れないことは境界ではない** — ペイン内の Claude Code には `HERDR_ENV` / `HERDR_SOCKET_PATH` が入るので、指示書が無いだけで能力は残る | #276 で実測(sandbox が socket 接続を止めるか / deny が `herdr pane run` の内側を拾うか)してから §5 の審査を通す |
 | Ralph loop 型の外側無人ループ(`while true; claude -p` 系) | merge ゲート・plan ゲートの人間監視を放棄することになる。2026-07-19 の検討で「パイプライン圧縮 + 人間ゲート再配置」(/dev + /next)を採用 | 完全無人で回してよい種類の反復タスク(大量 migration 等)が実際に発生したとき |
+| project-artifact プラグイン(公式 marketplace) | (2026-08-05)#264 で HTML 説明ページを検討した際に比較した。「固定 template.html + light/dark + Artifact publish」という**機構は同型**だが、作るページの**種類が違う** — あちらは 1 回の update に収まらないプロジェクトのタブ付きステータスページを per-project config で継続更新し delta を報告するもの。#264 が要るのは 1 回きりの判断・説明ページで、タブ機構と refresh 運用は使わない分だけ負債になる。自作の `html-brief` skill を採用した | 複数ワークストリームを継続追跡して同じ URL を更新し続ける必要が出たとき(そのときは html-brief を拡張せず、プラグインをそのまま有効化して評価する) |
 
 ## 10. codex / Claude Code の host 実行面の防御層
 
