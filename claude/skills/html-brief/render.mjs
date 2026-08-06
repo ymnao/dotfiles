@@ -16,7 +16,7 @@
  * データモデルの正本は reference/data-model.md。
  */
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { lstatSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -254,6 +254,22 @@ const css = readFileSync(join(HERE, "style.css"), "utf8");
 const html = render(data, css);
 
 if (outputPath) {
+  // 出力先のガード。この renderer は settings.json の allow リストに入っていて
+  // 確認プロンプト無しで走るため、argv 経由で任意のファイルを上書きできる状態に
+  // しない。拡張子を .html に限り、symlink 越しの書き込みを拒否する
+  // (~/.zshrc 等を指す symlink を作られると拡張子チェックを迂回できるため)。
+  if (!outputPath.endsWith(".html")) {
+    fail(`出力先は .html で終わるパスにしてください: ${outputPath}`);
+  }
+  let stat = null;
+  try {
+    stat = lstatSync(outputPath);
+  } catch {
+    stat = null; // 未作成なら新規作成する
+  }
+  if (stat && stat.isSymbolicLink()) {
+    fail(`出力先が symlink です: ${outputPath}`);
+  }
   writeFileSync(outputPath, html);
 } else {
   process.stdout.write(html);

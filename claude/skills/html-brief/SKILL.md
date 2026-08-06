@@ -41,7 +41,9 @@ HANDOFF.md。これらは Markdown のままにする。**指示が無いのに 
 - **HTML / CSS を書かない**。表現が足りないと感じたら `notes` 型で散文にするか、
   それでも足りなければ skill 側の PR として `style.css` / `render.mjs` を直す
 - `style.css` と `render.mjs` は **repo の正本**。ページごとに書き換えない
-- `brief.json` と生成した HTML は scratchpad に置く。**repo にコミットしない**
+- `brief.json` と生成した HTML は scratchpad に置く。**repo にコミットしない**。
+  出力先は `.html` で終わるパスに限られ、symlink 越しの書き込みは拒否される
+  (このレンダラは確認プロンプト無しで走るため)
 - 図は `diagram` 型 (mermaid)。画像を外部から読み込まない
 
 ## 注意

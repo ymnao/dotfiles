@@ -146,5 +146,37 @@ if [ "$RC" -eq 0 ] \
   && printf '%s' "$OUT" | grep -q '<ol class="steps">' \
   && printf '%s' "$OUT" | grep -q '<pre><code>cmd</code></pre>'; then ok; else ng "walkthrough renders (rc=$RC)"; fi
 
+# --- 13. 出力先ガード ---
+# このレンダラは settings.json の allow リストに入っていて確認プロンプト無しで
+# 走るため、argv 経由で任意のファイルを上書きできてはならない。
+printf '%s' "$MINIMAL" > "$WORKDIR/guard.json"
+
+# .html 以外への書き込みを拒否する
+printf 'original\n' > "$WORKDIR/victim.txt"
+set +e
+node "$RENDERER" "$WORKDIR/guard.json" "$WORKDIR/victim.txt" >/dev/null 2>&1
+rc=$?
+set -e
+if [ "$rc" -ne 0 ] && [ "$(cat "$WORKDIR/victim.txt")" = "original" ]; then
+  ok; else ng "non-html output path rejected (rc=$rc)"; fi
+
+# symlink 越しの書き込みを拒否する (拡張子チェックの迂回経路)
+printf 'secret\n' > "$WORKDIR/secret.txt"
+ln -s "$WORKDIR/secret.txt" "$WORKDIR/evil.html"
+set +e
+node "$RENDERER" "$WORKDIR/guard.json" "$WORKDIR/evil.html" >/dev/null 2>&1
+rc=$?
+set -e
+if [ "$rc" -ne 0 ] && [ "$(cat "$WORKDIR/secret.txt")" = "secret" ]; then
+  ok; else ng "symlink output path rejected (rc=$rc)"; fi
+
+# 正常な .html には書ける
+set +e
+node "$RENDERER" "$WORKDIR/guard.json" "$WORKDIR/fine.html" >/dev/null 2>&1
+rc=$?
+set -e
+if [ "$rc" -eq 0 ] && grep -q '<title>T</title>' "$WORKDIR/fine.html"; then
+  ok; else ng "html output path accepted (rc=$rc)"; fi
+
 echo "html-brief renderer tests: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

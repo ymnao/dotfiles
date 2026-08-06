@@ -23,7 +23,8 @@
       "Bash(make *)",
       "Bash(bash \"$HOME/.claude/skills/pr/scripts/gather-branch-info.sh\":*)",
       "Bash(bash \"$HOME/.claude/skills/pr/scripts/classify-risk.sh\":*)",
-      "Bash(bash \"$HOME/.claude/skills/dependabot-bulk/scripts/list-dependabot-prs.sh\":*)"
+      "Bash(bash \"$HOME/.claude/skills/dependabot-bulk/scripts/list-dependabot-prs.sh\":*)",
+      "Bash(node \"$HOME/.claude/skills/html-brief/render.mjs\":*)"
     ],
     "deny": [
       "Bash(rm -rf *)",
