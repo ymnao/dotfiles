@@ -6,7 +6,9 @@ set -euo pipefail
 # 何を守るためのテストか (予防的な網羅ではなく、実際に壊れる経路):
 #   - **エスケープ**: 入力の意味データがそのまま HTML に流れると生成物が壊れる
 #     (agent が書く文字列に <, &, ", ' が混ざるのは日常的に起きる)
-#   - **外部参照ゼロ**: 混入すると Artifact の CSP に publish 後まで気付けない
+#   - **subresource の読み込みゼロ**: 混入すると Artifact の CSP に publish 後まで
+#     気付けない。**`<a href>` のハイパーリンクは対象外** (CSP は止めないし
+#     ページも壊れない)。href が出るのは `<a>` の中だけであることは別に測る
 #   - **入力の型検証**: 列数不一致・未知の section・キーの typo を publish 前に落とす。
 #     かつ **stack trace ではなく `html-brief: ` 付きのメッセージで落ちる**こと
 #     (agent が JSON のどこを直せばよいか特定できるようにするため)
@@ -23,7 +25,7 @@ RENDERER="${RENDERER:-$REPO_ROOT/claude/skills/html-brief/render.mjs}"
 
 # 実行ケース数の独立した期待値。ケースを増減したらここも直す
 # (pass 数ではなく実行数を数える — ケースが黙って消えたときに気付くため)。
-EXPECTED_CASES=56
+EXPECTED_CASES=72
 
 if [ ! -f "$RENDERER" ]; then
   echo "ERROR: renderer not found: $RENDERER" >&2
@@ -225,17 +227,29 @@ ALL_TYPES='{"title": "T", "verdict": "V", "sections": [
   {"type": "series", "points": [{"label": "p", "value": 1}]},
   {"type": "diagram", "mermaid": "graph TD;A-->B;"}
 ]}'
-# 検査は scheme に依存しない形にする (相対パスの @import / href / srcset も拒否)
-EXTERNAL_REF_RE='https?://|url\(|@import|<script|src=|srcset=|href='
+# **subresource の読み込み**だけを拒否する。CSP が止めるのはこちらで、
+# `<a href>` のハイパーリンクは対象外 (止まらないし、ページも壊れない)。
+# scheme に依存しない形にする (相対パスの @import / srcset も拒否)。
+SUBRESOURCE_RE='url\(|@import|<script|<iframe|<link |src=|srcset='
 render "$ALL_TYPES"
-if [ "$RC" -eq 0 ] && ! printf '%s' "$OUT" | grep -qE "$EXTERNAL_REF_RE"; then
-  ok; else ng "no external references (rc=$RC)"; fi
+if [ "$RC" -eq 0 ] && ! printf '%s' "$OUT" | grep -qE "$SUBRESOURCE_RE"; then
+  ok; else ng "no subresource loads (rc=$RC)"; fi
 
 # 検査自体が効いていることを、既知の陽性で確かめる (パターンの空振り防止)
-if printf '<link href="x.css">' | grep -qE "$EXTERNAL_REF_RE" \
-  && printf '@import "x.css";' | grep -qE "$EXTERNAL_REF_RE" \
-  && printf '<img srcset="x.png">' | grep -qE "$EXTERNAL_REF_RE"; then
-  ok; else ng "external-ref pattern detects known positives"; fi
+if printf '<link href="x.css">' | grep -qE "$SUBRESOURCE_RE" \
+  && printf '@import "x.css";' | grep -qE "$SUBRESOURCE_RE" \
+  && printf '<img srcset="x.png">' | grep -qE "$SUBRESOURCE_RE" \
+  && printf 'background: url(x.png)' | grep -qE "$SUBRESOURCE_RE"; then
+  ok; else ng "subresource pattern detects known positives"; fi
+
+# href が出るのは <a> だけ (数を突き合わせる)。links 型を含む入力で測る
+render '{"title": "T", "verdict": "V", "sections": [{"type": "links",
+  "items": [{"label": "PR", "url": "https://github.com/ymnao/dotfiles/pull/279"}]}]}'
+href_all="$(printf '%s' "$OUT" | grep -oE 'href="' | wc -l | tr -d ' ')"
+href_anchor="$(printf '%s' "$OUT" | grep -oE '<a href="' | wc -l | tr -d ' ')"
+if [ "$RC" -eq 0 ] && [ "$href_all" = "$href_anchor" ] && [ "$href_all" = "1" ] \
+  && ! printf '%s' "$OUT" | grep -qE "$SUBRESOURCE_RE"; then
+  ok; else ng "href only inside <a> (rc=$RC, all=$href_all anchor=$href_anchor)"; fi
 
 # --- 10. series: バーの幅を最大値から算出する ---
 render '{"title": "T", "verdict": "V", "sections": [{"type": "series",
@@ -312,6 +326,89 @@ render '{"title": "T", "verdict": "日本語 🎨 か゚ <b>", "sections": [{"ty
 if [ "$RC" -eq 0 ] \
   && printf '%s' "$OUT" | grep -q '日本語 🎨 か゚' \
   && printf '%s' "$OUT" | grep -q '&lt;b&gt;'; then ok; else ng "unicode preserved (rc=$RC)"; fi
+
+# --- 12c. 追加した 7 型 + diff + 内訳バー ---
+render '{"title": "T", "verdict": "V", "sections": [{"type": "compare",
+  "left": {"label": "前", "code": "a"}, "right": {"label": "後", "body": "b"}}]}'
+if [ "$RC" -eq 0 ] \
+  && printf '%s' "$OUT" | grep -q '<div class="compare">' \
+  && printf '%s' "$OUT" | grep -q '<p class="compare-label">前</p>'; then
+  ok; else ng "compare renders (rc=$RC)"; fi
+
+# diff は行頭 1 文字で色を分ける
+render '{"title": "T", "verdict": "V", "sections": [{"type": "walkthrough",
+  "steps": [{"title": "s", "code": "@@ -1 +1 @@\n-old\n+new\n ctx", "codeLang": "diff"}]}]}'
+if [ "$RC" -eq 0 ] \
+  && printf '%s' "$OUT" | grep -q '<pre class="diff">' \
+  && printf '%s' "$OUT" | grep -q '<span class="d-add">+new</span>' \
+  && printf '%s' "$OUT" | grep -q '<span class="d-del">-old</span>' \
+  && printf '%s' "$OUT" | grep -q '<span class="d-hunk">@@ -1 +1 @@</span>'; then
+  ok; else ng "diff code block (rc=$RC)"; fi
+
+expect_reject "unknown codeLang rejected" \
+  '{"title": "T", "verdict": "V", "sections": [{"type": "walkthrough",
+    "steps": [{"title": "s", "code": "x", "codeLang": "typescript"}]}]}'
+
+# links: http(s) 以外の scheme を拒否する
+expect_reject "javascript: url rejected" \
+  '{"title": "T", "verdict": "V", "sections": [{"type": "links",
+    "items": [{"label": "x", "url": "javascript:alert(1)"}]}]}'
+expect_reject "relative url rejected" \
+  '{"title": "T", "verdict": "V", "sections": [{"type": "links",
+    "items": [{"label": "x", "url": "/local/path"}]}]}'
+
+render '{"title": "T", "verdict": "V", "sections": [{"type": "callout", "kind": "warn", "body": "w"}]}'
+if [ "$RC" -eq 0 ] && printf '%s' "$OUT" | grep -q '<div class="callout warn">'; then
+  ok; else ng "callout renders (rc=$RC)"; fi
+expect_reject "bad callout kind rejected" \
+  '{"title": "T", "verdict": "V", "sections": [{"type": "callout", "kind": "danger", "body": "w"}]}'
+
+render '{"title": "T", "verdict": "V", "sections": [{"type": "definitions",
+  "items": [{"term": "t1", "body": "d1"}]}]}'
+if [ "$RC" -eq 0 ] && printf '%s' "$OUT" | grep -q '<dt>t1</dt>'; then
+  ok; else ng "definitions renders (rc=$RC)"; fi
+
+render '{"title": "T", "verdict": "V", "sections": [{"type": "checklist",
+  "items": [{"label": "done", "checked": true}, {"label": "todo"}]}]}'
+if [ "$RC" -eq 0 ] \
+  && printf '%s' "$OUT" | grep -q '<span class="check on"' \
+  && printf '%s' "$OUT" | grep -q '<span class="check off"'; then
+  ok; else ng "checklist renders (rc=$RC)"; fi
+expect_reject "non-boolean checked rejected" \
+  '{"title": "T", "verdict": "V", "sections": [{"type": "checklist",
+    "items": [{"label": "x", "checked": "yes"}]}]}'
+
+render '{"title": "T", "verdict": "V", "sections": [{"type": "tiles",
+  "items": [{"label": "件数", "value": 56}]}]}'
+if [ "$RC" -eq 0 ] && printf '%s' "$OUT" | grep -q '<p class="tile-value">56</p>'; then
+  ok; else ng "tiles renders (rc=$RC)"; fi
+expect_reject "non-scalar tile value rejected" \
+  '{"title": "T", "verdict": "V", "sections": [{"type": "tiles",
+    "items": [{"label": "x", "value": {"a": 1}}]}]}'
+
+render '{"title": "T", "verdict": "V", "sections": [{"type": "timeline",
+  "items": [{"when": "2026-08-06", "title": "t", "body": "b"}]}]}'
+if [ "$RC" -eq 0 ] \
+  && printf '%s' "$OUT" | grep -q '<p class="tl-when">2026-08-06</p>' \
+  && printf '%s' "$OUT" | grep -q '<p class="tl-title">t</p>'; then
+  ok; else ng "timeline renders (rc=$RC)"; fi
+
+# 内訳つきバー: 塗り分けと凡例が出る。内側の幅は行内の割合
+render '{"title": "T", "verdict": "V", "sections": [{"type": "series",
+  "points": [{"label": "a", "value": 4, "parts": [
+    {"label": "Critical", "value": 1, "kind": "stop"},
+    {"label": "Warning", "value": 3, "kind": "warn"}]}]}]}'
+if [ "$RC" -eq 0 ] \
+  && printf '%s' "$OUT" | grep -q '<span class="bar seg" style="width: 100%">' \
+  && printf '%s' "$OUT" | grep -q '<span class="seg-part stop" style="width: 25%">' \
+  && printf '%s' "$OUT" | grep -q '<span class="seg-part warn" style="width: 75%">' \
+  && printf '%s' "$OUT" | grep -q '<p class="legend">'; then
+  ok; else ng "segmented bar (rc=$RC)"; fi
+
+# 合計が value と一致しない内訳は落とす
+expect_reject "parts sum mismatch rejected" \
+  '{"title": "T", "verdict": "V", "sections": [{"type": "series",
+    "points": [{"label": "a", "value": 4, "parts": [{"label": "x", "value": 1}]}]}]}'
 
 # --- 13. 出力先ガード ---
 # argv の指すファイルを誤って壊さないことを測る。

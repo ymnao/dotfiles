@@ -100,6 +100,104 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: now
 .bar { display: block; height: .45rem; border-radius: 2px; background: var(--accent); min-width: 2px; }
 .bar-cell { width: 40%; min-width: 6rem; }
 
+/* 内訳つきバー — 外側が合計、内側の各 part がその中の割合 */
+.bar.seg { display: flex; background: none; overflow: hidden; }
+.seg-part { display: block; height: 100%; background: var(--info-fg); }
+.seg-part.ok { background: var(--ok-fg); }
+.seg-part.warn { background: var(--warn-fg); }
+.seg-part.stop { background: var(--stop-fg); }
+.legend { display: flex; flex-wrap: wrap; gap: .4rem; margin: .5rem 0 0; }
+
+/* 対比 — 狭い画面では 1 カラムに落とす */
+.compare { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin: 1rem 0; }
+.compare-side > :first-child { margin-top: 0; }
+.compare-label {
+  font-size: .74rem; letter-spacing: .08em; font-weight: 700;
+  color: var(--ink-faint); margin: 0 0 .4rem;
+}
+@media (max-width: 40rem) { .compare { grid-template-columns: 1fr; } }
+
+/* diff — 行頭 1 文字だけで分ける (構文解析はしない) */
+pre.diff code { display: block; }
+pre.diff span { display: block; margin: 0 -1rem; padding: 0 1rem; }
+.d-add { background: var(--ok-bg); color: var(--ok-fg); }
+.d-del { background: var(--stop-bg); color: var(--stop-fg); }
+.d-hunk { color: var(--accent); }
+.d-meta { color: var(--ink-faint); }
+
+/* 出典・参照先 */
+ul.links { list-style: none; padding: 0; margin: 1rem 0; }
+ul.links > li { padding: .3rem 0; border-bottom: 1px solid var(--line); }
+ul.links a { color: var(--accent); }
+.link-note { color: var(--ink-faint); font-size: .85rem; }
+
+/* 注意喚起 */
+.callout {
+  border-radius: 3px; padding: .9rem 1.1rem; margin: 1rem 0;
+  background: var(--info-bg); color: var(--info-fg);
+}
+.callout.ok { background: var(--ok-bg); color: var(--ok-fg); }
+.callout.warn { background: var(--warn-bg); color: var(--warn-fg); }
+.callout.stop { background: var(--stop-bg); color: var(--stop-fg); }
+.callout p:first-child { margin-top: 0; }
+.callout p:last-child { margin-bottom: 0; }
+
+/* 用語定義 */
+dl.defs { margin: 1rem 0; }
+dl.defs dt { font-weight: 700; margin-top: 1rem; }
+dl.defs dd { margin: .2rem 0 0; padding-left: 1rem; border-left: 2px solid var(--line); }
+dl.defs dd p { margin: .3rem 0; }
+
+/* チェックリスト */
+ul.checklist { list-style: none; padding: 0; margin: 1rem 0; }
+ul.checklist > li { display: flex; gap: .6rem; align-items: baseline; padding: .25rem 0; }
+ul.checklist > li.off { color: var(--ink-soft); }
+.check {
+  flex: none; width: .95rem; height: .95rem; border-radius: 3px;
+  border: 1px solid var(--line); position: relative; top: .12rem;
+}
+.check.on { background: var(--ok-bg); border-color: var(--ok-fg); }
+.check.on::after {
+  content: ""; position: absolute; left: .28rem; top: .06rem;
+  width: .22rem; height: .5rem; border: solid var(--ok-fg);
+  border-width: 0 2px 2px 0; transform: rotate(45deg);
+}
+.check-note { color: var(--ink-faint); font-size: .85rem; margin-left: .5rem; }
+
+/* 数値タイル */
+.tiles {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: .75rem; margin: 1rem 0;
+}
+.tile {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 3px; padding: .9rem 1rem;
+}
+.tile-value {
+  font-size: 1.6rem; font-weight: 700; line-height: 1.2; margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.tile-label { font-size: .82rem; color: var(--ink-soft); margin: .2rem 0 0; }
+.tile-note { font-size: .76rem; color: var(--ink-faint); margin: .35rem 0 0; }
+
+/* 経緯 (walkthrough は「手順」、こちらは「いつ何が起きたか」) */
+ol.timeline { list-style: none; padding: 0; margin: 1rem 0; }
+ol.timeline > li {
+  position: relative; padding: 0 0 1.4rem 1.5rem;
+  border-left: 1px solid var(--line); margin-left: .35rem;
+}
+ol.timeline > li:last-child { padding-bottom: 0; }
+ol.timeline > li::before {
+  content: ""; position: absolute; left: -.3rem; top: .55rem;
+  width: .55rem; height: .55rem; border-radius: 999px;
+  background: var(--bg); border: 2px solid var(--accent);
+}
+.tl-when {
+  font-size: .74rem; letter-spacing: .06em; color: var(--ink-faint);
+  margin: 0; font-variant-numeric: tabular-nums;
+}
+.tl-title { font-weight: 700; margin: .1rem 0 0; }
+
 ol.steps { list-style: none; counter-reset: step; padding: 0; margin: 1rem 0; }
 ol.steps > li {
   counter-increment: step; position: relative;

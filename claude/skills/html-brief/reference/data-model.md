@@ -24,7 +24,7 @@
 
 | キー | 必須 | 内容 |
 |---|---|---|
-| `type` | ○ | `decision` / `walkthrough` / `series` / `notes` / `diagram` |
+| `type` | ○ | 下記 12 型のいずれか |
 | `title` | | 見出し (`<h2>`) |
 | `details` | | `{ "summary": "...", "body": "..." }` — 長い根拠を折り畳む |
 
@@ -77,6 +77,15 @@
   (割合を推測して書かない)
 - `takeaway` は**任意だが原則書く**(表だけで終わらせない)。レンダラは省略を
   拒否しない — 数字の意味づけは人が判断することなので、機械では強制しない
+- `points[].parts` を書くとバーを内訳で塗り分け、凡例が付く。
+  **合計が `value` と一致しないと検証エラー**(「一部だけ見せている」のか
+  誤りなのか読者に区別が付かないため):
+
+  ```json
+  { "label": "2 周目", "value": 9, "parts": [
+      { "label": "Critical", "value": 2, "kind": "stop" },
+      { "label": "Warning",  "value": 7, "kind": "warn" }] }
+  ```
 
 ## `notes` — 散文
 
@@ -87,3 +96,62 @@
 
 `{ "type": "diagram", "mermaid": "graph TD;A-->B;" }`。
 Artifact が mermaid をネイティブに描画する。画像を外部から読み込まない。
+
+## `compare` — 2 カラム対比
+
+入力/出力、変更前/後。**説明の中核は差分**なので、読者に頭の中で並べさせない。
+
+```json
+{
+  "type": "compare",
+  "left":  { "label": "変更前", "code": "Math.max(...values)" },
+  "right": { "label": "変更後", "code": "values.reduce(...)", "codeLang": "plain" }
+}
+```
+
+- `left` / `right` とも `label` が必須、`body` / `code` / `codeLang` は任意
+- 狭い画面では 1 カラムに落ちる
+
+## `links` — 出典・参照先
+
+```json
+{ "type": "links", "items": [{ "label": "PR #279", "url": "https://…", "note": "実装" }] }
+```
+
+- **`url` は `http(s)` のみ**。`javascript:` / `data:` 等は検証エラーで落ちる
+- 本文中にリンクは書けない (インライン記法にリンクは無い)。参照はこの型に集める
+
+## `callout` — 注意喚起
+
+`{ "type": "callout", "kind": "warn", "body": "落とし穴の説明" }`。
+`kind` は `ok` / `warn` / `stop` / `info` (既定)。**多用すると全部が目立たなくなる**。
+
+## `definitions` — 用語の定義
+
+`{ "type": "definitions", "items": [{ "term": "Tier1", "body": "壊れるもの" }] }`。
+`term` と `body` の両方が必須。
+
+## `checklist` — チェックリスト
+
+```json
+{ "type": "checklist", "items": [{ "label": "済んだ項目", "checked": true, "note": "備考" }] }
+```
+
+`checked` は真偽値 (既定 `false`)。静的ページなので**読者が触れるものではない** — 現状を示すために使う。
+
+## `tiles` — 数値サマリ
+
+`{ "type": "tiles", "items": [{ "label": "テストケース", "value": 56, "note": "備考" }] }`。
+`value` は文字列か数値。規模感を先に掴ませたいときだけ使う (結論ボックスと役割が競合するので置きすぎない)。
+
+## `timeline` — 経緯
+
+`{ "type": "timeline", "items": [{ "when": "2026-08-06", "title": "…", "body": "…" }] }`。
+`walkthrough` が「手順」なのに対し、こちらは**いつ何が起きたか**。番号は振らない。
+
+## コードブロックの `codeLang`
+
+`walkthrough.steps[]` と `compare` の左右で使える。値は `plain` (既定) か `diff` のみ。
+
+`diff` にすると**行頭 1 文字だけ**で色を分ける (`+` 追加 / `-` 削除 / `@@` hunk /
+`+++` `---` `diff ` メタ)。構文解析はしないので、言語別のハイライトは無い。

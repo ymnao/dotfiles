@@ -48,7 +48,15 @@ const SECTION_KEYS = {
   series: ["points", "unit", "labelHeader", "valueHeader", "noteHeader", "takeaway"],
   notes: ["body"],
   diagram: ["mermaid"],
+  compare: ["left", "right"],
+  links: ["items"],
+  callout: ["kind", "body"],
+  definitions: ["items"],
+  checklist: ["items"],
+  tiles: ["items"],
+  timeline: ["items"],
 };
+const CODE_LANGS = new Set(["plain", "diff"]);
 
 function fail(message) {
   process.stderr.write(`html-brief: ${message}\n`);
@@ -125,6 +133,39 @@ function requireStringArray(value, where) {
   return value;
 }
 
+// リンクは `<a href>` だけ。scheme を http(s) に限る (javascript: / data: を弾く)。
+// CSP が止めるのは subresource の読み込みで、ハイパーリンク自体は対象外。
+function requireHttpUrl(value, where) {
+  requireString(value, where);
+  if (!/^https?:\/\/[^\s<>"'`]+$/i.test(value)) {
+    fail(`${where} は http(s) の URL が必要です: ${value}`);
+  }
+  return value;
+}
+
+// コードブロック。`codeLang: "diff"` のときだけ行頭 1 文字で色を分ける
+// (構文解析はしない — 決定的に決まる範囲に留める)。
+function codeBlock(code, lang, where) {
+  optionalString(lang, `${where}.codeLang`);
+  if (lang !== undefined && !CODE_LANGS.has(lang)) {
+    fail(`${where}.codeLang が不正です: ${lang} (使えるのは ${[...CODE_LANGS].join(" / ")})`);
+  }
+  if (lang !== "diff") {
+    return `<pre><code>${esc(code)}</code></pre>`;
+  }
+  const lines = String(code)
+    .split("\n")
+    .map((line) => {
+      let kind = "ctx";
+      if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("diff ")) kind = "meta";
+      else if (line.startsWith("@@")) kind = "hunk";
+      else if (line.startsWith("+")) kind = "add";
+      else if (line.startsWith("-")) kind = "del";
+      return `<span class="d-${kind}">${esc(line)}</span>`;
+    });
+  return `<pre class="diff"><code>${lines.join("\n")}</code></pre>`;
+}
+
 function checkKeys(object, allowed, where) {
   for (const key of Object.keys(object)) {
     if (!allowed.includes(key)) {
@@ -192,12 +233,12 @@ function renderWalkthrough(section, where) {
     .map((step, i) => {
       const at = `${where}.steps[${i}]`;
       requireObject(step, at);
-      checkKeys(step, ["title", "body", "code"], at);
+      checkKeys(step, ["title", "body", "code", "codeLang"], at);
       requireString(step.title, `${at}.title`);
       optionalString(step.body, `${at}.body`);
       optionalString(step.code, `${at}.code`);
       const body = step.body ? paragraphs(step.body) : "";
-      const code = step.code ? `<pre><code>${esc(step.code)}</code></pre>` : "";
+      const code = step.code ? codeBlock(step.code, step.codeLang, at) : "";
       return `<li><p class="step-title">${inline(step.title)}</p>${body}${code}</li>`;
     })
     .join("\n");
@@ -209,14 +250,39 @@ function renderSeries(section, where) {
     optionalString(section[key], `${where}.${key}`);
   }
   const points = requireArray(section.points, `${where}.points`);
+  // 凡例は parts の (label, kind) を出現順に一意化して作る
+  const legend = new Map();
   const values = points.map((point, i) => {
     const at = `${where}.points[${i}]`;
     requireObject(point, at);
-    checkKeys(point, ["label", "value", "note"], at);
+    checkKeys(point, ["label", "value", "note", "parts"], at);
     requireString(point.label, `${at}.label`);
     optionalString(point.note, `${at}.note`);
     if (typeof point.value !== "number" || !Number.isFinite(point.value) || point.value < 0) {
       fail(`${at}.value は 0 以上の数値が必要です`);
+    }
+    if (point.parts !== undefined) {
+      const parts = requireArray(point.parts, `${at}.parts`);
+      let sum = 0;
+      parts.forEach((part, j) => {
+        const pat = `${at}.parts[${j}]`;
+        requireObject(part, pat);
+        checkKeys(part, ["label", "value", "kind"], pat);
+        requireString(part.label, `${pat}.label`);
+        if (typeof part.value !== "number" || !Number.isFinite(part.value) || part.value < 0) {
+          fail(`${pat}.value は 0 以上の数値が必要です`);
+        }
+        const kind = part.kind ?? "info";
+        if (!BADGE_KINDS.has(kind)) {
+          fail(`${pat}.kind が不正です: ${kind} (使えるのは ${[...BADGE_KINDS].join(" / ")})`);
+        }
+        if (!legend.has(part.label)) legend.set(part.label, kind);
+        sum += part.value;
+      });
+      // 合計が合わない内訳は「一部だけ見せている」のか誤りなのか読者に分からない
+      if (sum !== point.value) {
+        fail(`${at}.parts の合計 (${sum}) が value (${point.value}) と一致しません`);
+      }
     }
     return point.value;
   });
@@ -228,16 +294,30 @@ function renderSeries(section, where) {
     .map((point, i) => {
       const width = max > 0 ? Math.round((values[i] / max) * 1000) / 10 : 0;
       const note = point.note ? inline(point.note) : "";
-      return `<tr><td>${inline(point.label)}</td><td class="num">${esc(point.value)}${unit}</td><td class="bar-cell"><span class="bar" style="width: ${width}%"></span></td><td>${note}</td></tr>`;
+      // 内訳があるときはバーを塗り分ける。各 part の幅は「その行のバーの中での割合」
+      const bar = point.parts
+        ? `<span class="bar seg" style="width: ${width}%">${point.parts
+            .map((part) => {
+              const inner = point.value > 0 ? Math.round((part.value / point.value) * 1000) / 10 : 0;
+              return `<span class="seg-part ${part.kind ?? "info"}" style="width: ${inner}%"></span>`;
+            })
+            .join("")}</span>`
+        : `<span class="bar" style="width: ${width}%"></span>`;
+      return `<tr><td>${inline(point.label)}</td><td class="num">${esc(point.value)}${unit}</td><td class="bar-cell">${bar}</td><td>${note}</td></tr>`;
     })
     .join("\n");
+  const legendHtml = legend.size
+    ? `<p class="legend">${[...legend]
+        .map(([label, kind]) => `<span class="badge ${kind}">${esc(label)}</span>`)
+        .join(" ")}</p>`
+    : "";
   const takeaway = section.takeaway ? paragraphs(section.takeaway) : "";
   return `<div class="scroll"><table>
 <thead><tr><th>${esc(section.labelHeader ?? "時点")}</th><th>${esc(section.valueHeader ?? "値")}</th><th>推移</th><th>${esc(section.noteHeader ?? "備考")}</th></tr></thead>
 <tbody>
 ${rows}
 </tbody>
-</table></div>${takeaway}`;
+</table></div>${legendHtml}${takeaway}`;
 }
 
 function renderNotes(section, where) {
@@ -249,12 +329,137 @@ function renderDiagram(section, where) {
   return `<pre class="mermaid">${esc(requireString(section.mermaid, `${where}.mermaid`))}</pre>`;
 }
 
+// 対比 — 入力/出力、変更前/後。説明の中核は差分なので、並べて置く
+function renderCompare(section, where) {
+  const side = (key) => {
+    const at = `${where}.${key}`;
+    const obj = requireObject(section[key], at);
+    checkKeys(obj, ["label", "body", "code", "codeLang"], at);
+    requireString(obj.label, `${at}.label`);
+    optionalString(obj.body, `${at}.body`);
+    optionalString(obj.code, `${at}.code`);
+    const body = obj.body ? paragraphs(obj.body) : "";
+    const code = obj.code ? codeBlock(obj.code, obj.codeLang, at) : "";
+    return `<div class="compare-side"><p class="compare-label">${inline(obj.label)}</p>${body}${code}</div>`;
+  };
+  return `<div class="compare">${side("left")}${side("right")}</div>`;
+}
+
+// 出典・参照先。本文からリンクを切り離して 1 箇所に集める
+function renderLinks(section, where) {
+  const items = requireArray(section.items, `${where}.items`);
+  const rows = items
+    .map((item, i) => {
+      const at = `${where}.items[${i}]`;
+      requireObject(item, at);
+      checkKeys(item, ["label", "url", "note"], at);
+      requireString(item.label, `${at}.label`);
+      optionalString(item.note, `${at}.note`);
+      const url = requireHttpUrl(item.url, `${at}.url`);
+      const note = item.note ? ` <span class="link-note">${inline(item.note)}</span>` : "";
+      return `<li><a href="${esc(url)}" rel="noreferrer">${inline(item.label)}</a>${note}</li>`;
+    })
+    .join("\n");
+  return `<ul class="links">\n${rows}\n</ul>`;
+}
+
+// 注意喚起 — 落とし穴を本文から浮かせる
+function renderCallout(section, where) {
+  const kind = section.kind ?? "info";
+  if (!BADGE_KINDS.has(kind)) {
+    fail(`${where}.kind が不正です: ${kind} (使えるのは ${[...BADGE_KINDS].join(" / ")})`);
+  }
+  return `<div class="callout ${kind}">${paragraphs(requireString(section.body, `${where}.body`))}</div>`;
+}
+
+// 用語の定義。前提知識の非対称を埋める
+function renderDefinitions(section, where) {
+  const items = requireArray(section.items, `${where}.items`);
+  const rows = items
+    .map((item, i) => {
+      const at = `${where}.items[${i}]`;
+      requireObject(item, at);
+      checkKeys(item, ["term", "body"], at);
+      requireString(item.term, `${at}.term`);
+      requireString(item.body, `${at}.body`);
+      return `<dt>${inline(item.term)}</dt>\n<dd>${paragraphs(item.body)}</dd>`;
+    })
+    .join("\n");
+  return `<dl class="defs">\n${rows}\n</dl>`;
+}
+
+// チェックリスト。読者が自分のケースに当てはめられる形にする
+function renderChecklist(section, where) {
+  const items = requireArray(section.items, `${where}.items`);
+  const rows = items
+    .map((item, i) => {
+      const at = `${where}.items[${i}]`;
+      requireObject(item, at);
+      checkKeys(item, ["label", "checked", "note"], at);
+      requireString(item.label, `${at}.label`);
+      optionalString(item.note, `${at}.note`);
+      if (item.checked !== undefined && typeof item.checked !== "boolean") {
+        fail(`${at}.checked は true / false が必要です`);
+      }
+      const state = item.checked ? "on" : "off";
+      const note = item.note ? `<span class="check-note">${inline(item.note)}</span>` : "";
+      return `<li class="${state}"><span class="check ${state}" aria-hidden="true"></span><span>${inline(item.label)}${note}</span></li>`;
+    })
+    .join("\n");
+  return `<ul class="checklist">\n${rows}\n</ul>`;
+}
+
+// 数値サマリのタイル。規模感を先に掴ませる
+function renderTiles(section, where) {
+  const items = requireArray(section.items, `${where}.items`);
+  const rows = items
+    .map((item, i) => {
+      const at = `${where}.items[${i}]`;
+      requireObject(item, at);
+      checkKeys(item, ["label", "value", "note"], at);
+      requireString(item.label, `${at}.label`);
+      optionalString(item.note, `${at}.note`);
+      if (typeof item.value !== "string" && typeof item.value !== "number") {
+        fail(`${at}.value は文字列か数値が必要です`);
+      }
+      const note = item.note ? `<p class="tile-note">${inline(item.note)}</p>` : "";
+      return `<div class="tile"><p class="tile-value">${esc(item.value)}</p><p class="tile-label">${inline(item.label)}</p>${note}</div>`;
+    })
+    .join("\n");
+  return `<div class="tiles">\n${rows}\n</div>`;
+}
+
+// 経緯。walkthrough は「手順」、こちらは「いつ何が起きたか」
+function renderTimeline(section, where) {
+  const items = requireArray(section.items, `${where}.items`);
+  const rows = items
+    .map((item, i) => {
+      const at = `${where}.items[${i}]`;
+      requireObject(item, at);
+      checkKeys(item, ["when", "title", "body"], at);
+      requireString(item.when, `${at}.when`);
+      requireString(item.title, `${at}.title`);
+      optionalString(item.body, `${at}.body`);
+      const body = item.body ? paragraphs(item.body) : "";
+      return `<li><p class="tl-when">${inline(item.when)}</p><p class="tl-title">${inline(item.title)}</p>${body}</li>`;
+    })
+    .join("\n");
+  return `<ol class="timeline">\n${rows}\n</ol>`;
+}
+
 const RENDERERS = {
   decision: renderDecision,
   walkthrough: renderWalkthrough,
   series: renderSeries,
   notes: renderNotes,
   diagram: renderDiagram,
+  compare: renderCompare,
+  links: renderLinks,
+  callout: renderCallout,
+  definitions: renderDefinitions,
+  checklist: renderChecklist,
+  tiles: renderTiles,
+  timeline: renderTimeline,
 };
 
 function renderSection(section, i) {

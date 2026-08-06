@@ -22,8 +22,9 @@ HANDOFF.md。これらは Markdown のままにする。**指示が無いのに 
 
 ## Steps
 
-1. `$HOME/.claude/skills/html-brief/reference/data-model.md` を読む。
-   section は `decision` / `walkthrough` / `series` / `notes` / `diagram` の 5 型
+1. `$HOME/.claude/skills/html-brief/reference/data-model.md` を読む。section は 12 型:
+   `decision` `walkthrough` `series` `notes` `diagram` `compare` `links`
+   `callout` `definitions` `checklist` `tiles` `timeline`
 2. scratchpad に `brief.json` を書く。**結論 (`verdict`) だけで判断が付く粒度**に
    すること。本文を読まないと結論が分からないページは、md を読み返すのと同じコスト
 3. HTML を生成する。**どの repo からでもこの絶対パスで動く** (レンダラは cwd も
