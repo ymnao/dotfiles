@@ -223,7 +223,7 @@ MEMORY.md 先頭 200 行が自動ロードされる。
 
 **導入済みツールの一部機能だけを見送った場合もここに書く** — 表の単位は
 「ツール」ではなく「見送った機構」。本体を入れたことが、その拡張まで
-審査済みであることを意味しないため(実例: herdr の行)。
+審査済みであることを意味しないため(実例: herdr の 3 行)。
 
 | 機構 | 見送り理由 | 再評価条件 |
 |---|---|---|
@@ -233,7 +233,9 @@ MEMORY.md 先頭 200 行が自動ロードされる。
 | Superpowers(obra/superpowers) | 公式マーケットプレイス外で全文監査が必要。既存 skill 群と思想が重複。更新追従がない | 同種の困りごとが 3 回起きたとき、または公式マーケットプレイス入りしたとき(その skill だけ監査して取り込む) |
 | keybindings カスタマイズ | 現時点で困っている操作がない | 操作の不満が具体化したとき |
 | Stop hook 駆動の review 強制ループ(claude-review-loop 系) | /dev 内の有界レビューループ(上限 2 周)で足りる。無限ループ対策(`stop_hook_active` guard)が必要になり、停止タイミングの監視性も下がる | /dev 運用でレビュー飛ばしが実際に起きたとき |
-| herdr の agent skill(`herdr --skill`)/ plugin 機構 / codex 統合 | (2026-08-04)herdr 本体は導入したが(#265)、**エージェントに herdr を操作させる**部分は審査していない。socket API は認証が無く、公式 docs 自身が「socket にアクセスできる = そのセッション内の shell アクセスと同等」としている。`herdr pane run <id> "<cmd>"` は Bash tool の sandbox の外で走るため、`permissions.deny` と guard hook が内側のコマンドに当たるかは**未実測**。なお **skill を入れないことは境界ではない** — ペイン内の Claude Code には `HERDR_ENV` / `HERDR_SOCKET_PATH` が入るので、指示書が無いだけで能力は残る | #276 で実測(sandbox が socket 接続を止めるか / deny が `herdr pane run` の内側を拾うか)してから §5 の審査を通す |
+| herdr の agent skill(`herdr --skill`) | (2026-08-07 / #276)**動かないので入れない**。Bash tool の sandbox は AF_UNIX 操作を遮断するため、skill を置いても `herdr pane run` 等は成立しない(実測は §10「herdr socket API と各防御層の関係」)。§5 の審査: 出所は導入済みの herdr 本体と同一 / SKILL.md 195 行は全文監査できる量だが、動かない機能に監査コストは払わない / 最小権限の観点では **sandbox 外プロセスへ任意コマンドを渡す経路**にあたり、能力として過大。なお **skill を入れないことは境界ではない** — ペイン内の Claude Code には `HERDR_ENV` / `HERDR_SOCKET_PATH` が入るので、指示書が無いだけで能力は残る。境界を担っているのは sandbox(一次)と `block-dangerous-commands.sh`(二次)の 2 層 | ペイン内 Claude Code で sandbox の遮断が破れていると判明したとき(そのときは skill の採否より先に遮断経路の封鎖を検討する)、または `sandbox.excludedCommands` へ herdr を足す提案が出たとき |
+| herdr の plugin 機構(`herdr plugin install OWNER/REPO`) | (2026-08-07 / #276)GitHub から第三者コードを取得して herdr のランタイム内で動かす機構。**現時点で入れたい plugin が具体的に無く、§5 の出所確認・全文監査を通す対象が存在しない**。この repo は「困りごとが起きてから 1 件ずつ審査する」側なので、機構そのものの可否を先に決めない | 具体的に入れたい plugin が特定されたとき(そのとき **その 1 件だけ**を §5 で審査する) |
+| herdr の codex 統合(`herdr integration install codex`) | (2026-08-07 / #276)**前提が未確認なので着手しない** — herdr ペインで codex を使う運用が実際にあるかを確認していない(現状の想定は Claude Code の常用)。加えて `~/.codex/` 配下への書き込みは全経路で禁止しており(§10)、codex は hook を `trusted_hash` で承認するので TUI での再承認も要る。「ファイルを 1 つ増やす」ではなく承認機構を動かす作業 | herdr ペインで codex を常用する運用が実際に始まったとき(その時点で `~/.codex/` 書き込み禁止を迂回せずに満たす方法を先に決める) |
 | Ralph loop 型の外側無人ループ(`while true; claude -p` 系) | merge ゲート・plan ゲートの人間監視を放棄することになる。2026-07-19 の検討で「パイプライン圧縮 + 人間ゲート再配置」(/dev + /next)を採用 | 完全無人で回してよい種類の反復タスク(大量 migration 等)が実際に発生したとき |
 | project-artifact プラグイン(公式 marketplace) | (2026-08-05)#264 で HTML 説明ページを検討した際に比較した。「固定 template.html + light/dark + Artifact publish」という**機構は同型**だが、作るページの**種類が違う** — あちらは 1 回の update に収まらないプロジェクトのタブ付きステータスページを per-project config で継続更新し delta を報告するもの。#264 が要るのは 1 回きりの判断・説明ページで、タブ機構と refresh 運用は使わない分だけ負債になる。自作の `html-brief` skill を採用した | 複数ワークストリームを継続追跡して同じ URL を更新し続ける必要が出たとき(そのときは html-brief を拡張せず、プラグインをそのまま有効化して評価する) |
 
@@ -434,6 +436,61 @@ TLS 検証も通らない(実測: 上記 OSStatus -26276)ため外せない。�
   通らない。`excludedCommands` に項目が増えても、また PreToolUse から hook を
   外しても、hook テストは green のまま(vacuous pass)になる。この 2 点は
   `tests/integrity/verify-sandbox-exclusion-guard.sh` が assert する
+
+### herdr socket API と各防御層の関係 — 実測結果
+
+herdr(エージェント用ターミナル multiplexer)の socket API は**認証が無い**。
+公式 docs 自身が「socket にアクセスできることは、そのセッション内の shell
+アクセスと同等」としている。懸念は `herdr pane run <id> "<cmd>"` が
+**Bash tool の sandbox の外にある別プロセスのペインで実行される**点で、
+`permissions.deny` と guard hook が**内側のコマンド**に当たるかが問題になる
+(#276)。
+
+ここで測っているのは herdr そのものではなく、**上表の防御層が wrapper
+コマンド越しでも成立するか**なので、被験体を herdr にした §10 の実測として
+記録する。
+
+実測(2026-08-07 / Claude Code の Bash tool 内 / sandbox 有効・
+`allowUnsandboxedCommands: false` / **herdr ペインの外**で起動したセッション。
+`HERDR_ENV` と `HERDR_SOCKET_PATH` がいずれも未設定であることで確認):
+
+| 測ったこと | 結果 |
+|---|---|
+| `herdr status` | `Error: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }` |
+| python3 で `~/.config/herdr/herdr.sock`(実在・`srw-------`)に AF_UNIX connect | `PermissionError [Errno 1] Operation not permitted` |
+| **対照**: `$TMPDIR` 配下に自分で AF_UNIX socket を bind | `[Errno 1] Operation not permitted`(**herdr 固有の遮断ではなく sandbox の一般制限**) |
+| `agents/hooks/block-dangerous-commands.sh` に `herdr pane run 1 "rm -rf ~"` を stdin で与える | **exit=2(ブロック)**「rm -rf で危険なパスが指定されています」 |
+| **既知陽性の対照**: 同 hook に `rm -rf ~` を与える | exit=2(ブロック)。検出器が生きていることを確認した上で上の行を測っている |
+| `permissions.deny` の 11 パターン | いずれも先頭一致なので `herdr pane run 1 "..."` には**当たらない**(内側は hook が拾う) |
+| `sandbox.excludedCommands` | `docker *` / `gh *` / `brew *` / `pnpm test:e2e *` のみで **herdr は入っていない** → 一次防御が効いている。逆にここへ足すと[上節](#sandbox-の-excludedcommands-が一次防御を丸ごと外す経路)の経路で外れる |
+
+読み取れること:
+
+- **skill を入れるかどうかより前に、Bash tool から herdr を操作すること自体が
+  成立していない**。AF_UNIX が sandbox に遮断されるため、`herdr --skill` の
+  SKILL.md が前提とする `pane split` → `pane run` → `pane read` の系列は
+  ペイン外の Claude Code からは動かない
+- **`permissions.deny` が wrapper の内側に当たらないという懸念は当たっていた**が、
+  `block-dangerous-commands.sh` は先頭トークンではなく**コマンド文字列全体**を
+  走査するので wrapper 越しでも内側の危険コマンドを拾う。deny の穴を hook が
+  補完している形
+- したがって **`permissions.deny` に `herdr *` 系のパターンは足さない**。先頭一致で
+  内側コマンドを網羅することは構造的に不可能で、足すと「塞いだ」という偽の
+  安心感だけが残る
+
+**未確認**(この 2 点は測っていない。「同じはず」とは書かない):
+
+- **sandbox の外なら socket に繋がることの対照** — agent は
+  `allowUnsandboxedCommands: false` なので実行できず、user 実機での確認が要る
+- **herdr ペインの中で走る Claude Code でも同じ結果になるか** — 上記の計測は
+  すべてペイン外から。ペイン内では `HERDR_ENV` / `HERDR_SOCKET_PATH` が入るが、
+  sandbox の遮断が同じように効くかは測っていない
+
+**2026-08-06 の計測との差異**: 前日の計測では「`$TMPDIR` への bind は通り、
+connect が EPERM」と記録していたが、2026-08-07 は **bind の段階で** EPERM に
+なった。「AF_UNIX 操作が sandbox 内で成立しない」という結論は両日で一致するが、
+どの system call で落ちるかは一致していない。sandbox プロファイルが変わりうる
+ことの実例として残す(§9 の再評価条件が空文でない根拠でもある)。
 
 ### requiredMinimumVersion — user 設定に書いても enforce されない
 
