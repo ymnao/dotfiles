@@ -45,8 +45,9 @@ HANDOFF.md。これらは Markdown のままにする。**指示が無いのに 
   それでも足りなければ skill 側の PR として `style.css` / `render.mjs` を直す
 - `style.css` と `render.mjs` は **repo の正本**。ページごとに書き換えない
 - `brief.json` と生成した HTML は scratchpad に置く。**repo にコミットしない**。
-  出力先は 4 条件を満たすときだけ受け付ける: 拡張子が `.html` / `..` を含まない /
-  親ディレクトリが一時ディレクトリ配下 / symlink でも hardlink でもない。
+  出力先は 5 条件を満たすときだけ受け付ける: 拡張子が `.html` / `..` を含まない /
+  親ディレクトリが一時ディレクトリ配下 / 親が自分の所有で world-writable でない /
+  symlink でも hardlink でもない。生成物は 0600 で作る。
   これは**誤って既存ファイルを壊さないためのガード**で、セキュリティ境界ではない
 - 図は `diagram` 型 (mermaid)。画像を外部から読み込まない
 

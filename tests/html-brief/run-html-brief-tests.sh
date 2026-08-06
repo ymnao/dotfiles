@@ -10,8 +10,8 @@ set -euo pipefail
 #   - **入力の型検証**: 列数不一致・未知の section・キーの typo を publish 前に落とす。
 #     かつ **stack trace ではなく `html-brief: ` 付きのメッセージで落ちる**こと
 #     (agent が JSON のどこを直せばよいか特定できるようにするため)
-#   - **出力先ガード**: このレンダラは settings.json の allow リストに載っていて
-#     確認プロンプト無しで走る。argv 経由で任意のファイルを上書きできてはならない
+#   - **出力先ガード**: argv 経由で作業中 repo のファイルや任意の inode を
+#     誤って上書きできてはならない (誤爆防止。セキュリティ境界ではない)
 #   - **バーの幅**: レンダラが最大値から算出する計算そのもの
 #
 # ロケール非依存にするため LC_ALL は C に固定する (repo の lint-locale-pin 準拠)。
@@ -23,7 +23,7 @@ RENDERER="${RENDERER:-$REPO_ROOT/claude/skills/html-brief/render.mjs}"
 
 # 実行ケース数の独立した期待値。ケースを増減したらここも直す
 # (pass 数ではなく実行数を数える — ケースが黙って消えたときに気付くため)。
-EXPECTED_CASES=45
+EXPECTED_CASES=56
 
 if [ ! -f "$RENDERER" ]; then
   echo "ERROR: renderer not found: $RENDERER" >&2
@@ -37,26 +37,35 @@ fi
 
 WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/html-brief.XXXXXX")"
 
-# 「一時ディレクトリ外」のケースに使う。repo 自体が一時ディレクトリ配下にあると
-# レンダラが正しく受理してしまい、ケースが誤 FAIL する。前提が崩れたら
+# 「一時ディレクトリ外」のケース用の作業場所。**固定名を使わない** — repo 直下に
+# 固定名のファイルを作ると、同名の既存ファイルを上書きして壊しうる。
+# /var/tmp が使えればそちらが素直だが、agent の sandbox では書けないため repo 直下に
+# 一意なディレクトリを掘る (中身ごと cleanup で消す)。
+OUTSIDE_ROOT="$(mktemp -d "$REPO_ROOT/.html-brief-outside.XXXXXX")"
+OUTSIDE_TMP="$OUTSIDE_ROOT/outside.html"
+
+# trap は作業ディレクトリを作った直後に張る。この後の前提検証が exit しうるので、
+# 後ろに置くと作業ディレクトリが残る。
+cleanup() {
+  [ -n "${WORKDIR:-}" ] && rm -rf "$WORKDIR"
+  [ -n "${OUTSIDE_ROOT:-}" ] && rm -rf "$OUTSIDE_ROOT"
+}
+trap cleanup EXIT
+
+# OUTSIDE_ROOT が本当に一時ディレクトリの外にあることを確かめる。ここが崩れると
+# レンダラが正しく受理してしまい、outside-tmp ケースが誤 FAIL する。
 # skip ではなく明示的に落とす (skip はケース数の下限検査を素通しにするため)。
-OUTSIDE_TMP="$REPO_ROOT/.html-brief-outside-tmp.html"
+real_outside="$(cd "$OUTSIDE_ROOT" && pwd -P)"
 for tmp_root in "${TMPDIR:-/tmp}" /tmp; do
   real_root="$(cd "$tmp_root" 2>/dev/null && pwd -P || true)"
-  real_repo="$(cd "$REPO_ROOT" && pwd -P)"
-  case "$real_repo/" in
+  [ -n "$real_root" ] || continue
+  case "$real_outside/" in
     "$real_root"/*)
-      echo "ERROR: repo が一時ディレクトリ配下 ($real_root) にあるため outside-tmp ケースを実行できません" >&2
+      echo "ERROR: fixture ($real_outside) が一時ディレクトリ配下 ($real_root) にあるため outside-tmp ケースを実行できません" >&2
       exit 1
       ;;
   esac
 done
-cleanup() {
-  [ -n "${WORKDIR:-}" ] && rm -rf "$WORKDIR"
-  rm -f "$OUTSIDE_TMP" "$REPO_ROOT/.html-brief-tmpdir-probe.html" \
-    "$REPO_ROOT/.html-brief-escape-victim.html"
-}
-trap cleanup EXIT
 
 pass=0
 fail=0
@@ -212,9 +221,17 @@ ALL_TYPES='{"title": "T", "verdict": "V", "sections": [
   {"type": "series", "points": [{"label": "p", "value": 1}]},
   {"type": "diagram", "mermaid": "graph TD;A-->B;"}
 ]}'
+# 検査は scheme に依存しない形にする (相対パスの @import / href / srcset も拒否)
+EXTERNAL_REF_RE='https?://|url\(|@import|<script|src=|srcset=|href='
 render "$ALL_TYPES"
-if [ "$RC" -eq 0 ] && ! printf '%s' "$OUT" | grep -qE 'https?://|url\(|<script|src='; then
+if [ "$RC" -eq 0 ] && ! printf '%s' "$OUT" | grep -qE "$EXTERNAL_REF_RE"; then
   ok; else ng "no external references (rc=$RC)"; fi
+
+# 検査自体が効いていることを、既知の陽性で確かめる (パターンの空振り防止)
+if printf '<link href="x.css">' | grep -qE "$EXTERNAL_REF_RE" \
+  && printf '@import "x.css";' | grep -qE "$EXTERNAL_REF_RE" \
+  && printf '<img srcset="x.png">' | grep -qE "$EXTERNAL_REF_RE"; then
+  ok; else ng "external-ref pattern detects known positives"; fi
 
 # --- 10. series: バーの幅を最大値から算出する ---
 render '{"title": "T", "verdict": "V", "sections": [{"type": "series",
@@ -252,8 +269,48 @@ if [ "$RC" -eq 0 ] \
   && printf '%s' "$OUT" | grep -q '<ol class="steps">' \
   && printf '%s' "$OUT" | grep -q '<pre><code>cmd</code></pre>'; then ok; else ng "walkthrough renders (rc=$RC)"; fi
 
+# --- 12b. まだ測っていなかった分岐 ---
+# details の正常描画と、summary / body 欠落の拒否
+render '{"title": "T", "verdict": "V", "sections": [{"type": "notes", "body": "B",
+  "details": {"summary": "S", "body": "D"}}]}'
+if [ "$RC" -eq 0 ] \
+  && printf '%s' "$OUT" | grep -q '<details><summary>S</summary>' \
+  && printf '%s' "$OUT" | grep -q '<p>D</p>'; then ok; else ng "details renders (rc=$RC)"; fi
+
+expect_reject "details missing summary rejected" \
+  '{"title": "T", "verdict": "V", "sections": [{"type": "notes", "body": "B",
+    "details": {"body": "D"}}]}'
+expect_reject "details unknown key rejected" \
+  '{"title": "T", "verdict": "V", "sections": [{"type": "notes", "body": "B",
+    "details": {"summary": "S", "body": "D", "extra": "x"}}]}'
+
+# columns が 1 列だけなら落とす (1 列目=対象 / 2 列目=判定 が前提)
+expect_reject "single column rejected" \
+  '{"title": "T", "verdict": "V", "sections": [{"type": "decision",
+    "columns": ["a"], "rows": [{"label": "x"}]}]}'
+
+# badge.kind 省略時は info に既定化する
+render '{"title": "T", "verdict": "V", "sections": [{"type": "decision",
+  "columns": ["a", "判定"], "rows": [{"label": "x", "badge": {"text": "情報"}}]}]}'
+if [ "$RC" -eq 0 ] && printf '%s' "$OUT" | grep -q 'class="badge info"'; then
+  ok; else ng "badge kind defaults to info (rc=$RC)"; fi
+
+# 引数なしで起動したら usage を出してクリーンに落ちる
+set +e
+node "$RENDERER" >/dev/null 2>"$WORKDIR/err.txt"
+rc=$?
+set -e
+if [ "$rc" -ne 0 ] && stderr_is_clean "$WORKDIR/err.txt" \
+  && grep -q '使い方' "$WORKDIR/err.txt"; then ok; else ng "no-args usage (rc=$rc)"; fi
+
+# 日本語・絵文字・結合文字が壊れずに残り、同じ入力の HTML 特殊文字はエスケープされる
+render '{"title": "T", "verdict": "日本語 🎨 か゚ <b>", "sections": [{"type": "notes", "body": "B"}]}'
+if [ "$RC" -eq 0 ] \
+  && printf '%s' "$OUT" | grep -q '日本語 🎨 か゚' \
+  && printf '%s' "$OUT" | grep -q '&lt;b&gt;'; then ok; else ng "unicode preserved (rc=$RC)"; fi
+
 # --- 13. 出力先ガード ---
-# 確認プロンプト無しで走る前提なので、argv 経由で任意のファイルを壊せてはならない。
+# argv の指すファイルを誤って壊さないことを測る。
 printf '%s' "$MINIMAL" > "$WORKDIR/guard.json"
 
 guard_reject() { # <name> <outpath> <victim-path> <victim-content>
@@ -313,19 +370,19 @@ if [ "$rc" -ne 0 ] && stderr_is_clean "$WORKDIR/err.txt" && [ ! -e "$OUTSIDE_TMP
 # `..` が symlink 自身を打ち消す形にするのが要点。lexical には
 # `$WORKDIR/<victim>` (= 一時ディレクトリ配下、ガードは通す) に見えるが、
 # カーネルは repo-link を辿ってから `..` を解決するので repo 直下に書かれる。
-ln -s "$REPO_ROOT/tests" "$WORKDIR/repo-link"
-ESCAPE_VICTIM="$REPO_ROOT/.html-brief-escape-victim.html"
+mkdir -p "$OUTSIDE_ROOT/sub"
+ln -s "$OUTSIDE_ROOT/sub" "$WORKDIR/outside-link"
+ESCAPE_VICTIM="$OUTSIDE_ROOT/escape-victim.html"
 printf 'ORIGINAL' > "$ESCAPE_VICTIM"
 set +e
 node "$RENDERER" "$WORKDIR/guard.json" \
-  "$WORKDIR/repo-link/../.html-brief-escape-victim.html" \
+  "$WORKDIR/outside-link/../escape-victim.html" \
   >/dev/null 2>"$WORKDIR/err.txt"
 rc=$?
 set -e
 if [ "$rc" -ne 0 ] && stderr_is_clean "$WORKDIR/err.txt" \
   && [ "$(cat "$ESCAPE_VICTIM")" = "ORIGINAL" ]; then
   ok; else ng "dotdot escape rejected (rc=$rc)"; fi
-rm -f "$ESCAPE_VICTIM"
 
 # 親ディレクトリが無いときも stack trace にしない
 set +e
@@ -341,7 +398,7 @@ if [ "$rc" -ne 0 ] && stderr_is_clean "$WORKDIR/err.txt"; then
 
 # (a) TMPDIR が /tmp の外を指していても、/tmp 配下への出力は受理される
 set +e
-TMPDIR="$REPO_ROOT" node "$RENDERER" "$WORKDIR/guard.json" "$WORKDIR/root-tmp.html" \
+TMPDIR="$OUTSIDE_ROOT" node "$RENDERER" "$WORKDIR/guard.json" "$WORKDIR/root-tmp.html" \
   >/dev/null 2>"$WORKDIR/err.txt"
 rc=$?
 set -e
@@ -349,15 +406,14 @@ if [ "$rc" -eq 0 ] && grep -q '<title>T</title>' "$WORKDIR/root-tmp.html"; then
   ok; else ng "/tmp accepted as root when TMPDIR points elsewhere (rc=$rc)"; fi
 
 # (b) TMPDIR 側も受理側に効く (TMPDIR 配下なら /tmp の外でも書ける)
-TMPDIR_PROBE="$REPO_ROOT/.html-brief-tmpdir-probe.html"
+TMPDIR_PROBE="$OUTSIDE_ROOT/tmpdir-probe.html"
 set +e
-TMPDIR="$REPO_ROOT" node "$RENDERER" "$WORKDIR/guard.json" "$TMPDIR_PROBE" \
+TMPDIR="$OUTSIDE_ROOT" node "$RENDERER" "$WORKDIR/guard.json" "$TMPDIR_PROBE" \
   >/dev/null 2>"$WORKDIR/err.txt"
 rc=$?
 set -e
 if [ "$rc" -eq 0 ] && grep -q '<title>T</title>' "$TMPDIR_PROBE"; then
   ok; else ng "TMPDIR accepted as root (rc=$rc)"; fi
-rm -f "$TMPDIR_PROBE"
 
 # TMPDIR が解決できない場所を指していても stack trace にしない
 set +e
@@ -378,6 +434,30 @@ rc2=$?
 set -e
 if [ "$rc" -eq 0 ] && [ "$rc2" -eq 0 ] && grep -q '<title>T</title>' "$WORKDIR/fine.html"; then
   ok; else ng "html output path accepted and rewritable (rc=$rc/$rc2)"; fi
+
+# world-writable な親ディレクトリ (/tmp 直下は 1777) への出力を拒否する。
+# 共有一時領域は検証と open の間に親 symlink を差し替えられるため受けない。
+set +e
+node "$RENDERER" "$WORKDIR/guard.json" "/tmp/html-brief-world-writable-probe.html" \
+  >/dev/null 2>"$WORKDIR/err.txt"
+rc=$?
+set -e
+if [ "$rc" -ne 0 ] && stderr_is_clean "$WORKDIR/err.txt" \
+  && [ ! -e "/tmp/html-brief-world-writable-probe.html" ]; then
+  ok; else ng "world-writable parent rejected (rc=$rc)"; fi
+
+# 生成物は 0600 で作る (調査内容を含みうるので他ユーザーに読ませない)。
+# BSD / GNU 両対応のため stat ではなく find -perm で判定する。
+if [ -n "$(find "$WORKDIR" -maxdepth 1 -name fine.html -perm 600)" ]; then
+  ok; else ng "output mode is 0600"; fi
+
+# 入力は通常ファイルに限る (/dev/zero を渡しても返ってこなくならない)
+set +e
+node "$RENDERER" /dev/zero >/dev/null 2>"$WORKDIR/err.txt"
+rc=$?
+set -e
+if [ "$rc" -ne 0 ] && stderr_is_clean "$WORKDIR/err.txt"; then
+  ok; else ng "non-regular input rejected (rc=$rc)"; fi
 
 # --- 14. 入力が読めない / style.css が無い場合も stack trace にしない ---
 set +e

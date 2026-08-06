@@ -26,6 +26,7 @@ import {
   openSync,
   readFileSync,
   realpathSync,
+  statSync,
   writeSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -326,14 +327,16 @@ ${footer}
 /* ---------- 出力 ---------- */
 
 /*
- * 出力先のガード。書き込みは 4 条件を全て満たすときだけ行う:
+ * 出力先のガード。書き込みは 5 条件を全て満たすときだけ行う:
  *
  *   1. 拡張子が .html
  *   2. パスに `..` セグメントを含まない
  *   3. 親ディレクトリの realpath が一時ディレクトリ配下 (作業中 repo のファイルを
  *      沈黙のうちに壊さない。realpath を取るのでディレクトリ symlink 越しの
  *      迂回も塞がる)
- *   4. 最終要素が symlink でも hardlink でもない (O_NOFOLLOW + nlink 検査。
+ *   4. 親ディレクトリが自分の所有で world-writable でない (共有一時領域では
+ *      検証と open の間に親 symlink を差し替えられる = TOCTOU)
+ *   5. 最終要素が symlink でも hardlink でもない (O_NOFOLLOW + nlink 検査。
  *      hardlink は拡張子チェックを迂回して任意 inode を truncate できるため)
  *
  * 2 が要るのは、`resolve()` が `..` を**字句的に**畳むのに対しカーネルは
@@ -342,9 +345,12 @@ ${footer}
  * `realpathSync` も内部で `path.resolve()` を掛けるので、この差は realpath では
  * 埋まらない (Node と POSIX realpath(3) で結果が割れる)。
  *
- * これは**誤爆防止のガードであってセキュリティ境界ではない**。settings.json の
- * allow は argv を無制限に許すので、stdout をリダイレクトする形の書き込みまでは
- * 塞げない (matcher がリダイレクト付きコマンドをどう扱うかは未実測)。
+ * これは**誤爆防止のガードであってセキュリティ境界ではない**。shell の
+ * リダイレクト (`> path`) はこのプロセスの外なので、ここでは塞げない。
+ * 当初はこのレンダラを settings.json の allow に載せて確認プロンプトを
+ * 省く案だったが、matcher がリダイレクト付きコマンドをどう扱うかを実測できず、
+ * 「確認できない」を緩める根拠にしない方針 (claude/rules/shell.md) に従って
+ * allow は入れないことにした。
  */
 const OUTPUT_ROOTS_NOTE = "scratchpad などの一時ディレクトリ配下";
 
@@ -389,10 +395,28 @@ function writeOutput(outputPath, html) {
     fail(`出力先は ${OUTPUT_ROOTS_NOTE} にしてください (${roots.join(" / ")}): ${outputPath}`);
   }
 
+  // 親ディレクトリが自分の所有で、かつ other から書けないことを要求する。
+  // `/tmp` 直下は 1777 (world-writable) なので、ここで弾かれる — 共有一時領域では
+  // 検証と open の間に親 symlink を差し替えられる (TOCTOU) ため、そもそも受けない。
+  // scratchpad や mktemp -d が作るディレクトリは 0700 なので通る。
+  let parentStat;
+  try {
+    parentStat = statSync(realParent);
+  } catch (error) {
+    fail(`出力先のディレクトリを stat できません: ${realParent} (${error.code ?? error.message})`);
+  }
+  if (typeof process.getuid === "function" && parentStat.uid !== process.getuid()) {
+    fail(`出力先のディレクトリが自分の所有ではありません: ${realParent}`);
+  }
+  if (parentStat.mode & 0o002) {
+    fail(`出力先のディレクトリが world-writable です: ${realParent}`);
+  }
+
   let fd;
   try {
     // O_TRUNC はここでは付けない。nlink を検査してから truncate する
-    fd = openSync(outputPath, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_NOFOLLOW, 0o644);
+    // 0600 で作る。生成物は調査内容を含みうるので、他ユーザーから読ませない
+    fd = openSync(outputPath, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_NOFOLLOW, 0o600);
   } catch (error) {
     if (error.code === "ELOOP") fail(`出力先が symlink です: ${outputPath}`);
     fail(`出力先を開けません: ${outputPath} (${error.code ?? error.message})`);
@@ -419,8 +443,19 @@ if (!inputPath) {
   fail("使い方: node render.mjs <brief.json> [out.html]");
 }
 
+// 入力は通常ファイルかつ上限サイズ以内に限る。`/dev/zero` のような
+// character device や巨大ファイルを渡されると readFileSync が返ってこない。
+const MAX_INPUT_BYTES = 4 * 1024 * 1024;
+
 let raw;
 try {
+  const stat = statSync(inputPath);
+  if (!stat.isFile()) {
+    fail(`入力は通常ファイルが必要です: ${inputPath}`);
+  }
+  if (stat.size > MAX_INPUT_BYTES) {
+    fail(`入力が大きすぎます (${stat.size} バイト > ${MAX_INPUT_BYTES}): ${inputPath}`);
+  }
   raw = readFileSync(inputPath, "utf8");
 } catch (error) {
   fail(`入力を読めません: ${inputPath} (${error.code ?? error.message})`);
