@@ -1,0 +1,138 @@
+/*
+ * html-brief の見た目の正本。render.mjs がこのファイルを読んで HTML に inline する。
+ * ページごとに変えない (固定することが目的)。変更するときは skill の PR として出す。
+ * 外部ホストへの参照 (@import / url() / webfont) を書かないこと — Artifact の CSP が
+ * 全てブロックする。tests/html-brief がこれを機械的に検査する。
+ */
+
+/* light を既定にし、viewer のテーマトグル (data-theme) を media query より優先させる */
+:root, :root[data-theme="light"] {
+  color-scheme: light dark;
+  --bg: #fbfaf7;
+  --surface: #ffffff;
+  --ink: #1c1b19;
+  --ink-soft: #5c584f;
+  --ink-faint: #8b867a;
+  --line: #e3dfd5;
+  --accent: #1f6f6b;
+  --accent-soft: #e6f0ef;
+  --ok-bg: #e4efe2; --ok-fg: #2f5d2a;
+  --warn-bg: #f6ecd8; --warn-fg: #7a5713;
+  --stop-bg: #f5e2df; --stop-fg: #8a2f26;
+  --info-bg: #e5eaf1; --info-fg: #37506e;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17171a;
+    --surface: #1f1f23;
+    --ink: #ece9e3;
+    --ink-soft: #b3aea4;
+    --ink-faint: #837e75;
+    --line: #33333a;
+    --accent: #6fc0b8;
+    --accent-soft: #1d2f2e;
+    --ok-bg: #1f3320; --ok-fg: #9ed49a;
+    --warn-bg: #362c17; --warn-fg: #e0bd6d;
+    --stop-bg: #3a1f1c; --stop-fg: #e79c92;
+    --info-bg: #1e2733; --info-fg: #9fbbdc;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #17171a; --surface: #1f1f23; --ink: #ece9e3; --ink-soft: #b3aea4;
+  --ink-faint: #837e75; --line: #33333a; --accent: #6fc0b8; --accent-soft: #1d2f2e;
+  --ok-bg: #1f3320; --ok-fg: #9ed49a; --warn-bg: #362c17; --warn-fg: #e0bd6d;
+  --stop-bg: #3a1f1c; --stop-fg: #e79c92; --info-bg: #1e2733; --info-fg: #9fbbdc;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Hiragino Sans", "Noto Sans JP", ui-sans-serif, system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.75;
+  margin: 0;
+}
+.wrap { max-width: 54rem; margin: 0 auto; padding: 3rem 1.25rem 5rem; }
+
+h1 { font-size: 1.75rem; line-height: 1.35; margin: 0 0 .5rem; letter-spacing: .01em; }
+h2 {
+  font-size: 1.05rem; margin: 3rem 0 .75rem; padding-bottom: .4rem;
+  border-bottom: 1px solid var(--line); letter-spacing: .04em;
+}
+p { margin: .75rem 0; }
+.meta { color: var(--ink-faint); font-size: .82rem; letter-spacing: .03em; margin: 0 0 2rem; }
+.lead { color: var(--ink-soft); font-size: 1.02rem; margin-bottom: 2rem; }
+
+/* 結論ボックス — 冒頭に置き、読み返さずに判断できる形にする */
+.verdict {
+  background: var(--surface); border: 1px solid var(--line);
+  border-left: 3px solid var(--accent); border-radius: 3px;
+  padding: 1.1rem 1.25rem; margin: 0 0 2.5rem;
+}
+.verdict-label {
+  font-size: .72rem; letter-spacing: .12em; color: var(--accent);
+  margin: 0 0 .35rem; font-weight: 700;
+}
+.verdict p:last-child { margin-bottom: 0; }
+
+.badge {
+  display: inline-block; padding: .1rem .55rem; border-radius: 999px;
+  font-size: .75rem; font-weight: 700; letter-spacing: .02em; white-space: nowrap;
+  background: var(--info-bg); color: var(--info-fg);
+}
+.badge.ok { background: var(--ok-bg); color: var(--ok-fg); }
+.badge.warn { background: var(--warn-bg); color: var(--warn-fg); }
+.badge.stop { background: var(--stop-bg); color: var(--stop-fg); }
+
+/* 横長の要素はページ全体ではなくコンテナ内でスクロールさせる */
+.scroll { overflow-x: auto; margin: 1rem 0; }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+th, td {
+  border-bottom: 1px solid var(--line); padding: .6rem .7rem;
+  text-align: left; vertical-align: top;
+}
+th { color: var(--ink-faint); font-size: .76rem; letter-spacing: .06em; font-weight: 700; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* 時系列の値をセル内で可視化する (幅は render.mjs が最大値から算出する) */
+.bar { display: block; height: .45rem; border-radius: 2px; background: var(--accent); min-width: 2px; }
+.bar-cell { width: 40%; min-width: 6rem; }
+
+ol.steps { list-style: none; counter-reset: step; padding: 0; margin: 1rem 0; }
+ol.steps > li {
+  counter-increment: step; position: relative;
+  padding: 0 0 1.4rem 2.4rem; border-left: 1px solid var(--line); margin-left: .7rem;
+}
+ol.steps > li:last-child { border-left-color: transparent; padding-bottom: 0; }
+ol.steps > li::before {
+  content: counter(step); position: absolute; left: -.72rem; top: .15rem;
+  width: 1.45rem; height: 1.45rem; border-radius: 999px;
+  background: var(--accent-soft); color: var(--accent);
+  font-size: .78rem; font-weight: 700; line-height: 1.45rem; text-align: center;
+}
+ol.steps .step-title { font-weight: 700; }
+
+code, pre {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: .84rem;
+}
+code { background: var(--accent-soft); padding: .1rem .3rem; border-radius: 3px; }
+pre {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 3px;
+  padding: .85rem 1rem; overflow-x: auto; line-height: 1.6;
+}
+pre code { background: none; padding: 0; }
+pre.mermaid { border: none; background: none; padding: 0; }
+
+details { border-top: 1px solid var(--line); padding: .7rem 0; }
+summary { cursor: pointer; color: var(--ink-soft); font-size: .9rem; }
+summary::marker { color: var(--ink-faint); }
+
+footer {
+  margin-top: 4rem; padding-top: 1rem; border-top: 1px solid var(--line);
+  color: var(--ink-faint); font-size: .78rem;
+}
+
+img, pre.mermaid svg { max-width: 100%; }
