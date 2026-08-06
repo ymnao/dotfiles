@@ -22,11 +22,16 @@ HANDOFF.md。これらは Markdown のままにする。**指示が無いのに 
 
 ## Steps
 
-1. `reference/data-model.md` (この SKILL.md と同じディレクトリ) を読む。
+1. `$HOME/.claude/skills/html-brief/reference/data-model.md` を読む。
    section は `decision` / `walkthrough` / `series` / `notes` / `diagram` の 5 型
 2. scratchpad に `brief.json` を書く。**結論 (`verdict`) だけで判断が付く粒度**に
    すること。本文を読まないと結論が分からないページは、md を読み返すのと同じコスト
-3. `node <skill dir>/render.mjs brief.json out.html` で HTML を生成する
+3. HTML を生成する。**どの repo からでもこの絶対パスで動く** (レンダラは cwd も
+   git も参照しない):
+
+   ```
+   node "$HOME/.claude/skills/html-brief/render.mjs" brief.json out.html
+   ```
 4. 検証エラーが出たら **JSON を直す**。HTML を直接いじって回避しない
 5. `Artifact` ツールで `out.html` を publish し、URL を user に渡す。
    同じページを更新するときは**同じファイルパスで再 deploy**する (パスを変えると別 URL)
@@ -44,4 +49,6 @@ HANDOFF.md。これらは Markdown のままにする。**指示が無いのに 
 - `frontend-design` skill とは目的が逆 — あちらは「毎回違う美的方向性で
   production の UI を作る」ためのもの。こちらは固定。混ぜない
 - レンダラは Node の標準ライブラリだけで動く (依存追加なし)。
-  回帰テストは `tests/html-brief/`、`make test` から実行される
+  回帰テストは dotfiles repo の `tests/html-brief/` にあり `make test` から走る。
+  **skill 自体は user グローバル**なので、他のリポジトリの作業中でもそのまま使える
+  (必要なのは `make link` 済みの symlink と PATH 上の `node` だけ)
