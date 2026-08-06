@@ -36,6 +36,18 @@ if ! command -v node >/dev/null 2>&1; then
 fi
 
 WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/html-brief.XXXXXX")"
+OUTSIDE_ROOT=""
+# /tmp 直下に置く probe も固定名にしない (別プロセスや既存ファイルと衝突する)
+WORLD_WRITABLE_PROBE="/tmp/html-brief-ww-$(basename "$WORKDIR").html"
+
+# trap は最初の作業ディレクトリを作った直後に張る。この後の mktemp や前提検証が
+# 失敗しうるので、後ろに置くと WORKDIR が残る。INT / TERM でも同じ後始末をする。
+cleanup() {
+  [ -n "${WORKDIR:-}" ] && rm -rf "$WORKDIR"
+  [ -n "${OUTSIDE_ROOT:-}" ] && rm -rf "$OUTSIDE_ROOT"
+  rm -f "$WORLD_WRITABLE_PROBE"
+}
+trap cleanup EXIT INT TERM
 
 # 「一時ディレクトリ外」のケース用の作業場所。**固定名を使わない** — repo 直下に
 # 固定名のファイルを作ると、同名の既存ファイルを上書きして壊しうる。
@@ -43,14 +55,6 @@ WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/html-brief.XXXXXX")"
 # 一意なディレクトリを掘る (中身ごと cleanup で消す)。
 OUTSIDE_ROOT="$(mktemp -d "$REPO_ROOT/.html-brief-outside.XXXXXX")"
 OUTSIDE_TMP="$OUTSIDE_ROOT/outside.html"
-
-# trap は作業ディレクトリを作った直後に張る。この後の前提検証が exit しうるので、
-# 後ろに置くと作業ディレクトリが残る。
-cleanup() {
-  [ -n "${WORKDIR:-}" ] && rm -rf "$WORKDIR"
-  [ -n "${OUTSIDE_ROOT:-}" ] && rm -rf "$OUTSIDE_ROOT"
-}
-trap cleanup EXIT
 
 # OUTSIDE_ROOT が本当に一時ディレクトリの外にあることを確かめる。ここが崩れると
 # レンダラが正しく受理してしまい、outside-tmp ケースが誤 FAIL する。
@@ -425,25 +429,37 @@ set -e
 if [ "$rc" -eq 0 ] || stderr_is_clean "$WORKDIR/err.txt"; then
   ok; else ng "broken TMPDIR handled cleanly (rc=$rc)"; fi
 
-# 正常な .html には書ける / 同じパスへの再書き込み (再 deploy) もできる
+# 正常な .html には書ける / 同じパスへの再書き込み (再 deploy) もできる。
+# 再書き込みは **既存の長い内容を確実に消す**ことまで見る。同じ内容を 2 回書いて
+# title の有無だけを見ると、ftruncate を消す退行でも通ってしまう。
+# 既存ファイルは 0644 で作っておき、再 deploy 後に 0600 になることも見る
+# (openSync の mode は新規作成時にしか効かないため)。
+printf 'SENTINEL-OLD-TAIL-%s\n' "$(printf 'x%.0s' 1 2 3 4 5 6 7 8 9 0)" > "$WORKDIR/fine.html"
+head -c 20000 /dev/zero | tr '\0' 'Z' >> "$WORKDIR/fine.html"
+printf 'SENTINEL-OLD-END\n' >> "$WORKDIR/fine.html"
+chmod 644 "$WORKDIR/fine.html"
 set +e
 node "$RENDERER" "$WORKDIR/guard.json" "$WORKDIR/fine.html" >/dev/null 2>&1
 rc=$?
 node "$RENDERER" "$WORKDIR/guard.json" "$WORKDIR/fine.html" >/dev/null 2>&1
 rc2=$?
+node "$RENDERER" "$WORKDIR/guard.json" > "$WORKDIR/expected.html" 2>/dev/null
+rc3=$?
 set -e
-if [ "$rc" -eq 0 ] && [ "$rc2" -eq 0 ] && grep -q '<title>T</title>' "$WORKDIR/fine.html"; then
-  ok; else ng "html output path accepted and rewritable (rc=$rc/$rc2)"; fi
+if [ "$rc" -eq 0 ] && [ "$rc2" -eq 0 ] && [ "$rc3" -eq 0 ] \
+  && ! grep -q 'SENTINEL-OLD' "$WORKDIR/fine.html" \
+  && cmp -s "$WORKDIR/fine.html" "$WORKDIR/expected.html"; then
+  ok; else ng "rewrite truncates old content (rc=$rc/$rc2/$rc3)"; fi
 
 # world-writable な親ディレクトリ (/tmp 直下は 1777) への出力を拒否する。
 # 共有一時領域は検証と open の間に親 symlink を差し替えられるため受けない。
 set +e
-node "$RENDERER" "$WORKDIR/guard.json" "/tmp/html-brief-world-writable-probe.html" \
+node "$RENDERER" "$WORKDIR/guard.json" "$WORLD_WRITABLE_PROBE" \
   >/dev/null 2>"$WORKDIR/err.txt"
 rc=$?
 set -e
 if [ "$rc" -ne 0 ] && stderr_is_clean "$WORKDIR/err.txt" \
-  && [ ! -e "/tmp/html-brief-world-writable-probe.html" ]; then
+  && [ ! -e "$WORLD_WRITABLE_PROBE" ]; then
   ok; else ng "world-writable parent rejected (rc=$rc)"; fi
 
 # 生成物は 0600 で作る (調査内容を含みうるので他ユーザーに読ませない)。

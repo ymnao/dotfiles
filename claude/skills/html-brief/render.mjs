@@ -21,6 +21,7 @@
 import {
   closeSync,
   constants as fsConstants,
+  fchmodSync,
   fstatSync,
   ftruncateSync,
   openSync,
@@ -427,6 +428,10 @@ function writeOutput(outputPath, html) {
     if (stat.nlink > 1) {
       fail(`出力先が hardlink です (nlink=${stat.nlink}): ${outputPath}`);
     }
+    // openSync の mode は**新規作成時にしか効かない**。既存ファイルへの再 deploy
+    // (同じパスへの更新は通常の運用) で 0644 のまま書くと、生成物が他ユーザーから
+    // 読める。毎回明示的に落とす。
+    fchmodSync(fd, 0o600);
     ftruncateSync(fd, 0);
     writeSync(fd, html);
   } catch (error) {
