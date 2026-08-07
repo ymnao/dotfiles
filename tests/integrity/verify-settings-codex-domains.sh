@@ -13,7 +13,7 @@
 #      (issue #190: allowWrite の ~/.codex はディレクトリ全体なので、config.toml
 #       の notify / mcp_servers / hooks フィールド経由で host 側任意コマンド実行に
 #       繋がる。deny-within-allow で config.toml だけ単点 deny する設計)
-#   5. .sandbox.filesystem.denyWrite に ~/development/**/.codex/** が含まれる
+#   5. .sandbox.filesystem.denyWrite に ~/*/**/.codex/** が含まれる
 #      (issue #289: プロジェクト配下の .codex/ を Bash 経路で止める一次防御)
 #
 # make test の JSON 構文チェック (jq empty) では内容の drift を検出できないため
@@ -83,10 +83,12 @@ check_contains '.sandbox.filesystem.denyWrite' "${codex_literal}/config.toml" \
 # 2026-08-08 実測)、enforcement の根拠は docs/ai-operations.md §10
 # 「denyWrite のパス表記」節の測定記録の側にある。
 #
-# 前方一致や部分一致ではなく **全文一致** で pin するのはそのため —
-# `~/*/**/.codex` のように末尾の `/**` が落ちた形や、
-# `**/.codex/**` のように絶対パス始まりでなくなった形は、
-# JSON としては妥当で jq の存在検査も通るが sandbox では効かない。
+# 前方一致や部分一致ではなく **全文一致** で pin するのは、表記が変わったこと
+# 自体を fail にするため。変種が「効くかどうか」は変種ごとに違い、実測しないと
+# 分からない (2026-08-08 実測: `**/.codex/**` のように絶対パス始まりでなくなった形は
+# **効かない** が、`~/*/**/.codex` のように末尾の `/**` が落ちた形は
+# **ディレクトリ自体が deny されるので効く**)。どちらも JSON としては妥当で
+# jq の存在検査も通るため、効き目の向きに関わらず drift として止める。
 #
 # 先頭が `~/*/` なのも意味がある。`~/**/.codex/**` にすると `**` が中間 0 個にも
 # マッチするため `~/.codex/` 配下まで deny され、codex CLI の正当な書き込み
@@ -94,7 +96,7 @@ check_contains '.sandbox.filesystem.denyWrite' "${codex_literal}/config.toml" \
 # ので home 直下の作業ディレクトリだけを受ける (2026-08-08 実測)。
 project_codex_glob=$(tilde_literal '/*/**/.codex/**')
 check_contains '.sandbox.filesystem.denyWrite' "$project_codex_glob" \
-  "claude/settings.json: .sandbox.filesystem.denyWrite に ~/development/**/.codex/** が無い (プロジェクト配下の .codex/ が sandbox 層で無防備)"
+  "claude/settings.json: .sandbox.filesystem.denyWrite に ${project_codex_glob} が無い (プロジェクト配下の .codex/ が sandbox 層で無防備)"
 
 echo "settings codex domains: $pass passed, $fail failed"
 [ "$fail" = 0 ] || exit 1

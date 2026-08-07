@@ -204,7 +204,7 @@ check "settings-missing-project-codex-deny" 1 "$(run_settings_verifier "$SF")"
 # fixture 5c: 同エントリを「JSON としては妥当だが sandbox では効かない表記」に
 # 化かす → FAIL。実測 (2026-08-08) で、先頭が `**/` の非絶対エントリは警告なしに
 # 無視される。存在検査だけの pin だと通ってしまう形なので全文一致で塞いでいる。
-SF="$BASE/settings-project-codex-relative.json"; make_good_settings "$SF"
+SF="$BASE/settings-project-codex-non-absolute.json"; make_good_settings "$SF"
 jq '.sandbox.filesystem.denyWrite |= map(if . == "~/*/**/.codex/**" then "**/.codex/**" else . end)' \
   "$SF" >"$SF.tmp" && mv "$SF.tmp" "$SF"
 check "settings-project-codex-non-absolute" 1 "$(run_settings_verifier "$SF")"

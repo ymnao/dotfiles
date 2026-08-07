@@ -262,7 +262,7 @@ codex CLI の `~/.codex/config.toml` は **sandbox 境界を越えて host 側�
 | 層 | 実装 | 効くもの | 効かないもの |
 |---|---|---|---|
 | 一次: sandbox | `claude/settings.json` の `.sandbox.filesystem.denyWrite` に `~/.codex/config.toml`(allowWrite の `~/.codex` に対する deny-within-allow) | **Bash tool 経由**の全書き込み経路(リダイレクト / write コマンド / `sed -i` / `mv`)。`cd ~/.codex && printf x > config.toml` のように hook を回避する形も止まる | **Edit / Write / MultiEdit / apply_patch の file 編集 tool には適用されない**(実測: deny 対象の `claude/settings.json` は Bash append は拒否されるが Edit tool では書き換えられた) |
-| 一次: sandbox (プロジェクト配下) | 同 `denyWrite` に `~/*/**/.codex/**`(2026-08-08 追加) | home 直下のどの作業ディレクトリでも、その配下の**任意の深さ**で `.codex/` を deny。ディレクトリが存在しなくても `mkdir` 自体が拒否される | 3 経路(home の外 / excludedCommands で sandbox ごと外れる行 / file 編集 tool)。内訳と担当は下記「denyWrite のパス表記」節の末尾に 1 箇所だけ書く |
+| 一次: sandbox (プロジェクト配下) | 同 `denyWrite` に `~/*/**/.codex/**`(2026-08-08 追加) | home 直下 1 階層の作業ディレクトリ配下で `.codex/` を deny。ディレクトリが存在しなくても `mkdir` も `mv` (rename) も拒否される。**測れた範囲は下記節に明記** | 4 経路(home の外 / excludedCommands で sandbox ごと外れる行 / file 編集 tool / この設定自体の改ざん)。内訳と担当は下記「denyWrite のパス表記」節の末尾に 1 箇所だけ書く |
 | 二次: hook (Bash) | `agents/hooks/block-dangerous-commands.sh` の「書き込み文脈 + `.codex` component」判定 | tilde / `$HOME` / 絶対パス表記のいずれでも、path token に `.codex` component が現れる書き込みを block(読み取りは allow のまま) | `cd ~/.codex && printf x > config.toml` のように **書き込み segment 側に `.codex` component が現れない形**(一次防御が担当) |
 | 二次: hook (file 編集) | `agents/hooks/guard-codex-dir.sh` の `is_protected_home_codex_config` 判定 | Edit / Write / MultiEdit / NotebookEdit / apply_patch が `~/.codex/config.toml` を指す場合(tilde / `$HOME` / `${HOME}` / 絶対パス / `..` 経由 / 大文字表記を正規化して比較) | `~/.codex/` 配下の他ファイル(`sessions/` / `auth.json` 等は codex CLI が正当に書くため意図的に allow) |
 | 正規の書き込み経路 | `scripts/codex-merge-config.sh` を **ユーザーが手動実行**(sandbox 外) | repo の `codex/config.toml` を正本として `~/.codex/config.toml` へマージ | — |
@@ -339,7 +339,27 @@ issue #289 の「保護をコマンド文字列の静的解析で担い続ける
 現セッションからは書き込めず、プローブを置けないため。単一 `*` の意味論からは
 覆われるはずだが、確認したとは書かない。
 
-**それでも文字列解析の hook は統制から降ろせない。** 残る担当範囲は 3 つ:
+**あわせて測ったこと** (いずれも出荷形 `~/*/**/.codex/**` で。2026-08-08):
+
+- **`mv` (rename) でも作れない。** 別名で用意したディレクトリを `.codex` に
+  改名する形は `Operation not permitted`。deny が「中身への書き込み」だけを
+  覆っていると、中身に一度も触れずに丸ごと配置できてしまうため確認した
+- **綴りが違っても効く。** macOS の firmlink 綴り
+  (`/System/Volumes/Data/Users/…`) 経由でも拒否された。deny は物理位置ではなく
+  綴りでマッチするので、別綴りが回避経路にならないかを確認する必要があった
+- **単一 `*` はドット始まりのセグメントにもマッチする。** `~/.cache/uv/…/.codex/`
+  の作成が拒否された。含意は 2 方向で、**`~/.config/foo/` のような隠しディレクトリ
+  配下のプロジェクトも覆われる**一方、**`~/.cache/uv` / `~/Library/Caches/pip` に
+  展開されるパッケージが `.codex/` を含んでいると EPERM で失敗する**
+  (下記の FP)
+
+**受け入れた FP (いずれも fail-closed)**: この deny は書き込み主体を区別しないので、
+`.codex/` を同梱する正当なリポジトリの `git clone` や、`.codex/` を含む
+パッケージの展開 (`uv` / `pip` のキャッシュ配下を含む) も同じ経路で止まり、
+部分展開が残った状態で中断する。**遭遇したらこれは意図した deny** で、
+必要なら home の外 (`/tmp` 等) に展開すること。現時点で発火例は観測していない。
+
+**それでも文字列解析の hook は統制から降ろせない。** 残る経路は 4 つ:
 
 1. **home の外のプロジェクト** (`/Volumes/…` 等) — `~/*/` は home 直下を起点に
    するので届かない
@@ -348,12 +368,25 @@ issue #289 の「保護をコマンド文字列の静的解析で担い続ける
    リダイレクトを付けた行**は unsandboxed で走るので
    `block-dangerous-commands.sh` が唯一の防御になる
 3. **file 編集 tool (Edit / Write / MultiEdit / NotebookEdit / apply_patch)** —
-   sandbox が適用されない経路。`guard-codex-dir.sh` が担当
+   sandbox が適用されない経路。`guard-codex-dir.sh` が担当するが、
+   **プロジェクト判定は cwd 配下に限定されている** (`is_protected_project_path` は
+   cwd prefix 一致で、`tests/hooks/guard-codex-dir.cases.jsonl` は
+   `../other/.codex` を **allow として pin** している)。つまり
+   **cwd の外にある別プロジェクトの `.codex/` へ file 編集 tool で書く形は、
+   どの層も止めない。** この非対称は本節の変更で生じたものではない
+   (Bash 側だけが home 直下全体へ広がった結果、目立つようになった)
+4. **この deny エントリ自体の改ざん** — `claude/settings.json` は
+   Edit / Write tool で書き換えられる(sandbox の denyWrite は Bash 経路にしか
+   効かない。表の 1 行目の実測)。エントリを消してから Bash で書く並びでは
+   `block-dangerous-commands.sh` が唯一の防御に戻る。
+   `tests/integrity/` の pin は `make test` / CI / Stop gate での**事後**検出で、
+   同一ターン内の悪用には間に合わない
 
 つまり #289 の答えは「文字列解析をやめる」ではなく、**Bash 経路のうち
 sandbox が覆える範囲では統制の本体を操作境界へ移し、hook は多層防御 +
-sandbox が届かない 3 経路の一次防御として残す**。候補 2 (AST 解析) と
-候補 3 (allowlist 反転) は、この 3 経路を減らせないので**今回は採らない**。
+sandbox が届かない 4 経路の一次防御として残す**。候補 2 (AST 解析) と
+候補 3 (allowlist 反転) は、この 4 経路を減らせないので**今回は採らない**
+(経路 3 と 4 はそもそもコマンド文字列を経由しないので、解析の精度を上げても届かない)。
 
 **採らなかった候補: FS レベルのロック** (`chflags uchg` / ACL) は全プロセスに
 効く真の境界だが、**保護対象が存在しないプロジェクトでは事前にロックできず**、
