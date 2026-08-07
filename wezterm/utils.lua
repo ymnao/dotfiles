@@ -1,4 +1,21 @@
+local wezterm = require("wezterm")
+
 local M = {}
+
+-- 1〜9 のキーでタブ番号ジャンプするエントリを keys に追加して返す。
+-- ActivateTab は 0 始まりなので i - 1 を渡す。
+-- merge_lists ではなく table.insert で足すのは、merge_lists が pairs() 走査で
+-- 配列順序を保証しないため。
+function M.add_tab_number_keys(keys, mods)
+	for i = 1, 9 do
+		table.insert(keys, {
+			key = tostring(i),
+			mods = mods,
+			action = wezterm.action.ActivateTab(i - 1),
+		})
+	end
+	return keys
+end
 
 function M.basename(s)
 	return string.gsub(s, "(.*[/\\])(.*)", "%2")

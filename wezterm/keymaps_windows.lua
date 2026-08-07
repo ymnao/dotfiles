@@ -3,6 +3,7 @@
 
 local wezterm = require("wezterm")
 local act = wezterm.action
+local utils = require("utils")
 
 local keys = {
 	-- Copy/Paste (terminal standard: Ctrl+Shift+C/V)
@@ -95,12 +96,4 @@ local keys = {
 }
 
 -- Tab activation by number (CTRL+1~9)
-for i = 1, 9 do
-	table.insert(keys, {
-		key = tostring(i),
-		mods = "CTRL",
-		action = act.ActivateTab(i - 1),
-	})
-end
-
-return keys
+return utils.add_tab_number_keys(keys, "CTRL")
