@@ -321,3 +321,7 @@
 # 汚染のない一時 dir で ls -A 確認)。段 1 が空白を食うことの pin。
 {"name":"fp-fddup-spaced","expect":"allow","command":"cat .codex/config.toml >& 1","reason":">& 1 は fd 複製 (ファイル生成なし)"}
 {"name":"fp-fddup-spaced-fdnum","expect":"allow","command":"cat .codex/config.toml 2>& 1","reason":"2>& 1 も同様"}
+# fd 複製マスクの**左境界**の pin。境界が無いと直前の word 末尾の数字まで fd 番号と
+# 誤認して食い、書き込み先が化ける。実測 2026-08-07: `echo hi > .codex2>&1` が作るのは
+# `.codex2` という**ファイル**で、保護対象の .codex/ には触れない。
+{"name":"fp-fddup-left-boundary-filename","expect":"allow","command":"echo x > .codex2>&1","reason":"書き込み先は .codex2 というファイル (.codex ディレクトリではない)"}
