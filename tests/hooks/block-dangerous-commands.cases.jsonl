@@ -304,3 +304,9 @@
 {"name":"adv-write-then-fddup","expect":"block","command":"echo x >>.co*/log 2>&1","reason":"本物の write redirect + fd 複製の複合 (マスクが >> を消さないこと)"}
 {"name":"adv-fddup-then-write","expect":"block","command":"echo x 2>&1 >.co*/log","reason":"fd 複製が先行しても後続の write redirect は検出する"}
 {"name":"adv-fddup-rm-glob","expect":"block","command":"rm -rf .co* 2>&1","reason":"2>&1 が付いても書き込みコマンド側の判定は維持"}
+# 「動的展開 + 書き込み系リダイレクト」判定 (3 箇所目) にも同じ正規化を適用したことの検査。
+# 修正前は `>&word` がこの判定の write redirect パターンに一切マッチせず、たまたま別判定
+# (コマンド名トークンの動的展開検出) が拾っていたケースでのみブロックされていた。
+{"name":"adv-dynamic-amp-word-redirect","expect":"block","command":"echo \"$msg\" >& out.txt","reason":"動的展開 + >&word (静的 target なのでコマンド名判定は発火しない)"}
+{"name":"fp-dynamic-fddup-stderr","expect":"allow","command":"echo \"$msg\" >&2","reason":"動的展開 + fd 複製のみ (ファイル書き込みなし)"}
+{"name":"fp-dynamic-fddup-2to1","expect":"allow","command":"echo \"$msg\" 2>&1","reason":"動的展開 + 2>&1 のみ (FP ラチェット維持)"}
