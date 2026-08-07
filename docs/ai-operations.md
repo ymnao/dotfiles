@@ -262,6 +262,7 @@ codex CLI の `~/.codex/config.toml` は **sandbox 境界を越えて host 側�
 | 層 | 実装 | 効くもの | 効かないもの |
 |---|---|---|---|
 | 一次: sandbox | `claude/settings.json` の `.sandbox.filesystem.denyWrite` に `~/.codex/config.toml`(allowWrite の `~/.codex` に対する deny-within-allow) | **Bash tool 経由**の全書き込み経路(リダイレクト / write コマンド / `sed -i` / `mv`)。`cd ~/.codex && printf x > config.toml` のように hook を回避する形も止まる | **Edit / Write / MultiEdit / apply_patch の file 編集 tool には適用されない**(実測: deny 対象の `claude/settings.json` は Bash append は拒否されるが Edit tool では書き換えられた) |
+| 一次: sandbox (プロジェクト配下) | 同 `denyWrite` に `~/development/**/.codex/**`(2026-08-08 追加) | `~/development` 配下の**全プロジェクトの任意の深さ**で `.codex/` を deny。ディレクトリが存在しなくても `mkdir` 自体が拒否される | `~/development` **の外**のプロジェクト(hook が担当)。excludedCommands で sandbox ごと外れる行(下記の節)。file 編集 tool |
 | 二次: hook (Bash) | `agents/hooks/block-dangerous-commands.sh` の「書き込み文脈 + `.codex` component」判定 | tilde / `$HOME` / 絶対パス表記のいずれでも、path token に `.codex` component が現れる書き込みを block(読み取りは allow のまま) | `cd ~/.codex && printf x > config.toml` のように **書き込み segment 側に `.codex` component が現れない形**(一次防御が担当) |
 | 二次: hook (file 編集) | `agents/hooks/guard-codex-dir.sh` の `is_protected_home_codex_config` 判定 | Edit / Write / MultiEdit / NotebookEdit / apply_patch が `~/.codex/config.toml` を指す場合(tilde / `$HOME` / `${HOME}` / 絶対パス / `..` 経由 / 大文字表記を正規化して比較) | `~/.codex/` 配下の他ファイル(`sessions/` / `auth.json` 等は codex CLI が正当に書くため意図的に allow) |
 | 正規の書き込み経路 | `scripts/codex-merge-config.sh` を **ユーザーが手動実行**(sandbox 外) | repo の `codex/config.toml` を正本として `~/.codex/config.toml` へマージ | — |
@@ -275,6 +276,72 @@ file 編集 tool 経路は sandbox が効かないので hook が止める。片
   の `home-codex-config-*` / `tilde-codex-config-*` ケースが pin する
 - 二次防御 (file 編集) の regression は `tests/hooks/guard-codex-dir.cases.jsonl` の
   `{{HOME}}/.codex/config.toml` 系ケースが pin する(allow 側のラチェットも含む)
+
+### denyWrite のパス表記 — 相対は無視され、絶対 / `~` 始まりなら glob が効く
+
+issue #289 の「保護をコマンド文字列の静的解析で担い続けるか」を決めるために、
+**どの表記なら sandbox 層で書き込みを止められるか**を実測した
+(2026-08-08 / Claude Code 2.1.220 / macOS Seatbelt)。測定は保護対象と無関係な
+`.sbxprobe-*` という名前で行い、`block-dangerous-commands.sh` の文字列検出を
+経由せず sandbox 層だけを見ている。判定は exit code ではなく
+**ファイルが実在するか**で行った(`touch` は拒否されても 0 を返しうる)。
+
+| `denyWrite` に書いた表記 | 直下 | ネスト | 判定 |
+|---|---|---|---|
+| `.sbxprobe-rel-exists`(素の相対) | 書けた | — | **効かない** |
+| `./.sbxprobe-dot`(`./` 付き相対) | 書けた | — | **効かない** |
+| `**/.sbxprobe-glob/**`(glob 始まり = 非絶対) | 書けた | 書けた | **効かない** |
+| `/Users/…/.sbxprobe-abs-missing`(絶対・**存在しない**) | 拒否 | — | 効く |
+| `~/development/…/.sbxprobe-tilde`(`~` 始まり) | 拒否 | — | 効く |
+| `/Users/…/**/.sbxprobe-absglob/**`(絶対始まりの glob) | 拒否 | 拒否 | 効く |
+| `/Users/…/.sbxprobe-absglob-top/*`(絶対始まりの単一 `*`) | 拒否 | — | 効く |
+| `~/development/**/.sbxprobe-tglob/**`(`~` 始まりの glob) | 拒否 | 拒否 | 効く |
+
+読み取れること:
+
+- **エントリは絶対パスまたは `~` で始まらなければならない。** 相対表記は
+  `./` を付けても効かない。**エラーも警告も観測されなかった**ので、
+  「設定したのに一度も効いていない」状態が緑のまま成立する
+  (`requiredMinimumVersion` と同じ壊れ方。§10 の該当節を参照)
+- **glob は「絶対パス / `~` で始まっていれば」効く。** 先頭が `**/` の形が
+  効かなかったのは glob 非対応だからではなく、**エントリ全体が非絶対になる**ため
+- **`**` は中間ディレクトリ 0 個にもマッチする。** つまり
+  `/Users/<user>/**/.codex/**` と書くと `~/.codex/` 配下まで巻き込み、
+  codex CLI の正当な書き込み(`sessions/` / `auth.json` 等)を壊す。
+  **home 全体に掛けてはいけない** — スコープをプロジェクト木に絞ること
+- **deny 対象は存在しなくてよい。** そのディレクトリを作る `mkdir` 自体が
+  `Operation not permitted` になる(守りたいのは「まだ無い `.codex/` を
+  作らせないこと」なので、この性質が無いと候補 1 は成立しなかった)
+- **sandbox 設定はセッションを再起動しなくても反映された。** 同一セッション中に
+  `claude/settings.json`(= `~/.claude/settings.json` への symlink)を書き換えた
+  直後の Bash 呼び出しから deny が効いた。**この観測は「再起動が不要」と
+  確約するものではない** — 反映契機を特定したわけではないので、設定変更の検証は
+  引き続き再起動後にも確認する
+
+この結果を受けて `~/development/**/.codex/**` を denyWrite に追加した。
+出荷する表記そのもので (a) repo 直下・1 段・2 段ネストがすべて拒否、
+(b) `~/.codex/` への正当な書き込みは通り `~/.codex/config.toml` は deny のまま、
+(c) 似た名前 (`.codex-other`) と無関係なディレクトリは書ける、を確認済み。
+
+**それでも文字列解析の hook は統制から降ろせない。** 残る担当範囲は 3 つ:
+
+1. **`~/development` の外のプロジェクト** — sandbox エントリはパスを列挙する
+   方式なので、新しい場所で作業を始めると覆われない
+2. **excludedCommands にマッチする行** — sandbox ごと外れる(次節)。
+   compound 行は `guard-sandbox-exclusions.sh` が止めるが、**単独の除外コマンドに
+   リダイレクトを付けた行**は unsandboxed で走るので
+   `block-dangerous-commands.sh` が唯一の防御になる
+3. **file 編集 tool (Edit / Write / MultiEdit / NotebookEdit / apply_patch)** —
+   sandbox が適用されない経路。`guard-codex-dir.sh` が担当
+
+つまり #289 の答えは「文字列解析をやめる」ではなく、**Bash 経路のうち
+sandbox が覆える範囲では統制の本体を操作境界へ移し、hook は多層防御 +
+sandbox が届かない 3 経路の一次防御として残す**。候補 2 (AST 解析) と
+候補 3 (allowlist 反転) は、この 3 経路を減らせないので**今回は採らない**。
+
+**採らなかった候補: FS レベルのロック** (`chflags uchg` / ACL) は全プロセスに
+効く真の境界だが、**保護対象が存在しないプロジェクトでは事前にロックできず**、
+ロックのために全 repo に `.codex/` を作って回るのは保護目的と本末転倒なので却下した。
 
 ### sandbox の excludedCommands が「一次防御」を丸ごと外す経路
 

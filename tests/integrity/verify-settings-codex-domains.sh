@@ -13,6 +13,8 @@
 #      (issue #190: allowWrite の ~/.codex はディレクトリ全体なので、config.toml
 #       の notify / mcp_servers / hooks フィールド経由で host 側任意コマンド実行に
 #       繋がる。deny-within-allow で config.toml だけ単点 deny する設計)
+#   5. .sandbox.filesystem.denyWrite に ~/development/**/.codex/** が含まれる
+#      (issue #289: プロジェクト配下の .codex/ を Bash 経路で止める一次防御)
 #
 # make test の JSON 構文チェック (jq empty) では内容の drift を検出できないため
 # 本テストで assert する。issue #184 の failure scenario 参照。
@@ -66,6 +68,22 @@ check_contains '.sandbox.filesystem.allowWrite' "$codex_literal" \
 # 壊れやすいため、攻撃面が集中している config.toml 1 ファイルを deny する。
 check_contains '.sandbox.filesystem.denyWrite' "${codex_literal}/config.toml" \
   "claude/settings.json: .sandbox.filesystem.denyWrite に ~/.codex/config.toml が無い (notify 経由の sandbox escape)"
+# プロジェクト配下の .codex/ を sandbox 層で deny する (issue #289)。
+#
+# この assert が測るのは **エントリが設定に在ること** だけで、
+# **実際に書き込みが止まることの証明ではない**。表記を 1 文字変えるだけで
+# 静かに無効化されるため (相対表記や `**/` 始まりは警告なしで無視される。
+# 2026-08-08 実測)、enforcement の根拠は docs/ai-operations.md §10
+# 「denyWrite のパス表記」節の測定記録の側にある。
+#
+# 前方一致や部分一致ではなく **全文一致** で pin するのはそのため —
+# `~/development/**/.codex` のように末尾の `/**` が落ちた形や、
+# `**/.codex/**` のように絶対パス始まりでなくなった形は、
+# JSON としては妥当で jq の存在検査も通るが sandbox では効かない。
+project_codex_glob='~'
+project_codex_glob="${project_codex_glob}/development/**/.codex/**"
+check_contains '.sandbox.filesystem.denyWrite' "$project_codex_glob" \
+  "claude/settings.json: .sandbox.filesystem.denyWrite に ~/development/**/.codex/** が無い (プロジェクト配下の .codex/ が sandbox 層で無防備)"
 
 echo "settings codex domains: $pass passed, $fail failed"
 [ "$fail" = 0 ] || exit 1
