@@ -281,3 +281,26 @@
 {"name":"reparse-assign-abs-bash-c","expect":"block","command":"FOO=bar /bin/bash -c 'rm -rf ~'","reason":"代入語 + 絶対パス shell"}
 {"name":"reparse-source-procsub-dangerous","expect":"block","command":"source <(echo 'rm -rf ~')","reason":"source receiver 分岐"}
 {"name":"reparse-dot-procsub-dangerous","expect":"block","command":". <(echo 'rm -rf ~')","reason":". receiver 分岐"}
+# --- issue #284: fd 複製 (N>&M / >&M / >&-) のマスクと rsync/tar の書き込み文脈追加 ---
+# FP 側: `2>&1` の `&` でセグメントが割れ、孤立した `2>` が write redirect に誤マッチしていた
+{"name":"fp-fddup-ls-codex","expect":"allow","command":"ls .codex 2>&1","reason":"実FP: 2>&1 は fd 複製でファイルへ書かない (読み取り免除を維持)"}
+{"name":"fp-fddup-cat-codex-config","expect":"allow","command":"cat .codex/config.toml 2>&1","reason":"実FP同型: 読み取りコマンド + 2>&1"}
+{"name":"fp-fddup-pipe-tail","expect":"allow","command":"ls .codex 2>&1 | tail -5","reason":"実運用で頻出の `cmd 2>&1 | pipe` 形"}
+{"name":"fp-fddup-stdout-to-stderr","expect":"allow","command":"ls .codex >&2","reason":"fd 番号省略形 >&2 も fd 複製"}
+{"name":"fp-fddup-close","expect":"allow","command":"cat .codex/config.toml 2>&-","reason":">&- (fd クローズ) も書き込みではない"}
+# rsync / tar 追加で受理側の口が広がりすぎていないことの検査 (.codex 非該当なら allow)
+{"name":"fp-rsync-plain-dst","expect":"allow","command":"rsync -a src/ dst/","reason":"rsync でも .codex にマッチしない引数は allow"}
+{"name":"fp-tar-plain-dst","expect":"allow","command":"tar -xf x.tar -C build","reason":"tar でも .codex にマッチしない引数は allow"}
+{"name":"allow-rsync-git-glob","expect":"allow","command":"rsync -a src/ .git*/","reason":".git* は `.codex` 非該当 (glob 判定が効いている証拠)"}
+# 敵対側: rsync / tar の glob 経路 (欠陥 2)
+{"name":"adv-rsync-glob-dst","expect":"block","command":"rsync -a src/ .co*/","reason":"rsync が書き込み文脈と認識されず素通りしていた"}
+{"name":"adv-tar-glob-extract-dir","expect":"block","command":"tar -xf x.tar -C .co*","reason":"tar -C の展開先 glob も同様に素通りしていた"}
+{"name":"adv-rsync-brace-dst","expect":"block","command":"rsync -a src/ .co{dex,foo}/","reason":"rsync + brace 展開"}
+# 敵対側: マスクを `>&` の直後が数字列/`-` の形に限定していることの検査。
+# bash では `>&word` (word が数字でも `-` でもない) は `&>word` と同義で
+# **両ストリームをファイルへ書く本物の write redirect** なのでブロック維持が必要。
+{"name":"adv-amp-word-redirect-literal","expect":"block","command":"echo x >&.codex/log","reason":">&word はファイル書き込み (マスク対象外)"}
+{"name":"adv-amp-word-redirect-glob","expect":"block","command":"echo x >& .co*/foo","reason":">&word の空白あり + glob 形"}
+{"name":"adv-write-then-fddup","expect":"block","command":"echo x >>.co*/log 2>&1","reason":"本物の write redirect + fd 複製の複合 (マスクが >> を消さないこと)"}
+{"name":"adv-fddup-then-write","expect":"block","command":"echo x 2>&1 >.co*/log","reason":"fd 複製が先行しても後続の write redirect は検出する"}
+{"name":"adv-fddup-rm-glob","expect":"block","command":"rm -rf .co* 2>&1","reason":"2>&1 が付いても書き込みコマンド側の判定は維持"}

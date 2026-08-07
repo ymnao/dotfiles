@@ -548,7 +548,46 @@ fi
 # sed は `-i` フラグ付き (BSD `-i ''` / GNU `-i.bak`) のみ書き込み扱い
 # セグメント分割は `; & |` のみ (brace `{}` は展開文法で分割対象外)
 _seg_seps=';&|()'
-_write_cmd_names="rm|chmod|chown|shred|${write_cmds}"
+# fd 複製 (`2>&1` / `>&2` / `>&-` / `2>&1-`) は「既存 fd の複製」であってファイルへは
+# 書かないが、`&` がセグメント区切り (`_seg_seps`) に該当するため分割で `... 2>` と
+# `1` に割れる。前半セグメント末尾に孤立した `2>` が `_write_redirect_re` の
+# `[0-9]+>>?([^&]|$)` に `$` 境界で誤マッチし、読み取り専用コマンドまで書き込み文脈と
+# 判定されていた (issue #284。`cmd ... 2>&1 | tail` 系が破綻する)。分割**前**に空白へ
+# 潰して `&` を消す。置換先を placeholder 文字列ではなく空白にするのは、区切り文字・
+# glob メタ文字・`.codex` マッチ・readonly allowlist 語・小文字化のいずれとも衝突
+# しないため (文字列だと全部について衝突分析が要る)。fd 番号も一緒に消すので、
+# walker 側のセグメント先頭に裸の `1` が立つ問題も同時に解消する。
+# **マスク対象は `>&` の直後が数字列 (末尾 `-` 可) または `-` 単体の形に限定する**:
+#   - `&>file` / `&>>file` は `>file 2>&1` の bash 短縮形 = 本物の write redirect。
+#     `&` が `>` に先行するのでこの正規表現には一切マッチしない
+#   - `>&word` (word が数字でも `-` でもない) は bash では `&>word` と同義で
+#     **両ストリームをファイルへ書く本物の write redirect**。空白の有無を問わず
+#     ファイルが作られることを 2026-08-07 に実測 (`bash -c 'echo hello >& out.txt'`
+#     でファイル生成、`ls /nonexistent >& out.txt` で stderr も捕捉)
+# そのうえで **2 段目の正規化**を行う: 1 段目で fd 複製を消した後に残る `>&` は
+# 定義上この「両ストリーム → ファイル」形なので、`> ` に書き換えて `&` を除去する。
+# これをしないと `&` でセグメントが割れ、リダイレクト演算子 (`echo x >`) と書き込み先
+# (`.co*/foo`) が別セグメントに分かれるため、`_check_glob_seg` の component 検査が
+# 書き込み先に一度も当たらない。**この素通りは issue #284 の修正前から開いていた**
+# (2026-08-07 に旧 hook で `echo x >& .co*/foo` が exit=0 になることを実測)。
+# literal 形 (`>&.codex/log`) だけは後段の `.codex` 文字列検出が拾っていたため、
+# glob 形にのみ穴が残っていた — 欠陥 2 (rsync/tar) と同型の取りこぼし。
+# 既知のスコープ外: 入力側 fd 複製 `<&N` は同型の分割を起こすが、書き込み文脈判定に
+# 関与しないため issue #284 では扱わない。
+_normalize_fd_redirects() {
+  printf '%s' "$1" | sed -E \
+    -e 's/[0-9]*>&([0-9]+-?|-)/ /g' \
+    -e 's/>&[[:space:]]*/> /g'
+}
+# rsync / tar は literal 形なら後段の `.codex` 文字列検出で止まるが、glob 形 (`.co*`) は
+# ここで書き込み文脈と認識されないと `_check_glob_seg` の component 検査に入らず素通り
+# していた (issue #284)。追加先は本判定用の `_write_cmd_names` のみで、430 行の
+# `write_cmds` (動的展開 + 書き込み系コマンドの安全側ブロック) には足さない —
+# あちらに足すと `tar -xf "$f"` のような日常形まで誤ブロックが広がる。
+# 副作用として `tar -tf x.tar '.co*'` のような読み取り系 tar も、glob 引数が `.codex` に
+# マッチする場合はブロックされる。fail-closed 方向の FP であり、`.codex` 保護 (#190) の
+# 方針と整合するため許容する。
+_write_cmd_names="rm|chmod|chown|shred|rsync|tar|${write_cmds}"
 _write_cmd_boundary_re="(^|[[:space:]/\\])(${_write_cmd_names})([[:space:]]|$)"
 _sed_boundary_re='(^|[[:space:]/\\])sed([[:space:]]|$)'
 _sed_inplace_re='(^|[[:space:]])-[a-zA-Z]*i[a-zA-Z]*(\.[a-zA-Z0-9]*)?([[:space:]]|$)'
@@ -635,7 +674,7 @@ _check_glob_seg() {
 # `>|` (clobber redirect) は `|` を含むが pipe ではないため、tr 前に `>` に
 # 正規化する (semantics 上 `>` と `>|` は noclobber の有無以外同一で
 # security 判定に影響しない)。
-_command_norm=$(printf '%s' "$command" | sed -e 's/>|/>/g')
+_command_norm=$(_normalize_fd_redirects "$command" | sed -e 's/>|/>/g')
 case "$_command_norm" in
   *[";&|()"]*)
     while IFS= read -r _seg; do
@@ -673,7 +712,12 @@ fi
 #      書き込めるため対象外。find は -delete/-exec を持つため対象外）
 codex_readonly_ok=0
 if [[ "$has_dynamic" = 0 ]] && printf '%s' "$command" | grep -qi '\.codex'; then
-  if ! printf '%s' "$command" | grep -qE '(^|[^&0-9])>[>|]?([^&]|$)|&>>?([^&]|$)|[0-9]+>>?([^&]|$)'; then
+  # 判定 2 (書き込み系リダイレクトの有無) と判定 3 (セグメント先頭コマンド) は
+  # 同じ正規化 view で行う。素の $command で見ると `>&file` (両ストリーム → ファイル)
+  # が既存パターンのどれにもマッチせず、書き込みを含むコマンドに読み取り免除を
+  # 与えてしまう。正規化後は `> file` になるので判定 2 が拾う (issue #284)。
+  _command_fdnorm=$(_normalize_fd_redirects "$command")
+  if ! printf '%s' "$_command_fdnorm" | grep -qE '(^|[^&0-9])>[>|]?([^&]|$)|&>>?([^&]|$)|[0-9]+>>?([^&]|$)'; then
     readonly_cmds='grep|egrep|fgrep|rg|cat|head|tail|less|more|wc|ls|stat|file|diff|cmp|md5|shasum|sha256sum|strings|hexdump|od|readlink|basename|dirname|test'
     codex_readonly_ok=1
     while IFS= read -r _seg; do
@@ -686,7 +730,10 @@ if [[ "$has_dynamic" = 0 ]] && printf '%s' "$command" | grep -qi '\.codex'; then
         codex_readonly_ok=0
         break
       fi
-    done <<< "$(printf '%s' "$command" | tr ';&|(){}' '\n\n\n\n\n\n\n')"
+    # 分割前に正規化するのは glob 経路 (_command_norm) と同じ理由。しないと
+    # `ls .codex 2>&1` が `ls .codex 2>` と `1` に割れ、裸の `1` が readonly
+    # allowlist に無いため免除が外れる (issue #284)。
+    done <<< "$(printf '%s' "$_command_fdnorm" | tr ';&|(){}' '\n\n\n\n\n\n\n')"
   fi
 fi
 
