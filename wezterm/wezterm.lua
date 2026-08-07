@@ -81,6 +81,15 @@ if is_windows then
 		"Consolas"
 	})
 
+	-- Copy/Paste behavior (Windows only)
+	config.selection_word_boundary = " \t\n{}[]()\"'`,;:@"
+	config.quick_select_patterns = {
+		-- URL (ポート・パス・クエリ・フラグメントを含む)
+		"https?://[\\w.-]+(?::\\d+)?(?:/[\\w./_-]*)?(?:\\?[\\w=&%-]*)?(?:#[\\w-]*)?",
+		-- ファイルパス (ディレクトリ区切りと拡張子を必須にして誤検出を減らす)
+		"[\\w/~-]+/[\\w.-]+\\.[a-zA-Z]{2,}",
+	}
+
 elseif is_macos then
 	-- macOS-specific settings
 	config.window_background_opacity = 0.7
