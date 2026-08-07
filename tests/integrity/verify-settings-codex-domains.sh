@@ -52,13 +52,20 @@ check_contains '.sandbox.network.allowedDomains' 'chatgpt.com' \
   "claude/settings.json: .sandbox.network.allowedDomains に chatgpt.com が無い"
 check_contains '.sandbox.network.allowedDomains' 'auth.openai.com' \
   "claude/settings.json: .sandbox.network.allowedDomains に auth.openai.com が無い (token refresh で 401)"
-# tilde を quote 内に直書きすると shellcheck SC2088 を踏むので 2 段組みで
-# literal を組み立てる。single-quote (`'~/.codex'`) だけでなく double-quote
-# (`"~/.codex"`) でも同じ SC2088 が発火するため、素朴な「簡略化」で
-# `codex_literal="~/.codex"` にリファクタしないこと。$HOME 展開もさせない —
-# JSON 側は "~/.codex" のリテラル文字列で保存されており sandbox runtime が解釈する。
-codex_literal='~'
-codex_literal="${codex_literal}/.codex"
+# tilde を quote 内に直書きすると shellcheck SC2088 を踏むので、先頭の `~` だけを
+# 変数展開経由にして literal を組み立てる。single-quote (`'~/.codex'`) だけでなく
+# double-quote (`"~/.codex"`) でも同じ SC2088 が発火するため、素朴な「簡略化」で
+# `codex_literal="~/.codex"` にリファクタしないこと (2026-08-08 に shellcheck で
+# 両方の形を実測)。$HOME 展開もさせない — JSON 側は "~/.codex" のリテラル文字列で
+# 保存されており sandbox runtime が解釈する。
+#
+# 関数にまとめてあるのは、tilde literal が必要な箇所が増えたときに
+# 「なぜ 1 行で書けないか」の理由がコメントの無いコピーとして複製されるのを防ぐため。
+tilde_literal() {
+  # $1=`~` の後ろに続ける部分 (先頭の / を含める)
+  printf '%s' "~$1"
+}
+codex_literal=$(tilde_literal '/.codex')
 check_contains '.sandbox.filesystem.allowWrite' "$codex_literal" \
   "claude/settings.json: .sandbox.filesystem.allowWrite に ~/.codex が無い"
 # allowWrite が ~/.codex ディレクトリ全体なので、config.toml は denyWrite 側で
@@ -77,11 +84,15 @@ check_contains '.sandbox.filesystem.denyWrite' "${codex_literal}/config.toml" \
 # 「denyWrite のパス表記」節の測定記録の側にある。
 #
 # 前方一致や部分一致ではなく **全文一致** で pin するのはそのため —
-# `~/development/**/.codex` のように末尾の `/**` が落ちた形や、
+# `~/*/**/.codex` のように末尾の `/**` が落ちた形や、
 # `**/.codex/**` のように絶対パス始まりでなくなった形は、
 # JSON としては妥当で jq の存在検査も通るが sandbox では効かない。
-project_codex_glob='~'
-project_codex_glob="${project_codex_glob}/development/**/.codex/**"
+#
+# 先頭が `~/*/` なのも意味がある。`~/**/.codex/**` にすると `**` が中間 0 個にも
+# マッチするため `~/.codex/` 配下まで deny され、codex CLI の正当な書き込み
+# (sessions/ / auth.json 等) が壊れる。単一 `*` は 1 セグメントを必ず消費する
+# ので home 直下の作業ディレクトリだけを受ける (2026-08-08 実測)。
+project_codex_glob=$(tilde_literal '/*/**/.codex/**')
 check_contains '.sandbox.filesystem.denyWrite' "$project_codex_glob" \
   "claude/settings.json: .sandbox.filesystem.denyWrite に ~/development/**/.codex/** が無い (プロジェクト配下の .codex/ が sandbox 層で無防備)"
 

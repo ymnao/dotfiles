@@ -64,7 +64,7 @@
         "~/.zprofile",
         "~/.bashrc",
         "~/.codex/config.toml",
-        "~/development/**/.codex/**"
+        "~/*/**/.codex/**"
       ]
     },
     "network": {

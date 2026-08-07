@@ -262,7 +262,7 @@ codex CLI の `~/.codex/config.toml` は **sandbox 境界を越えて host 側�
 | 層 | 実装 | 効くもの | 効かないもの |
 |---|---|---|---|
 | 一次: sandbox | `claude/settings.json` の `.sandbox.filesystem.denyWrite` に `~/.codex/config.toml`(allowWrite の `~/.codex` に対する deny-within-allow) | **Bash tool 経由**の全書き込み経路(リダイレクト / write コマンド / `sed -i` / `mv`)。`cd ~/.codex && printf x > config.toml` のように hook を回避する形も止まる | **Edit / Write / MultiEdit / apply_patch の file 編集 tool には適用されない**(実測: deny 対象の `claude/settings.json` は Bash append は拒否されるが Edit tool では書き換えられた) |
-| 一次: sandbox (プロジェクト配下) | 同 `denyWrite` に `~/development/**/.codex/**`(2026-08-08 追加) | `~/development` 配下の**全プロジェクトの任意の深さ**で `.codex/` を deny。ディレクトリが存在しなくても `mkdir` 自体が拒否される | `~/development` **の外**のプロジェクト(hook が担当)。excludedCommands で sandbox ごと外れる行(下記の節)。file 編集 tool |
+| 一次: sandbox (プロジェクト配下) | 同 `denyWrite` に `~/*/**/.codex/**`(2026-08-08 追加) | home 直下のどの作業ディレクトリでも、その配下の**任意の深さ**で `.codex/` を deny。ディレクトリが存在しなくても `mkdir` 自体が拒否される | 3 経路(home の外 / excludedCommands で sandbox ごと外れる行 / file 編集 tool)。内訳と担当は下記「denyWrite のパス表記」節の末尾に 1 箇所だけ書く |
 | 二次: hook (Bash) | `agents/hooks/block-dangerous-commands.sh` の「書き込み文脈 + `.codex` component」判定 | tilde / `$HOME` / 絶対パス表記のいずれでも、path token に `.codex` component が現れる書き込みを block(読み取りは allow のまま) | `cd ~/.codex && printf x > config.toml` のように **書き込み segment 側に `.codex` component が現れない形**(一次防御が担当) |
 | 二次: hook (file 編集) | `agents/hooks/guard-codex-dir.sh` の `is_protected_home_codex_config` 判定 | Edit / Write / MultiEdit / NotebookEdit / apply_patch が `~/.codex/config.toml` を指す場合(tilde / `$HOME` / `${HOME}` / 絶対パス / `..` 経由 / 大文字表記を正規化して比較) | `~/.codex/` 配下の他ファイル(`sessions/` / `auth.json` 等は codex CLI が正当に書くため意図的に allow) |
 | 正規の書き込み経路 | `scripts/codex-merge-config.sh` を **ユーザーが手動実行**(sandbox 外) | repo の `codex/config.toml` を正本として `~/.codex/config.toml` へマージ | — |
@@ -296,6 +296,7 @@ issue #289 の「保護をコマンド文字列の静的解析で担い続ける
 | `/Users/…/**/.sbxprobe-absglob/**`(絶対始まりの glob) | 拒否 | 拒否 | 効く |
 | `/Users/…/.sbxprobe-absglob-top/*`(絶対始まりの単一 `*`) | 拒否 | — | 効く |
 | `~/development/**/.sbxprobe-tglob/**`(`~` 始まりの glob) | 拒否 | 拒否 | 効く |
+| `~/*/**/.codex/**`(出荷した形) | 拒否 | 拒否 | 効く |
 
 読み取れること:
 
@@ -306,9 +307,11 @@ issue #289 の「保護をコマンド文字列の静的解析で担い続ける
 - **glob は「絶対パス / `~` で始まっていれば」効く。** 先頭が `**/` の形が
   効かなかったのは glob 非対応だからではなく、**エントリ全体が非絶対になる**ため
 - **`**` は中間ディレクトリ 0 個にもマッチする。** つまり
-  `/Users/<user>/**/.codex/**` と書くと `~/.codex/` 配下まで巻き込み、
+  `~/**/.codex/**` と書くと `~/.codex/` 配下まで巻き込み、
   codex CLI の正当な書き込み(`sessions/` / `auth.json` 等)を壊す。
-  **home 全体に掛けてはいけない** — スコープをプロジェクト木に絞ること
+  **単一 `*` は 1 セグメントを必ず消費する**ので、`~/*/**/.codex/**` と書けば
+  home 直下の作業ディレクトリだけを受け、`~/.codex/` は巻き込まない
+  (この 2 つの差が、下記のスコープ設計の土台)
 - **deny 対象は存在しなくてよい。** そのディレクトリを作る `mkdir` 自体が
   `Operation not permitted` になる(守りたいのは「まだ無い `.codex/` を
   作らせないこと」なので、この性質が無いと候補 1 は成立しなかった)
@@ -318,15 +321,28 @@ issue #289 の「保護をコマンド文字列の静的解析で担い続ける
   確約するものではない** — 反映契機を特定したわけではないので、設定変更の検証は
   引き続き再起動後にも確認する
 
-この結果を受けて `~/development/**/.codex/**` を denyWrite に追加した。
+この結果を受けて `~/*/**/.codex/**` を denyWrite に追加した。
 出荷する表記そのもので (a) repo 直下・1 段・2 段ネストがすべて拒否、
 (b) `~/.codex/` への正当な書き込みは通り `~/.codex/config.toml` は deny のまま、
 (c) 似た名前 (`.codex-other`) と無関係なディレクトリは書ける、を確認済み。
 
+**プロジェクトルートを列挙する形は採らなかった。** 当初は
+`~/development/**/.codex/**` と書いていたが、これは本節の冒頭で
+「codex が書く必要 subpath を列挙する方式は実装詳細の増加に追随できず壊れやすい」
+として却下したのと**同じ構造**で、`~/work` のような新しい作業ディレクトリを
+使い始めた瞬間に静かに非カバーになる。`~/*/` は「home 直下の 1 階層は何でもよい」
+という形なので、ディレクトリ名を知らなくても追随する。
+
+**測れた範囲**: repo (`~/development/important/dotfiles` = home から 3 階層) と
+その配下 1〜2 段、および `~/.codex/` が巻き込まれないこと。**home 直下 1 階層の
+プロジェクト (`~/foo/.codex`) は実測していない** — そこは sandbox の allowWrite 外で
+現セッションからは書き込めず、プローブを置けないため。単一 `*` の意味論からは
+覆われるはずだが、確認したとは書かない。
+
 **それでも文字列解析の hook は統制から降ろせない。** 残る担当範囲は 3 つ:
 
-1. **`~/development` の外のプロジェクト** — sandbox エントリはパスを列挙する
-   方式なので、新しい場所で作業を始めると覆われない
+1. **home の外のプロジェクト** (`/Volumes/…` 等) — `~/*/` は home 直下を起点に
+   するので届かない
 2. **excludedCommands にマッチする行** — sandbox ごと外れる(次節)。
    compound 行は `guard-sandbox-exclusions.sh` が止めるが、**単独の除外コマンドに
    リダイレクトを付けた行**は unsandboxed で走るので

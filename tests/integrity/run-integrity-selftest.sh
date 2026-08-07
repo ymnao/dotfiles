@@ -158,7 +158,7 @@ make_good_settings() {
       network: { allowedDomains: ["chatgpt.com", "auth.openai.com", "example.com"] },
       filesystem: {
         allowWrite: ["~/.codex", "/tmp"],
-        denyWrite: ["~/.zshrc", "~/.codex/config.toml", "~/development/**/.codex/**"]
+        denyWrite: ["~/.zshrc", "~/.codex/config.toml", "~/*/**/.codex/**"]
       }
     }
   }' >"$1"
@@ -195,17 +195,17 @@ SF="$BASE/settings-no-config-deny.json"; make_good_settings "$SF"
 jq '.sandbox.filesystem.denyWrite -= ["~/.codex/config.toml"]' "$SF" >"$SF.tmp" && mv "$SF.tmp" "$SF"
 check "settings-missing-config-toml-deny" 1 "$(run_settings_verifier "$SF")"
 
-# fixture 5b: denyWrite から ~/development/**/.codex/** を除外 → FAIL
+# fixture 5b: denyWrite から ~/*/**/.codex/** を除外 → FAIL
 # (issue #289: プロジェクト配下の .codex/ を Bash 経路で止める一次防御が消える)
 SF="$BASE/settings-no-project-codex-deny.json"; make_good_settings "$SF"
-jq '.sandbox.filesystem.denyWrite -= ["~/development/**/.codex/**"]' "$SF" >"$SF.tmp" && mv "$SF.tmp" "$SF"
+jq '.sandbox.filesystem.denyWrite -= ["~/*/**/.codex/**"]' "$SF" >"$SF.tmp" && mv "$SF.tmp" "$SF"
 check "settings-missing-project-codex-deny" 1 "$(run_settings_verifier "$SF")"
 
 # fixture 5c: 同エントリを「JSON としては妥当だが sandbox では効かない表記」に
 # 化かす → FAIL。実測 (2026-08-08) で、先頭が `**/` の非絶対エントリは警告なしに
 # 無視される。存在検査だけの pin だと通ってしまう形なので全文一致で塞いでいる。
 SF="$BASE/settings-project-codex-relative.json"; make_good_settings "$SF"
-jq '.sandbox.filesystem.denyWrite |= map(if . == "~/development/**/.codex/**" then "**/.codex/**" else . end)' \
+jq '.sandbox.filesystem.denyWrite |= map(if . == "~/*/**/.codex/**" then "**/.codex/**" else . end)' \
   "$SF" >"$SF.tmp" && mv "$SF.tmp" "$SF"
 check "settings-project-codex-non-absolute" 1 "$(run_settings_verifier "$SF")"
 
