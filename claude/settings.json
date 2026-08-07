@@ -63,7 +63,8 @@
         "~/.zshenv",
         "~/.zprofile",
         "~/.bashrc",
-        "~/.codex/config.toml"
+        "~/.codex/config.toml",
+        ".codex"
       ]
     },
     "network": {
