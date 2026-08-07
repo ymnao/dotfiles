@@ -7,7 +7,9 @@ local utils = require("utils")
 
 local keys = {
 	-- Copy/Paste (terminal standard: Ctrl+Shift+C/V)
-	-- Ctrl+C は端末アプリへ SIGINT を送る側なのでコピーには使わない
+	-- Ctrl+C は端末アプリへ SIGINT を送る側なのでコピーには使わない。
+	-- この 2 行は WezTerm デフォルトと同一 action の明示 (`wezterm -n show-keys
+	-- --lua` で確認)。disable_default_key_bindings を入れても壊れないよう残す
 	{ key = "c", mods = "CTRL|SHIFT", action = act.CopyTo("Clipboard") },
 	{ key = "v", mods = "CTRL|SHIFT", action = act.PasteFrom("Clipboard") },
 
@@ -23,6 +25,8 @@ local keys = {
 	{ key = ")", mods = "CTRL|SHIFT", action = act.MoveTabRelative(1) },
 
 	-- Tab navigation (browser-style)
+	-- この 4 行も WezTerm デフォルトと同一 action の明示。実際に挙動が変わるのは
+	-- 末尾の CTRL+1〜9 だけ (デフォルトは CTRL+Shift+数字)
 	{ key = "Tab", mods = "CTRL", action = act.ActivateTabRelative(1) },
 	{ key = "Tab", mods = "CTRL|SHIFT", action = act.ActivateTabRelative(-1) },
 	{ key = "PageUp", mods = "CTRL", action = act.ActivateTabRelative(-1) },
