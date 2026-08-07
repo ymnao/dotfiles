@@ -142,7 +142,7 @@ printf '{"projects":{"/x":{"allowedTools":[]}}}\n' >"$H/.claude.json"
 check "no-mcp-ok" 0 "$(run_checker "$H")"
 
 # ---- verify-settings-codex-domains.sh の selftest (issue #189) ----
-# 検知器が壊れて常に PASS を返す退行を防ぐ。base fixture は 4 項目を全て
+# 検知器が壊れて常に PASS を返す退行を防ぐ。base fixture は 5 項目を全て
 # 含み、tamper 版はそれぞれ 1 項目を欠落/破壊して FAIL 期待。
 run_settings_verifier() {
   # $1=settings.json パス。exit code を echo
@@ -152,13 +152,13 @@ run_settings_verifier() {
 }
 
 make_good_settings() {
-  # $1=出力パス。verify-settings-codex-domains.sh の 4 項目を全て満たす最小 JSON
+  # $1=出力パス。verify-settings-codex-domains.sh の 5 項目を全て満たす最小 JSON
   jq -n '{
     sandbox: {
       network: { allowedDomains: ["chatgpt.com", "auth.openai.com", "example.com"] },
       filesystem: {
         allowWrite: ["~/.codex", "/tmp"],
-        denyWrite: ["~/.zshrc", "~/.codex/config.toml"]
+        denyWrite: ["~/.zshrc", "~/.codex/config.toml", "~/*/**/.codex/**"]
       }
     }
   }' >"$1"
@@ -194,6 +194,20 @@ check "settings-domains-string-not-array" 1 "$(run_settings_verifier "$SF")"
 SF="$BASE/settings-no-config-deny.json"; make_good_settings "$SF"
 jq '.sandbox.filesystem.denyWrite -= ["~/.codex/config.toml"]' "$SF" >"$SF.tmp" && mv "$SF.tmp" "$SF"
 check "settings-missing-config-toml-deny" 1 "$(run_settings_verifier "$SF")"
+
+# fixture 5b: denyWrite から ~/*/**/.codex/** を除外 → FAIL
+# (issue #289: プロジェクト配下の .codex/ を Bash 経路で止める一次防御が消える)
+SF="$BASE/settings-no-project-codex-deny.json"; make_good_settings "$SF"
+jq '.sandbox.filesystem.denyWrite -= ["~/*/**/.codex/**"]' "$SF" >"$SF.tmp" && mv "$SF.tmp" "$SF"
+check "settings-missing-project-codex-deny" 1 "$(run_settings_verifier "$SF")"
+
+# fixture 5c: 同エントリを「JSON としては妥当だが sandbox では効かない表記」に
+# 化かす → FAIL。実測 (2026-08-08) で、先頭が `**/` の非絶対エントリは警告なしに
+# 無視される。存在検査だけの pin だと通ってしまう形なので全文一致で塞いでいる。
+SF="$BASE/settings-project-codex-non-absolute.json"; make_good_settings "$SF"
+jq '.sandbox.filesystem.denyWrite |= map(if . == "~/*/**/.codex/**" then "**/.codex/**" else . end)' \
+  "$SF" >"$SF.tmp" && mv "$SF.tmp" "$SF"
+check "settings-project-codex-non-absolute" 1 "$(run_settings_verifier "$SF")"
 
 # fixture 6: denyWrite キー自体を消す → FAIL
 # (`-=` による要素除去とは別経路。denyWrite ブロックごと削除された drift で
