@@ -90,10 +90,12 @@ check_contains '.sandbox.filesystem.denyWrite' "${codex_literal}/config.toml" \
 # **ディレクトリ自体が deny されるので効く**)。どちらも JSON としては妥当で
 # jq の存在検査も通るため、効き目の向きに関わらず drift として止める。
 #
-# 先頭が `~/*/` なのも意味がある。`~/**/.codex/**` にすると `**` が中間 0 個にも
-# マッチするため `~/.codex/` 配下まで deny され、codex CLI の正当な書き込み
-# (sessions/ / auth.json 等) が壊れる。単一 `*` は 1 セグメントを必ず消費する
-# ので home 直下の作業ディレクトリだけを受ける (2026-08-08 実測)。
+# 先頭が `~/*/` なのも意味がある。単一 `*` は 1 セグメントを必ず消費するので
+# home 直下の作業ディレクトリだけを受け、`~/.codex` 自身は対象外になる
+# (codex CLI が sessions/ / auth.json 等に書く必要がある)。
+# `~/**/…` に広げる案は、実測では `~/.codex/` を巻き込まなかったものの
+# **なぜ巻き込まないのかを特定できていない**ため採らなかった。経緯と測定値は
+# docs/ai-operations.md §10「denyWrite のパス表記」節。
 project_codex_glob=$(tilde_literal '/*/**/.codex/**')
 check_contains '.sandbox.filesystem.denyWrite' "$project_codex_glob" \
   "claude/settings.json: .sandbox.filesystem.denyWrite に ${project_codex_glob} が無い (プロジェクト配下の .codex/ が sandbox 層で無防備)"
