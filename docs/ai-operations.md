@@ -505,13 +505,22 @@ herdr(エージェント用ターミナル multiplexer)の socket API は**認�
   起動先のエージェントが持つ経路が実質的に加算される。この評価は
   遮断が外れたときに改めて要る
 
-**未確認**(この 2 点は測っていない。「同じはず」とは書かない):
+**sandbox 外の対照**(2026-08-07 / user 実機 / 通常の fish シェル。agent は
+`allowUnsandboxedCommands: false` なので測れず、user に依頼して実行した):
 
-- **sandbox の外なら socket に繋がることの対照** — agent は
-  `allowUnsandboxedCommands: false` なので実行できず、user 実機での確認が要る
+`herdr status` は正常に応答し、client / server とも 0.8.0・protocol 19・
+`status: running` を返した。**client が使った socket は
+`/Users/nakiym/.config/herdr/herdr.sock`** で、sandbox 内で EPERM になったのと
+同一パス。よって socket 側の permission や herdr の状態ではなく、
+**sandbox が遮断している**ことが対照で確定した。
+
+**未確認**(この 1 点は測っていない。「同じはず」とは書かない):
+
 - **herdr ペインの中で走る Claude Code でも同じ結果になるか** — 上記の計測は
   すべてペイン外から。ペイン内では `HERDR_ENV` / `HERDR_SOCKET_PATH` が入るが、
-  sandbox の遮断が同じように効くかは測っていない
+  sandbox の遮断が同じように効くかは測っていない。**判定は
+  `HERDR_SOCKET_PATH` が非空であることを先に確認してから行う** — 空のシェルは
+  ペイン外なので、そこで `herdr status` が通っても上の対照の再測にしかならない
 
 **2026-08-06 の計測との差異**: 前日の計測では「`$TMPDIR` への bind は通り、
 connect が EPERM」と記録していたが、2026-08-07 は **bind の段階で** EPERM に
