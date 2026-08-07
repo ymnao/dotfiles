@@ -333,6 +333,12 @@
 {"name":"adv-fddup-sep-class-at","expect":"block","command":"head -1 x >&1@/../.codex/notify.sh","reason":"@ も同様 (readonly 免除経路から破られる形)"}
 {"name":"adv-fddup-sep-class-colon","expect":"block","command":"grep -r x . >&1:/../.codex/hook.js","reason":": も同様"}
 {"name":"adv-fddup-sep-class-tilde","expect":"block","command":"cat payload.txt >&1~/../.codex/config.toml","reason":"~ も同様"}
+# 空白側も同型。[[:space:]] は VT/FF/CR にマッチするが bash はそれらを word 区切りに
+# しない (ファイル名の一部になる)。実測 2026-08-07: 3/3 で Zdir/evil を生成する。
+{"name":"adv-fddup-sep-class-vt","expect":"block","command":"cat payload.txt >&1\u000b/../.codex/config.toml","reason":"VT は [[:space:]] に含まれるが bash の word 区切りではない"}
+{"name":"adv-fddup-sep-class-ff","expect":"block","command":"cat payload.txt >&1\u000c/../.codex/config.toml","reason":"FF も同様"}
+{"name":"adv-fddup-sep-class-cr","expect":"block","command":"cat payload.txt >&1\u000d/../.codex/config.toml","reason":"CR も同様"}
+{"name":"fp-fddup-gap-tab","expect":"allow","command":"cat .codex/config.toml 2>&\u00091","reason":"tab は bash の word 区切りなので fd 複製のまま (blank に狭めても壊れないこと)"}
 # 消費した境界文字を書き戻す (\1 / \3) ことの pin。落とすと隣接する `>` が消え、
 # 直後の本物の write redirect が判定から消える。
 {"name":"adv-fddup-adjacent-write","expect":"block","command":"cat foo >&1>.co*/evil","reason":"境界の > を再出力しないと後続の write redirect ごと消える"}

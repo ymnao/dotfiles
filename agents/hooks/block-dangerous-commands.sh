@@ -501,11 +501,17 @@ fi
 # 書き込み先として扱われ、外したときの被害が fail-closed 側に出る。
 # quote (`"` `'`) や `$` / backtick を含めないのも同じ理由 (含めると
 # `>&1"/../.codex/evil"` が通る)。
-_fd_word_sep='[[:space:];&|()<>]'
+# 空白側は `[[:space:]]` ではなく **`[[:blank:]]` (space + tab のみ)** を使う。
+# `[[:space:]]` は VT(0x0B) / FF(0x0C) / CR(0x0D) にもマッチするが、**bash は
+# この 3 文字を word 区切りとして扱わない** — ファイル名の一部になる。
+# 2026-08-07 実測: `cat src >&1<VT|FF|CR>/../Zdir/evil` は 3/3 で Zdir/evil を生成し、
+# `[[:space:]]` 版の hook はこれを allow していた (パス文字 13 種と同型の fail-open)。
+# 改行を列挙しないのは sed が行単位で処理するため — 行末は `$` 側が拾う。
+_fd_word_sep='[[:blank:];&|()<>]'
 _normalize_fd_redirects() {
   printf '%s' "$1" | sed -E \
-    -e "s/(^|${_fd_word_sep})[0-9]+>&[[:space:]]*([0-9]+-?|-)(${_fd_word_sep}|\$)/\\1 \\3/g" \
-    -e "s/>&[[:space:]]*([0-9]+-?|-)(${_fd_word_sep}|\$)/ \\2/g" \
+    -e "s/(^|${_fd_word_sep})[0-9]+>&[[:blank:]]*([0-9]+-?|-)(${_fd_word_sep}|\$)/\\1 \\3/g" \
+    -e "s/>&[[:blank:]]*([0-9]+-?|-)(${_fd_word_sep}|\$)/ \\2/g" \
     -e 's/>&[[:space:]]*/> /g' \
     -e 's/>[|]/>/g'
 }
