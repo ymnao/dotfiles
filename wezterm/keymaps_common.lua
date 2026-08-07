@@ -3,6 +3,7 @@
 
 local wezterm = require("wezterm")
 local act = wezterm.action
+local utils = require("utils")
 
 local keys = {
 	-- Leader key operations
@@ -30,12 +31,4 @@ local keys = {
 }
 
 -- Tab activation with LEADER key (1-9)
-for i = 1, 9 do
-	table.insert(keys, {
-		key = tostring(i),
-		mods = "LEADER",
-		action = act.ActivateTab(i - 1),
-	})
-end
-
-return keys
+return utils.add_tab_number_keys(keys, "LEADER")

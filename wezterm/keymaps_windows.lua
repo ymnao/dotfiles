@@ -3,8 +3,16 @@
 
 local wezterm = require("wezterm")
 local act = wezterm.action
+local utils = require("utils")
 
 local keys = {
+	-- Copy/Paste (terminal standard: Ctrl+Shift+C/V)
+	-- Ctrl+C は端末アプリへ SIGINT を送る側なのでコピーには使わない。
+	-- この 2 行は WezTerm デフォルトと同一 action の明示 (`wezterm -n show-keys
+	-- --lua` で確認)。disable_default_key_bindings を入れても壊れないよう残す
+	{ key = "c", mods = "CTRL|SHIFT", action = act.CopyTo("Clipboard") },
+	{ key = "v", mods = "CTRL|SHIFT", action = act.PasteFrom("Clipboard") },
+
 	-- Pane management (CTRL key)
 	{ key = "d", mods = "CTRL|SHIFT", action = act({ SplitVertical = { domain = "CurrentPaneDomain" } }) },
 	{ key = "d", mods = "CTRL", action = act.SplitHorizontal({ domain = "CurrentPaneDomain" }) },
@@ -16,7 +24,16 @@ local keys = {
 	{ key = "(", mods = "CTRL|SHIFT", action = act.MoveTabRelative(-1) },
 	{ key = ")", mods = "CTRL|SHIFT", action = act.MoveTabRelative(1) },
 
+	-- Tab navigation (browser-style)
+	-- この 4 行も WezTerm デフォルトと同一 action の明示。実際に挙動が変わるのは
+	-- 末尾の CTRL+1〜9 だけ (デフォルトは CTRL+Shift+数字)
+	{ key = "Tab", mods = "CTRL", action = act.ActivateTabRelative(1) },
+	{ key = "Tab", mods = "CTRL|SHIFT", action = act.ActivateTabRelative(-1) },
+	{ key = "PageUp", mods = "CTRL", action = act.ActivateTabRelative(-1) },
+	{ key = "PageDown", mods = "CTRL", action = act.ActivateTabRelative(1) },
+
 	-- Pane navigation (ALT + hjkl)
+	-- ALT なのは CTRL+hjkl が端末の制御文字と衝突するため
 	{ key = "h", mods = "ALT", action = act.ActivatePaneDirection("Left") },
 	{ key = "j", mods = "ALT", action = act.ActivatePaneDirection("Down") },
 	{ key = "k", mods = "ALT", action = act.ActivatePaneDirection("Up") },
@@ -82,4 +99,5 @@ local keys = {
 	},
 }
 
-return keys
+-- Tab activation by number (CTRL+1~9)
+return utils.add_tab_number_keys(keys, "CTRL")
