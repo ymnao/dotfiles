@@ -363,3 +363,7 @@
 # 先行文字クラスから / を外す等の変更で「意図した FP が黙って消えた」ことが見えるように pin する。
 {"name":"fp-accepted-tar-basename-path","expect":"block","command":"cat build/tar .co*","reason":"basename が tar のパスも書き込み文脈になる (許容した FP)"}
 {"name":"fp-accepted-tar-readonly-list","expect":"block","command":"tar -tf x.tar .co*","reason":"読み取り系 tar も glob が .codex にマッチすればブロック (許容した FP)"}
+# 許容 FP の 3 種目: `.co*` を読み取り元に取る形。_check_glob_seg は引数の位置を
+# 区別しないのでコピー元とコピー先を分けられない (2026-08-07 実測、main は allow)。
+{"name":"fp-accepted-rsync-source-glob","expect":"block","command":"rsync -a .co*/ dst/","reason":"読み取り元が .co* でもブロック (許容した FP)"}
+{"name":"fp-accepted-tar-create-source","expect":"block","command":"tar -cf out.tar .co*","reason":"アーカイブ元が .co* でもブロック (許容した FP)"}
