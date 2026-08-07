@@ -339,6 +339,11 @@
 {"name":"adv-fddup-sep-class-ff","expect":"block","command":"cat payload.txt >&1\u000c/../.codex/config.toml","reason":"FF も同様"}
 {"name":"adv-fddup-sep-class-cr","expect":"block","command":"cat payload.txt >&1\u000d/../.codex/config.toml","reason":"CR も同様"}
 {"name":"fp-fddup-gap-tab","expect":"allow","command":"cat .codex/config.toml 2>&\u00091","reason":"tab は bash の word 区切りなので fd 複製のまま (blank に狭めても壊れないこと)"}
+# 段 1a / 1b の反復の pin。1 個目のマッチが右境界を消費するため、区切りが隣接して
+# fd 複製が連続する形は 1 パスでは取りこぼす。収束まで回さないと裸の fd 番号が
+# セグメント先頭に立ち、readonly 免除が外れて読み取りが過ブロックされる。
+{"name":"fp-fddup-adjacent-pipe","expect":"allow","command":"cat .codex/config.toml 2>&1|2>&1","reason":"区切り隣接の連続 fd 複製 (段 1a の反復が要る)"}
+{"name":"fp-fddup-chained","expect":"allow","command":"cat .codex/config.toml >&1>&2","reason":"連鎖 fd 複製 (段 1b の反復が要る)"}
 # 消費した境界文字を書き戻す (\1 / \3) ことの pin。落とすと隣接する `>` が消え、
 # 直後の本物の write redirect が判定から消える。
 {"name":"adv-fddup-adjacent-write","expect":"block","command":"cat foo >&1>.co*/evil","reason":"境界の > を再出力しないと後続の write redirect ごと消える"}
