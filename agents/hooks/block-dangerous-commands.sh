@@ -433,10 +433,133 @@ if [[ "$has_dynamic" = 1 ]] && printf '%s' "$residual" | grep -qiE "(^|[;&|({\`[
   exit 2
 fi
 
+# リダイレクト演算子の表記ゆらぎを、「書き込み系リダイレクトが在るか」を問う全判定の
+# 手前で 1 度だけ正規化する。この hook はセグメントを `; & | ( )` で分割してから判定
+# するため、`&` を含む演算子は演算子と書き込み先が別セグメントに割れてしまう。
+# 同型の設計判断として `>|` → `>` の正規化が元から入っており (noclobber の有無しか
+# 違わないので security 判定に影響しない)、そこへ fd リダイレクトの 2 形を足す。
+#
+# 段1: fd 複製 (`2>&1` / `>&2` / `>&-` / `2>&1-`) を空白へ潰す。これは「既存 fd の
+#   複製」でファイルへは書かないが、`&` が区切りに該当するため `... 2>` と `1` に割れ、
+#   前半に孤立した `2>` が `_write_redirect_re` の `[0-9]+>>?([^&]|$)` に `$` 境界で
+#   誤マッチし、読み取り専用コマンドまで書き込み文脈と判定されていた
+#   (issue #284。`cmd ... 2>&1 | tail` 系が破綻する)。置換先を placeholder 文字列
+#   ではなく空白にするのは、区切り文字・glob メタ文字・`.codex` マッチ・readonly
+#   allowlist 語・小文字化のいずれとも衝突しないため (文字列だと全部について衝突
+#   分析が要る)。fd 番号も一緒に消すので、readonly walker のセグメント先頭に裸の
+#   `1` が立つ問題も同時に解消する。区切りが隣接する `cmd 2>&1|2>&1` /
+#   `cmd >&1>&2` は 1 個目のマッチが右境界を消費して 2 個目を取りこぼすが、
+#   段 1a / 1b をそれぞれ収束まで反復することで解消している (後述)。
+#   **対象は `>&` の後ろの word が「まるごと」数字列 (末尾 `-` 可) または `-` 単体の
+#   形に限定する**。境界は 3 つ要る (段 1 が 2 本の -e に分かれているのはこのため):
+#     - `&>` との区別: `&>file` / `&>>file` は `>file 2>&1` の bash 短縮形 = 本物の
+#       write redirect。`&` が `>` に先行するのでこの正規表現には一切マッチしない
+#     - 左 (`(^|[^A-Za-z0-9_./-])[0-9]+`): `>&` の直前の数字が「明示 fd 番号」なのか
+#       「直前の word の末尾」なのかを区別する。境界が無いと
+#       `echo x > file2>&1` の `file2` の `2` まで fd 番号と誤認して食い、書き込み先が
+#       `file` に化ける。実測 2026-08-07: `bash -c 'echo hi > file2>&1'` が生成する
+#       ファイルは `file2`。影響は fail-closed 側 (`> .codex2>&1` は `.codex2` という
+#       **ファイル**を作るだけなのに `.codex` と読めてブロックされていた) だが、
+#       判定 view が実際のコマンドと食い違うこと自体が誤り。
+#       左境界にマッチしなかった `>&<数字>` は 2 本目の -e が拾う (直前の word を
+#       食わずに `>&1` だけを消す)
+#     - 右: `([^A-Za-z0-9_./-]|$)` で word 末尾を要求する。**これが無いと
+#       `>&1/../.codex/evil` の `>&1` だけを fd 複製と誤認して丸ごと消し、本物の
+#       書き込みが判定から消えて allow に転ぶ** (fail-open)。実測 2026-08-07:
+#       `bash -c 'cat src.txt >&1/../.codex/evil'` は exit=0 で `.codex/evil` を
+#       実際に生成する。数字始まりのディレクトリ (`1/` `2024/`) はエージェント自身が
+#       作れるので前提条件は容易に整う
+#   `>&` と数字の間の空白も食う (`>& 1` / `2>& 1`)。これらは bash では fd 複製で、
+#   実測でもファイルは生成されない (2026-08-07、汚染のない一時 dir で `ls -A` 確認)。
+# 段2: 段1 で消えずに残った `>&` は、定義上「word が数字でも `-` でもない」形なので
+#   bash では `&>word` と同義の **両ストリーム → ファイル書き込み**。`> ` に書き換えて
+#   `&` を除去する。空白の有無を問わずファイルが作られることを 2026-08-07 に実測
+#   (`echo hello >& out.txt` / `echo hello >&out.txt` の両形で out.txt 生成、
+#   `ls /nonexistent >& out.txt` で stderr も捕捉)。これをしないと演算子
+#   (`echo x >`) と書き込み先 (`.co*/foo`) が
+#   別セグメントに分かれ、`_check_glob_seg` の component 検査が書き込み先に一度も
+#   当たらない。**この素通りは issue #284 の修正前から開いていた** (旧 hook で
+#   `echo x >& .co*/foo` が exit=0 になることを実測)。literal 形 (`>&.codex/log`) は
+#   後段の `.codex` 文字列検出が拾っていたため、glob 形にのみ穴が残っていた。
+# 段3: `>|` (clobber redirect) を `>` へ。`|` を含むが pipe ではないため、分割前に
+#   潰しておく必要がある。`\|` ではなく `[|]` と書くのは、ERE における `\|` の
+#   意味が POSIX 未定義で実装依存 (BSD / GNU で割れうる) なため。
+# 段1 と段2 を 1 本の正規表現にまとめられないのは、**置換後の文字列が違う**ため
+# (段1 は空白 1 個、段2 は `> `)。パターンの複雑さの問題ではなく、段1 で消費され
+# なかった `>&` だけが段2 に残るという排他的な残余関係になっている。
+# 既知のスコープ外: 入力側 fd 複製 `<&N` は同型の分割を起こすが、書き込み文脈判定に
+# 関与しないため issue #284 では扱わない。
+# 境界は **shell の word 区切り** で定義する。「パス文字でない文字」(`[^A-Za-z0-9_./-]`)
+# で書くと受理側の口が広すぎて破れる: `!` `#` `%` `+` `,` `:` `=` `?` `@` `[` `]` `^` `~`
+# はいずれもファイル名に使える文字なので、`>&1+/../.codex/evil` のような形が
+# 「fd 複製 + 区切り」に見えてマスクされ、本物の書き込みが判定から消える。
+# 2026-08-07 に 13 文字すべてを実測: bash は 13/13 で `.codex/` にファイルを生成し、
+# 「パス文字でない」版の hook は 13/13 を allow していた (fail-open)。
+# 区切りだけを列挙する側に倒せば、判断できない文字は「word の続き」= 本物の
+# 書き込み先として扱われ、外したときの被害が fail-closed 側に出る。
+# quote (`"` `'`) や `$` / backtick を含めないのも同じ理由 (含めると
+# `>&1"/../.codex/evil"` が通る)。
+# 空白側は `[[:space:]]` ではなく **`[[:blank:]]` (space + tab のみ)** を使う。
+# `[[:space:]]` は VT(0x0B) / FF(0x0C) / CR(0x0D) にもマッチするが、**bash は
+# この 3 文字を word 区切りとして扱わない** — ファイル名の一部になる。
+# 2026-08-07 実測: `cat src >&1<VT|FF|CR>/../Zdir/evil` は 3/3 で Zdir/evil を生成し、
+# `[[:space:]]` 版の hook はこれを allow していた (パス文字 13 種と同型の fail-open)。
+# 改行を列挙しないのは sed が行単位で処理するため — 行末は `$` 側が拾う。
+# 左右で集合が違う。**同じ「区切り」という語だが問いが違う**ので共有しない:
+#   - 右 (`_fd_word_end_sep`): 「fd 番号の word がここで終わるか」。`&` `<` `>` を
+#     含める — `>&1>foo` の `>` や `>&1&` の `&` は確かに word の終端 (消費した文字は
+#     `\2` / `\3` で書き戻すので後続の判定からは失われない)
+#   - 左 (`_fd_word_start_sep`): 「この数字が明示 fd 番号として word の先頭にあるか」。
+#     **`&` `<` `>` を含めてはいけない** — これらは `>&` `<&` というリダイレクト演算子
+#     自身の構成文字なので、境界として認めると `>&1>&2` の 2 個目の `&` が左境界に
+#     使われ、`&1>&2` ごと消えて演算子 `>&` が残り、段 2 が `> ` (書き込み) に化かす。
+#     実測 2026-08-07: 含めた版では `cat .codex/config.toml >&1>&2` が exit=2。
+#     除いた版では両方の fd 複製が消えて exit=0 (bash でも書き込みは発生しない)
+_fd_word_start_sep='[[:blank:];|()]'
+_fd_word_end_sep='[[:blank:];&|()<>]'
+# 段 1 は収束するまで反復する。1 回では、fd 複製が区切りを挟んで連続する形
+# (`2>&1|2>&1` / `>&1>&2`) で **1 個目のマッチが右境界を消費してしまい**、2 個目に
+# 左境界が残らず取りこぼす。取りこぼした fd 番号が裸でセグメント先頭に立ち、readonly
+# 免除が外れて読み取りが過ブロックされていた (fail-closed で main も同結果なので
+# リグレッションではなかったが、機構としては直せる)。反復は fail-open 方向には
+# 倒れない — 各パスが消すのは「両側に境界がある fd 複製」だけで、本物の書き込みは
+# 境界にマッチしないので残る。上限 8 は expand_assignments と同じ無限ループ防止。
+#
+# **段 1a を先に収束させてから段 1b を回す**。同じ sed の -e に並べると、1b が先に
+# `>&1` を消してしまい、1a が拾うはずだった裸の fd 番号が残る
+# (`ls .codex 2>&1|2>&1` → 1a が `|` を境界として消費 → 残り `2>&1` に左境界が
+# 無い → 1b が `>&1` だけ消して `|2 ` になり、裸の `2` がセグメント先頭に立つ)。
+_normalize_fd_redirects() {
+  local _cur=$1 _prev _i
+  _i=0
+  while [ "$_i" -lt 8 ]; do
+    _i=$((_i + 1))
+    _prev=$_cur
+    _cur=$(printf '%s' "$_cur" | sed -E \
+      "s/(^|${_fd_word_start_sep})[0-9]+>&[[:blank:]]*([0-9]+-?|-)(${_fd_word_end_sep}|\$)/\\1 \\3/g")
+    [ "$_cur" = "$_prev" ] && break
+  done
+  _i=0
+  while [ "$_i" -lt 8 ]; do
+    _i=$((_i + 1))
+    _prev=$_cur
+    _cur=$(printf '%s' "$_cur" | sed -E \
+      "s/>&[[:blank:]]*([0-9]+-?|-)(${_fd_word_end_sep}|\$)/ \\2/g")
+    [ "$_cur" = "$_prev" ] && break
+  done
+  # 残った `>&` (word が数字でも `-` でもない = 両ストリーム → ファイル書き込み) と
+  # `>|` は反復の必要が無いので、収束後に 1 度だけ適用する。
+  printf '%s' "$_cur" | sed -E \
+    -e 's/>&[[:blank:]]*/> /g' \
+    -e 's/>[|]/>/g'
+}
+
 # 動的展開と書き込み系リダイレクト演算子の組み合わせも同様に安全側ブロックする。
 # 例: echo x > .$(echo codex)/config.toml → 実行時に .codex/config.toml へ書き込み。
 # 対象演算子: > / >> / >| / &> / &>> / N> / N>> （N は fd 番号）
-# 入力リダイレクト < / << / <<< と fd コピー >& は対象外（書き込み先がファイルでない）。
+# 入力リダイレクト < / << / <<< は対象外（書き込み先がファイルでない）。fd 複製
+# (`>&N` / `>&-`) も同じ理由で対象外だが、`>&word` は上記のとおり本物の書き込みなので
+# 対象に含める — どちらも _normalize_fd_redirects が判定前に振り分ける (issue #284)。
 # この判定に限り、2026-07-07 の実 FP ラチェットとして 2 つの除外を適用する
 # (.codex 参照判定・書き込み系コマンド判定には適用しない — 安全側期待を維持):
 #   除外1: リダイレクト先がデバイス系リテラル (/dev/null, /dev/stdout, /dev/stderr,
@@ -454,7 +577,7 @@ fi
 # コマンド置換を保護マーカー化 (`echo x > "$(which claude)"` のような
 # 「置換結果への書き込み」= バイナリ上書き等は除外2 の対象にせずブロック維持)
 # → (3) 読み取り専用イントロスペクション置換の除去。
-residual_redirect=$(printf '%s' "$residual" | sed -E \
+residual_redirect=$(_normalize_fd_redirects "$residual" | sed -E \
   -e 's#((^|[^&0-9])>[>|]?|&>>?|[0-9]+>>?)[[:space:]]*/dev/(null|stdout|stderr|tty)([^A-Za-z0-9_/]|$)#\2\4#g' \
   -e 's#(>[>|]?[[:space:]]*"?)\$\(#\1\$REDIRECT_TARGET_SUBST(#g' \
   -e 's/\$\((pwd|which[[:space:]]+[A-Za-z0-9_-][A-Za-z0-9_.-]*|command[[:space:]]+-v[[:space:]]+[A-Za-z0-9_-][A-Za-z0-9_.-]*|git[[:space:]]+rev-parse([[:space:]]+[A-Za-z0-9_@{}=-]+)*)\)/ /g')
@@ -548,7 +671,28 @@ fi
 # sed は `-i` フラグ付き (BSD `-i ''` / GNU `-i.bak`) のみ書き込み扱い
 # セグメント分割は `; & |` のみ (brace `{}` は展開文法で分割対象外)
 _seg_seps=';&|()'
-_write_cmd_names="rm|chmod|chown|shred|${write_cmds}"
+# rsync / tar は literal 形なら後段の `.codex` 文字列検出で止まるが、glob 形 (`.co*`) は
+# ここで書き込み文脈と認識されないと `_check_glob_seg` の component 検査に入らず素通り
+# していた (issue #284)。追加先は本判定用の `_write_cmd_names` のみで、430 行の
+# `write_cmds` (動的展開 + 書き込み系コマンドの安全側ブロック) には足さない —
+# あちらに足すと `tar -xf "$f"` のような日常形まで誤ブロックが広がる。
+# 副作用として 3 種類の FP が増える。いずれも fail-closed 方向で、`.codex` 保護 (#190)
+# の方針と整合するため許容する (成立には同一セグメントに `.codex` にマッチする glob が
+# 要るので、実運用での遭遇率は低い)。2026-08-07 実測、いずれも追加前 exit=0 →
+# 追加後 exit=2:
+#   - 読み取り系 tar (`tar -tf x.tar '.co*'`)
+#   - basename が rsync / tar のパス。`_write_cmd_boundary_re` の先行文字クラスが
+#     `/` を含むため、`cat build/tar .co*` のような形も書き込み文脈と判定される
+#   - **`.co*` を「読み取り元」に取る形** (`rsync -a .co*/ dst/` / `rsync --dry-run`
+#     / `tar -cf out.tar .co*`)。`_check_glob_seg` は引数の**位置を区別せず**
+#     セグメント内の全引数を検査するので、コピー元とコピー先を分けられない。
+#     区別するには「どの引数が書き込み先か」をコマンドごとに知る必要があり、
+#     列挙型ブロックリストの枠を超える (#288 / #289 の射程)
+# **列挙方式なので、塞がるのはここに書いたコマンドだけ**。同型の書き込み経路
+# (`unzip -d .co*` / `curl -o .co*/x` / `wget -O .co*/x` / `cpio -D .co*` /
+# `ditto src .co*`) は main と同じく素通りのまま (2026-08-07 実測、いずれも exit=0)。
+# issue #284 で塞いだのは rsync / tar だけであって「glob 経路が閉じた」わけではない。
+_write_cmd_names="rm|chmod|chown|shred|rsync|tar|${write_cmds}"
 _write_cmd_boundary_re="(^|[[:space:]/\\])(${_write_cmd_names})([[:space:]]|$)"
 _sed_boundary_re='(^|[[:space:]/\\])sed([[:space:]]|$)'
 _sed_inplace_re='(^|[[:space:]])-[a-zA-Z]*i[a-zA-Z]*(\.[a-zA-Z0-9]*)?([[:space:]]|$)'
@@ -632,10 +776,11 @@ _check_glob_seg() {
   done
 }
 # 単一 segment (大多数のケース) は tr/here-string を回避。
-# `>|` (clobber redirect) は `|` を含むが pipe ではないため、tr 前に `>` に
-# 正規化する (semantics 上 `>` と `>|` は noclobber の有無以外同一で
-# security 判定に影響しない)。
-_command_norm=$(printf '%s' "$command" | sed -e 's/>|/>/g')
+# リダイレクト演算子の正規化 (fd 複製 / `>&word` / `>|`) は _normalize_fd_redirects が
+# まとめて行う。この view は後段の codex_readonly_ok 判定でも使い回すため、hook 1 回の
+# 実行につき 1 度しか計算しない (同じ計算を各 if で独立に走らせない — has_dynamic と
+# 同じ方針)。
+_command_norm=$(_normalize_fd_redirects "$command")
 case "$_command_norm" in
   *[";&|()"]*)
     while IFS= read -r _seg; do
@@ -673,7 +818,13 @@ fi
 #      書き込めるため対象外。find は -delete/-exec を持つため対象外）
 codex_readonly_ok=0
 if [[ "$has_dynamic" = 0 ]] && printf '%s' "$command" | grep -qi '\.codex'; then
-  if ! printf '%s' "$command" | grep -qE '(^|[^&0-9])>[>|]?([^&]|$)|&>>?([^&]|$)|[0-9]+>>?([^&]|$)'; then
+  # 判定 2 (書き込み系リダイレクトの有無) と判定 3 (セグメント先頭コマンド) は
+  # glob 経路と同じ正規化 view ($_command_norm) で行う。素の $command で見ると
+  # `>&file` (両ストリーム → ファイル) が既存パターンのどれにもマッチせず、書き込みを
+  # 含むコマンドに読み取り免除を与えてしまう。正規化後は `> file` になるので判定 2 が
+  # 拾う (issue #284)。判定 2 のパターンは _write_redirect_re と同じ問い
+  # (「書き込み系リダイレクトが在るか」) なので、リテラルを複製せず変数を共有する。
+  if ! printf '%s' "$_command_norm" | grep -qE "$_write_redirect_re"; then
     readonly_cmds='grep|egrep|fgrep|rg|cat|head|tail|less|more|wc|ls|stat|file|diff|cmp|md5|shasum|sha256sum|strings|hexdump|od|readlink|basename|dirname|test'
     codex_readonly_ok=1
     while IFS= read -r _seg; do
@@ -686,7 +837,9 @@ if [[ "$has_dynamic" = 0 ]] && printf '%s' "$command" | grep -qi '\.codex'; then
         codex_readonly_ok=0
         break
       fi
-    done <<< "$(printf '%s' "$command" | tr ';&|(){}' '\n\n\n\n\n\n\n')"
+    # 正規化前の $command で分割すると `ls .codex 2>&1` が `ls .codex 2>` と `1` に
+    # 割れ、裸の `1` が readonly allowlist に無いため免除が外れる (issue #284)。
+    done <<< "$(printf '%s' "$_command_norm" | tr ';&|(){}' '\n\n\n\n\n\n\n')"
   fi
 fi
 

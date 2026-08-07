@@ -281,3 +281,89 @@
 {"name":"reparse-assign-abs-bash-c","expect":"block","command":"FOO=bar /bin/bash -c 'rm -rf ~'","reason":"代入語 + 絶対パス shell"}
 {"name":"reparse-source-procsub-dangerous","expect":"block","command":"source <(echo 'rm -rf ~')","reason":"source receiver 分岐"}
 {"name":"reparse-dot-procsub-dangerous","expect":"block","command":". <(echo 'rm -rf ~')","reason":". receiver 分岐"}
+# --- issue #284: fd 複製 (N>&M / >&M / >&-) のマスクと rsync/tar の書き込み文脈追加 ---
+# FP 側: `2>&1` の `&` でセグメントが割れ、孤立した `2>` が write redirect に誤マッチしていた
+{"name":"fp-fddup-ls-codex","expect":"allow","command":"ls .codex 2>&1","reason":"実FP: 2>&1 は fd 複製でファイルへ書かない (読み取り免除を維持)"}
+{"name":"fp-fddup-cat-codex-config","expect":"allow","command":"cat .codex/config.toml 2>&1","reason":"実FP同型: 読み取りコマンド + 2>&1"}
+{"name":"fp-fddup-pipe-tail","expect":"allow","command":"ls .codex 2>&1 | tail -5","reason":"実運用で頻出の `cmd 2>&1 | pipe` 形"}
+{"name":"fp-fddup-stdout-to-stderr","expect":"allow","command":"ls .codex >&2","reason":"fd 番号省略形 >&2 も fd 複製"}
+{"name":"fp-fddup-close","expect":"allow","command":"cat .codex/config.toml 2>&-","reason":">&- (fd クローズ) も書き込みではない"}
+# rsync / tar 追加で受理側の口が広がりすぎていないことの検査 (.codex 非該当なら allow)
+{"name":"fp-rsync-plain-dst","expect":"allow","command":"rsync -a src/ dst/","reason":"日常形が過ブロックされないこと (rsync 追加の有無では結果は変わらない)"}
+{"name":"fp-tar-plain-dst","expect":"allow","command":"tar -xf x.tar -C build","reason":"日常形が過ブロックされないこと (tar 追加の有無では結果は変わらない)"}
+# 敵対側: rsync / tar の glob 経路 (欠陥 2)
+{"name":"adv-rsync-glob-dst","expect":"block","command":"rsync -a src/ .co*/","reason":"rsync が書き込み文脈と認識されず素通りしていた"}
+{"name":"adv-tar-glob-extract-dir","expect":"block","command":"tar -xf x.tar -C .co*","reason":"tar -C の展開先 glob も同様に素通りしていた"}
+{"name":"adv-rsync-brace-dst","expect":"block","command":"rsync -a src/ .co{dex,foo}/","reason":"rsync + brace 展開"}
+# 敵対側: マスクを `>&` の直後が数字列/`-` の形に限定していることの検査。
+# bash では `>&word` (word が数字でも `-` でもない) は `&>word` と同義で
+# **両ストリームをファイルへ書く本物の write redirect** なのでブロック維持が必要。
+{"name":"adv-amp-word-redirect-literal","expect":"block","command":"echo x >&.codex/log","reason":"literal .codex は文字列検出が拾う (マスク境界ではなくこの経路の pin)"}
+{"name":"adv-amp-word-redirect-glob","expect":"block","command":"echo x >& .co*/foo","reason":">&word の空白あり + glob 形"}
+{"name":"adv-write-then-fddup","expect":"block","command":"echo x >>.co*/log 2>&1","reason":"本物の write redirect + fd 複製の複合 (マスクが >> を消さないこと)"}
+{"name":"adv-fddup-then-write","expect":"block","command":"echo x 2>&1 >.co*/log","reason":"fd 複製が先行しても後続の write redirect は検出する"}
+{"name":"adv-fddup-rm-glob","expect":"block","command":"rm -rf .co* 2>&1","reason":"2>&1 が付いても書き込みコマンド側の判定は維持"}
+# 「動的展開 + 書き込み系リダイレクト」判定 (3 箇所目) にも同じ正規化を適用したことの検査。
+# 修正前は `>&word` がこの判定の write redirect パターンに一切マッチせず、たまたま別判定
+# (コマンド名トークンの動的展開検出) が拾っていたケースでのみブロックされていた。
+{"name":"adv-dynamic-amp-word-redirect","expect":"block","command":"echo \"$msg\" >& out.txt","reason":"動的展開 + >&word (静的 target なのでコマンド名判定は発火しない)"}
+{"name":"fp-dynamic-fddup-stderr","expect":"allow","command":"echo \"$msg\" >&2","reason":"動的展開 + fd 複製のみ (ファイル書き込みなし)"}
+{"name":"fp-dynamic-fddup-2to1","expect":"allow","command":"echo \"$msg\" 2>&1","reason":"動的展開 + 2>&1 のみ (FP ラチェット維持)"}
+# fd 複製マスクの**右境界**の pin。境界が無いと `>&1` だけを fd 複製と誤認して消し、
+# 本物の書き込みが判定から消えて allow に転ぶ (fail-open)。実測 2026-08-07:
+# `bash -c 'cat src.txt >&1/../.codex/evil'` は exit=0 で .codex/evil を実際に生成する。
+{"name":"adv-fddup-boundary-parent-escape","expect":"block","command":"cat .codex/config.toml >&1/../.codex/evil","reason":">&1 に見えるが word 全体はパス = 本物の書き込み"}
+{"name":"adv-fddup-boundary-multidigit","expect":"block","command":"ls -la .codex >&2024/../.codex/evil","reason":"複数桁の数字始まりディレクトリでも同じ"}
+{"name":"adv-fddup-boundary-glob-target","expect":"block","command":"cat .codex/config.toml >&1/../.co*/evil","reason":"境界なしだと glob 経路の component 検査ごと消える"}
+{"name":"adv-fddup-boundary-echo-glob","expect":"block","command":"echo x >&1/../.co*/log","reason":"読み取り免除に関係なく書き込み文脈として検出する"}
+# 空白を挟む fd 複製 (`>& 1`) は bash では複製でファイルを作らない (2026-08-07 実測、
+# 汚染のない一時 dir で ls -A 確認)。段 1 が空白を食うことの pin。
+{"name":"fp-fddup-spaced","expect":"allow","command":"cat .codex/config.toml >& 1","reason":">& 1 は fd 複製 (ファイル生成なし)"}
+{"name":"fp-fddup-spaced-fdnum","expect":"allow","command":"cat .codex/config.toml 2>& 1","reason":"2>& 1 も同様"}
+# fd 複製マスクの**左境界**の pin。境界が無いと直前の word 末尾の数字まで fd 番号と
+# 誤認して食い、書き込み先が化ける。実測 2026-08-07: `echo hi > .codex2>&1` が作るのは
+# `.codex2` という**ファイル**で、保護対象の .codex/ には触れない。
+{"name":"fp-fddup-left-boundary-filename","expect":"allow","command":"echo x > .codex2>&1","reason":"書き込み先は .codex2 というファイル (.codex ディレクトリではない)"}
+{"name":"fp-fddup-left-boundary-semicolon","expect":"allow","command":"cat .codex/config.toml;2>&1","reason":"区切り直後の fd 番号は明示 fd。左境界つき -e が消さないと裸の 2 がセグメント先頭に立つ"}
+# 境界の文字クラスは **shell の word 区切り** で定義する。「パス文字でない」で書くと
+# ファイル名に使える記号 (! # % + , : = ? @ [ ] ^ ~) が区切りに見えて、本物の書き込みが
+# fd 複製としてマスクされる (fail-open)。実測 2026-08-07: bash は 13 文字すべてで
+# `cat src >&1<char>/../.codex/evil` から .codex/ にファイルを生成する。
+{"name":"adv-fddup-sep-class-plus","expect":"block","command":"cat payload.txt >&1+/../.codex/config.toml","reason":"+ はファイル名文字であって word 区切りではない"}
+{"name":"adv-fddup-sep-class-at","expect":"block","command":"head -1 x >&1@/../.codex/notify.sh","reason":"@ も同様 (readonly 免除経路から破られる形)"}
+{"name":"adv-fddup-sep-class-colon","expect":"block","command":"grep -r x . >&1:/../.codex/hook.js","reason":": も同様"}
+{"name":"adv-fddup-sep-class-tilde","expect":"block","command":"cat payload.txt >&1~/../.codex/config.toml","reason":"~ も同様"}
+# 空白側も同型。[[:space:]] は VT/FF/CR にマッチするが bash はそれらを word 区切りに
+# しない (ファイル名の一部になる)。実測 2026-08-07: 3/3 で Zdir/evil を生成する。
+{"name":"adv-fddup-sep-class-vt","expect":"block","command":"cat payload.txt >&1\u000b/../.codex/config.toml","reason":"VT は [[:space:]] に含まれるが bash の word 区切りではない"}
+{"name":"adv-fddup-sep-class-ff","expect":"block","command":"cat payload.txt >&1\u000c/../.codex/config.toml","reason":"FF も同様"}
+{"name":"adv-fddup-sep-class-cr","expect":"block","command":"cat payload.txt >&1\u000d/../.codex/config.toml","reason":"CR も同様"}
+{"name":"fp-fddup-gap-tab","expect":"allow","command":"cat .codex/config.toml 2>&\u00091","reason":"tab は bash の word 区切りなので fd 複製のまま (blank に狭めても壊れないこと)"}
+# 段 1a / 1b の反復の pin。1 個目のマッチが右境界を消費するため、区切りが隣接して
+# fd 複製が連続する形は 1 パスでは取りこぼす。収束まで回さないと裸の fd 番号が
+# セグメント先頭に立ち、readonly 免除が外れて読み取りが過ブロックされる。
+{"name":"fp-fddup-adjacent-pipe","expect":"allow","command":"cat .codex/config.toml 2>&1|2>&1","reason":"区切り隣接の連続 fd 複製 (段 1a の反復が要る)"}
+{"name":"fp-fddup-chained","expect":"allow","command":"cat .codex/config.toml >&1>&2","reason":"連鎖 fd 複製 (段 1b の反復が要る)"}
+{"name":"fp-fddup-long-chain","expect":"allow","command":"cat .codex/config.toml >&1>&2>&1>&2>&1>&2>&1>&2>&1>&2","reason":"反復上限 8 が長い連鎖でも足りること (足りないと残った >&N が段 2 で書き込みに化ける)"}
+# 読み取りコマンドが .codex を参照しつつ保護対象外へ書く形。readonly 免除がこの経路で
+# 外れることの直接の pin (免除が戻ると .codex 参照ブロックまで素通りする)。
+{"name":"adv-readonly-cmd-writes-elsewhere","expect":"block","command":"cat .codex/config.toml >& out.txt","reason":">&word は書き込みなので readonly 免除の対象外"}
+# fd move (`N>&M-`) と fd 番号省略 close (`>&-`)。`([0-9]+-?|-)` の両分岐の pin。
+{"name":"fp-fddup-move","expect":"allow","command":"cat .codex/config.toml 2>&1-","reason":"fd move も複製の一種でファイルへは書かない"}
+{"name":"fp-fddup-close-nofd","expect":"allow","command":"cat .codex/config.toml >&-","reason":"fd 番号省略の close 形 (段 1b の - 分岐)"}
+# 境界文字クラスのうち括弧・バックグラウンド & の pin (空白を挟まない形)。
+{"name":"fp-fddup-subshell","expect":"allow","command":"(cat .codex/config.toml 2>&1)","reason":"括弧が境界として働くこと"}
+{"name":"fp-fddup-background","expect":"allow","command":"cat .codex/config.toml 2>&1&","reason":"直後のバックグラウンド & が境界として働くこと"}
+# `>&word` を `> word` に正規化した後も、既存のデバイス除外ラチェットが効くこと。
+{"name":"fp-dynamic-ampword-devnull","expect":"allow","command":"echo \"$msg\" >& /dev/null","reason":"正規化後に /dev/null 除外が当たる (過ブロックしない)"}
+# 消費した境界文字を書き戻す (\1 / \3) ことの pin。落とすと隣接する `>` が消え、
+# 直後の本物の write redirect が判定から消える。
+{"name":"adv-fddup-adjacent-write","expect":"block","command":"cat foo >&1>.co*/evil","reason":"境界の > を再出力しないと後続の write redirect ごと消える"}
+# rsync/tar 追加で意図的に受け入れた fail-closed 側の FP。将来 _write_cmd_boundary_re の
+# 先行文字クラスから / を外す等の変更で「意図した FP が黙って消えた」ことが見えるように pin する。
+{"name":"fp-accepted-tar-basename-path","expect":"block","command":"cat build/tar .co*","reason":"basename が tar のパスも書き込み文脈になる (許容した FP)"}
+{"name":"fp-accepted-tar-readonly-list","expect":"block","command":"tar -tf x.tar .co*","reason":"読み取り系 tar も glob が .codex にマッチすればブロック (許容した FP)"}
+# 許容 FP の 3 種目: `.co*` を読み取り元に取る形。_check_glob_seg は引数の位置を
+# 区別しないのでコピー元とコピー先を分けられない (2026-08-07 実測、main は allow)。
+{"name":"fp-accepted-rsync-source-glob","expect":"block","command":"rsync -a .co*/ dst/","reason":"読み取り元が .co* でもブロック (許容した FP)"}
+{"name":"fp-accepted-tar-create-source","expect":"block","command":"tar -cf out.tar .co*","reason":"アーカイブ元が .co* でもブロック (許容した FP)"}
