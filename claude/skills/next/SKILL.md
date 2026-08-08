@@ -29,9 +29,18 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      SHA が一致すること**を fetch の成功条件にする。
      **この SHA 一致と diff は別々に見る** — 一致しないまま diff が空に
      なることがあり (local main が偶然 HEAD と同一 tree)、その場合は
-     stale な main へ checkout してしまう。SHA 不一致、または diff 非空
-     (squash merge / 他コミット混入) なら user Terminal 依頼に
-     フォールバック (memory `project_settings_pr_pull_workaround.md`)
+     stale な main へ checkout してしまう。**SHA 不一致なら即 user
+     Terminal 依頼** (main がそもそも想定と違う状態)。
+     diff が非空のときは、そこで依頼に倒さず
+     **`git diff HEAD main --name-only` で locked path を含むかを見る** —
+     含まなければ `git checkout main` してよい (unlink 制限は locked path
+     にしか掛からない)。含むなら user Terminal 依頼にフォールバック
+     (memory `project_settings_pr_pull_workaround.md`)。
+     **diff 非空だけを条件にしない** — 自分の PR の後に Dependabot PR 等が
+     merge されると diff は必ず非空になるので、粗いままだと locked path と
+     無関係な merge のたびに user を止めることになる (2026-08-08 に実測:
+     PR #294 merge 後の diff は #295 の `.github/workflows/test.yml` 1 件
+     だけで、checkout は unlink エラー無しに成功した)
    - **既に main checkout 済みで `git pull` が unlink 失敗**:
      この状況は origin/main が locked file を書き換えている場合に発生
      するため、local main の working tree は古い locked file が残った
