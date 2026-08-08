@@ -222,26 +222,22 @@ codex-review は step 5 の /pr が risk tier に応じて実行するため
   - `complete` — 指摘 0 で loop 正常終了 (round=1 で 0 指摘完了も含む)
   - `cap-reached` — round=2 で残指摘があるが 2 周上限のため fix せず
     step 5 (/pr) の fix-or-issue-or-dismiss へ引き渡す
-- **round=2 の判定基準**: 「発散防止のため 2 周目では新規指摘を
-  fix しない」規約 (本 step 冒頭) に従い round=2 の `applied` は必ず
-  `0`。status は `complete` (残指摘 0) か `cap-reached` (残指摘あり)
-  の 2 択で、`continue` は取らない。
-  **次の 2 つはこの限りでない** — どちらも fix を伴うので `applied` は
-  実数になる:
-  - **上限を延長した場合** — 延長後の round は status も `continue` を
-    取りうる。延長の承認を得た turn がその根拠になる
-  - **step 4-0 の例外 (自分が持ち込んだものの即 fix) を適用した場合** —
-    live 環境への副作用や diff 内の誤った記述は「周回数に関わらず即 fix」
-    なので、上限延長が無くても round=2 で `applied` が非ゼロになる。
-    status は残指摘の有無で `complete` / `cap-reached` のまま (この例外は
-    **新規指摘を fix しない**規約を外すものではないので `continue` は
-    取らない)。**この経路を書き漏らすと、規約を守ると必ずログ規定に
-    違反する**状態になる (2026-08-08 の issue #296 で実際に発生し、
-    `round=2 applied=3 status=cap-reached` を逸脱の断り書き付きで出した)
-- **fix コミットを作らない round の head/dirty 不変**: 「発散防止のため
-  fix しない」規約に従う round (round=2 のうち上限延長も step 4-0 の
-  例外適用も無いもの + round=1 で 0 件完了ケース)
-  では、`phase=start` と `phase=end` の `head=` と `dirty=` がそれぞれ
+- **`applied` は実測値**: その round で実際に fix した件数をそのまま書く。
+  round=2 は「発散防止のため新規指摘を fix しない」規約 (本 step 冒頭) に
+  従うので**結果として** `0` になるのが基本形だが、fix を伴う経路
+  (上限延長、step 4-0 の例外による即 fix など) を通れば非ゼロになる。
+  **「round=2 の applied は必ず 0、ただし例外は〜」と例外を列挙する形で
+  書かないこと** — step 4-0 側に経路が増えるたびログ規定が追随を要求され、
+  追随を忘れると「規約を守ると必ずログ規定に違反する」状態に戻る
+  (2026-08-08 の issue #296 で実際に踏み、列挙を 1 つ増やす形で直しかけた)
+- **round=2 の status**: `complete` (残指摘 0) か `cap-reached` (残指摘あり)
+  の 2 択で `continue` は取らない。**上限を延長した round だけは
+  `continue` を取りうる** (再周回するのはこの経路だけ。step 4-0 の例外に
+  よる即 fix は「新規指摘を fix しない」規約を外すものではないので
+  再周回しない)。延長の承認を得た turn がその根拠になる
+- **fix コミットを作らない round の head/dirty 不変**: その round で fix
+  コミットを作らなかったとき (= `applied=0`) は、
+  `phase=start` と `phase=end` の `head=` と `dirty=` がそれぞれ
   同一でなければならない (両方 `0` または両方 `1`)。Edit / Write tool
   call マーカーでは Bash 経由の変更を取りこぼすため head + dirty の
   同値比較で全経路 (Bash / apply_patch / sed 含む) の変更混入を検出
