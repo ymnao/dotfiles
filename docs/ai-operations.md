@@ -686,6 +686,44 @@ connect が EPERM」と記録していたが、2026-08-07 は **bind の段階�
 どの system call で落ちるかは一致していない。sandbox プロファイルが変わりうる
 ことの実例として残す(§9 の再評価条件が空文でない根拠でもある)。
 
+### 更新チャンネル — `claude-code` ではなく `claude-code@latest` cask を使う
+
+Homebrew は Claude Code の cask を 2 つ出しており、**名前がチャンネルを決める**
+(docs 実測、2026-08-08): `claude-code` は stable チャンネルで「約 1 週遅れ、
+大きな退行を含む版をスキップする」、`claude-code@latest` は latest チャンネルで
+「出た端から受け取る」。両者は `conflicts_with` なので共存せず、乗り換えは
+**uninstall → install の順**が要る。
+
+**stable を選んでいたのは判断ではなく既定だった**。2026-08-08 に実測した時点で
+手元は 2.1.220、upstream は 2.1.226 で、間の 6 版に許可チェック迂回の修正が
+4 件入っていた。うち 2.1.221 の
+"Fixed a Bash tool permission-check bypass where zsh could execute hidden
+commands in `[[ ]]` regex conditionals" は、**この repo の Bash tool 実行経路
+(zsh) に直撃する**。この repo の host 側防御は deny ルールと PreToolUse hook に
+乗っているので、その 2 層をすり抜ける穴を 1 週遅れで受け取る設計になっていた。
+latest へ移して即日適用する側に倒した(issue #296)。**代償は退行の screening を
+失うこと** — 退行を踏んだらこの節に追記してチャンネルを見直す。
+
+`autoUpdatesChannel` 設定は**書かない**。docs verbatim で
+"Homebrew installations choose a channel by cask name instead of this setting"
+であり、Homebrew 管理下では読まれない。**チャンネルの正本は Brewfile の cask 名**。
+
+更新の実行経路は `make update` の素の `brew upgrade`。**どちらの cask も
+`auto_updates` を設定していない**ため(2026-08-08 に cask 定義を実測)、
+`--greedy` は要らない。
+
+### cross-session messaging — 受信を拒否する
+
+2.1.224 で `SendMessage` がセッション間に広がり、2.1.225 で他マシンのセッションから
+名前指定で会話を開始できるようになった。**設定ファイルではなく実行中のセッションに
+届く入力経路**で、この §10 が 1 つずつ潰してきた経路の一覧に無い種類。この環境では
+使う予定が無いので `claude/settings.json` に `crossSessionInbound: "refuse"` を置いた。
+
+**「設定した」までが実測範囲**。2.1.226 で `claude doctor` が settings の
+validation error を出さないことは確認したが、**refuse が実際に受信を落とすことは
+観測していない**(送る側のセッションを用意していない)。#245 の
+「設定値の存在を防御の根拠にしない」に従い、効いていることの根拠には使わない。
+
 ### requiredMinimumVersion — user 設定に書いても enforce されない
 
 **まずこれを読むこと**: `requiredMinimumVersion` は **managed (policy) 設定
@@ -710,8 +748,8 @@ connect が EPERM」と記録していたが、2026-08-07 は **bind の段階�
 `claude/rules/shell.md` の「確認できないことを検査を緩める根拠に使わない」
 と同型の外し方(schema の describe を読めば分かった)。
 
-**それでも値は 2.1.220 に上げてある**(2026-08-04、issue #245 step 4)。
-enforce されないので実効は無いが、**下記の managed 設定を導入したときに
+**それでも値は 2.1.226 に上げてある**(2026-08-08、issue #296。
+それ以前は 2.1.220)。enforce されないので実効は無いが、**下記の managed 設定を導入したときに
 そのまま使える正しい値**として置いてある。したがって下限の値は
 `claude/settings.json`(宣言・無効)と `claude/managed-settings.json`
 (実効・下記の手順で配置したときのみ)の **2 箇所にある。上げるときは両方**
@@ -772,7 +810,7 @@ Claude Code が**起動しなくなる**。`claude --version` が下限以上で
 
 - `update` / `install` / `doctor` の 3 サブコマンドだけは下限チェックの例外
   として通る。ただし **Homebrew cask 管理下ではこの `claude update` は自己更新
-  せず案内を出すだけ**なので、実際に叩くのは `brew upgrade claude-code`
+  せず案内を出すだけ**なので、実際に叩くのは `brew upgrade claude-code@latest`
   (これは `claude` を経由しないので下限に関係なく通る)
 - 直接のロールバックは
   `sudo rm "/Library/Application Support/ClaudeCode/managed-settings.json"`
