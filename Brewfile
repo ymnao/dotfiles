@@ -152,9 +152,8 @@ cask "slack"
 cask "zoom"
 cask "postman"
 cask "claude"
-# claude-code (無印) ではなく @latest を使う。無印は stable チャンネルで約 1 週遅れ、
-# 許可チェック迂回の修正 3 版ぶんが未適用のまま停滞していた (issue #296)。
-# 両者は conflicts_with なので、乗り換えは uninstall → install の順が要る。
+# 更新チャンネルは cask 名で決まる (無印 = stable、@latest = latest)。
+# ここが選択の正本。理由と乗り換え手順は docs/ai-operations.md §10。
 cask "claude-code@latest"
 cask "codex"
 cask "codex-app"

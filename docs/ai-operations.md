@@ -689,20 +689,29 @@ connect が EPERM」と記録していたが、2026-08-07 は **bind の段階�
 ### 更新チャンネル — `claude-code` ではなく `claude-code@latest` cask を使う
 
 Homebrew は Claude Code の cask を 2 つ出しており、**名前がチャンネルを決める**
-(docs 実測、2026-08-08): `claude-code` は stable チャンネルで「約 1 週遅れ、
-大きな退行を含む版をスキップする」、`claude-code@latest` は latest チャンネルで
-「出た端から受け取る」。両者は `conflicts_with` なので共存せず、乗り換えは
-**uninstall → install の順**が要る。
+(公式 docs を 2026-08-08 に取得して確認。これは docs の読解であって測定ではない):
+`claude-code` は stable チャンネルで「約 1 週遅れ、大きな退行を含む版をスキップ
+する」、`claude-code@latest` は latest チャンネルで「出た端から受け取る」。両者は
+`conflicts_with` なので共存せず、乗り換えは **uninstall → install の順**が要る
+(cask 定義と `conflicts_with` は 2026-08-08 に実測)。
 
 **stable を選んでいたのは判断ではなく既定だった**。2026-08-08 に実測した時点で
-手元は 2.1.220、upstream は 2.1.226 で、間の 6 版に許可チェック迂回の修正が
-4 件入っていた。うち 2.1.221 の
+手元は 2.1.220、upstream は 2.1.226。間の 6 版には許可チェック迂回の修正が
+複数入っている(件数を書かないのは、どこまでを「迂回」に数えるかで変わるため。
+2.1.222 の PreToolUse auto-allow 迂回、2.1.223 の crafted command / 不可視
+Unicode / `bypassPermissions` の 3 件などがある)。うち 2.1.221 の
 "Fixed a Bash tool permission-check bypass where zsh could execute hidden
 commands in `[[ ]]` regex conditionals" は、**この repo の Bash tool 実行経路
 (zsh) に直撃する**。この repo の host 側防御は deny ルールと PreToolUse hook に
 乗っているので、その 2 層をすり抜ける穴を 1 週遅れで受け取る設計になっていた。
 latest へ移して即日適用する側に倒した(issue #296)。**代償は退行の screening を
 失うこと** — 退行を踏んだらこの節に追記してチャンネルを見直す。
+
+**stable へ戻すときは下限を先に下げること**。managed 設定を配置した状態で下限が
+2.1.226 のまま無印 cask へ戻すと、stable 側がまだ 2.1.226 未満の期間(2026-08-08
+時点の stable は 2.1.220)は**起動しなくなる**。この節と下の
+「managed settings で実際に enforce する」を両方いじる順序の問題で、復旧経路は
+そちらに書いてある `sudo rm` と `brew upgrade`。
 
 `autoUpdatesChannel` 設定は**書かない**。docs verbatim で
 "Homebrew installations choose a channel by cask name instead of this setting"
@@ -714,15 +723,35 @@ latest へ移して即日適用する側に倒した(issue #296)。**代償は�
 
 ### cross-session messaging — 受信を拒否する
 
-2.1.224 で `SendMessage` がセッション間に広がり、2.1.225 で他マシンのセッションから
-名前指定で会話を開始できるようになった。**設定ファイルではなく実行中のセッションに
-届く入力経路**で、この §10 が 1 つずつ潰してきた経路の一覧に無い種類。この環境では
+2.1.224 で `SendMessage` がセッション間に広がった(CHANGELOG verbatim:
+"Claude Code sessions can now message each other, on any of your machines")。
+2.1.225 では、それまで**相手から届いた後に返信することしかできなかった**のが、
+こちらから **Remote Control セッションを名前で指定して会話を開始できる**ように
+なっている(同 verbatim: "SendMessage can now start a conversation with your
+Remote Control sessions on other machines by name ... instead of only replying
+after they message you first")。**設定ファイルではなく実行中のセッションに届く
+入力経路**で、この §10 が 1 つずつ潰してきた経路の一覧に無い種類。この環境では
 使う予定が無いので `claude/settings.json` に `crossSessionInbound: "refuse"` を置いた。
 
-**「設定した」までが実測範囲**。2.1.226 で `claude doctor` が settings の
-validation error を出さないことは確認したが、**refuse が実際に受信を落とすことは
-観測していない**(送る側のセッションを用意していない)。#245 の
-「設定値の存在を防御の根拠にしない」に従い、効いていることの根拠には使わない。
+**user scope に置いて効くことは確認した**。#245 の罠(user scope に書いた値が
+一度も参照されない)と同型でないかを先に見る必要があるため。2.1.226 のバイナリの
+文字列を見ると、このキーには **3 つの出所を書き分けたメッセージが別々に存在する** —
+`Your "crossSessionInbound" setting is "hold".` / `Your organization's managed
+settings set "crossSessionInbound" to "hold".` / `This repository's settings set
+"crossSessionInbound" to "hold" (your own "accept" cannot override a repo
+tightening).`。user 自身の設定が読まれ、repo 側は**締める方向にしか**上書き
+できない。値は docs によれば `accept`(配信)/ `hold`(通知のみ)/ `refuse`(破棄)で、
+`refuse` は破棄に当たる最も厳しい側なので repo 設定から緩められない。
+
+**ただし「refuse が実際に受信を落とす」ことは観測していない**(送る側のセッションを
+用意していない)。`claude doctor` が settings の validation error を出さないことと、
+上の scope の書き分けまでが実測範囲。#245 の「設定値の存在を防御の根拠にしない」に
+従い、ここから先は根拠に使わない。
+
+なお `claude/settings.json` は user scope の実体で、**agent の Edit tool から
+書き換えられる**(sandbox の denyWrite は Bash 経路にしか効かない — #212)。
+`refuse` を agent が緩められない位置に置きたいなら managed 正本へ移す必要があるが、
+現状は入れていない。
 
 ### requiredMinimumVersion — user 設定に書いても enforce されない
 
