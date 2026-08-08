@@ -101,7 +101,7 @@
       ]
     }
   },
-  "requiredMinimumVersion": "2.1.226",
+  "requiredMinimumVersion": "2.1.222",
   "crossSessionInbound": "refuse",
   "hooks": {
     "PreToolUse": [
