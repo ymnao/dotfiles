@@ -707,9 +707,9 @@ commands in `[[ ]]` regex conditionals" は、**この repo の Bash tool 実行
 latest へ移して即日適用する側に倒した(issue #296)。**代償は退行の screening を
 失うこと** — 退行を踏んだらこの節に追記してチャンネルを見直す。
 
-**stable へ戻すときは下限を先に下げること**。managed 設定を配置した状態で下限が
-2.1.226 のまま無印 cask へ戻すと、stable 側がまだ 2.1.226 未満の期間(2026-08-08
-時点の stable は 2.1.220)は**起動しなくなる**(起動不能の条件そのものは下の
+**stable へ戻すときは下限を先に下げること**。managed 設定を配置した状態で
+stable 側がまだ下限未満の期間(2026-08-08 時点の stable は 2.1.220)に無印 cask へ
+戻すと**起動しなくなる**(起動不能の条件そのものは下の
 「managed settings で実際に enforce する」節が正本)。
 
 **このシナリオでの復旧は `sudo rm` だけ**。同節がもう 1 つ挙げている
@@ -759,6 +759,9 @@ tightening).`。user 自身の設定が読まれ、repo 側は**締める方向�
 `refuse` を agent が緩められない位置に置きたいなら managed 正本へ移す必要があるが、
 現状は入れていない。
 
+**版との関係**は「下限は Claude Desktop が pin している CLI を超えられない」節に
+書いた(下限を 2.1.222 へ下げた影響。この節の実測を更新するときはあちらも見る)。
+
 ### requiredMinimumVersion — user 設定に書いても enforce されない
 
 **まずこれを読むこと**: `requiredMinimumVersion` は **managed (policy) 設定
@@ -783,16 +786,56 @@ tightening).`。user 自身の設定が読まれ、repo 側は**締める方向�
 `claude/rules/shell.md` の「確認できないことを検査を緩める根拠に使わない」
 と同型の外し方(schema の describe を読めば分かった)。
 
-**それでも値は 2.1.226 に上げてある**(2026-08-08、issue #296。
-それ以前は 2.1.220)。enforce されないので実効は無いが、**下記の managed 設定を導入したときに
+**それでも値は置いてある**(2026-08-08 時点で `2.1.222`)。enforce されないので
+`claude/settings.json` 側の実効は無いが、**下記の managed 設定を導入したときに
 そのまま使える正しい値**として置いてある。したがって下限の値は
 `claude/settings.json`(宣言・無効)と `claude/managed-settings.json`
 (実効・下記の手順で配置したときのみ)の **2 箇所にある。上げるときは両方**
 — 実際に効くのは managed 側なので、片方だけ更新すると「settings.json に
 書いてある値」と「強制されている値」が食い違う。「依存する挙動がある最小の版」
-(strictAllowlist の 2.1.219、symlink 系修正の 2.1.217)ではなく host の
-実バージョンに合わせているのは、下限を「これ未満は未検証」の宣言として
-使うため。
+(strictAllowlist の 2.1.219、symlink 系修正の 2.1.217)ではなく
+**この machine で起動する CLI のうち最も古いもの**に合わせている。基準を
+「host の実バージョン」から言い直したのは下の節の事故を踏んだため。
+
+### 下限は Claude Desktop が pin している CLI を超えられない
+
+**Claude Desktop はターミナルの `claude` を使わない**。自前の CLI を
+`~/Library/Application Support/Claude/claude-code/<version>/claude.app` に
+展開して起動し、その `<version>` は **desktop アプリのビルド時に pin されている**
+(`app.asar` 内の `buildPinVersion`。`userData/claude-code` 配下へ preseed する
+実装)。Homebrew の cask とは別系統なので、`brew upgrade` でも `claude update`
+でも上がらない — 上げる手段は desktop アプリ自体の更新だけ。
+
+**2026-08-08 の事故**: managed 設定の下限を `2.1.226`(= ターミナルの
+`claude --version`)に上げたところ、desktop アプリが起動のたびに落ちるように
+なった。`Claude Code process exited with code 1. stderr: Claude Code 2.1.222 is
+older than the minimum version required by your organization (2.1.226).`
+
+このとき desktop アプリ本体は 1.26832.0(自己更新済みで、`brew list --cask` の
+記録 1.18286.0 は古い)。**latest チャンネルの cask に合わせた下限は、desktop の
+pin より先に進む**。下限を決めるときに見るのは `claude --version` ではなく、
+**この machine で起動する CLI 全部のうち最小のもの**。
+
+desktop 側の版を実測する(下限を上げる前にこれを見る):
+
+```sh
+ls ~/Library/Application\ Support/Claude/claude-code/
+"$HOME/Library/Application Support/Claude/claude-code/<version>/claude.app/Contents/MacOS/claude" --version
+```
+
+ディレクトリ名がそのまま pin されている版で、2 行目はそれを直接叩いて裏を取る
+形(2026-08-08 はどちらも `2.1.222`)。
+
+**下げても cross-session 受信は復活しない**(上の節の判断を保つ根拠)。
+2.1.222 のバイナリに `crossSessionInbound` は **0 件**、比較のため同じ
+バイナリで `requiredMinimumVersion` は 5 件ヒットする(`strings` は効いている)。
+2.1.224 で入った受信経路が 2.1.222 には無い。ただし下限が 2.1.222 になると
+**2.1.224 / 2.1.225 も許可される** — この machine には入っていないが、下限は
+その 2 版を止めない。
+
+下限を下げる代わりに desktop へ新しい CLI を使わせる案(`app.asar` の
+`CLAUDE_CODE_LOCAL_BINARY` override)は、GUI アプリへの env 注入が要るうえ
+pin と違う版を desktop⇄CLI 間で使うことになるため採らなかった。**未検証**。
 
 ### managed settings で実際に enforce する(user 操作)
 
@@ -841,7 +884,9 @@ managed-settings.json になる**。意図しない内容だったら
 
 **入れる前に必ず確認すること**: managed 設定の下限を満たさない CLI では
 Claude Code が**起動しなくなる**。`claude --version` が下限以上であることを
-全マシンで確かめてから入れる。ロックアウトからの復旧経路は 2 つ:
+全マシンで確かめ、**加えて Claude Desktop が pin している CLI のバージョンも
+別途確かめる**(上の節。`claude --version` だけ見ると desktop を落とす)。
+ロックアウトからの復旧経路は 2 つ:
 
 - `update` / `install` / `doctor` の 3 サブコマンドだけは下限チェックの例外
   として通る。ただし **Homebrew cask 管理下ではこの `claude update` は自己更新
