@@ -898,6 +898,82 @@ Claude Code が**起動しなくなる**。`claude --version` が下限以上で
 `scripts/link.ps1` が配線する Windows 側にも同じ判断が要る(配置先は
 Windows の managed settings パスで、上のコマンドはそのままでは使えない)。
 
+### managed 設定は原則触らない — 判断基準は「復旧に sudo が要るか」
+
+**このファイルは触るたびに起動不能を引いている**。#302 は下限を上げて Claude
+Desktop を落とし、#297 は `disableSideloadFlags` を入れて Desktop の起動経路を
+落とした。2 サイクル連続で、いずれも「設定値は仕様どおり正しい」まま壊れている。
+
+原因は個別の値ではなく**着手判断**にある。managed 設定の本来の価値は「組織の
+管理者が、開発者に policy を外させない」ことだが、**この repo は user 1 人・
+管理者も同じ 1 人・マシン 1 台**なので、その価値の大半は守る相手がいない。
+残る利点は「agent が自分の権限を広げる経路を塞ぐ」だけで、対価は**失敗が必ず
+起動不能になり、復旧に admin パスワードが要る**こと。この非対称を天秤に載せず、
+外部サーベイ由来の推奨を「正しいか」だけ検証して入れたのが両方の入口だった。
+
+したがって:
+
+- **判断基準は「壊れたときの復旧に `sudo` が要るか」**。要るなら実質一方通行と
+  みなし、サーベイ由来の推奨は**そのまま起票しない**
+- 一次情報で仕様を確かめるのは前提であって着手理由にはならない。確かめるべきは
+  「入れたら仕様どおり効くか」ではなく「**効いたときに何が困るか**」。#297 では
+  前者を全部実測して後者を docs の一文に頼り、その一文が過小だった
+- 触ると決めた場合は**ベースライン → 配置 → 検証 → 即戻し**の順を崩さない。
+  #297 の被害が数分で済んだのはこの順にしていたからで、着手判断の誤りを
+  取り消すものではない
+
+### disableSideloadFlags — 実測して見送った(#297)
+
+`--plugin-dir` / `--plugin-url` / `--agents` / `--mcp-config` を起動時に拒否する
+managed 専用キー(2.1.193 以降)。**2026-08-09 に実配置して実測し、見送った。**
+
+docs は影響範囲を「currently Cowork local sessions in the desktop app」と書いて
+いたが、**実際にはそれより広い**。Cowork を使っていない状態でも、`--plugin-dir`
+を内部で渡す経路が別にあり、Claude Code のプロセスが exit code 1 で落ちた:
+
+```
+Claude Code process exited with code 1. stderr: --plugin-dir is disabled by your
+organization's managed settings (disableSideloadFlags).
+```
+
+**フラグを落として続行する形ではなく、プロセスごと落ちる。** エラーが設定名を
+名指しするので原因の特定自体は即座にできた。
+
+得られるものも当初の見積もりより狭い。同じ docs 行に「Doesn't block
+`claude mcp add`, `.mcp.json`, or SDK `setMcpServers()`」とあり、MCP を積む経路は
+**設定ファイル経由なら開いたまま**で、塞ぐのは起動フラグ 1 本だけ。さらにこの
+キーが守る対象として名指しされている `strictKnownMarketplaces` を、この repo は
+設定していない。全 scope に効く MCP 制御が要るなら `allowedMcpServers` /
+`allowManagedMcpServersOnly` が対応するキーだが、**上の節の基準に照らすと着手
+対象にならない**(復旧に `sudo` が要る)。
+
+### sandbox.credentials の deny を managed 側に 1 件置く理由(#297)
+
+`claude/managed-settings.json` の `sandbox.credentials.files` に `~/.ssh` の
+`"mode": "deny"` を 1 件置いている。**この 1 件の目的は認証情報の保護ではない**
+(それは user 設定側の 4 件が既にやっている)。目的は
+`sandbox.filesystem.disabled` を **managed 設定からしか設定できないキーに変える**
+ことにある。docs 逐語:
+
+> When managed settings configure `sandbox.filesystem` at all, or list any
+> `sandbox.credentials.files` entry with `"mode": "deny"`, only managed settings
+> can set the key.
+
+`filesystem.disabled` は「ファイル制限だけを無効にする」設定で、押せる場所は
+user 設定 / managed 設定 / `--settings` 起動フラグの 3 つ。user 設定
+(`claude/settings.json`)は repo への symlink なので **agent の Edit tool から
+書き換えられる**(この節の上の方と memory `project_settings_files_sandbox_lock`)。
+pin することで、隔離そのものを外す操作が `sudo` を経由しないと通らなくなる。
+
+**実測(2026-08-09、Claude Code 2.1.226)**:
+`claude --settings '{"sandbox":{"filesystem":{"disabled":true}}}'` で起動し
+`/sandbox` の Config タブを見たところ、Filesystem Read / Write Restrictions が
+**表示されたまま**だった(注入した `disabled` が無視された)。
+
+配列キーは全 scope でマージされ、どの scope も他が足した deny を外せないので、
+user 設定側の既存 4 件はそのまま効き続ける。増えるのは「外せなくなる」ことだけで、
+**起動をゲートしない**(下限や `disableSideloadFlags` と違い、壊れても起動はする)。
+
 ### network.strictAllowlist — 許可外ホストを確認ダイアログ抜きで拒否する
 
 `sandbox.network.strictAllowlist: true`(issue #245 step 5、Claude Code
