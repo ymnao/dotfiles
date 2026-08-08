@@ -243,7 +243,7 @@ MEMORY.md 先頭 200 行が自動ロードされる。
 | herdr の codex 統合(`herdr integration install codex`) | (2026-08-07 / #276)**前提が未確認なので着手しない** — herdr ペインで codex を使う運用が実際にあるかを確認していない(現状の想定は Claude Code の常用)。加えて codex は hook を `trusted_hash` で承認するので TUI での再承認が要り、「ファイルを 1 つ増やす」ではなく**承認機構を動かす**作業になる。なお書き込み先の `~/.codex/herdr-agent-state.sh` は §10 の deny 対象(`config.toml` 1 ファイル)ではないので、**書き込み自体は塞がれていない** — Bash 経路は `block-dangerous-commands.sh` の `.codex` component 判定で止まるが、file 編集 tool 経路は通る(2026-08-07 に hook 単体で実測) | herdr ペインで codex を常用する運用が実際に始まったとき(その時点で `trusted_hash` の再承認をどう扱うかを先に決める) |
 | Ralph loop 型の外側無人ループ(`while true; claude -p` 系) | merge ゲート・plan ゲートの人間監視を放棄することになる。2026-07-19 の検討で「パイプライン圧縮 + 人間ゲート再配置」(/dev + /next)を採用 | 完全無人で回してよい種類の反復タスク(大量 migration 等)が実際に発生したとき |
 | project-artifact プラグイン(公式 marketplace) | (2026-08-05)#264 で HTML 説明ページを検討した際に比較した。「固定 template.html + light/dark + Artifact publish」という**機構は同型**だが、作るページの**種類が違う** — あちらは 1 回の update に収まらないプロジェクトのタブ付きステータスページを per-project config で継続更新し delta を報告するもの。#264 が要るのは 1 回きりの判断・説明ページで、タブ機構と refresh 運用は使わない分だけ負債になる。自作の `html-brief` skill を採用した | 複数ワークストリームを継続追跡して同じ URL を更新し続ける必要が出たとき(そのときは html-brief を拡張せず、プラグインをそのまま有効化して評価する) |
-| `disableSideloadFlags`(Claude Code の managed 設定) | (2026-08-09 / #297)**実配置して実測し、見送った** — `--plugin-dir` を内部で渡す経路があり、Cowork 未使用でも Claude Code のプロセスが exit code 1 で落ちる。塞げるのは起動フラグ 1 本だけで `claude mcp add` / `.mcp.json` は素通り。実測とエラー全文は §10「[disableSideloadFlags — 実測して見送った](#disablesideloadflags--実測して見送った297)」 | 起動フラグ以外の経路も塞ぐ必要が出たとき(そのときは全 scope に効く `allowedMcpServers` / `allowManagedMcpServersOnly` を先に検討する)。ただし着手の可否は §10「[managed 設定は原則触らない](#managed-設定は原則触らない--判断基準は復旧に-sudo-が要るか)」の基準を先に通す |
+| `disableSideloadFlags`(Claude Code の managed 設定) | (2026-08-09 / #297)**実配置して実測し、見送った** — `--plugin-dir` を内部で渡す経路があり、Cowork 未使用でも Claude Code のプロセスが exit code 1 で落ちる。塞げるのは起動フラグ経路 1 本だけで `claude mcp add` / `.mcp.json` は素通り。実測とエラー全文は §10「[disableSideloadFlags — 実測して見送った](#disablesideloadflags--実測して見送った297)」 | 起動フラグ以外の経路も塞ぐ必要が出たとき(そのときは全 scope に効く `allowedMcpServers` / `allowManagedMcpServersOnly` を先に検討する)。ただし着手の可否は §10「[managed 設定は原則触らない](#managed-設定は原則触らない--判断基準は復旧に-sudo-が要るか)」の基準を先に通す |
 
 ## 10. codex / Claude Code の host 実行面の防御層
 
@@ -907,22 +907,15 @@ Desktop を落とし(§10「[下限は Claude Desktop が pin している CLI �
 2 サイクル連続で、いずれも「設定値は仕様どおり正しい」まま壊れている。
 
 原因は個別の値ではなく**着手判断**にある。managed 設定の本来の価値は「組織の
-管理者が、開発者に policy を外させない」ことだが、**この repo は user 1 人・
-管理者も同じ 1 人・マシン 1 台**なので、その価値の大半は守る相手がいない。
-残る利点は「agent が自分の権限を広げる経路を塞ぐ」だけで、対価は**失敗が必ず
-起動不能になり、復旧に admin パスワードが要る**こと。この非対称を天秤に載せず、
-外部サーベイ由来の推奨を「正しいか」だけ検証して入れたのが両方の入口だった。
+管理者が、開発者に policy を外させない」ことだが、**この repo は user と管理者が
+同一人物**なので、その価値の大半は守る相手がいない。残る利点は「agent が自分の
+権限を広げる経路を塞ぐ」だけで、対価は**失敗が必ず起動不能になり、復旧に admin
+パスワードが要る**こと。この非対称を天秤に載せず、外部サーベイ由来の推奨を
+「正しいか」だけ検証して入れたのが両方の入口だった。
 
-したがって:
-
-- **判断基準は「壊れたときの復旧に `sudo` が要るか」**。要るなら実質一方通行と
-  みなし、サーベイ由来の推奨は**そのまま起票しない**
-- 一次情報で仕様を確かめるのは前提であって着手理由にはならない。確かめるべきは
-  「入れたら仕様どおり効くか」ではなく「**効いたときに何が困るか**」。#297 では
-  前者を全部実測して後者を docs の一文に頼り、その一文が過小だった
-- 触ると決めた場合は**ベースライン → 配置 → 検証 → 即戻し**の順を崩さない。
-  #297 の被害が数分で済んだのはこの順にしていたからで、着手判断の誤りを
-  取り消すものではない
+**着手基準の正本は [`claude/rules/managed-settings.md`](../claude/rules/managed-settings.md)**
+(`claude/managed-settings.json` を触ったときだけ lazy load される)。ここに複製せず、
+基準を変えるときはそちらを直す。この節は事故の経緯と、なぜその基準になったかを残す。
 
 ### disableSideloadFlags — 実測して見送った(#297)
 
@@ -955,19 +948,32 @@ organization's managed settings (disableSideloadFlags).
 > `sandbox.credentials.files` entry with `"mode": "deny"`, only managed settings
 > can set the key.
 
-`filesystem.disabled` は「ファイル制限だけを無効にする」設定で、押せる場所は
-user 設定 / managed 設定 / `--settings` 起動フラグの 3 つ。このうち user 設定は
-agent の Edit tool から書き換えられる(§10「[managed settings で実際に enforce する](#managed-settings-で実際に-enforce-するuser-操作)」)。
-pin することで、隔離そのものを外す操作が `sudo` を経由しないと通らなくなる。
+`filesystem.disabled` を押せる場所は 3 つに限られる(docs 逐語):
+
+> User settings, managed settings, and the `--settings` CLI flag can set it.
+> Project settings in `.claude/settings.json` and `.claude/settings.local.json`
+> can't, so a checked-out project can't switch filesystem isolation off。
+
+このうち user 設定は agent の Edit tool から書き換えられる
+(§10「[managed settings で実際に enforce する](#managed-settings-で実際に-enforce-するuser-操作)」)。
+pin するとこの経路が閉じる。
 
 **実測(2026-08-09、Claude Code 2.1.226)**:
 `claude --settings '{"sandbox":{"filesystem":{"disabled":true}}}'` で起動し
 `/sandbox` の Config タブを見たところ、Filesystem Read / Write Restrictions が
 **表示されたまま**だった(注入した `disabled` が無視された)。
 
-配列キーは全 scope でマージされ、どの scope も他が足した deny を外せないので、
-user 設定側の既存 4 件はそのまま効き続ける。増えるのは「外せなくなる」ことだけで、
-**起動をゲートしない**(下限や `disableSideloadFlags` と違い、壊れても起動はする)。
+**塞がるのは `filesystem.disabled` のキー 1 つだけで、隔離全体ではない。**
+引用した仕様が managed 専用にすると言っているのは this key = `filesystem.disabled`
+であって、`sandbox.enabled` を pin するとは書かれていない。user 設定の
+`"enabled": true` を Edit tool で `false` にする経路が残るかは**実測していない**。
+「隔離そのものを外せなくなった」と読まないこと。
+
+配列キーは全 scope でマージされ、どの scope も他が足した deny を外せない
+(docs 逐語: 「For array keys such as `excludedCommands` and `allowRead`, Claude
+Code merges entries from every scope」)。したがって user 設定側の既存 4 件は
+そのまま効き続ける。増えるのは「外せなくなる」ことだけで、**起動をゲートしない**
+(下限や `disableSideloadFlags` と違い、壊れても起動はする)。
 
 ### network.strictAllowlist — 許可外ホストを確認ダイアログ抜きで拒否する
 
