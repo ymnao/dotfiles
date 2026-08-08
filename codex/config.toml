@@ -11,10 +11,17 @@
 #   - notify は turn 終了ごとに host 側でコマンドを起動する実行ベクタで、
 #     共有ベース設定で恒常化するのは防御層の設計意図に逆行する
 #     (脅威モデルは docs/ai-operations.md §10。ここには複製しない)
-# 通知が必要な場合は merge 実行後に ~/.codex/config.toml へ手で追記する。
-# トップレベルの notify は codex-merge-config.sh の preserve 対象
-# ([projects] / [plugins] / [notice] / [tui] / [hooks.state] の 5 セクションのみ)
-# に含まれないため、merge のたびに再追記が要る。
+# なお **現状の機構では手元での復元も成立しない** (2026-08-08 実測)。
+# トップレベルキーは最初のテーブル見出しより前にしか書けないので、置ける場所は
+# base の prefix 内部だけ。そこへ入れると tests/integrity/run-integrity-check.sh
+# の base 一致検査 (先頭 base_size バイトの cmp) が落ち、`make gate` が
+# 毎ターン失敗し続ける。ファイル末尾に足すと TOML 仕様上
+# [shell_environment_policy] 配下のキーになり (tomllib で実測: トップレベルの
+# notify は未定義のまま)、トップレベル設定である notify としては解釈されない。
+# パースエラーにはならないので気付きにくい。
+# マシン固有 notify を使う必要が出たら、この非対称 (dest 側で保護されるのは
+# セクションだけでトップレベルキーは対象外) を merge スクリプト側で扱うか
+# どうかを別途決める。
 
 model = "gpt-5.6-sol"
 model_reasoning_effort = "medium"

@@ -48,7 +48,9 @@ set -uo pipefail
 # 日本語直前の変数展開は自分でブレース (`${var}`) を徹底すること (claude/rules/shell.md)。
 export LC_ALL=C
 
-# 監視対象は「host 側で起動されるコマンドを **直接** 定義しているファイル」に限る:
+# 監視対象は「host 側で起動されるコマンド、またはその実行環境・実行可否を
+# **直接** 定義しているファイル」に限る (後半は codex/config.toml の
+# shell_environment_policy と .claude/settings.json の permissions / sandbox):
 #   agents/hooks/ (正本) / claude/hooks/ / codex/hooks/ (symlink + codex 固有実体)
 #   codex/hooks.json / claude/settings.json (hook と statusLine の command 定義)
 #   codex/config.toml (~/.codex/config.toml の base。現在は command を直接
