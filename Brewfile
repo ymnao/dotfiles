@@ -152,7 +152,10 @@ cask "slack"
 cask "zoom"
 cask "postman"
 cask "claude"
-cask "claude-code"
+# claude-code (無印) ではなく @latest を使う。無印は stable チャンネルで約 1 週遅れ、
+# 許可チェック迂回の修正 3 版ぶんが未適用のまま停滞していた (issue #296)。
+# 両者は conflicts_with なので、乗り換えは uninstall → install の順が要る。
+cask "claude-code@latest"
 cask "codex"
 cask "codex-app"
 # kura は自作の menu bar app。HOMEBREW_REQUIRE_TAP_TRUST 下でも通るよう trusted: true。

@@ -22,8 +22,9 @@ update: ## Update Homebrew packages
 	@# 逆方向 (未記載だがインストール済み) は check では検出できず、
 	@# 破壊的な bundle cleanup / dump を避けるため今回はスコープ外。
 	@# cleanup は Brewfile 手動編集の構造を破壊するため使わない (CLAUDE.md 参照)。
-	@# --greedy は auto_updates cask (claude-code 等) の版遅延を拾うが、
-	@#   cask 側の更新頻度に依存するため常時採用はせず、今回は check のみ。
+	@# --greedy は auto_updates cask の版遅延を拾うが、常時採用はせず check のみ。
+	@#   claude-code@latest は auto_updates を設定していないので (2026-08-08 に
+	@#   cask 定義を実測)、下の素の brew upgrade で上がる。--greedy は要らない。
 	@echo "==> Brewfile 記載パッケージのインストール状態チェック"
 	@brew bundle check --file=Brewfile --verbose || { \
 	    echo ""; \
