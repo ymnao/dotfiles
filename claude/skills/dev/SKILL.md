@@ -226,12 +226,21 @@ codex-review は step 5 の /pr が risk tier に応じて実行するため
   fix しない」規約 (本 step 冒頭) に従い round=2 の `applied` は必ず
   `0`。status は `complete` (残指摘 0) か `cap-reached` (残指摘あり)
   の 2 択で、`continue` は取らない。
-  **上限を延長した場合はこの限りでない** — 延長後の round は fix を伴う
-  ので `applied` は実数、status も `continue` を取りうる。延長の承認を
-  得た turn がその根拠になる
+  **次の 2 つはこの限りでない** — どちらも fix を伴うので `applied` は
+  実数になる:
+  - **上限を延長した場合** — 延長後の round は status も `continue` を
+    取りうる。延長の承認を得た turn がその根拠になる
+  - **step 4-0 の例外 (自分が持ち込んだものの即 fix) を適用した場合** —
+    live 環境への副作用や diff 内の誤った記述は「周回数に関わらず即 fix」
+    なので、上限延長が無くても round=2 で `applied` が非ゼロになる。
+    status は残指摘の有無で `complete` / `cap-reached` のまま (この例外は
+    **新規指摘を fix しない**規約を外すものではないので `continue` は
+    取らない)。**この経路を書き漏らすと、規約を守ると必ずログ規定に
+    違反する**状態になる (2026-08-08 の issue #296 で実際に発生し、
+    `round=2 applied=3 status=cap-reached` を逸脱の断り書き付きで出した)
 - **fix コミットを作らない round の head/dirty 不変**: 「発散防止のため
-  fix しない」規約に従う round (上限延長の無い round=2 + round=1 で
-  0 件完了ケース)
+  fix しない」規約に従う round (round=2 のうち上限延長も step 4-0 の
+  例外適用も無いもの + round=1 で 0 件完了ケース)
   では、`phase=start` と `phase=end` の `head=` と `dirty=` がそれぞれ
   同一でなければならない (両方 `0` または両方 `1`)。Edit / Write tool
   call マーカーでは Bash 経由の変更を取りこぼすため head + dirty の
