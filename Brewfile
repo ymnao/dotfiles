@@ -152,7 +152,9 @@ cask "slack"
 cask "zoom"
 cask "postman"
 cask "claude"
-cask "claude-code"
+# 更新チャンネルは cask 名で決まる (無印 = stable、@latest = latest)。
+# ここが選択の正本。理由と乗り換え手順は docs/ai-operations.md §10。
+cask "claude-code@latest"
 cask "codex"
 cask "codex-app"
 # kura は自作の menu bar app。HOMEBREW_REQUIRE_TAP_TRUST 下でも通るよう trusted: true。
