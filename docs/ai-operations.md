@@ -709,9 +709,14 @@ latest へ移して即日適用する側に倒した(issue #296)。**代償は�
 
 **stable へ戻すときは下限を先に下げること**。managed 設定を配置した状態で下限が
 2.1.226 のまま無印 cask へ戻すと、stable 側がまだ 2.1.226 未満の期間(2026-08-08
-時点の stable は 2.1.220)は**起動しなくなる**。この節と下の
-「managed settings で実際に enforce する」を両方いじる順序の問題で、復旧経路は
-そちらに書いてある `sudo rm` と `brew upgrade`。
+時点の stable は 2.1.220)は**起動しなくなる**(起動不能の条件そのものは下の
+「managed settings で実際に enforce する」節が正本)。
+
+**このシナリオでの復旧は `sudo rm` だけ**。同節がもう 1 つ挙げている
+`brew upgrade` は効かない — 無印 cask へ戻した後なので `@latest` は uninstall 済みで
+upgrade の対象が無く、`brew upgrade claude-code` も stable が下限未満である限り
+上がらない(それがこのロックアウトの定義そのもの)。cask を戻す形で直すなら
+upgrade ではなく uninstall → install で `@latest` に入れ直すことになる。
 
 `autoUpdatesChannel` 設定は**書かない**。docs verbatim で
 "Homebrew installations choose a channel by cask name instead of this setting"
@@ -725,15 +730,16 @@ latest へ移して即日適用する側に倒した(issue #296)。**代償は�
 
 2.1.224 で `SendMessage` がセッション間に広がった(CHANGELOG verbatim:
 "Claude Code sessions can now message each other, on any of your machines")。
-2.1.225 では、それまで**相手から届いた後に返信することしかできなかった**のが、
-こちらから **Remote Control セッションを名前で指定して会話を開始できる**ように
-なっている(同 verbatim: "SendMessage can now start a conversation with your
+2.1.225 では、**Remote Control セッション相手に限って**それまで相手から届いた後に
+返信することしかできなかったのが、こちらから**名前で指定して会話を開始できる**ように
+なった(同 verbatim: "SendMessage can now start a conversation with your
 Remote Control sessions on other machines by name ... instead of only replying
 after they message you first")。**設定ファイルではなく実行中のセッションに届く
 入力経路**で、この §10 が 1 つずつ潰してきた経路の一覧に無い種類。この環境では
 使う予定が無いので `claude/settings.json` に `crossSessionInbound: "refuse"` を置いた。
 
-**user scope に置いて効くことは確認した**。#245 の罠(user scope に書いた値が
+**user scope の値が読まれることは確認した**(「効く」= 受信を落とす、ではない。
+下記)。#245 の罠(user scope に書いた値が
 一度も参照されない)と同型でないかを先に見る必要があるため。2.1.226 のバイナリの
 文字列を見ると、このキーには **3 つの出所を書き分けたメッセージが別々に存在する** —
 `Your "crossSessionInbound" setting is "hold".` / `Your organization's managed
