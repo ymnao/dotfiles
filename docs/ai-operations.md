@@ -759,6 +759,9 @@ tightening).`。user 自身の設定が読まれ、repo 側は**締める方向�
 `refuse` を agent が緩められない位置に置きたいなら managed 正本へ移す必要があるが、
 現状は入れていない。
 
+**版との関係**は「下限は Claude Desktop が pin している CLI を超えられない」節に
+書いた(下限を 2.1.222 へ下げた影響。この節の実測を更新するときはあちらも見る)。
+
 ### requiredMinimumVersion — user 設定に書いても enforce されない
 
 **まずこれを読むこと**: `requiredMinimumVersion` は **managed (policy) 設定
@@ -791,10 +794,8 @@ tightening).`。user 自身の設定が読まれ、repo 側は**締める方向�
 — 実際に効くのは managed 側なので、片方だけ更新すると「settings.json に
 書いてある値」と「強制されている値」が食い違う。「依存する挙動がある最小の版」
 (strictAllowlist の 2.1.219、symlink 系修正の 2.1.217)ではなく
-**この machine で起動する CLI のうち最も古いもの**に合わせている。
-2026-08-08 に一度 `2.1.226`(= ターミナルの `claude --version`)に上げて
-Claude Desktop を起動不能にしたため、基準を「host の実バージョン」から
-言い直した(下の節)。
+**この machine で起動する CLI のうち最も古いもの**に合わせている。基準を
+「host の実バージョン」から言い直したのは下の節の事故を踏んだため。
 
 ### 下限は Claude Desktop が pin している CLI を超えられない
 
@@ -810,17 +811,20 @@ Claude Desktop を起動不能にしたため、基準を「host の実バージ
 なった。`Claude Code process exited with code 1. stderr: Claude Code 2.1.222 is
 older than the minimum version required by your organization (2.1.226).`
 
-実測(2026-08-08):
-
-| 何 | 値 |
-|---|---|
-| desktop アプリ | 1.26832.0(自己更新済み。`brew list --cask` の記録 1.18286.0 は古い) |
-| desktop が pin する CLI | `2.1.222`(バイナリを直接叩いて `--version` を確認) |
-| ターミナルの `claude` | `2.1.226`(`claude-code@latest` cask) |
-
-つまり **latest チャンネルの cask に合わせた下限は、desktop の pin より先に
-進む**。下限を決めるときに見るのは `claude --version` ではなく、
+このとき desktop アプリ本体は 1.26832.0(自己更新済みで、`brew list --cask` の
+記録 1.18286.0 は古い)。**latest チャンネルの cask に合わせた下限は、desktop の
+pin より先に進む**。下限を決めるときに見るのは `claude --version` ではなく、
 **この machine で起動する CLI 全部のうち最小のもの**。
+
+desktop 側の版を実測する(下限を上げる前にこれを見る):
+
+```sh
+ls ~/Library/Application\ Support/Claude/claude-code/
+"$HOME/Library/Application Support/Claude/claude-code/<version>/claude.app/Contents/MacOS/claude" --version
+```
+
+ディレクトリ名がそのまま pin されている版で、2 行目はそれを直接叩いて裏を取る
+形(2026-08-08 はどちらも `2.1.222`)。
 
 **下げても cross-session 受信は復活しない**(上の節の判断を保つ根拠)。
 2.1.222 のバイナリに `crossSessionInbound` は **0 件**、比較のため同じ
@@ -829,10 +833,9 @@ older than the minimum version required by your organization (2.1.226).`
 **2.1.224 / 2.1.225 も許可される** — この machine には入っていないが、下限は
 その 2 版を止めない。
 
-desktop に別の CLI を使わせる経路は存在する(`app.asar` に
-`CLAUDE_CODE_LOCAL_BINARY` の override と `initLocalBinary` がある)が、
-GUI アプリへの env 注入が要るうえ pin と違う版を desktop⇄CLI 間で使うことに
-なるため採らなかった。**未検証**。
+下限を下げる代わりに desktop へ新しい CLI を使わせる案(`app.asar` の
+`CLAUDE_CODE_LOCAL_BINARY` override)は、GUI アプリへの env 注入が要るうえ
+pin と違う版を desktop⇄CLI 間で使うことになるため採らなかった。**未検証**。
 
 ### managed settings で実際に enforce する(user 操作)
 
