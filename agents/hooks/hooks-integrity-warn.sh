@@ -51,7 +51,10 @@ export LC_ALL=C
 # 監視対象は「host 側で起動されるコマンドを **直接** 定義しているファイル」に限る:
 #   agents/hooks/ (正本) / claude/hooks/ / codex/hooks/ (symlink + codex 固有実体)
 #   codex/hooks.json / claude/settings.json (hook と statusLine の command 定義)
-#   codex/config.toml (notify — turn 終了ごとに host バイナリを起動する)
+#   codex/config.toml (~/.codex/config.toml の base。現在は command を直接
+#     定義しないが、shell_environment_policy が codex の子プロセス環境を決め、
+#     notify / mcp_servers / hooks を足せば host 実行面になる。#283 で notify を
+#     除去した後も監視対象に残す。脅威モデルは docs/ai-operations.md §10)
 #   .claude/stop-gate.conf (Stop hook が bash -c に渡す検証コマンド)
 #   .claude/settings.json (この repo の permissions / sandbox。何を承認なしに
 #     実行できるか・どこに書けるかを決めるので同じ脅威モデルに属する)

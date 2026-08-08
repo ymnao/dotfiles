@@ -419,12 +419,7 @@ check "$?" "Makefile の実行行が hooks-integrity-warn.sh を呼ぶこと"
 #     リスト側のコメントで追加時の確認事項を明示するに留めている
 #
 # 対象に含めないもの (意図的):
-#   - codex/config.toml の notify — 値は repo 外の絶対パス (host バイナリ) を
-#     指しており repo 内ファイルを参照しない。含めると「repo 外パスの正当性判定」
-#     という別の分類問題を持ち込むことになる。ファイル自体は WATCHED_PATHS に
-#     載っているので改変検知はされる。将来 notify が repo 内ファイルを指すよう
-#     変わった場合、この検査では捕まらない
-#   - .claude/stop-gate.conf の中身 (`make gate`) — 同上。間接実行の連鎖まで
+#   - .claude/stop-gate.conf の中身 (`make gate`) — 間接実行の連鎖まで
 #     広げない方針は hooks-integrity-warn.sh の WATCHED_PATHS コメントに準ずる
 #   - .claude/settings.json — WATCHED_PATHS には載っているが配線の抽出元には
 #     していない。2026-07-31 時点の中身は `$schema` / `permissions` / `sandbox` の

@@ -4,14 +4,21 @@
 # ベース設定として書き出される。
 # Codex CLI が動的に書き込む [projects.*] / [plugins.*] / [notice.*] /
 # [tui.*] / [hooks.state] は dest 側で保護されるため、ここには含めない。
+#
+# notify もここには含めない (issue #283):
+#   - 値がマシン固有の絶対パス (通知バイナリの実体) になるため、
+#     「新しいマシンで同じ環境を再現する」というこの repo の目的と矛盾する
+#   - notify は turn 終了ごとに host 側でコマンドを起動する実行ベクタで、
+#     共有ベース設定で恒常化するのは防御層の設計意図に逆行する
+#     (脅威モデルは docs/ai-operations.md §10。ここには複製しない)
+# 通知が必要な場合は merge 実行後に ~/.codex/config.toml へ手で追記する。
+# トップレベルの notify は codex-merge-config.sh の preserve 対象
+# ([projects] / [plugins] / [notice] / [tui] / [hooks.state] の 5 セクションのみ)
+# に含まれないため、merge のたびに再追記が要る。
 
 model = "gpt-5.6-sol"
 model_reasoning_effort = "medium"
 allow_login_shell = false
-notify = [
-    "/Users/nakiym/.codex/computer-use/Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient",
-    "turn-ended",
-]
 
 [shell_environment_policy]
 inherit = "all"
