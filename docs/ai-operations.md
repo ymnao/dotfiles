@@ -909,8 +909,9 @@ Desktop を落とし(§10「[下限は Claude Desktop が pin している CLI �
 原因は個別の値ではなく**着手判断**にある。managed 設定の本来の価値は「組織の
 管理者が、開発者に policy を外させない」ことだが、**この repo は user と管理者が
 同一人物**なので、その価値の大半は守る相手がいない。残る利点は「agent が自分の
-権限を広げる経路を塞ぐ」だけで、対価は**失敗が必ず起動不能になり、復旧に admin
-パスワードが要る**こと。この非対称を天秤に載せず、外部サーベイ由来の推奨を
+権限を広げる経路を塞ぐ」だけで、対価は**失敗すると起動不能になりうること、
+そしてその復旧に admin パスワードが要ること**(起動をゲートするキーに触った
+場合。下の `sandbox.credentials` のように壊れても起動する種類は別枠)。この非対称を天秤に載せず、外部サーベイ由来の推奨を
 「正しいか」だけ検証して入れたのが両方の入口だった。
 
 **着手基準の正本は [`claude/rules/managed-settings.md`](../claude/rules/managed-settings.md)**
@@ -952,19 +953,25 @@ organization's managed settings (disableSideloadFlags).
 
 > User settings, managed settings, and the `--settings` CLI flag can set it.
 > Project settings in `.claude/settings.json` and `.claude/settings.local.json`
-> can't, so a checked-out project can't switch filesystem isolation off。
+> can't, so a checked-out project can't switch filesystem isolation off.
 
 このうち user 設定は agent の Edit tool から書き換えられる
 (§10「[managed settings で実際に enforce する](#managed-settings-で実際に-enforce-するuser-操作)」)。
-pin するとこの経路が閉じる。
+**この経路が閉じることは docs の記述に拠っており、実測はしていない** —
+user 設定に直接 `filesystem.disabled` を書いた状態は試していない。
+実測できたのは下の `--settings` 経路だけで、**pin の主目的である user 設定経路の
+方が未実測**である。
 
-**実測(2026-08-09、Claude Code 2.1.226)**:
+**実測(2026-08-09、Claude Code 2.1.226、managed 配置後)**:
 `claude --settings '{"sandbox":{"filesystem":{"disabled":true}}}'` で起動し
 `/sandbox` の Config タブを見たところ、Filesystem Read / Write Restrictions が
 **表示されたまま**だった(注入した `disabled` が無視された)。
+**対照は取っていない** — managed 未配置の状態で同じコマンドが `disabled` を
+反映することは確認していないので、「2.1.226 では `--settings` がこのキーに
+そもそも効かない」可能性を排除できていない。
 
 **塞がるのは `filesystem.disabled` のキー 1 つだけで、隔離全体ではない。**
-引用した仕様が managed 専用にすると言っているのは this key = `filesystem.disabled`
+引用した仕様が managed 専用にすると言っている "the key" は `filesystem.disabled`
 であって、`sandbox.enabled` を pin するとは書かれていない。user 設定の
 `"enabled": true` を Edit tool で `false` にする経路が残るかは**実測していない**。
 「隔離そのものを外せなくなった」と読まないこと。
