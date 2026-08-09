@@ -762,7 +762,7 @@ _check_components() {
   done
 }
 _check_glob_seg() {
-  local _seg=$1 _arg _expanded _optval _seg_lower _seg_nodev
+  local _seg=$1 _arg _expanded _tail _optval _seg_lower _seg_nodev
   _seg="${_seg#"${_seg%%[![:space:]]*}"}"
   [[ -z "$_seg" ]] && return 0
   _seg_lower=$(printf '%s' "$_seg" | tr '[:upper:]' '[:lower:]')
@@ -793,9 +793,13 @@ _check_glob_seg() {
       # 先頭 component にオプション文字列ごと入って `.codex` にマッチせず素通りする
       # (issue #311)。元の文字列は**置換せず**派生候補として足す — 前処理で削って
       # しまうと、境界の見誤りが「危険な形を無害な形に化かす」fail-open として出る。
-      case "$_expanded" in
-        *=*) _check_components "${_expanded#*=}" "$_arg" ;;
-      esac
+      # 値の中にさらに `=` がある形 (`--directory=x=.co*`) も外れないよう、
+      # 最初の 1 つではなく `=` の位置ごとに後ろを候補にする。
+      _tail=$_expanded
+      while [[ $_tail == *=* ]]; do
+        _tail=${_tail#*=}
+        _check_components "$_tail" "$_arg"
+      done
       case "$_expanded" in
         -*)
           _optval=${_expanded#-}
