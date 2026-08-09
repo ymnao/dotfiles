@@ -291,10 +291,8 @@ file 編集 tool 経路は sandbox が効かないので hook が止める。片
   クローンして読む作業まで巻き込むため。issue #190 型の攻撃は「次に codex を
   起動するプロジェクト」で成立するので、実運用上の攻撃面は home 配下に集中する
 - guard 内の **Bash token 判定は cwd 配下のみ**のまま(`is_protected_project_path`)。
-  こちらは sandbox の `~/*/**/.codex/**` と `block-dangerous-commands.sh` の
-  「書き込み文脈 + `.codex` component」判定が担当しており、guard 側で token 一致
-  だけで塞ぐと `cat ~/other/.codex/foo` のような**読み取りの許可を壊す**ため
-  (home config 判定を file 編集 tool 限定にしたのと同じ分業)
+  home 配下の Bash 経路は一次 (sandbox) と二次 (Bash) の 2 層が担当する
+  (理由は上の表の「二次: hook (Bash)」行)
 
 - 一次防御の regression は `tests/integrity/verify-settings-codex-domains.sh`
   (+ `run-integrity-selftest.sh` の tamper fixture)が assert する
