@@ -308,10 +308,15 @@ extract_paths() {
 # 倒れる (2026-08-09 に対照付きで実測: 同じ実体を指す symlink でも、名前が改行
 # なしなら block、改行入りなら allow だった。codex-review security 指摘)。
 # NUL はコマンド置換が落とすので変数に溜められない — 呼び出し側はプロセス置換で
-# 直接読む。jq の失敗検出は上の extract_paths 側の fail-safe が担当する
-# (同じ入力・同じ形の jq プログラムなので、片方だけ失敗する経路が無い)。
-# Bash token 側を NUL 化しないのは、shell にとって改行は本来 word 区切りだから
-# (そちらは分割されるのが正しい)。
+# 直接読む。Bash token 側を NUL 化しないのは、shell にとって改行は本来 word 区切り
+# だから (そちらは分割されるのが正しい)。
+#
+# レコードは 1 文字のタグ付き: `P<path>` が候補、`E` が終端。**プロセス置換の
+# 終了ステータスは while に伝播しない**ため、jq / awk / tr のどれかが落ちても
+# 消費側からは「候補 0 件」= allow と区別が付かない。全段を通ったときだけ終端
+# レコードを出し、消費側は終端の有無で成否を判定する (無ければ fail-safe で block)。
+# タグを付けるのは終端の目印を path と混同しないため — `E` という名前の path が
+# あってもレコードは `PE` になるので衝突しない。
 extract_edit_paths_nul() {
   printf '%s' "$input" | jq -j '
     .tool_input
@@ -321,7 +326,7 @@ extract_edit_paths_nul() {
         empty
       end
     | select(. != null)
-    | tostring + "\u0000"
+    | "P" + tostring + "\u0000"
   ' || return 1
 
   # apply_patch のヘッダーは行ベースの書式なので、path に改行は現れない。
@@ -330,11 +335,13 @@ extract_edit_paths_nul() {
       {
         lower = tolower($0)
         if (match(lower, /^\*\*\* (add file|update file|delete file|move to): /)) {
-          print substr($0, RLENGTH + 1)
+          print "P" substr($0, RLENGTH + 1)
         }
       }
     ' \
-    | tr '\n' '\000'
+    | tr '\n' '\000' || return 1
+
+  printf 'E\000'
 }
 
 # 入力解析中の pipeline 失敗は fail-safe でブロック。
@@ -358,7 +365,13 @@ fi
 # (gate 任せだと名前にトークンを含まない symlink + config.toml 以外の leaf が
 # 素通りする。上の normalize_path のコメント参照)。
 edit_reason=""
-while IFS= read -r -d '' p; do
+edit_scan_complete=""
+while IFS= read -r -d '' rec; do
+  if [[ "$rec" == "E" ]]; then
+    edit_scan_complete=1
+    continue
+  fi
+  p=${rec#P}
   [[ -n "$p" ]] || continue
   p_lower=$(normalize_path "$p" always)
   if is_protected_home_codex_config "$p_lower"; then
@@ -377,6 +390,13 @@ done < <(extract_edit_paths_nul)
 
 if [[ -n "$edit_reason" ]]; then
   echo "ブロック: ${edit_reason}" >&2
+  exit 2
+fi
+
+# 終端レコードが来ていなければ抽出のどこかが落ちている。プロセス置換の終了
+# ステータスは受け取れないので、ここが唯一の検出点 (fail-safe でブロック)。
+if [[ -z "$edit_scan_complete" ]]; then
+  echo "ブロック: file 編集 tool の path 抽出に失敗しました (.codex/ 保護を確認できません)" >&2
   exit 2
 fi
 
