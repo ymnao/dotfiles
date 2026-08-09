@@ -391,6 +391,7 @@
 {"name":"fp-accepted-unzip-readonly-list","expect":"block","command":"unzip -l .co*","reason":"読み取り系 unzip も glob が .codex にマッチすればブロック (許容した FP)"}
 {"name":"fp-accepted-curl-basename-path","expect":"block","command":"cat build/curl .co*","reason":"basename が curl のパスも書き込み文脈になる (許容した FP)"}
 {"name":"fp-accepted-curl-url-glob","expect":"block","command":"curl https://example.com/.co*","reason":"URL の component が .codex にマッチする形もブロック (許容した FP)"}
-# 値を分離して書く形は塞がっていることの対照 (option 連結形の素通りが「この列挙が
-# 効いていない」ではなく「引数の書き方で component 分割から外れる」ことを示す。#311)
-{"name":"ctl-tar-sep-short-opt","expect":"block","command":"tar -xf x.tar -C .co*","reason":"分離形は塞がっている"}
+# option と値が連結された形 (`--directory=.co*` / `-C.co*` / `-d.co*`) は component 分割
+# から外れて素通りする (#311)。列挙の有無ではなく引数の書き方で外れることの対照は
+# 上の adv-tar-glob-extract-dir (分離形 `-C .co*` が block) が既に担っているので、
+# ここに同じ入力のケースは足さない。素通り側は block を期待できないため pin しない。

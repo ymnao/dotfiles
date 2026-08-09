@@ -680,18 +680,19 @@ _seg_seps=';&|()'
 # あちらに足すと `tar -xf "$f"` のような日常形まで誤ブロックが広がる。
 # 副作用として 3 種類の FP が増える。いずれも fail-closed 方向で、`.codex` 保護 (#190)
 # の方針と整合するため許容する (成立には同一セグメントに `.codex` にマッチする glob が
-# 要るので、実運用での遭遇率は低い)。2026-08-07 実測、いずれも追加前 exit=0 →
-# 追加後 exit=2:
-#   - 読み取り系 tar (`tar -tf x.tar '.co*'`)
-#   - basename が rsync / tar のパス。`_write_cmd_boundary_re` の先行文字クラスが
-#     `/` を含むため、`cat build/tar .co*` のような形も書き込み文脈と判定される
-#   - **`.co*` を「読み取り元」に取る形** (`rsync -a .co*/ dst/` / `rsync --dry-run`
-#     / `tar -cf out.tar .co*`)。`_check_glob_seg` は引数の**位置を区別せず**
+# 要るので、実運用での遭遇率は低い)。実測日は #284 分 (rsync / tar) が 2026-08-07、
+# #288 分 (残り 5 つ) が 2026-08-09。いずれも追加前 exit=0 → 追加後 exit=2:
+#   - 読み取り系 (`tar -tf x.tar '.co*'` / `unzip -l .co*`)
+#   - basename が列挙済みコマンドのパス。`_write_cmd_boundary_re` の先行文字クラスが
+#     `/` を含むため、`cat build/tar .co*` / `cat build/curl .co*` のような形も
+#     書き込み文脈と判定される
+#   - **`.co*` を書き込み先以外の引数に取る形** (読み取り元: `rsync -a .co*/ dst/` /
+#     `rsync --dry-run` / `tar -cf out.tar .co*`、パスですらない引数:
+#     `curl https://example.com/.co*` の URL)。`_check_glob_seg` は
+#     引数の**位置を区別せず**
 #     セグメント内の全引数を検査するので、コピー元とコピー先を分けられない。
 #     区別するには「どの引数が書き込み先か」をコマンドごとに知る必要があり、
 #     列挙型ブロックリストの枠を超える (#289 の射程)
-# #288 で足した 5 つも同じ 3 種類の FP を増やす (2026-08-09 実測、追加前 exit=0 →
-# 追加後 exit=2: `unzip -l .co*` / `cat build/curl .co*` / `curl https://example.com/.co*`)。
 # **列挙方式なので、塞がるのはここに書いたコマンドだけ**。この構造的限界は #288 の
 # 追加後も変わらない — 個々の穴を塞いでも「列挙に無いコマンド」の集合は開いたまま。
 # glob 経路を網羅する統制の本体は sandbox の `denyWrite` 側にあり (PR #292 / #289 の
