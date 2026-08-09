@@ -230,6 +230,10 @@ MEMORY.md 先頭 200 行が自動ロードされる。
 「ツール」ではなく「見送った機構」。本体を入れたことが、その拡張まで
 審査済みであることを意味しないため(実例: herdr の 3 行)。
 
+**harness に標準搭載されていて導入ステップ自体が存在しないものも、
+運用に採用しないと決めたならここに書く**(実例: Workflow tool の行)。
+「使えること」は「使うと決めたこと」ではないため。
+
 | 機構 | 見送り理由 | 再評価条件 |
 |---|---|---|
 | GitHub Actions 連携(claude-code-action) | API 従量課金が必要(x20 定額の外)。ローカルレビューと重複。prompt injection 前提の運用が必要 | 他者コントリビュータのいるリポを持ったとき |
@@ -246,7 +250,7 @@ MEMORY.md 先頭 200 行が自動ロードされる。
 | `disableSideloadFlags`(Claude Code の managed 設定) | (2026-08-09 / #297)**実配置して実測し、見送った** — `--plugin-dir` を内部で渡す経路があり、Cowork 未使用でも Claude Code のプロセスが exit code 1 で落ちる。塞げるのは起動フラグ経路 1 本だけで `claude mcp add` / `.mcp.json` は素通り。実測とエラー全文は §10「[disableSideloadFlags — 実測して見送った](#disablesideloadflags--実測して見送った297)」 | 起動フラグ以外の経路も塞ぐ必要が出たとき(そのときは全 scope に効く `allowedMcpServers` / `allowManagedMcpServersOnly` を先に検討する)。ただし着手の可否は §10「[managed 設定は原則触らない](#managed-設定は原則触らない--判断基準は復旧に-sudo-が要るか)」の基準を先に通す |
 | Context7 MCP(ライブラリドキュメント取得) | (2026-08-09 / #286)公式ドキュメントを直接 fetch すれば大半足りる。§5 の順序(CLI / skill で代替できるなら MCP を入れない)に該当 | 公式 doc の直接取得で調査が破綻するケースが 3 回起きたとき(そのときは §5 の導入審査 — 出所確認・全文監査・最小権限・lethal trifecta — を通す) |
 | リポジトリ内 `.agents/memory/`(教訓のマシン間共有) | (2026-08-09 / #286)HANDOFF.md 運用と重複する。auto memory と §7 の昇格運用で足りる | HANDOFF 経由の引き継ぎ漏れが 2 回起きたとき |
-| Workflow tool の運用採用(skill の手順を決定的スクリプトに移す) | (2026-08-09 / #286)**見送っているのは導入ではなく運用への採用** — 機構自体は Claude Code の harness 組み込みツールとして既にセッションに存在する(2026-08-09 に tool 一覧で確認。追加インストールは不要で、呼び出しに user の明示的な opt-in が要るだけ)。現行の skill 内 fan-out(/dev のレビューループ、/adversarial-review の並列 code-reviewer)で足りており、採用すると同じ手順が SKILL.md と workflow スクリプトに二重管理になる | /adversarial-review や /simplify で並列数・検証回数のブレ起因の見逃しが実際に起きたとき |
+| Workflow tool(skill の手順を決定的スクリプトに移す) | (2026-08-09 / #286)**harness 組み込みなので導入は済んでおり、見送っているのは運用への採用**(2026-08-09 に tool 一覧で存在を確認)。現行の skill 内 fan-out で足りており、採用すると同じ手順が SKILL.md と workflow スクリプトに二重管理になる | /adversarial-review や /simplify で見逃しが起き、その原因が並列数・検証回数のブレだと特定できたとき |
 
 ## 10. codex / Claude Code の host 実行面の防御層
 
