@@ -406,6 +406,7 @@
 {"name":"adv-tar-eq-brace","expect":"block","command":"tar -xf x.tar --directory={.co*,tmp}","reason":"brace 展開の後に = を剥がす順序であること (逆順だと素通りする)"}
 {"name":"adv-dd-of","expect":"block","command":"dd if=/dev/zero of=.co*/x","reason":"= 規則を - 始まりに限定しないので dd の of= も閉じる"}
 {"name":"adv-tar-eq-nested","expect":"block","command":"tar -xf x.tar --directory=x=.co*","reason":"値の中にさらに = がある形 (最初の 1 つだけ剥がす実装だと素通りする)"}
+{"name":"adv-tar-eq-equiv-class","expect":"block","command":"tar -xf x.tar --directory=.cod[=e=]x","reason":"= を含む component が .codex にマッチする形 (= で分割する実装に変えると素通りする)"}
 # 受理側。値が英数字だけの短オプション連結 (-Ctmp) は派生候補が空になるが、.codex に
 # マッチする glob は必ず非英数字を含むので危険側は漏れない — その pin も兼ねる。
 {"name":"fp-tar-eq-plain","expect":"allow","command":"tar -xf x.tar --directory=tmp","reason":"= 連結の日常形が過ブロックされないこと"}

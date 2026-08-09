@@ -719,6 +719,13 @@ _glob_to_ere() {
 _matches_codex() {
   local _comp=$1 _re
   [[ -z "$_comp" ]] && return 1
+  # 先頭が `.` かワイルドカード (`*` `?` `[`) でなければ `.codex` の 1 文字目に
+  # 対応できないので、ERE 変換 (subshell を 1 つ起こす) の前に落とす。長い引数を
+  # component ごとに検査する経路のコストがこれで線形側に寄る。
+  case "$_comp" in
+    [.*?[]*) ;;
+    *) return 1 ;;
+  esac
   _re=$(_glob_to_ere "$_comp")
   [[ ".codex" =~ ^${_re}$ ]]
 }
@@ -795,10 +802,15 @@ _check_glob_seg() {
       # しまうと、境界の見誤りが「危険な形を無害な形に化かす」fail-open として出る。
       # 値の中にさらに `=` がある形 (`--directory=x=.co*`) も外れないよう、
       # 最初の 1 つではなく `=` の位置ごとに後ろを候補にする。
+      # 候補は**最初の `/` まで**に切る — その先の component は元文字列の検査で
+      # 既に見ており、切らずに `_check_components` へ渡すと `/` 分割を `=` の
+      # 個数だけやり直して O(n^3) になる (`a=/a=/…` 形で 1.8KB / 82s を実測)。
+      # `=` では分割しない: `[=e=]` のような等価クラスを含む glob を割ると
+      # マッチしなくなり fail-open に倒れる。
       _tail=$_expanded
       while [[ $_tail == *=* ]]; do
         _tail=${_tail#*=}
-        _check_components "$_tail" "$_arg"
+        _check_components "${_tail%%/*}" "$_arg"
       done
       case "$_expanded" in
         -*)
