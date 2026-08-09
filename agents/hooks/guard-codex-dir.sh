@@ -104,6 +104,11 @@ normalize_path() {
     path="${cwd_real}/${path#./}"
   fi
 
+  # 畳み込み前の形を残す。`..` の字句畳み込みは symlink を跨ぐと OS の解決結果と
+  # ずれる (`link/../x` の `..` は link の *実体* の親を指す) ため、always 経路は
+  # 畳み込む前のこの形から物理解決をやり直す。
+  local path_raw="$path"
+
   # / . / と / .. / を畳み込み、// を圧縮
   path=$(printf '%s' "$path" | sed -E -e 's#/\./#/#g' -e ':a' -e 's#/[^/]+/\.\.(/|$)#/#g' -e 'ta' -e 's#//+#/#g')
 
@@ -121,19 +126,26 @@ normalize_path() {
   # 1 回の cd + pwd -P に収まる。Bash token 経路は 1 コマンドから多数の token が
   # 出るため gate を維持し、そちらは sandbox の denyWrite と
   # block-dangerous-commands.sh が担当する分業に委ねる。
-  local _resolve=0
+  local _try_dir _rest _resolved
   if [[ "$resolve_mode" == "always" ]]; then
-    _resolve=1
-  else
-    local _gate_probe
-    _gate_probe=$(printf '%s' "$path" | tr '[:upper:]' '[:lower:]')
-    case "$_gate_probe" in
-      *codex*|*/config.toml) _resolve=1 ;;
-    esac
-  fi
+    # 物理解決。字句で畳んだ path ではなく path_raw から始め、`cd -P` に `..` を
+    # 解かせる (logical な `cd` は `..` を字句処理するので、symlink を跨ぐ形が
+    # 解決できない)。さらに **末尾要素が symlink の場合も辿る** — 祖先だけを
+    # 解決する形だと、保護対象内のファイルを指す symlink (`notes.txt` →
+    # `<保護対象>/config.toml`) へ書くと判定は素通りするのに write は保護対象内へ
+    # 着地する。どちらも 2026-08-09 に「hook は allow / write は保護対象内に着地」
+    # を対照付きで実測した (codex-review shell-senior 指摘)。
+    local _link_target _hops=0
+    path="$path_raw"
+    while [[ -L "$path" && "$_hops" -lt 40 ]]; do
+      _link_target=$(readlink "$path") || break
+      case "$_link_target" in
+        /*) path="$_link_target" ;;
+        *)  path="${path%/*}/$_link_target" ;;
+      esac
+      _hops=$((_hops + 1))
+    done
 
-  if [[ "$_resolve" -eq 1 ]]; then
-    local _try_dir _rest _resolved
     _try_dir=$path
     _rest=
     while [[ -n "$_try_dir" && "$_try_dir" != "/" && ! -d "$_try_dir" ]]; do
@@ -142,11 +154,34 @@ normalize_path() {
       [[ -z "$_try_dir" ]] && _try_dir=/
     done
     if [[ -d "$_try_dir" ]]; then
-      _resolved=$(cd "$_try_dir" 2>/dev/null && pwd -P) || _resolved=""
+      _resolved=$(cd -P "$_try_dir" 2>/dev/null && pwd -P) || _resolved=""
       if [[ -n "$_resolved" ]]; then
         path="${_resolved}${_rest}"
       fi
     fi
+    # 実在しなかった suffix 側に残る `.` / `..` を畳む (存在しない以上 OS も
+    # 解決できないので、ここは字句処理でよい)。
+    path=$(printf '%s' "$path" | sed -E -e 's#/\./#/#g' -e ':a' -e 's#/[^/]+/\.\.(/|$)#/#g' -e 'ta' -e 's#//+#/#g')
+  else
+    local _gate_probe
+    _gate_probe=$(printf '%s' "$path" | tr '[:upper:]' '[:lower:]')
+    case "$_gate_probe" in
+      *codex*|*/config.toml)
+        _try_dir=$path
+        _rest=
+        while [[ -n "$_try_dir" && "$_try_dir" != "/" && ! -d "$_try_dir" ]]; do
+          _rest="/${_try_dir##*/}${_rest}"
+          _try_dir=${_try_dir%/*}
+          [[ -z "$_try_dir" ]] && _try_dir=/
+        done
+        if [[ -d "$_try_dir" ]]; then
+          _resolved=$(cd "$_try_dir" 2>/dev/null && pwd -P) || _resolved=""
+          if [[ -n "$_resolved" ]]; then
+            path="${_resolved}${_rest}"
+          fi
+        fi
+        ;;
+    esac
   fi
 
   printf '%s' "$path" | tr '[:upper:]' '[:lower:]'

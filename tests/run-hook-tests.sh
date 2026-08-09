@@ -16,6 +16,9 @@ set -euo pipefail
 #   `{{HOMEPROJLINK}}` は「隔離 HOME 配下のプロジェクトを指す、home 外に置かれた symlink」に置換する。
 #   `{{HOMEDIRLINK}}` / `{{CWDDIRLINK}}` は「保護対象ディレクトリ自体を指す、名前に
 #   トークンを含まない symlink」(それぞれ home 配下プロジェクト / cwd 配下) に置換する。
+#   `{{DOTDOTLINK}}` は「home 外に置かれ、home 配下プロジェクトのサブディレクトリを
+#   指す symlink」(`/../` を後ろに付ける形の検証用)、`{{LEAFLINK}}` は「保護対象内の
+#   ファイルを指す、末尾要素そのものの symlink」に置換する。
 #   tool_input / command 内の文字列に `{{CWD}}` が含まれる場合、hook 実行時の
 #   一時 cwd 実パスに置換される (cwd 内絶対パステスト用)。
 #
@@ -107,6 +110,23 @@ CWD_DIR_LINK="$WORKDIR/plainlink"
 mkdir -p "$WORKDIR/.codex"
 ln -sfn "$WORKDIR/.codex" "$CWD_DIR_LINK"
 
+# {{DOTDOTLINK}}: home 外に置いた symlink が「隔離 HOME 配下プロジェクトのサブ
+# ディレクトリ」を指す。`{{DOTDOTLINK}}/../.codex/x` は OS 解決だと保護対象に
+# 着地するが、`..` を字句で畳むと home 外のパスに見える。
+DOTDOT_LINK="$BASEDIR/dotdotlink"
+mkdir -p "$FAKE_HOME/other-project/sub"
+ln -sfn "$FAKE_HOME/other-project/sub" "$DOTDOT_LINK"
+# `..` を字句で畳んだ側のパス ($BASEDIR/.codex) も**実在させる**。ここが無いと
+# 字句解決した cd が失敗し、bash が元パスへフォールバックして物理解決と同じ結果に
+# なるため、`cd -P` の有無を測れない (mutation で全 pass する形になる)。
+mkdir -p "$BASEDIR/.codex"
+
+# {{LEAFLINK}}: **末尾要素そのもの**が symlink で、保護対象内のファイルを指す。
+# 祖先だけを解決する形だと判定は素通りするのに write は保護対象内へ着地する。
+LEAF_LINK="$FAKE_HOME/other-project/notes.txt"
+: >"$FAKE_HOME/other-project/.codex/config.toml"
+ln -sfn "$FAKE_HOME/other-project/.codex/config.toml" "$LEAF_LINK"
+
 # 対象ケースファイルの決定 (引数なしなら glob。SC2045 回避のため ls は使わない)
 if [ "$#" -eq 0 ]; then
   set -- "$SCRIPT_DIR"/hooks/*.cases.jsonl
@@ -152,6 +172,8 @@ substitute_cwd() {
   s=${s//\{\{HOMEPROJLINK\}\}/$HOME_PROJ_LINK}
   s=${s//\{\{HOMEDIRLINK\}\}/$HOME_DIR_LINK}
   s=${s//\{\{CWDDIRLINK\}\}/$CWD_DIR_LINK}
+  s=${s//\{\{DOTDOTLINK\}\}/$DOTDOT_LINK}
+  s=${s//\{\{LEAFLINK\}\}/$LEAF_LINK}
   printf '%s' "$s"
 }
 
