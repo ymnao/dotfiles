@@ -272,18 +272,36 @@ codex CLI の `~/.codex/config.toml` は **sandbox 境界を越えて host 側�
 | 一次: sandbox | `claude/settings.json` の `.sandbox.filesystem.denyWrite` に `~/.codex/config.toml`(allowWrite の `~/.codex` に対する deny-within-allow) | **Bash tool 経由**の全書き込み経路(リダイレクト / write コマンド / `sed -i` / `mv`)。`cd ~/.codex && printf x > config.toml` のように hook を回避する形も止まる | **Edit / Write / MultiEdit / apply_patch の file 編集 tool には適用されない**(実測: deny 対象の `claude/settings.json` は Bash append は拒否されるが Edit tool では書き換えられた) |
 | 一次: sandbox (プロジェクト配下) | 同 `denyWrite` に `~/*/**/.codex/**`(2026-08-08 追加) | home 直下 1 階層の作業ディレクトリ配下で `.codex/` を deny。ディレクトリが存在しなくても `mkdir` も `mv` (rename) も拒否される。**測れた範囲は下記節に明記** | 4 経路(home の外 / excludedCommands で sandbox ごと外れる行 / file 編集 tool / この設定自体の改ざん)。内訳と担当は下記「denyWrite のパス表記」節の末尾に 1 箇所だけ書く |
 | 二次: hook (Bash) | `agents/hooks/block-dangerous-commands.sh` の「書き込み文脈 + `.codex` component」判定。**cwd 配下については `agents/hooks/guard-codex-dir.sh` も Bash matcher に配線されており**、command 文字列から token を抽出して cwd 内の `.codex/` を止める(読み取りも止まる) | tilde / `$HOME` / 絶対パス表記のいずれでも、path token に `.codex` component が現れる書き込みを block(block-dangerous 側は読み取りは allow のまま) | `cd ~/.codex && printf x > config.toml` のように **書き込み segment 側に `.codex` component が現れない形**(一次防御が担当) |
-| 二次: hook (file 編集) | `agents/hooks/guard-codex-dir.sh` の `is_protected_home_codex_config` 判定 | Edit / Write / MultiEdit / NotebookEdit / apply_patch が `~/.codex/config.toml` を指す場合(tilde / `$HOME` / `${HOME}` / 絶対パス / `..` 経由 / 大文字表記を正規化して比較) | `~/.codex/` 配下の他ファイル(`sessions/` / `auth.json` 等は codex CLI が正当に書くため意図的に allow) |
+| 二次: hook (file 編集) | `agents/hooks/guard-codex-dir.sh` の 3 判定: `is_protected_project_path`(cwd 配下)/ `is_protected_home_codex_config`(`~/.codex/config.toml` 1 ファイル)/ `is_protected_home_project_codex_path`(home 配下の別プロジェクト。2026-08-09 追加 / #291) | Edit / Write / MultiEdit / NotebookEdit / apply_patch が (a) cwd 配下の `.codex/`、(b) `~/.codex/config.toml`、(c) `~/<任意のディレクトリ>/…/.codex/` 配下 を指す場合。tilde / `$HOME` / `${HOME}` / 絶対パス / `..` 経由 / 大文字表記を正規化し、**symlink はこの経路では無条件に解決**してから比較する(gate 任せだと、名前に `codex` を含まない symlink + `config.toml` 以外の leaf が素通りする。2026-08-09 に対照付きで実測して塞いだ) | `~/.codex/` 配下の他ファイル(`sessions/` / `auth.json` 等は codex CLI が正当に書くため意図的に allow)、および **home の外**の `.codex/`(`/tmp` / `/Volumes` 等。下記参照) |
 | 正規の書き込み経路 | `scripts/codex-merge-config.sh` を **ユーザーが手動実行**(sandbox 外) | repo の `codex/config.toml` を正本として `~/.codex/config.toml` へマージ | — |
 
 一次と二次が担当する経路は**意図的に非対称**。Bash 経路は sandbox が包括的に止め、
 file 編集 tool 経路は sandbox が効かないので hook が止める。片方だけでは穴が残る。
+
+**担当する経路は非対称でよいが、覆う範囲 (スコープ) は揃える。** 2026-08-08 に
+一次 (sandbox) 側だけが `~/*/**/.codex/**` で home 配下の全プロジェクトへ広がり、
+二次 (file 編集) 側は cwd 配下のままだったため、**cwd 外プロジェクトの `.codex/` が
+どの層にも止められない**状態が生まれた(#291)。同じ不変条件を守る層のスコープが
+食い違うと、経路の分業では説明できない穴になる。2026-08-09 に
+`is_protected_home_project_codex_path` を足して二次側を一次側のスコープに揃えた。
+
+- **home の外**(`/tmp` / `/Volumes` / 外部ボリューム等)は**両層とも非カバー**で、
+  これは層間の非対称ではなく**共通の残余として受容している**。塞ぐと `.codex`
+  component を持つ任意のパスを実質グローバル禁止することになり、他 repo を
+  クローンして読む作業まで巻き込むため。issue #190 型の攻撃は「次に codex を
+  起動するプロジェクト」で成立するので、実運用上の攻撃面は home 配下に集中する
+- guard 内の **Bash token 判定は cwd 配下のみ**のまま(`is_protected_project_path`)。
+  home 配下の Bash 経路は一次 (sandbox) と二次 (Bash) の 2 層が担当する
+  (理由は上の表の「二次: hook (Bash)」行)
 
 - 一次防御の regression は `tests/integrity/verify-settings-codex-domains.sh`
   (+ `run-integrity-selftest.sh` の tamper fixture)が assert する
 - 二次防御 (Bash) の regression は `tests/hooks/block-dangerous-commands.cases.jsonl`
   の `home-codex-config-*` / `tilde-codex-config-*` ケースが pin する
 - 二次防御 (file 編集) の regression は `tests/hooks/guard-codex-dir.cases.jsonl` の
-  `{{HOME}}/.codex/config.toml` 系ケースが pin する(allow 側のラチェットも含む)
+  `{{HOME}}/.codex/config.toml` 系 (#190) と `{{HOME}}/other-project/.codex/` 系
+  (#291) のケースが pin する(allow 側のラチェット — `sessions/` / `auth.json` /
+  ドット無し `codex/` / home 外 / Bash 素通し — も含む)
 
 ### denyWrite のパス表記 — 相対は無視され、絶対 / `~` 始まりなら glob が効く
 
@@ -405,13 +423,18 @@ issue #289 の「保護をコマンド文字列の静的解析で担い続ける
    command 文字列から token を抽出して cwd 内の `.codex/` を止める)。
    **cwd の外**については `block-dangerous-commands.sh` が唯一の防御になる
 3. **file 編集 tool (Edit / Write / MultiEdit / NotebookEdit / apply_patch)** —
-   sandbox が適用されない経路。`guard-codex-dir.sh` が担当するが、
-   **プロジェクト判定は cwd 配下に限定されている** (`is_protected_project_path` は
-   cwd prefix 一致で、`tests/hooks/guard-codex-dir.cases.jsonl` は
-   `../other/.codex` を **allow として pin** している)。つまり
-   **cwd の外にある別プロジェクトの `.codex/` へ file 編集 tool で書く形は、
-   どの層も止めない。** この非対称は本節の変更で生じたものではない
-   (Bash 側だけが home 直下全体へ広がった結果、目立つようになった)
+   sandbox が適用されない経路。`guard-codex-dir.sh` が担当する。
+   **2026-08-09 (#291) までは、プロジェクト判定が cwd 配下に限定されていた**
+   (`is_protected_project_path` は cwd prefix 一致で、
+   `tests/hooks/guard-codex-dir.cases.jsonl` は `../other/.codex` を
+   **allow として pin** していた)。この非対称は本節の変更で生じたものではないが
+   (Bash 側だけが home 直下全体へ広がった結果、目立つようになった)、
+   **同じ不変条件を守る層のスコープが食い違う状態**なので
+   `is_protected_home_project_codex_path` を足して一次側のスコープに揃えた。
+   あわせて、この経路の symlink 解決を**無条件**に変えた — パス文字列に
+   `codex` が現れない symlink 経由の書き込みが、leaf が `config.toml` の
+   ときしか止まっていなかった(同日、対照付きで実測)。
+   **この経路で残るのは home の外だけ**(上の経路 1 と同じ範囲)
    **さらに、コマンド文字列だけを見る hook は `bash <script>` で中身を隠されると
    素通りする** — hook に渡るのは `bash /path/to/x.sh` という 1 行だけで、
    スクリプトの中身は検査されない。上の「再現方法」が使っているのはこの性質

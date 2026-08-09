@@ -42,12 +42,16 @@
 {"name":"allow: cwd 前方一致 (別ディレクトリ) {{CWD}}-other/.codex","expect":"allow","tool_input":{"file_path":"{{CWD}}-other/.codex/foo"}}
 
 # --- 許可ケース ---
-{"name":"allow: cwd 外絶対 /private/nonexistent/.codex/x","expect":"allow","tool_input":{"file_path":"/private/nonexistent/.codex/x"}}
+# 下 2 件は cwd 外かつ **home 外**。issue #291 で home 配下は block に変わったので、
+# この 2 件が pin しているのは「cwd 外だから allow」ではなく
+# 「home 外は受容した残余だから allow」(docs/ai-operations.md §10)。
+# 一時 cwd (WORKDIR) は隔離 HOME の配下ではないため、相対パスも home 外に落ちる。
+{"name":"allow: home 外絶対 /private/nonexistent/.codex/x (受容した残余)","expect":"allow","tool_input":{"file_path":"/private/nonexistent/.codex/x"}}
+{"name":"allow: 相対 ../other/.codex (cwd 外かつ home 外、受容した残余)","expect":"allow","tool_input":{"file_path":"../other-project/.codex/foo"}}
 {"name":"allow: ドット無し codex/hooks/x.sh","expect":"allow","tool_input":{"file_path":"codex/hooks/guard-codex-dir.sh"}}
 {"name":"allow: 通常ファイル README.md","expect":"allow","tool_input":{"file_path":"README.md"}}
 {"name":"allow: path 系フィールドなし","expect":"allow","tool_input":{"other":"noop"}}
 {"name":"allow: apply_patch 本文中の .codex 言及 (ヘッダー以外)","expect":"allow","tool_input":{"patch":"*** Begin Patch\n*** Update File: README.md\n@@\n-old\n+we mention .codex/ in prose\n*** End Patch\n"}}
-{"name":"allow: 相対 ../other/.codex (cwd 外)","expect":"allow","tool_input":{"file_path":"../other-project/.codex/foo"}}
 
 # --- issue #190: $HOME/.codex/config.toml への file 編集 tool 経由の書き込み ---
 # sandbox の denyWrite は Bash にしか効かず Edit / Write / apply_patch には
@@ -73,6 +77,76 @@
 # 解決の発火条件に「末尾が config.toml」を足して塞いだので、その回帰を pin する。
 {"name":"block: codex を含まない symlink 経由の config.toml","expect":"block","tool_input":{"file_path":"{{SYMHOME}}/config.toml"}}
 {"name":"allow: 同 symlink 経由の sessions 配下 (config.toml 以外は allow)","expect":"allow","tool_input":{"file_path":"{{SYMHOME}}/sessions/x.jsonl"}}
+
+# --- issue #291: $HOME 配下の別プロジェクトの .codex/ への file 編集 tool 経由の書き込み ---
+# sandbox の denyWrite (~/*/**/.codex/**) は Bash 経路しか止めず、cwd 判定は cwd の
+# 外を見ないため、cwd 外プロジェクトが全層素通りしていた。file 編集 tool 側の
+# スコープを sandbox 側に揃える。
+{"name":"block: home 配下別プロジェクト {{HOME}}/other-project/.codex/config.toml","expect":"block","tool_input":{"file_path":"{{HOME}}/other-project/.codex/config.toml"}}
+{"name":"block: home 配下別プロジェクト config.toml 以外","expect":"block","tool_input":{"file_path":"{{HOME}}/other-project/.codex/hooks.sh"}}
+{"name":"block: home 配下の深い階層 {{HOME}}/a/b/c/.codex/x","expect":"block","tool_input":{"file_path":"{{HOME}}/a/b/c/.codex/x"}}
+{"name":"block: home 配下 .codex ディレクトリ終端","expect":"block","tool_input":{"file_path":"{{HOME}}/other-project/.codex"}}
+{"name":"block: home 配下 大文字 .Codex","expect":"block","tool_input":{"file_path":"{{HOME}}/other-project/.Codex/Foo"}}
+{"name":"block: home 配下 tilde 表記 ~/other-project/.codex/foo","expect":"block","tool_input":{"file_path":"~/other-project/.codex/foo"}}
+{"name":"block: home 配下 $HOME 表記","expect":"block","tool_input":{"file_path":"$HOME/other-project/.codex/foo"}}
+{"name":"block: home 配下 ${HOME} 表記","expect":"block","tool_input":{"file_path":"${HOME}/other-project/.codex/foo"}}
+{"name":"block: home 配下 /../ 経由の正規化","expect":"block","tool_input":{"file_path":"{{HOME}}/other-project/sub/../.codex/foo"}}
+{"name":"block: home 配下 path フィールド","expect":"block","tool_input":{"path":"{{HOME}}/other-project/.codex/foo"}}
+{"name":"block: home 配下 NotebookEdit notebook_path","expect":"block","tool_input":{"notebook_path":"{{HOME}}/other-project/.codex/nb.ipynb"}}
+{"name":"block: home 配下 apply_patch add file","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Add File: {{HOME}}/other-project/.codex/config.toml\n+notify = [\"evil\"]\n*** End Patch\n"}}
+# home 外の path 表記から home 配下に入る symlink 経由の回避
+# ({{HOMEPROJLINK}} は runner が「home 外に置かれた、隔離 HOME 配下のプロジェクトを
+# 指す symlink」の path に置換する)。normalize_path の解決を経て block になる。
+{"name":"block: home 外 symlink 経由で home 配下プロジェクトの .codex","expect":"block","tool_input":{"file_path":"{{HOMEPROJLINK}}/.codex/config.toml"}}
+# 名前にトークンを含まない symlink が保護対象ディレクトリ自体を指す形。パス文字列に
+# 手掛かりが出ないため normalize_path の gate 付き解決では発火せず、leaf が
+# config.toml のときだけ block されていた (2026-08-09 に対照付きで実測)。file 編集
+# tool 経路を無条件解決にして塞いだので、その回帰を home 配下と cwd 配下の両方で pin する。
+# **無条件解決を pin しているのは下の 3 件** (leaf が config.toml 以外)。gated に
+# 差し戻す mutant で落ちるのはこの 3 件だけであることを実測済み。
+{"name":"block: 非トークン symlink 経由 (home 配下) leaf が config.toml 以外","expect":"block","tool_input":{"file_path":"{{HOMEDIRLINK}}/hooks.sh"}}
+{"name":"block: 非トークン symlink 経由 (cwd 配下) leaf が config.toml 以外","expect":"block","tool_input":{"file_path":"{{CWDDIRLINK}}/hooks.sh"}}
+{"name":"block: 非トークン symlink 経由 (home 配下) apply_patch","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Add File: {{HOMEDIRLINK}}/hooks.sh\n+evil\n*** End Patch\n"}}
+# 次の 1 件は対照 — leaf が config.toml なら **gated 側の gate が発火する**ので、
+# 無条件解決の前から block だった。3 件との差が「gate が何を取りこぼすか」を示す
+# ので残すが、無条件解決の pin としては数えない (mutant で落ちない)。
+{"name":"block: 非トークン symlink 経由 (home 配下) leaf が config.toml (対照・旧 gate でも block)","expect":"block","tool_input":{"file_path":"{{HOMEDIRLINK}}/config.toml"}}
+# symlink を跨ぐ `..` と、末尾要素そのものが symlink の形。どちらも 2026-08-09 に
+# 「hook は allow を返すが write は保護対象内に着地する」ことを対照付きで実測した
+# (codex-review shell-senior 指摘)。file 編集 tool 経路を物理解決 (cd -P + 末尾
+# symlink の追跡) に変えて塞いだので、その回帰を pin する。
+{"name":"block: symlink の後ろの .. で home 配下プロジェクトへ着地","expect":"block","tool_input":{"file_path":"{{DOTDOTLINK}}/../.codex/x"}}
+{"name":"block: 末尾要素が保護対象内ファイルを指す symlink","expect":"block","tool_input":{"file_path":"{{LEAFLINK}}"}}
+{"name":"block: 末尾 symlink を apply_patch で更新","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Update File: {{LEAFLINK}}\n@@\n-old\n+notify = [\"evil\"]\n*** End Patch\n"}}
+# 末尾 symlink の target が相対パスの分岐と、2 段 chain を辿る分岐。
+# 絶対 target の 1 段だけでは readlink の相対解決も反復も一度も通らない。
+{"name":"block: 末尾 symlink の target が相対パス","expect":"block","tool_input":{"file_path":"{{RELLEAFLINK}}"}}
+{"name":"block: 末尾 symlink が 2 段 chain (相対 → 絶対)","expect":"block","tool_input":{"file_path":"{{CHAINLEAFLINK}}"}}
+# パスに改行を含む形。行区切りで候補を反復すると 1 つのパスが 2 候補に割れ、
+# どちらも保護対象に一致しないまま allow に倒れていた (2026-08-09 に対照付きで
+# 実測: 同じ実体を指す symlink でも改行なしなら block、改行入りなら allow。
+# codex-review security 指摘)。NUL 区切りの反復に変えて塞いだ回帰を pin する。
+{"name":"block: 改行を含むパスで home 配下プロジェクトの .codex","expect":"block","tool_input":{"file_path":"{{HOME}}/other-project/x\n/.codex/y"}}
+{"name":"block: 改行を含むパスで cwd 配下の .codex","expect":"block","tool_input":{"file_path":"{{CWD}}/x\n/.codex/y"}}
+{"name":"block: 改行を含むパスで home config.toml","expect":"block","tool_input":{"file_path":"{{HOME}}/x\n/../.codex/config.toml"}}
+# 1 入力に複数候補があり、**保護対象が先頭ではない**形。先頭候補だけを見て
+# 打ち切る退行 (ループを if にする / break の位置を誤る) を検出する。
+{"name":"block: 安全な path の後に保護対象の file_path","expect":"block","tool_input":{"path":"README.md","file_path":"{{HOME}}/other-project/.codex/x"}}
+{"name":"block: 安全なヘッダーの後に保護対象ヘッダー (複数ファイル patch)","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Update File: README.md\n@@\n-a\n+b\n*** Add File: {{HOME}}/other-project/.codex/config.toml\n+notify = [\"evil\"]\n*** End Patch\n"}}
+# apply_patch ヘッダーの Delete File / Move to 分岐を home スコープでも通す
+# (cwd スコープの既存ケースは相対パスなので home 判定側を一度も通らない)。
+{"name":"block: home 配下 apply_patch delete file","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Delete File: {{HOME}}/other-project/.codex/config.toml\n*** End Patch\n"}}
+{"name":"block: home 配下 apply_patch move to (通常ファイル → 保護対象)","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Move to: {{HOME}}/other-project/.codex/renamed.toml\n*** End Patch\n"}}
+# 受理パターンの広さを検査する allow ラチェット。
+{"name":"allow: home 配下のドット無し codex/ (この repo 自身の codex/ 運用を巻き込まない)","expect":"allow","tool_input":{"file_path":"{{HOME}}/other-project/codex/hooks/x.sh"}}
+{"name":"allow: home 配下の .codex-other (似た名前)","expect":"allow","tool_input":{"file_path":"{{HOME}}/other-project/.codex-other/foo"}}
+{"name":"allow: home 配下の通常ファイル","expect":"allow","tool_input":{"file_path":"{{HOME}}/other-project/README.md"}}
+# apply_patch ヘッダーで home 外を指す形。候補レコードのタグ (`P`) が Bash token 側の
+# 候補集合へ漏れると、実在しないパスが cwd 配下に見えて **過剰 block** に倒れる
+# (実際に一度漏らして、上の複数ヘッダーのケースが誤った理由で緑になっていた)。
+{"name":"allow: apply_patch ヘッダーが home 外を指す (タグ漏れの過剰 block を検出)","expect":"allow","tool_input":{"patch":"*** Begin Patch\n*** Add File: /private/nonexistent/.codex/x\n+y\n*** End Patch\n"}}
+{"name":"allow: Bash で home 配下別プロジェクトへ書き込み (guard は素通し、sandbox+block-dangerous が担当)","expect":"allow","command":"echo x > ~/other-project/.codex/foo"}
+{"name":"allow: Bash で home 配下別プロジェクトを読む","expect":"allow","command":"cat ~/other-project/.codex/foo"}
 
 # --- raw モード (malformed input fail-safe 検証) ---
 # raw:block: 壊れた JSON (jq が失敗) → fail-safe ブロック|block

@@ -13,6 +13,14 @@ set -euo pipefail
 #   $HOME/.codex の有無に依存しないため CI でも同じ結果になる。
 #   tool_input / command 内の文字列に `{{HOME}}` が含まれる場合、隔離 HOME に置換する。
 #   `{{SYMHOME}}` は「隔離 HOME の .codex を指す (名前に codex を含まない) symlink」に置換する。
+#   `{{HOMEPROJLINK}}` は「隔離 HOME 配下のプロジェクトを指す、home 外に置かれた symlink」に置換する。
+#   `{{HOMEDIRLINK}}` / `{{CWDDIRLINK}}` は「保護対象ディレクトリ自体を指す、名前に
+#   トークンを含まない symlink」(それぞれ home 配下プロジェクト / cwd 配下) に置換する。
+#   `{{DOTDOTLINK}}` は「home 外に置かれ、home 配下プロジェクトのサブディレクトリを
+#   指す symlink」(`/../` を後ろに付ける形の検証用)、`{{LEAFLINK}}` は「保護対象内の
+#   ファイルを指す、末尾要素そのものの symlink」に置換する。
+#   `{{RELLEAFLINK}}` は同じ形で target が相対パスのもの、`{{CHAINLEAFLINK}}` は
+#   相対 → 絶対の 2 段 chain。
 #   tool_input / command 内の文字列に `{{CWD}}` が含まれる場合、hook 実行時の
 #   一時 cwd 実パスに置換される (cwd 内絶対パステスト用)。
 #
@@ -83,6 +91,55 @@ mkdir -p "$FAKE_HOME/.codex/sessions"
 SYMHOME="$BASEDIR/homelink"
 ln -sfn "$FAKE_HOME/.codex" "$SYMHOME"
 
+# {{HOMEPROJLINK}}: home の外にある symlink が $HOME 配下のプロジェクトを指す状況。
+# issue #291 の home 配下判定は「home 外は allow」なので、home 外の path 表記から
+# home 配下に入る経路が素通りしないことを pin する ({{SYMHOME}} は逆向き
+# — home 配下の .codex を home 外の名前で指す形 — なので別ケースが要る)。
+HOME_PROJ_LINK="$BASEDIR/projlink"
+mkdir -p "$FAKE_HOME/other-project"
+ln -sfn "$FAKE_HOME/other-project" "$HOME_PROJ_LINK"
+
+# {{HOMEDIRLINK}} / {{CWDDIRLINK}}: **名前にトークンを含まない** symlink が
+# 保護対象ディレクトリ自体を指す状況。パス文字列に手掛かりが出ないため、
+# normalize_path の gate 付き解決では発火せず素通りする形 (leaf が config.toml の
+# ときだけ {{SYMHOME}} 側の gate が拾っていた)。file 編集 tool 経路が無条件解決に
+# なっていることを pin する。
+HOME_DIR_LINK="$FAKE_HOME/other-project/plainlink"
+mkdir -p "$FAKE_HOME/other-project/.codex"
+ln -sfn "$FAKE_HOME/other-project/.codex" "$HOME_DIR_LINK"
+
+CWD_DIR_LINK="$WORKDIR/plainlink"
+mkdir -p "$WORKDIR/.codex"
+ln -sfn "$WORKDIR/.codex" "$CWD_DIR_LINK"
+
+# {{DOTDOTLINK}}: home 外に置いた symlink が「隔離 HOME 配下プロジェクトのサブ
+# ディレクトリ」を指す。`{{DOTDOTLINK}}/../.codex/x` は OS 解決だと保護対象に
+# 着地するが、`..` を字句で畳むと home 外のパスに見える。
+DOTDOT_LINK="$BASEDIR/dotdotlink"
+mkdir -p "$FAKE_HOME/other-project/sub"
+ln -sfn "$FAKE_HOME/other-project/sub" "$DOTDOT_LINK"
+# `..` を字句で畳んだ側のパス ($BASEDIR/.codex) も**実在させる**。ここが無いと
+# 字句解決した cd が失敗し、bash が元パスへフォールバックして物理解決と同じ結果に
+# なるため、`cd -P` の有無を測れない (mutation で全 pass する形になる)。
+mkdir -p "$BASEDIR/.codex"
+
+# {{LEAFLINK}}: **末尾要素そのもの**が symlink で、保護対象内のファイルを指す。
+# 祖先だけを解決する形だと判定は素通りするのに write は保護対象内へ着地する。
+LEAF_LINK="$FAKE_HOME/other-project/notes.txt"
+: >"$FAKE_HOME/other-project/.codex/config.toml"
+ln -sfn "$FAKE_HOME/other-project/.codex/config.toml" "$LEAF_LINK"
+
+# {{RELLEAFLINK}}: 末尾 symlink の target が **相対パス**。readlink の相対分岐
+# (link の親ディレクトリ基準で解決する側) は絶対 target のケースでは通らない。
+REL_LEAF_LINK="$FAKE_HOME/other-project/rel-notes.txt"
+ln -sfn ".codex/config.toml" "$REL_LEAF_LINK"
+
+# {{CHAINLEAFLINK}}: 相対 → 絶対の 2 段 symlink chain。1 段しか辿らない実装
+# (while を if にする類の退行) を検出する。
+ln -sfn "$FAKE_HOME/other-project/.codex/config.toml" "$FAKE_HOME/other-project/hop2.txt"
+CHAIN_LEAF_LINK="$FAKE_HOME/other-project/hop1.txt"
+ln -sfn "hop2.txt" "$CHAIN_LEAF_LINK"
+
 # 対象ケースファイルの決定 (引数なしなら glob。SC2045 回避のため ls は使わない)
 if [ "$#" -eq 0 ]; then
   set -- "$SCRIPT_DIR"/hooks/*.cases.jsonl
@@ -113,7 +170,8 @@ run_hook() {
   printf '%s' "$rc"
 }
 
-# {{CWD}} を一時 cwd に、{{HOME}} を隔離 HOME に、{{SYMHOME}} を上記 symlink に置換する。
+# {{CWD}} を一時 cwd に、{{HOME}} を隔離 HOME に、{{SYMHOME}} / {{HOMEPROJLINK}} を
+# 上記 symlink に置換する。
 # {{HOME}} は guard-codex-dir.sh の ~/.codex/config.toml 判定 (issue #190) を
 # 「実際に tool が渡す絶対パス形」で検証するために必要 — tilde / $HOME 表記だけでは
 # normalize_path の展開分岐しか通らず、絶対パス経路が未検証になる。
@@ -124,6 +182,13 @@ substitute_cwd() {
   s=${s//\{\{CWD\}\}/$WORKDIR}
   s=${s//\{\{HOME\}\}/$FAKE_HOME}
   s=${s//\{\{SYMHOME\}\}/$SYMHOME}
+  s=${s//\{\{HOMEPROJLINK\}\}/$HOME_PROJ_LINK}
+  s=${s//\{\{HOMEDIRLINK\}\}/$HOME_DIR_LINK}
+  s=${s//\{\{CWDDIRLINK\}\}/$CWD_DIR_LINK}
+  s=${s//\{\{DOTDOTLINK\}\}/$DOTDOT_LINK}
+  s=${s//\{\{LEAFLINK\}\}/$LEAF_LINK}
+  s=${s//\{\{RELLEAFLINK\}\}/$REL_LEAF_LINK}
+  s=${s//\{\{CHAINLEAFLINK\}\}/$CHAIN_LEAF_LINK}
   printf '%s' "$s"
 }
 
@@ -218,6 +283,59 @@ if [ -z "${HOOK_DIR:-}" ] && [ -f "$REPO_ROOT/agents/hooks/guard-codex-dir.sh" ]
     echo "FAIL guard-codex-dir jq-missing fail-safe: expected exit 2, got $jq_missing_rc"
     fail=$((fail + 1))
   fi
+
+  # 候補抽出 (extract_edit_paths_nul) の途中段が落ちたときの fail-safe。
+  # プロセス置換の終了ステータスは while に伝播しないため、抽出が失敗すると
+  # 「候補 0 件」= allow と区別が付かない。awk だけを PATH から外して
+  # 「終端レコードが来なければ block」の経路を発火させる (jq 不在は手前の
+  # command -v jq で止まるので、この経路を測れるのは awk 側だけ)。
+  echo "==> guard-codex-dir (抽出失敗 fail-safe)"
+  no_awk_bin="$WORKDIR/no-awk-bin"
+  mkdir -p "$no_awk_bin"
+  for _real in /usr/bin/jq /usr/local/bin/jq /opt/homebrew/bin/jq; do
+    [ -x "$_real" ] && ln -sfn "$_real" "$no_awk_bin/jq" && break
+  done
+  if [ ! -e "$no_awk_bin/jq" ]; then
+    _jq_path=$(command -v jq 2>/dev/null || true)
+    [ -n "$_jq_path" ] && ln -sfn "$_jq_path" "$no_awk_bin/jq"
+  fi
+  # awk 以外はすべて張る (bash 自身も PATH 解決されるので必要)。
+  for _tool in bash cat sed tr readlink; do
+    for _dir in /usr/bin /bin; do
+      [ -x "$_dir/$_tool" ] && ln -sfn "$_dir/$_tool" "$no_awk_bin/$_tool" && break
+    done
+  done
+  awk_missing_rc=0
+  printf '%s' '{"tool_input":{"file_path":"README.md"}}' \
+    | (cd "$WORKDIR" && HOME="$FAKE_HOME" PATH="$no_awk_bin" \
+        bash "$REPO_ROOT/agents/hooks/guard-codex-dir.sh" >/dev/null 2>&1) \
+    || awk_missing_rc=$?
+  if [ "$awk_missing_rc" = "2" ]; then
+    pass=$((pass + 1))
+  else
+    echo "FAIL guard-codex-dir 抽出失敗 fail-safe: expected exit 2, got $awk_missing_rc"
+    fail=$((fail + 1))
+  fi
+
+  # $HOME 自体が symlink の環境。home_forms の 2 要素目 (pwd -P 解決後の $HOME) が
+  # 使われる経路は、runner の通常 HOME (実ディレクトリ) では一度も発火しない。
+  # symlink 表記と実体表記の**両方**で block されることを見る。
+  echo "==> guard-codex-dir (HOME が symlink)"
+  home_symlink="$BASEDIR/home-as-link"
+  ln -sfn "$FAKE_HOME" "$home_symlink"
+  for _spelling in "$home_symlink" "$FAKE_HOME"; do
+    home_link_rc=0
+    printf '{"tool_input":{"file_path":"%s/.codex/config.toml"}}' "$_spelling" \
+      | (cd "$WORKDIR" && HOME="$home_symlink" \
+          bash "$REPO_ROOT/agents/hooks/guard-codex-dir.sh" >/dev/null 2>&1) \
+      || home_link_rc=$?
+    if [ "$home_link_rc" = "2" ]; then
+      pass=$((pass + 1))
+    else
+      echo "FAIL guard-codex-dir HOME-symlink ($_spelling): expected exit 2, got $home_link_rc"
+      fail=$((fail + 1))
+    fi
+  done
 fi
 
 # guard-sandbox-exclusions: jq 不在時に exit 2 (フェイルセーフ) となることを検証。
