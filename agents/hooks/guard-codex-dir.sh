@@ -21,6 +21,12 @@
 # ブロックしており、`cat ~/.codex/config.toml` のような読み取りは意図的に許可
 # されている (guard 側で token 一致だけで塞ぐとその緩和を壊す)。
 #
+# さらに $HOME 配下の別プロジェクトの .codex/ への書き込みもブロックする
+# (issue #291)。sandbox の denyWrite は `~/*/**/.codex/**` で home 配下の
+# プロジェクトを Bash 経路について止めているが file 編集 tool には効かず、
+# cwd 判定は cwd の外を見ないため、cwd 外のプロジェクトが全層素通りしていた。
+# これも file 編集 tool の path のみに適用する (理由は上と同じ)。
+#
 # Cymulate notify エスケープ（未修正）対策。
 #
 # exit 0 = 許可, exit 2 = ブロック
@@ -46,8 +52,16 @@ cwd_lower=$(printf '%s' "$cwd_real" | tr '[:upper:]' '[:lower:]')
 # ホーム配下の codex 設定本体。$HOME 未設定環境では空にして判定を無効化する
 # (空 prefix が全パスに一致する誤爆を防ぐ)。
 home_lower=""
+home_resolved_lower=""
 if [[ -n "${HOME:-}" ]]; then
   home_lower=$(printf '%s' "$HOME" | tr '[:upper:]' '[:lower:]')
+  # symlink 解決後の $HOME も比較対象に持つ ($HOME 自体が symlink の環境や、
+  # $HOME に末尾スラッシュが付く環境で、正規化済み path との文字列比較が
+  # 外れるのを防ぐ)。cwd と同じくパス毎ではなく 1 度だけ解決する。
+  home_resolved_lower=$(cd "$HOME" 2>/dev/null && pwd -P) || home_resolved_lower=""
+  if [[ -n "$home_resolved_lower" ]]; then
+    home_resolved_lower=$(printf '%s' "$home_resolved_lower" | tr '[:upper:]' '[:lower:]')
+  fi
 fi
 
 # パスを小文字化・絶対化・`.`/`..` 畳み込み・symlink 解決した形に正規化して echo する。
@@ -141,20 +155,46 @@ is_protected_home_codex_config() {
   local path_lower
   path_lower=$(normalize_path "$1")
 
-  # symlink 解決後の $HOME も比較対象に含める。$HOME 自体が symlink (例: /home → /Users)
-  # の環境で、正規化済み path と未解決 $HOME の文字列比較が外れるのを防ぐ。
-  local home_resolved
-  home_resolved=$(cd "$HOME" 2>/dev/null && pwd -P) || home_resolved=""
-  if [[ -n "$home_resolved" ]]; then
-    home_resolved=$(printf '%s' "$home_resolved" | tr '[:upper:]' '[:lower:]')
-  fi
-
   case "$path_lower" in
     "$home_lower/$protected_name/config.toml") return 0 ;;
   esac
-  if [[ -n "$home_resolved" ]]; then
+  if [[ -n "$home_resolved_lower" ]]; then
     case "$path_lower" in
-      "$home_resolved/$protected_name/config.toml") return 0 ;;
+      "$home_resolved_lower/$protected_name/config.toml") return 0 ;;
+    esac
+  fi
+
+  return 1
+}
+
+# パスを解決し「$HOME 配下の別プロジェクトの .codex/」を指しているかを判定する
+# (issue #291)。sandbox の denyWrite は `~/*/**/.codex/**` で home 配下の
+# プロジェクトを Bash 経路について包括的に止めているが、file 編集 tool には
+# 適用されないため、cwd 外のプロジェクトが全層素通りしていた。この判定で
+# file 編集 tool 側のスコープを sandbox 側に揃える。
+#
+# $HOME 直下の .codex/ 自身は対象外 — case の `*` が空にマッチしても
+# `$home/.codex` は `$home//.codex` にならず (normalize_path が // を潰した形と
+# 一致しない) 判定を外れる。そこは is_protected_home_codex_config が
+# config.toml 1 ファイルだけを止め、codex CLI が正当に書く sessions/ /
+# auth.json 等は allow するという別の切り分けを担当している。
+#
+# home の外 (/tmp / /Volumes 等) は allow のまま — sandbox の
+# `~/*/**/.codex/**` も非カバーで、層間の非対称ではなく共通の残余
+# (docs/ai-operations.md §10 に記録)。
+is_protected_home_project_codex_path() {
+  # HOME 不明の環境では判定しない (誤爆を避ける。cwd 判定は引き続き効く)
+  [[ -n "$home_lower" ]] || return 1
+
+  local path_lower
+  path_lower=$(normalize_path "$1")
+
+  case "$path_lower" in
+    "$home_lower"/*"/$protected_name"|"$home_lower"/*"/$protected_name"/*) return 0 ;;
+  esac
+  if [[ -n "$home_resolved_lower" ]]; then
+    case "$path_lower" in
+      "$home_resolved_lower"/*"/$protected_name"|"$home_resolved_lower"/*"/$protected_name"/*) return 0 ;;
     esac
   fi
 
@@ -232,6 +272,25 @@ done <<<"$edit_candidates"
 
 if [[ -n "$home_matched" ]]; then
   echo "ブロック: ~/.codex/config.toml への書き込みは禁止されています（notify / mcp_servers / hooks 経由の host 側コマンド実行対策、issue #190）" >&2
+  exit 2
+fi
+
+# $HOME 配下の別プロジェクトの .codex/ への file 編集 tool 経由の書き込みを
+# ブロックする (issue #291)。Bash token には適用しない — Bash 経路の書き込みは
+# sandbox の denyWrite (~/*/**/.codex/**) と block-dangerous-commands.sh が
+# 担当しており、guard 側で token 一致だけで塞ぐと `cat ~/other/.codex/foo` の
+# ような読み取りまで巻き込む (home config 判定を edit-only にしたのと同じ分業)。
+home_project_matched=""
+while IFS= read -r p; do
+  [[ -n "$p" ]] || continue
+  if is_protected_home_project_codex_path "$p"; then
+    home_project_matched=$p
+    break
+  fi
+done <<<"$edit_candidates"
+
+if [[ -n "$home_project_matched" ]]; then
+  echo "ブロック: ホーム配下のプロジェクトの Codex 設定ディレクトリへのファイル操作は禁止されています（次回 codex 起動時の host 側コマンド実行対策、issue #291）" >&2
   exit 2
 fi
 

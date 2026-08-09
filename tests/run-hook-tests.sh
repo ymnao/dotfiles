@@ -13,6 +13,7 @@ set -euo pipefail
 #   $HOME/.codex の有無に依存しないため CI でも同じ結果になる。
 #   tool_input / command 内の文字列に `{{HOME}}` が含まれる場合、隔離 HOME に置換する。
 #   `{{SYMHOME}}` は「隔離 HOME の .codex を指す (名前に codex を含まない) symlink」に置換する。
+#   `{{HOMEPROJLINK}}` は「隔離 HOME 配下のプロジェクトを指す、home 外に置かれた symlink」に置換する。
 #   tool_input / command 内の文字列に `{{CWD}}` が含まれる場合、hook 実行時の
 #   一時 cwd 実パスに置換される (cwd 内絶対パステスト用)。
 #
@@ -83,6 +84,14 @@ mkdir -p "$FAKE_HOME/.codex/sessions"
 SYMHOME="$BASEDIR/homelink"
 ln -sfn "$FAKE_HOME/.codex" "$SYMHOME"
 
+# {{HOMEPROJLINK}}: home の外にある symlink が $HOME 配下のプロジェクトを指す状況。
+# issue #291 の home 配下判定は「home 外は allow」なので、home 外の path 表記から
+# home 配下に入る経路が素通りしないことを pin する ({{SYMHOME}} は逆向き
+# — home 配下の .codex を home 外の名前で指す形 — なので別ケースが要る)。
+HOME_PROJ_LINK="$BASEDIR/projlink"
+mkdir -p "$FAKE_HOME/other-project"
+ln -sfn "$FAKE_HOME/other-project" "$HOME_PROJ_LINK"
+
 # 対象ケースファイルの決定 (引数なしなら glob。SC2045 回避のため ls は使わない)
 if [ "$#" -eq 0 ]; then
   set -- "$SCRIPT_DIR"/hooks/*.cases.jsonl
@@ -113,7 +122,8 @@ run_hook() {
   printf '%s' "$rc"
 }
 
-# {{CWD}} を一時 cwd に、{{HOME}} を隔離 HOME に、{{SYMHOME}} を上記 symlink に置換する。
+# {{CWD}} を一時 cwd に、{{HOME}} を隔離 HOME に、{{SYMHOME}} / {{HOMEPROJLINK}} を
+# 上記 symlink に置換する。
 # {{HOME}} は guard-codex-dir.sh の ~/.codex/config.toml 判定 (issue #190) を
 # 「実際に tool が渡す絶対パス形」で検証するために必要 — tilde / $HOME 表記だけでは
 # normalize_path の展開分岐しか通らず、絶対パス経路が未検証になる。
@@ -124,6 +134,7 @@ substitute_cwd() {
   s=${s//\{\{CWD\}\}/$WORKDIR}
   s=${s//\{\{HOME\}\}/$FAKE_HOME}
   s=${s//\{\{SYMHOME\}\}/$SYMHOME}
+  s=${s//\{\{HOMEPROJLINK\}\}/$HOME_PROJ_LINK}
   printf '%s' "$s"
 }
 
