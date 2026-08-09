@@ -671,9 +671,11 @@ fi
 # sed は `-i` フラグ付き (BSD `-i ''` / GNU `-i.bak`) のみ書き込み扱い
 # セグメント分割は `; & |` のみ (brace `{}` は展開文法で分割対象外)
 _seg_seps=';&|()'
-# rsync / tar は literal 形なら後段の `.codex` 文字列検出で止まるが、glob 形 (`.co*`) は
+# rsync / tar / unzip / curl / wget / cpio / ditto は literal 形なら後段の `.codex`
+# 文字列検出で止まるが、glob 形 (`.co*`) は
 # ここで書き込み文脈と認識されないと `_check_glob_seg` の component 検査に入らず素通り
-# していた (issue #284)。追加先は本判定用の `_write_cmd_names` のみで、430 行の
+# していた (issue #284 で rsync / tar、#288 で残り 5 つ)。追加先は本判定用の
+# `_write_cmd_names` のみで、430 行の
 # `write_cmds` (動的展開 + 書き込み系コマンドの安全側ブロック) には足さない —
 # あちらに足すと `tar -xf "$f"` のような日常形まで誤ブロックが広がる。
 # 副作用として 3 種類の FP が増える。いずれも fail-closed 方向で、`.codex` 保護 (#190)
@@ -687,12 +689,15 @@ _seg_seps=';&|()'
 #     / `tar -cf out.tar .co*`)。`_check_glob_seg` は引数の**位置を区別せず**
 #     セグメント内の全引数を検査するので、コピー元とコピー先を分けられない。
 #     区別するには「どの引数が書き込み先か」をコマンドごとに知る必要があり、
-#     列挙型ブロックリストの枠を超える (#288 / #289 の射程)
-# **列挙方式なので、塞がるのはここに書いたコマンドだけ**。同型の書き込み経路
-# (`unzip -d .co*` / `curl -o .co*/x` / `wget -O .co*/x` / `cpio -D .co*` /
-# `ditto src .co*`) は main と同じく素通りのまま (2026-08-07 実測、いずれも exit=0)。
-# issue #284 で塞いだのは rsync / tar だけであって「glob 経路が閉じた」わけではない。
-_write_cmd_names="rm|chmod|chown|shred|rsync|tar|${write_cmds}"
+#     列挙型ブロックリストの枠を超える (#289 の射程)
+# #288 で足した 5 つも同じ 3 種類の FP を増やす (2026-08-09 実測、追加前 exit=0 →
+# 追加後 exit=2: `unzip -l .co*` / `cat build/curl .co*` / `curl https://example.com/.co*`)。
+# **列挙方式なので、塞がるのはここに書いたコマンドだけ**。この構造的限界は #288 の
+# 追加後も変わらない — 個々の穴を塞いでも「列挙に無いコマンド」の集合は開いたまま。
+# glob 経路を網羅する統制の本体は sandbox の `denyWrite` 側にあり (PR #292 / #289 の
+# 結論)、この hook はそれが届かない 4 経路 (home 外プロジェクト / excludedCommands /
+# file 編集 tool / deny エントリ自体の改ざん) の一次防御 + 多層防御として維持する。
+_write_cmd_names="rm|chmod|chown|shred|rsync|tar|unzip|curl|wget|cpio|ditto|${write_cmds}"
 _write_cmd_boundary_re="(^|[[:space:]/\\])(${_write_cmd_names})([[:space:]]|$)"
 _sed_boundary_re='(^|[[:space:]/\\])sed([[:space:]]|$)'
 _sed_inplace_re='(^|[[:space:]])-[a-zA-Z]*i[a-zA-Z]*(\.[a-zA-Z0-9]*)?([[:space:]]|$)'
