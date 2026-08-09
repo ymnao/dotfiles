@@ -687,7 +687,7 @@ _seg_seps=';&|()'
 #     `/` を含むため、`cat build/tar .co*` / `cat build/curl .co*` のような形も
 #     書き込み文脈と判定される
 #   - **`.co*` を書き込み先以外の引数に取る形** (読み取り元: `rsync -a .co*/ dst/` /
-#     `rsync --dry-run` / `tar -cf out.tar .co*`、パスですらない引数:
+#     `rsync --dry-run -a .co*/ dst/` / `tar -cf out.tar .co*`、パスですらない引数:
 #     `curl https://example.com/.co*` の URL)。`_check_glob_seg` は
 #     引数の**位置を区別せず**
 #     セグメント内の全引数を検査するので、コピー元とコピー先を分けられない。
@@ -696,8 +696,10 @@ _seg_seps=';&|()'
 # **列挙方式なので、塞がるのはここに書いたコマンドだけ**。この構造的限界は #288 の
 # 追加後も変わらない — 個々の穴を塞いでも「列挙に無いコマンド」の集合は開いたまま。
 # glob 経路を網羅する統制の本体は sandbox の `denyWrite` 側にあり (PR #292 / #289 の
-# 結論)、この hook はそれが届かない 4 経路 (home 外プロジェクト / excludedCommands /
-# file 編集 tool / deny エントリ自体の改ざん) の一次防御 + 多層防御として維持する。
+# 結論)、この hook はその多層防御 + sandbox が届かない経路の一次防御として維持する。
+# **この hook が担うのは Bash 経路だけ** — file 編集 tool 経路は `guard-codex-dir.sh`
+# の担当で、ここは届かない。経路の内訳と担当は docs/ai-operations.md §10 に 1 箇所だけ
+# 書く方針なので、ここには複製しない。
 _write_cmd_names="rm|chmod|chown|shred|rsync|tar|unzip|curl|wget|cpio|ditto|${write_cmds}"
 _write_cmd_boundary_re="(^|[[:space:]/\\])(${_write_cmd_names})([[:space:]]|$)"
 _sed_boundary_re='(^|[[:space:]/\\])sed([[:space:]]|$)'
