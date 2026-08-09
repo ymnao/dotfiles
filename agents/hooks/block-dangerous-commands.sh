@@ -747,8 +747,8 @@ _expand_braces() {
 # block はこの関数から直接 exit する — return にすると呼び出し側で握り潰されて
 # fail-open に倒れる。
 _check_components() {
-  local _cand=$1 _argfull=$2 _rest=$1 _comp
-  [[ -z "$_cand" ]] && return 0
+  local _argfull=$2 _rest=$1 _comp
+  [[ -z "$_rest" ]] && return 0
   while :; do
     _comp="${_rest%%/*}"
     if _matches_codex "$_comp"; then
