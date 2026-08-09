@@ -14,6 +14,8 @@ set -euo pipefail
 #   tool_input / command 内の文字列に `{{HOME}}` が含まれる場合、隔離 HOME に置換する。
 #   `{{SYMHOME}}` は「隔離 HOME の .codex を指す (名前に codex を含まない) symlink」に置換する。
 #   `{{HOMEPROJLINK}}` は「隔離 HOME 配下のプロジェクトを指す、home 外に置かれた symlink」に置換する。
+#   `{{HOMEDIRLINK}}` / `{{CWDDIRLINK}}` は「保護対象ディレクトリ自体を指す、名前に
+#   トークンを含まない symlink」(それぞれ home 配下プロジェクト / cwd 配下) に置換する。
 #   tool_input / command 内の文字列に `{{CWD}}` が含まれる場合、hook 実行時の
 #   一時 cwd 実パスに置換される (cwd 内絶対パステスト用)。
 #
@@ -92,6 +94,19 @@ HOME_PROJ_LINK="$BASEDIR/projlink"
 mkdir -p "$FAKE_HOME/other-project"
 ln -sfn "$FAKE_HOME/other-project" "$HOME_PROJ_LINK"
 
+# {{HOMEDIRLINK}} / {{CWDDIRLINK}}: **名前にトークンを含まない** symlink が
+# 保護対象ディレクトリ自体を指す状況。パス文字列に手掛かりが出ないため、
+# normalize_path の gate 付き解決では発火せず素通りする形 (leaf が config.toml の
+# ときだけ {{SYMHOME}} 側の gate が拾っていた)。file 編集 tool 経路が無条件解決に
+# なっていることを pin する。
+HOME_DIR_LINK="$FAKE_HOME/other-project/plainlink"
+mkdir -p "$FAKE_HOME/other-project/.codex"
+ln -sfn "$FAKE_HOME/other-project/.codex" "$HOME_DIR_LINK"
+
+CWD_DIR_LINK="$WORKDIR/plainlink"
+mkdir -p "$WORKDIR/.codex"
+ln -sfn "$WORKDIR/.codex" "$CWD_DIR_LINK"
+
 # 対象ケースファイルの決定 (引数なしなら glob。SC2045 回避のため ls は使わない)
 if [ "$#" -eq 0 ]; then
   set -- "$SCRIPT_DIR"/hooks/*.cases.jsonl
@@ -135,6 +150,8 @@ substitute_cwd() {
   s=${s//\{\{HOME\}\}/$FAKE_HOME}
   s=${s//\{\{SYMHOME\}\}/$SYMHOME}
   s=${s//\{\{HOMEPROJLINK\}\}/$HOME_PROJ_LINK}
+  s=${s//\{\{HOMEDIRLINK\}\}/$HOME_DIR_LINK}
+  s=${s//\{\{CWDDIRLINK\}\}/$CWD_DIR_LINK}
   printf '%s' "$s"
 }
 

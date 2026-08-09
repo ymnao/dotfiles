@@ -74,8 +74,10 @@ fi
 # パスを小文字化・絶対化・`.`/`..` 畳み込み・symlink 解決した形に正規化して echo する。
 # cwd 判定 / home 判定のすべてがこの 1 つの正規化を通るよう共通化してある
 # — 1 つでも正規化が緩いと、そこがバイパス経路になるため。
+# $2 に `always` を渡すと symlink 解決を無条件に行う (既定は下記 gate 付き)。
 normalize_path() {
   local path="$1"
+  local resolve_mode="${2:-gated}"
 
   # 引用符 / 先頭の ./ を剥がす
   path="${path#\"}"
@@ -106,29 +108,46 @@ normalize_path() {
   path=$(printf '%s' "$path" | sed -E -e 's#/\./#/#g' -e ':a' -e 's#/[^/]+/\.\.(/|$)#/#g' -e 'ta' -e 's#//+#/#g')
 
   # 存在する祖先ディレクトリまで遡って pwd -P で symlink を解決 (存在しない suffix は結合)。
-  # 解決の発火条件に「末尾が config.toml」を含めるのが重要 — 名前に codex を含まない
-  # symlink (例: `ln -s ~/.codex mylink` → `mylink/config.toml`) で home config 判定を
-  # 回避できてしまうため。回避経路は実測で確認済み (codex-review security 指摘)。
-  local _gate_probe
-  _gate_probe=$(printf '%s' "$path" | tr '[:upper:]' '[:lower:]')
-  case "$_gate_probe" in
-    *codex*|*/config.toml)
-      local _try_dir _rest _resolved
-      _try_dir=$path
-      _rest=
-      while [[ -n "$_try_dir" && "$_try_dir" != "/" && ! -d "$_try_dir" ]]; do
-        _rest="/${_try_dir##*/}${_rest}"
-        _try_dir=${_try_dir%/*}
-        [[ -z "$_try_dir" ]] && _try_dir=/
-      done
-      if [[ -d "$_try_dir" ]]; then
-        _resolved=$(cd "$_try_dir" 2>/dev/null && pwd -P) || _resolved=""
-        if [[ -n "$_resolved" ]]; then
-          path="${_resolved}${_rest}"
-        fi
+  # gate 付き (既定) の発火条件に「末尾が config.toml」を含めるのが重要 — 名前に
+  # codex を含まない symlink (例: `ln -s ~/.codex mylink` → `mylink/config.toml`) で
+  # home config 判定を回避できてしまうため。回避経路は実測で確認済み
+  # (codex-review security 指摘)。
+  #
+  # ただし gate は「パス文字列に手掛かりが出る形」しか捕まえない。名前にトークンを
+  # 含まない symlink + config.toml 以外の leaf (`mylink/hooks.sh`) は解決されず
+  # 素通りする (2026-08-09 に対照付きで実測: 直接指定は block、同じ実体を指す
+  # symlink 経由の非 config leaf は allow)。file 編集 tool 経路はこの穴を塞ぐ必要が
+  # あるので `always` を渡して無条件に解決する — 候補は通常 1 パスなのでコストは
+  # 1 回の cd + pwd -P に収まる。Bash token 経路は 1 コマンドから多数の token が
+  # 出るため gate を維持し、そちらは sandbox の denyWrite と
+  # block-dangerous-commands.sh が担当する分業に委ねる。
+  local _resolve=0
+  if [[ "$resolve_mode" == "always" ]]; then
+    _resolve=1
+  else
+    local _gate_probe
+    _gate_probe=$(printf '%s' "$path" | tr '[:upper:]' '[:lower:]')
+    case "$_gate_probe" in
+      *codex*|*/config.toml) _resolve=1 ;;
+    esac
+  fi
+
+  if [[ "$_resolve" -eq 1 ]]; then
+    local _try_dir _rest _resolved
+    _try_dir=$path
+    _rest=
+    while [[ -n "$_try_dir" && "$_try_dir" != "/" && ! -d "$_try_dir" ]]; do
+      _rest="/${_try_dir##*/}${_rest}"
+      _try_dir=${_try_dir%/*}
+      [[ -z "$_try_dir" ]] && _try_dir=/
+    done
+    if [[ -d "$_try_dir" ]]; then
+      _resolved=$(cd "$_try_dir" 2>/dev/null && pwd -P) || _resolved=""
+      if [[ -n "$_resolved" ]]; then
+        path="${_resolved}${_rest}"
       fi
-      ;;
-  esac
+    fi
+  fi
 
   printf '%s' "$path" | tr '[:upper:]' '[:lower:]'
 }
@@ -259,34 +278,41 @@ if ! edit_candidates=$(extract_paths edit-only); then
   exit 2
 fi
 
-# home 配下への file 編集 tool 経由の書き込みをブロックする。sandbox の denyWrite は
-# Bash にしか効かないため hook 側で塞ぐ (config.toml 1 ファイル = issue #190、
-# home 配下の別プロジェクト = issue #291)。
-# Bash token には適用しない — Bash 経路の書き込みは sandbox の denyWrite
-# (~/.codex/config.toml と ~/*/**/.codex/**) と block-dangerous-commands.sh が
-# 担当しており、guard 側で token 一致だけで塞ぐと `cat ~/.codex/config.toml` の
-# ような読み取りの許可を壊す。
-# 1 候補につき normalize_path は 1 回だけ呼ぶ (sed / tr / pwd -P の subshell を
-# 伴い、この hook は Bash 呼び出しと file 編集のたびに起動するため)。
-home_reason=""
+# file 編集 tool 経由の書き込みをブロックする。sandbox の denyWrite は Bash にしか
+# 効かないため hook 側で塞ぐ (config.toml 1 ファイル = issue #190、home 配下の
+# 別プロジェクト = issue #291、cwd 配下 = 従来から)。
+# home 系判定は Bash token には適用しない — Bash 経路の書き込みは sandbox の
+# denyWrite (~/.codex/config.toml と ~/*/**/.codex/**) と
+# block-dangerous-commands.sh が担当しており、guard 側で token 一致だけで塞ぐと
+# `cat ~/.codex/config.toml` のような読み取りの許可を壊す。
+# 正規化は 1 候補につき 1 回だけ呼び、symlink 解決は `always` で無条件に行う
+# (gate 任せだと名前にトークンを含まない symlink + config.toml 以外の leaf が
+# 素通りする。上の normalize_path のコメント参照)。
+edit_reason=""
 while IFS= read -r p; do
   [[ -n "$p" ]] || continue
-  p_lower=$(normalize_path "$p")
+  p_lower=$(normalize_path "$p" always)
   if is_protected_home_codex_config "$p_lower"; then
-    home_reason="~/.codex/config.toml への書き込みは禁止されています（notify / mcp_servers / hooks 経由の host 側コマンド実行対策、issue #190）"
+    edit_reason="~/.codex/config.toml への書き込みは禁止されています（notify / mcp_servers / hooks 経由の host 側コマンド実行対策、issue #190）"
     break
   fi
   if is_protected_home_project_codex_path "$p_lower"; then
-    home_reason="ホーム配下のプロジェクトの Codex 設定ディレクトリへのファイル操作は禁止されています（次回 codex 起動時の host 側コマンド実行対策、issue #291）"
+    edit_reason="ホーム配下のプロジェクトの Codex 設定ディレクトリへのファイル操作は禁止されています（次回 codex 起動時の host 側コマンド実行対策、issue #291）"
+    break
+  fi
+  if is_protected_project_path "$p_lower"; then
+    edit_reason="プロジェクト内の Codex 設定ディレクトリへのファイル操作は禁止されています（Cymulate notify エスケープ対策）"
     break
   fi
 done <<<"$edit_candidates"
 
-if [[ -n "$home_reason" ]]; then
-  echo "ブロック: ${home_reason}" >&2
+if [[ -n "$edit_reason" ]]; then
+  echo "ブロック: ${edit_reason}" >&2
   exit 2
 fi
 
+# Bash token を含む全候補に対する cwd 判定。file 編集 tool の path は上のループで
+# 解決済みだが、gate 付き正規化でも拾える形はここでも二重に当たる (害は無い)。
 matched=""
 while IFS= read -r p; do
   [[ -n "$p" ]] || continue

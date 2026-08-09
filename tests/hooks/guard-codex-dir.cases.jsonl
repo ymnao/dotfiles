@@ -98,6 +98,14 @@
 # ({{HOMEPROJLINK}} は runner が「home 外に置かれた、隔離 HOME 配下のプロジェクトを
 # 指す symlink」の path に置換する)。normalize_path の解決を経て block になる。
 {"name":"block: home 外 symlink 経由で home 配下プロジェクトの .codex","expect":"block","tool_input":{"file_path":"{{HOMEPROJLINK}}/.codex/config.toml"}}
+# 名前にトークンを含まない symlink が保護対象ディレクトリ自体を指す形。パス文字列に
+# 手掛かりが出ないため normalize_path の gate 付き解決では発火せず、leaf が
+# config.toml のときだけ block されていた (2026-08-09 に対照付きで実測)。file 編集
+# tool 経路を無条件解決にして塞いだので、その回帰を home 配下と cwd 配下の両方で pin する。
+{"name":"block: 非トークン symlink 経由 (home 配下) leaf が config.toml 以外","expect":"block","tool_input":{"file_path":"{{HOMEDIRLINK}}/hooks.sh"}}
+{"name":"block: 非トークン symlink 経由 (home 配下) leaf が config.toml","expect":"block","tool_input":{"file_path":"{{HOMEDIRLINK}}/config.toml"}}
+{"name":"block: 非トークン symlink 経由 (cwd 配下) leaf が config.toml 以外","expect":"block","tool_input":{"file_path":"{{CWDDIRLINK}}/hooks.sh"}}
+{"name":"block: 非トークン symlink 経由 (home 配下) apply_patch","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Add File: {{HOMEDIRLINK}}/hooks.sh\n+evil\n*** End Patch\n"}}
 # 受理パターンの広さを検査する allow ラチェット。
 {"name":"allow: home 配下のドット無し codex/ (この repo 自身の codex/ 運用を巻き込まない)","expect":"allow","tool_input":{"file_path":"{{HOME}}/other-project/codex/hooks/x.sh"}}
 {"name":"allow: home 配下の .codex-other (似た名前)","expect":"allow","tool_input":{"file_path":"{{HOME}}/other-project/.codex-other/foo"}}
