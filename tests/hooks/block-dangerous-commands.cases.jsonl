@@ -394,7 +394,30 @@
 {"name":"fp-accepted-unzip-readonly-list","expect":"block","command":"unzip -l .co*","reason":"読み取り系 unzip も glob が .codex にマッチすればブロック (許容した FP)"}
 {"name":"fp-accepted-curl-basename-path","expect":"block","command":"cat build/curl .co*","reason":"basename が curl のパスも書き込み文脈になる (許容した FP)"}
 {"name":"fp-accepted-curl-url-glob","expect":"block","command":"curl https://example.com/.co*","reason":"URL の component が .codex にマッチする形もブロック (許容した FP)"}
-# option と値が連結された形 (`--directory=.co*` / `-C.co*` / `-d.co*`) は component 分割
-# から外れて素通りする (#311)。列挙の有無ではなく引数の書き方で外れることの対照は
-# 上の adv-tar-glob-extract-dir (分離形 `-C .co*` が block) が既に担っているので、
-# ここに同じ入力のケースは足さない。素通り側は block を期待できないため pin しない。
+# --- issue #311: option と値が連結された形 (`--directory=.co*` / `-C.co*`) ---
+# 先頭 component にオプション文字列ごと入るため component 分割から外れて素通りしていた。
+# 列挙 (`_write_cmd_names`) ではなく引数の書き方で外れる問題なので、対照は列挙済みの
+# tar で取る (分離形 `-C .co*` の block は上の adv-tar-glob-extract-dir が担う)。
+# 2026-08-10 実測: 以下 6 形はいずれも修正前 exit=0 → 修正後 exit=2。
+{"name":"adv-tar-eq-directory","expect":"block","command":"tar -xf x.tar --directory=.co*","reason":"= 連結の長オプション値が glob 検査に入ること"}
+{"name":"adv-tar-attached-shortopt","expect":"block","command":"tar -xf x.tar -C.co*","reason":"値を連結した短オプションも同様"}
+{"name":"adv-wget-eq-output","expect":"block","command":"wget --output-document=.co*/x https://example.com","reason":"= 連結の値が / を含む形 (派生候補も component 分割される)"}
+{"name":"adv-unzip-attached-d","expect":"block","command":"unzip x.zip -d.co*","reason":"短オプション連結の別コマンド"}
+{"name":"adv-tar-eq-brace","expect":"block","command":"tar -xf x.tar --directory={.co*,tmp}","reason":"brace 展開の後に = を剥がす順序であること (逆順だと素通りする)"}
+{"name":"adv-dd-of","expect":"block","command":"dd if=/dev/zero of=.co*/x","reason":"= 規則を - 始まりに限定しないので dd の of= も閉じる"}
+{"name":"adv-tar-eq-nested","expect":"block","command":"tar -xf x.tar --directory=x=.co*","reason":"値の中にさらに = がある形 (最初の 1 つだけ剥がす実装だと素通りする)"}
+{"name":"adv-tar-eq-equiv-class","expect":"block","command":"tar -xf x.tar --directory=.cod[=e=]x","reason":"= を含む component が .codex にマッチする形 (= で分割する実装に変えると素通りする)"}
+# 受理側。値が英数字だけの短オプション連結 (-Ctmp) は派生候補が空になるが、.codex に
+# マッチする glob は必ず非英数字を含むので危険側は漏れない — その pin も兼ねる。
+{"name":"fp-tar-eq-plain","expect":"allow","command":"tar -xf x.tar --directory=tmp","reason":"= 連結の日常形が過ブロックされないこと"}
+{"name":"fp-tar-attached-plain","expect":"allow","command":"tar -xzf x.tar -Ctmp","reason":"短オプション連結の日常形 (英数字剥がしの pin)"}
+{"name":"fp-tar-attached-nonascii","expect":"allow","command":"tar -xf x.tar -Cé.co*","reason":"非 ASCII 値。剥がしの文字クラスを range で書くと en_US.UTF-8 だけ block に転ぶ (CI の locale matrix で検出される)"}
+{"name":"fp-rsync-include-txt","expect":"allow","command":"rsync -a --include=*.txt src/ dst/","reason":"= の右辺が glob でも .codex に不一致なら allow"}
+{"name":"fp-wget-stdout","expect":"allow","command":"wget -O- https://example.com","reason":"値が - だけの形"}
+{"name":"fp-unzip-attached-dot","expect":"allow","command":"unzip x.zip -d.","reason":"値が . だけの形"}
+# 連結形を閉じたことで増える許容 FP。いずれも 2026-08-10 実測で修正前 exit=0 → 修正後
+# exit=2。「引数の位置・意味を区別しない」という既存の設計前提 (上の許容 FP 3 種) の
+# 延長として受け入れる。除外パターン系オプションだけを外すと列挙の再導入 + fail-open。
+{"name":"fp-accepted-rsync-exclude-dotglob","expect":"block","command":"rsync -a --exclude=.* src/ dst/","reason":"除外パターンでも .codex にマッチすればブロック (許容した FP)"}
+{"name":"fp-accepted-env-assign-glob","expect":"block","command":"FOO=.co* rm x","reason":"= 規則を - 始まりに限定しないので env 前置代入も対象 (許容した FP。限定する退行の pin)"}
+{"name":"fp-accepted-attached-prefixed","expect":"block","command":"tar -xf x.tar -Ctmp.co*","reason":"値が tmp.co* (.codex に不一致) でも、オプション名と値の境界が決められないので block (許容した FP。分離形と = 形は allow)"}
