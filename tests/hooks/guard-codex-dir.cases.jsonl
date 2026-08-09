@@ -118,6 +118,13 @@
 {"name":"block: symlink の後ろの .. で home 配下プロジェクトへ着地","expect":"block","tool_input":{"file_path":"{{DOTDOTLINK}}/../.codex/x"}}
 {"name":"block: 末尾要素が保護対象内ファイルを指す symlink","expect":"block","tool_input":{"file_path":"{{LEAFLINK}}"}}
 {"name":"block: 末尾 symlink を apply_patch で更新","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Update File: {{LEAFLINK}}\n@@\n-old\n+notify = [\"evil\"]\n*** End Patch\n"}}
+# パスに改行を含む形。行区切りで候補を反復すると 1 つのパスが 2 候補に割れ、
+# どちらも保護対象に一致しないまま allow に倒れていた (2026-08-09 に対照付きで
+# 実測: 同じ実体を指す symlink でも改行なしなら block、改行入りなら allow。
+# codex-review security 指摘)。NUL 区切りの反復に変えて塞いだ回帰を pin する。
+{"name":"block: 改行を含むパスで home 配下プロジェクトの .codex","expect":"block","tool_input":{"file_path":"{{HOME}}/other-project/x\n/.codex/y"}}
+{"name":"block: 改行を含むパスで cwd 配下の .codex","expect":"block","tool_input":{"file_path":"{{CWD}}/x\n/.codex/y"}}
+{"name":"block: 改行を含むパスで home config.toml","expect":"block","tool_input":{"file_path":"{{HOME}}/x\n/../.codex/config.toml"}}
 # 受理パターンの広さを検査する allow ラチェット。
 {"name":"allow: home 配下のドット無し codex/ (この repo 自身の codex/ 運用を巻き込まない)","expect":"allow","tool_input":{"file_path":"{{HOME}}/other-project/codex/hooks/x.sh"}}
 {"name":"allow: home 配下の .codex-other (似た名前)","expect":"allow","tool_input":{"file_path":"{{HOME}}/other-project/.codex-other/foo"}}

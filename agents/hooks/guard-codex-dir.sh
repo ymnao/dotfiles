@@ -303,12 +303,46 @@ extract_paths() {
   }
 }
 
+# file 編集 tool 由来の候補を **NUL 区切り**で吐く。行区切りで反復すると、改行を
+# 含む 1 つのパスが 2 つの候補に割れ、どちらも保護対象に一致しないまま allow に
+# 倒れる (2026-08-09 に対照付きで実測: 同じ実体を指す symlink でも、名前が改行
+# なしなら block、改行入りなら allow だった。codex-review security 指摘)。
+# NUL はコマンド置換が落とすので変数に溜められない — 呼び出し側はプロセス置換で
+# 直接読む。jq の失敗検出は上の extract_paths 側の fail-safe が担当する
+# (同じ入力・同じ形の jq プログラムなので、片方だけ失敗する経路が無い)。
+# Bash token 側を NUL 化しないのは、shell にとって改行は本来 word 区切りだから
+# (そちらは分割されるのが正しい)。
+extract_edit_paths_nul() {
+  printf '%s' "$input" | jq -j '
+    .tool_input
+    | if type == "object" then
+        (.path?, .file_path?, .filename?, .notebook_path?)
+      else
+        empty
+      end
+    | select(. != null)
+    | tostring + "\u0000"
+  ' || return 1
+
+  # apply_patch のヘッダーは行ベースの書式なので、path に改行は現れない。
+  printf '%s' "$input" | jq -r '.tool_input | (.patch? // .input? // empty)' \
+    | awk '
+      {
+        lower = tolower($0)
+        if (match(lower, /^\*\*\* (add file|update file|delete file|move to): /)) {
+          print substr($0, RLENGTH + 1)
+        }
+      }
+    ' \
+    | tr '\n' '\000'
+}
+
 # 入力解析中の pipeline 失敗は fail-safe でブロック。
 if ! candidates=$(extract_paths all); then
   echo "ブロック: tool_input の解析に失敗しました (.codex/ 保護を確認できません)" >&2
   exit 2
 fi
-if ! edit_candidates=$(extract_paths edit-only); then
+if ! extract_paths edit-only >/dev/null; then
   echo "ブロック: tool_input の解析に失敗しました (.codex/ 保護を確認できません)" >&2
   exit 2
 fi
@@ -324,7 +358,7 @@ fi
 # (gate 任せだと名前にトークンを含まない symlink + config.toml 以外の leaf が
 # 素通りする。上の normalize_path のコメント参照)。
 edit_reason=""
-while IFS= read -r p; do
+while IFS= read -r -d '' p; do
   [[ -n "$p" ]] || continue
   p_lower=$(normalize_path "$p" always)
   if is_protected_home_codex_config "$p_lower"; then
@@ -339,7 +373,7 @@ while IFS= read -r p; do
     edit_reason="プロジェクト内の Codex 設定ディレクトリへのファイル操作は禁止されています（Cymulate notify エスケープ対策）"
     break
   fi
-done <<<"$edit_candidates"
+done < <(extract_edit_paths_nul)
 
 if [[ -n "$edit_reason" ]]; then
   echo "ブロック: ${edit_reason}" >&2
