@@ -311,8 +311,10 @@ if [[ -n "$edit_reason" ]]; then
   exit 2
 fi
 
-# Bash token を含む全候補に対する cwd 判定。file 編集 tool の path は上のループで
-# 解決済みだが、gate 付き正規化でも拾える形はここでも二重に当たる (害は無い)。
+# Bash token を含む全候補に対する cwd 判定。実質 Bash token 専用 — file 編集 tool の
+# path は上のループで cwd 判定まで済ませて exit しているので、ここまで来た時点で
+# 一致することはない。候補集合を token だけに絞らないのは、extract_paths に
+# 3 つ目の mode を足すより「全候補に当てる」方が漏れの向きが安全なため。
 matched=""
 while IFS= read -r p; do
   [[ -n "$p" ]] || continue

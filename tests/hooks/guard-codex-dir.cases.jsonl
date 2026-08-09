@@ -102,10 +102,15 @@
 # 手掛かりが出ないため normalize_path の gate 付き解決では発火せず、leaf が
 # config.toml のときだけ block されていた (2026-08-09 に対照付きで実測)。file 編集
 # tool 経路を無条件解決にして塞いだので、その回帰を home 配下と cwd 配下の両方で pin する。
+# **無条件解決を pin しているのは下の 3 件** (leaf が config.toml 以外)。gated に
+# 差し戻す mutant で落ちるのはこの 3 件だけであることを実測済み。
 {"name":"block: 非トークン symlink 経由 (home 配下) leaf が config.toml 以外","expect":"block","tool_input":{"file_path":"{{HOMEDIRLINK}}/hooks.sh"}}
-{"name":"block: 非トークン symlink 経由 (home 配下) leaf が config.toml","expect":"block","tool_input":{"file_path":"{{HOMEDIRLINK}}/config.toml"}}
 {"name":"block: 非トークン symlink 経由 (cwd 配下) leaf が config.toml 以外","expect":"block","tool_input":{"file_path":"{{CWDDIRLINK}}/hooks.sh"}}
 {"name":"block: 非トークン symlink 経由 (home 配下) apply_patch","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Add File: {{HOMEDIRLINK}}/hooks.sh\n+evil\n*** End Patch\n"}}
+# 次の 1 件は対照 — leaf が config.toml なら **gated 側の gate が発火する**ので、
+# 無条件解決の前から block だった。3 件との差が「gate が何を取りこぼすか」を示す
+# ので残すが、無条件解決の pin としては数えない (mutant で落ちない)。
+{"name":"block: 非トークン symlink 経由 (home 配下) leaf が config.toml (対照・旧 gate でも block)","expect":"block","tool_input":{"file_path":"{{HOMEDIRLINK}}/config.toml"}}
 # 受理パターンの広さを検査する allow ラチェット。
 {"name":"allow: home 配下のドット無し codex/ (この repo 自身の codex/ 運用を巻き込まない)","expect":"allow","tool_input":{"file_path":"{{HOME}}/other-project/codex/hooks/x.sh"}}
 {"name":"allow: home 配下の .codex-other (似た名前)","expect":"allow","tool_input":{"file_path":"{{HOME}}/other-project/.codex-other/foo"}}
