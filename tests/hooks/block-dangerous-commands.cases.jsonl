@@ -381,6 +381,9 @@
 # その退行を素通りさせる (2026-08-09 に mutation で実測)。
 {"name":"fp-curl-dynamic-output","expect":"allow","command":"curl -sS \"$url\" -o out.json","reason":"動的展開つき curl の日常形 (write_cmds への追加を検出する pin)"}
 {"name":"fp-unzip-dynamic-src","expect":"allow","command":"unzip \"$f\" -d build","reason":"動的展開つき unzip の日常形 (同上)"}
+{"name":"fp-wget-dynamic-output","expect":"allow","command":"wget -O \"$out\" https://example.com","reason":"動的展開つき wget の日常形 (同上)"}
+{"name":"fp-cpio-dynamic-dir","expect":"allow","command":"cpio -i -D \"$dir\"","reason":"動的展開つき cpio の日常形 (同上)"}
+{"name":"fp-ditto-dynamic-dst","expect":"allow","command":"ditto src \"$dst\"","reason":"動的展開つき ditto の日常形 (同上)"}
 {"name":"fp-unzip-plain-dst","expect":"allow","command":"unzip x.zip -d build","reason":"日常形が過ブロックされないこと"}
 {"name":"fp-curl-plain-output","expect":"allow","command":"curl -sS https://example.com -o out.json","reason":"日常形が過ブロックされないこと"}
 {"name":"fp-wget-plain-output","expect":"allow","command":"wget -O out.json https://example.com","reason":"日常形が過ブロックされないこと"}
