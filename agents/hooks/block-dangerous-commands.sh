@@ -667,6 +667,7 @@ fi
 #   - `echo x > .co*/foo` → write redirect 文脈 → target の `.co*` が block
 #   - `.co{dex,foo}` → brace 展開結果 `.codex` が block
 #   - `command rm -rf .co*` / `env rm -rf .co*` → wrapper 透過 grep で write 判定
+#   - `tar --directory=.co*` / `unzip -d.co*` → オプション連結形も派生候補で block
 #   - `cat .co*` → read-only 文脈 (write cmd でも redirect でもない) → allow
 # sed は `-i` フラグ付き (BSD `-i ''` / GNU `-i.bak`) のみ書き込み扱い
 # セグメント分割は `; & |` のみ (brace `{}` は展開文法で分割対象外)
@@ -741,8 +742,27 @@ _expand_braces() {
       ;;
   esac
 }
+# 候補文字列を `/` 区切り component に割り、`.codex` にマッチする glob があれば
+# ブロックする。$2 はメッセージに出す元の引数。
+# block はこの関数から直接 exit する — return にすると呼び出し側で握り潰されて
+# fail-open に倒れる。
+_check_components() {
+  local _cand=$1 _argfull=$2 _rest=$1 _comp
+  [[ -z "$_cand" ]] && return 0
+  while :; do
+    _comp="${_rest%%/*}"
+    if _matches_codex "$_comp"; then
+      echo "ブロック: 書き込み文脈の引数に .codex にマッチしうる glob/brace ($_argfull) が指定されています（Cymulate notify エスケープ対策）" >&2
+      exit 2
+    fi
+    case "$_rest" in
+      */*) _rest="${_rest#*/}" ;;
+      *) break ;;
+    esac
+  done
+}
 _check_glob_seg() {
-  local _seg=$1 _arg _comp _rest _seg_lower _seg_nodev
+  local _seg=$1 _arg _expanded _optval _seg_lower _seg_nodev
   _seg="${_seg#"${_seg%%[![:space:]]*}"}"
   [[ -z "$_seg" ]] && return 0
   _seg_lower=$(printf '%s' "$_seg" | tr '[:upper:]' '[:lower:]')
@@ -768,18 +788,23 @@ _check_glob_seg() {
     _arg=$(printf '%s' "$_arg" | tr '[:upper:]' '[:lower:]')
     # brace 展開を全パターンに解いてから component-wise glob match
     while IFS= read -r _expanded; do
-      _rest=$_expanded
-      while :; do
-        _comp="${_rest%%/*}"
-        if _matches_codex "$_comp"; then
-          echo "ブロック: 書き込み文脈の引数に .codex にマッチしうる glob/brace ($_arg) が指定されています（Cymulate notify エスケープ対策）" >&2
-          exit 2
-        fi
-        case "$_rest" in
-          */*) _rest="${_rest#*/}" ;;
-          *) break ;;
-        esac
-      done
+      _check_components "$_expanded" "$_arg"
+      # オプションと値が 1 トークンに連結された形 (`--directory=.co*` / `-C.co*`) は、
+      # 先頭 component にオプション文字列ごと入って `.codex` にマッチせず素通りする
+      # (issue #311)。元の文字列は**置換せず**派生候補として足す — 前処理で削って
+      # しまうと、境界の見誤りが「危険な形を無害な形に化かす」fail-open として出る。
+      case "$_expanded" in
+        *=*) _check_components "${_expanded#*=}" "$_arg" ;;
+      esac
+      case "$_expanded" in
+        -*)
+          _optval=${_expanded#-}
+          while [[ $_optval == [a-z0-9]* ]]; do _optval=${_optval#?}; done
+          # 英数字だけの値 (`-Ctmp`) は候補が空になるが、`.codex` にマッチする glob は
+          # 必ず非英数字 (`.` `*` `?` `[`) を含むので危険側は漏れない。
+          _check_components "$_optval" "$_arg"
+          ;;
+      esac
     done <<< "$(_expand_braces "$_arg")"
   done
 }
