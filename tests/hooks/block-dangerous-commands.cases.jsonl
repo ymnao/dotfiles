@@ -367,3 +367,34 @@
 # 区別しないのでコピー元とコピー先を分けられない (2026-08-07 実測、main は allow)。
 {"name":"fp-accepted-rsync-source-glob","expect":"block","command":"rsync -a .co*/ dst/","reason":"読み取り元が .co* でもブロック (許容した FP)"}
 {"name":"fp-accepted-tar-create-source","expect":"block","command":"tar -cf out.tar .co*","reason":"アーカイブ元が .co* でもブロック (許容した FP)"}
+# --- issue #288: 同型の書き込み経路 5 コマンド (unzip / curl / wget / cpio / ditto) ---
+# 敵対側: いずれも 2026-08-09 実測で追加前 exit=0 (#284 修正後も main と同じ fail-open)。
+{"name":"adv-unzip-glob-extract-dir","expect":"block","command":"unzip x.zip -d .co*","reason":"unzip -d の展開先 glob が書き込み文脈と認識されず素通りしていた"}
+{"name":"adv-curl-glob-output","expect":"block","command":"curl -o .co*/x https://example.com","reason":"curl -o の出力先 glob も同様"}
+{"name":"adv-wget-glob-output","expect":"block","command":"wget -O .co*/x https://example.com","reason":"wget -O の出力先 glob も同様"}
+{"name":"adv-cpio-glob-dir","expect":"block","command":"cpio -i -D .co*","reason":"cpio -D の展開先 glob も同様"}
+{"name":"adv-ditto-glob-dst","expect":"block","command":"ditto src .co*","reason":"ditto のコピー先 glob も同様"}
+{"name":"adv-ditto-brace-dst","expect":"block","command":"ditto src .co{dex,foo}","reason":"brace 展開結果が .codex になる形"}
+# 受理側の口が広がりすぎていないことの検査 (.codex 非該当なら allow)。
+# 動的展開つきの形は、5 つを write_cmds (動的展開 + 書き込み系コマンドの
+# 安全側ブロック) に足す退行を検出するための pin — 静的な日常形だけだと
+# その退行を素通りさせる (2026-08-09 に mutation で実測)。
+{"name":"fp-curl-dynamic-output","expect":"allow","command":"curl -sS \"$url\" -o out.json","reason":"動的展開つき curl の日常形 (write_cmds への追加を検出する pin)"}
+{"name":"fp-unzip-dynamic-src","expect":"allow","command":"unzip \"$f\" -d build","reason":"動的展開つき unzip の日常形 (同上)"}
+{"name":"fp-wget-dynamic-output","expect":"allow","command":"wget -O \"$out\" https://example.com","reason":"動的展開つき wget の日常形 (同上)"}
+{"name":"fp-cpio-dynamic-dir","expect":"allow","command":"cpio -i -D \"$dir\"","reason":"動的展開つき cpio の日常形 (同上)"}
+{"name":"fp-ditto-dynamic-dst","expect":"allow","command":"ditto src \"$dst\"","reason":"動的展開つき ditto の日常形 (同上)"}
+{"name":"fp-unzip-plain-dst","expect":"allow","command":"unzip x.zip -d build","reason":"日常形が過ブロックされないこと"}
+{"name":"fp-curl-plain-output","expect":"allow","command":"curl -sS https://example.com -o out.json","reason":"日常形が過ブロックされないこと"}
+{"name":"fp-wget-plain-output","expect":"allow","command":"wget -O out.json https://example.com","reason":"日常形が過ブロックされないこと"}
+{"name":"fp-cpio-plain-dir","expect":"allow","command":"cpio -i -D build","reason":"日常形が過ブロックされないこと"}
+{"name":"fp-ditto-plain-dst","expect":"allow","command":"ditto src dst","reason":"日常形が過ブロックされないこと"}
+# rsync/tar と同じ 3 種類の許容 FP が 5 コマンドにも増えることの pin
+# (2026-08-09 実測、いずれも追加前 exit=0 → 追加後 exit=2)。
+{"name":"fp-accepted-unzip-readonly-list","expect":"block","command":"unzip -l .co*","reason":"読み取り系 unzip も glob が .codex にマッチすればブロック (許容した FP)"}
+{"name":"fp-accepted-curl-basename-path","expect":"block","command":"cat build/curl .co*","reason":"basename が curl のパスも書き込み文脈になる (許容した FP)"}
+{"name":"fp-accepted-curl-url-glob","expect":"block","command":"curl https://example.com/.co*","reason":"URL の component が .codex にマッチする形もブロック (許容した FP)"}
+# option と値が連結された形 (`--directory=.co*` / `-C.co*` / `-d.co*`) は component 分割
+# から外れて素通りする (#311)。列挙の有無ではなく引数の書き方で外れることの対照は
+# 上の adv-tar-glob-extract-dir (分離形 `-C .co*` が block) が既に担っているので、
+# ここに同じ入力のケースは足さない。素通り側は block を期待できないため pin しない。

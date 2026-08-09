@@ -671,28 +671,36 @@ fi
 # sed は `-i` フラグ付き (BSD `-i ''` / GNU `-i.bak`) のみ書き込み扱い
 # セグメント分割は `; & |` のみ (brace `{}` は展開文法で分割対象外)
 _seg_seps=';&|()'
-# rsync / tar は literal 形なら後段の `.codex` 文字列検出で止まるが、glob 形 (`.co*`) は
+# rsync / tar / unzip / curl / wget / cpio / ditto は literal 形なら後段の `.codex`
+# 文字列検出で止まるが、glob 形 (`.co*`) は
 # ここで書き込み文脈と認識されないと `_check_glob_seg` の component 検査に入らず素通り
-# していた (issue #284)。追加先は本判定用の `_write_cmd_names` のみで、430 行の
+# していた (issue #284 で rsync / tar、#288 で残り 5 つ)。追加先は本判定用の
+# `_write_cmd_names` のみで、430 行の
 # `write_cmds` (動的展開 + 書き込み系コマンドの安全側ブロック) には足さない —
 # あちらに足すと `tar -xf "$f"` のような日常形まで誤ブロックが広がる。
 # 副作用として 3 種類の FP が増える。いずれも fail-closed 方向で、`.codex` 保護 (#190)
 # の方針と整合するため許容する (成立には同一セグメントに `.codex` にマッチする glob が
-# 要るので、実運用での遭遇率は低い)。2026-08-07 実測、いずれも追加前 exit=0 →
-# 追加後 exit=2:
-#   - 読み取り系 tar (`tar -tf x.tar '.co*'`)
-#   - basename が rsync / tar のパス。`_write_cmd_boundary_re` の先行文字クラスが
-#     `/` を含むため、`cat build/tar .co*` のような形も書き込み文脈と判定される
-#   - **`.co*` を「読み取り元」に取る形** (`rsync -a .co*/ dst/` / `rsync --dry-run`
-#     / `tar -cf out.tar .co*`)。`_check_glob_seg` は引数の**位置を区別せず**
+# 要るので、実運用での遭遇率は低い)。実測日は #284 分 (rsync / tar) が 2026-08-07、
+# #288 分 (残り 5 つ) が 2026-08-09。いずれも追加前 exit=0 → 追加後 exit=2:
+#   - 読み取り系 (`tar -tf x.tar '.co*'` / `unzip -l .co*`)
+#   - basename が列挙済みコマンドのパス。`_write_cmd_boundary_re` の先行文字クラスが
+#     `/` を含むため、`cat build/tar .co*` / `cat build/curl .co*` のような形も
+#     書き込み文脈と判定される
+#   - **`.co*` を書き込み先以外の引数に取る形** (読み取り元: `rsync -a .co*/ dst/` /
+#     `rsync --dry-run -a .co*/ dst/` / `tar -cf out.tar .co*`、パスですらない引数:
+#     `curl https://example.com/.co*` の URL)。`_check_glob_seg` は
+#     引数の**位置を区別せず**
 #     セグメント内の全引数を検査するので、コピー元とコピー先を分けられない。
 #     区別するには「どの引数が書き込み先か」をコマンドごとに知る必要があり、
-#     列挙型ブロックリストの枠を超える (#288 / #289 の射程)
-# **列挙方式なので、塞がるのはここに書いたコマンドだけ**。同型の書き込み経路
-# (`unzip -d .co*` / `curl -o .co*/x` / `wget -O .co*/x` / `cpio -D .co*` /
-# `ditto src .co*`) は main と同じく素通りのまま (2026-08-07 実測、いずれも exit=0)。
-# issue #284 で塞いだのは rsync / tar だけであって「glob 経路が閉じた」わけではない。
-_write_cmd_names="rm|chmod|chown|shred|rsync|tar|${write_cmds}"
+#     列挙型ブロックリストの枠を超える (#289 の射程)
+# **列挙方式なので、塞がるのはここに書いたコマンドだけ**。この構造的限界は #288 の
+# 追加後も変わらない — 個々の穴を塞いでも「列挙に無いコマンド」の集合は開いたまま。
+# glob 経路を網羅する統制の本体は sandbox の `denyWrite` 側にあり (PR #292 / #289 の
+# 結論)、この hook はその多層防御 + sandbox が届かない経路の一次防御として維持する。
+# **この hook が担うのは Bash 経路だけ** — file 編集 tool 経路は `guard-codex-dir.sh`
+# の担当で、ここは届かない。経路の内訳と担当は docs/ai-operations.md §10 に 1 箇所だけ
+# 書く方針なので、ここには複製しない。
+_write_cmd_names="rm|chmod|chown|shred|rsync|tar|unzip|curl|wget|cpio|ditto|${write_cmds}"
 _write_cmd_boundary_re="(^|[[:space:]/\\])(${_write_cmd_names})([[:space:]]|$)"
 _sed_boundary_re='(^|[[:space:]/\\])sed([[:space:]]|$)'
 _sed_inplace_re='(^|[[:space:]])-[a-zA-Z]*i[a-zA-Z]*(\.[a-zA-Z0-9]*)?([[:space:]]|$)'
