@@ -411,6 +411,7 @@
 # マッチする glob は必ず非英数字を含むので危険側は漏れない — その pin も兼ねる。
 {"name":"fp-tar-eq-plain","expect":"allow","command":"tar -xf x.tar --directory=tmp","reason":"= 連結の日常形が過ブロックされないこと"}
 {"name":"fp-tar-attached-plain","expect":"allow","command":"tar -xzf x.tar -Ctmp","reason":"短オプション連結の日常形 (英数字剥がしの pin)"}
+{"name":"fp-tar-attached-nonascii","expect":"allow","command":"tar -xf x.tar -Cé.co*","reason":"非 ASCII 値。剥がしの文字クラスを range で書くと en_US.UTF-8 だけ block に転ぶ (CI の locale matrix で検出される)"}
 {"name":"fp-rsync-include-txt","expect":"allow","command":"rsync -a --include=*.txt src/ dst/","reason":"= の右辺が glob でも .codex に不一致なら allow"}
 {"name":"fp-wget-stdout","expect":"allow","command":"wget -O- https://example.com","reason":"値が - だけの形"}
 {"name":"fp-unzip-attached-dot","expect":"allow","command":"unzip x.zip -d.","reason":"値が . だけの形"}

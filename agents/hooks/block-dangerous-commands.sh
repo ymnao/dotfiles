@@ -815,7 +815,14 @@ _check_glob_seg() {
       case "$_expanded" in
         -*)
           _optval=${_expanded#-}
-          while [[ $_optval == [a-z0-9]* ]]; do _optval=${_optval#?}; done
+          # 文字クラスを列挙で書く。`[a-z0-9]` の range は collation 依存で、
+          # 2026-08-10 実測では en_US.UTF-8 だけが `é` を範囲内と見て 1 文字余分に
+          # 剥がし、`tar -xf x.tar -Cé.co*` が C / ja_JP.UTF-8 と違う判定になった
+          # (剥がしすぎは候補が増える方向 = fail-closed だが、ロケールで結果が
+          # 割れること自体を潰す)。
+          while [[ $_optval == [0123456789abcdefghijklmnopqrstuvwxyz]* ]]; do
+            _optval=${_optval#?}
+          done
           # 英数字だけの値 (`-Ctmp`) は候補が空になるが、`.codex` にマッチする glob は
           # 必ず非英数字 (`.` `*` `?` `[`) を含むので危険側は漏れない。
           _check_components "$_optval" "$_arg"
