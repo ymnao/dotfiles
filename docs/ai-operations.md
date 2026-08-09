@@ -244,6 +244,9 @@ MEMORY.md 先頭 200 行が自動ロードされる。
 | Ralph loop 型の外側無人ループ(`while true; claude -p` 系) | merge ゲート・plan ゲートの人間監視を放棄することになる。2026-07-19 の検討で「パイプライン圧縮 + 人間ゲート再配置」(/dev + /next)を採用 | 完全無人で回してよい種類の反復タスク(大量 migration 等)が実際に発生したとき |
 | project-artifact プラグイン(公式 marketplace) | (2026-08-05)#264 で HTML 説明ページを検討した際に比較した。「固定 template.html + light/dark + Artifact publish」という**機構は同型**だが、作るページの**種類が違う** — あちらは 1 回の update に収まらないプロジェクトのタブ付きステータスページを per-project config で継続更新し delta を報告するもの。#264 が要るのは 1 回きりの判断・説明ページで、タブ機構と refresh 運用は使わない分だけ負債になる。自作の `html-brief` skill を採用した | 複数ワークストリームを継続追跡して同じ URL を更新し続ける必要が出たとき(そのときは html-brief を拡張せず、プラグインをそのまま有効化して評価する) |
 | `disableSideloadFlags`(Claude Code の managed 設定) | (2026-08-09 / #297)**実配置して実測し、見送った** — `--plugin-dir` を内部で渡す経路があり、Cowork 未使用でも Claude Code のプロセスが exit code 1 で落ちる。塞げるのは起動フラグ経路 1 本だけで `claude mcp add` / `.mcp.json` は素通り。実測とエラー全文は §10「[disableSideloadFlags — 実測して見送った](#disablesideloadflags--実測して見送った297)」 | 起動フラグ以外の経路も塞ぐ必要が出たとき(そのときは全 scope に効く `allowedMcpServers` / `allowManagedMcpServersOnly` を先に検討する)。ただし着手の可否は §10「[managed 設定は原則触らない](#managed-設定は原則触らない--判断基準は復旧に-sudo-が要るか)」の基準を先に通す |
+| Context7 MCP(ライブラリドキュメント取得) | (2026-08-09 / #286)公式ドキュメントを直接 fetch すれば大半足りる。§5 の順序(CLI / skill で代替できるなら MCP を入れない)に該当 | 公式 doc の直接取得で調査が破綻するケースが 3 回起きたとき(そのときは §5 の導入審査 — 出所確認・全文監査・最小権限・lethal trifecta — を通す) |
+| リポジトリ内 `.agents/memory/`(教訓のマシン間共有) | (2026-08-09 / #286)HANDOFF.md 運用と重複する。auto memory と §7 の昇格運用で足りる | HANDOFF 経由の引き継ぎ漏れが 2 回起きたとき |
+| Workflow tool の運用採用(skill の手順を決定的スクリプトに移す) | (2026-08-09 / #286)**見送っているのは導入ではなく運用への採用** — 機構自体は Claude Code の harness 組み込みツールとして既にセッションに存在する(2026-08-09 に tool 一覧で確認。追加インストールは不要で、呼び出しに user の明示的な opt-in が要るだけ)。現行の skill 内 fan-out(/dev のレビューループ、/adversarial-review の並列 code-reviewer)で足りており、採用すると同じ手順が SKILL.md と workflow スクリプトに二重管理になる | /adversarial-review や /simplify で並列数・検証回数のブレ起因の見逃しが実際に起きたとき |
 
 ## 10. codex / Claude Code の host 実行面の防御層
 
