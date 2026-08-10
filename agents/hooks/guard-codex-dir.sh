@@ -255,6 +255,80 @@ is_protected_home_project_codex_path() {
   return 1
 }
 
+# apply_patch の patch 本文 (stdin) からファイル操作ヘッダーの path を 1 行 1 件で吐く。
+# $1 は各レコードの先頭に付けるタグ (省略時は無タグ)。
+#
+# 実パーサと同じ行正規化を再現する: codex は行末 CR を落としてから Rust の
+# `str::trim` (Unicode の White_Space 全部) で行の前後を trim し、その結果から
+# marker を strip して path にする (codex-rs/apply-patch/src/streaming_parser.rs の
+# `line.strip_suffix('\r')` → `line.trim()` → `strip_prefix(ADD_FILE_MARKER)`。
+# 2026-08-10 に一次情報で確認)。hook 側が trim しないと、パーサは実 path へ書くのに
+# 完全一致判定 (is_protected_home_codex_config) だけが外れる。2026-08-10 の実測では
+# LF だけが block で、行末 CR / 各種空白と行頭空白の 11 形は全て allow だった (issue #308)。
+#
+# Why not 文字クラス正規表現: 非 ASCII 空白は BSD awk の文字クラスで表現できず、
+# `\xNN` は POSIX awk 未定義。バイト列を octal エスケープで明示列挙する。
+# Why not `[[:space:]]`: ASCII 6 文字しか覆わず、実測で素通りした U+00A0 / U+3000 が漏れる。
+# Why not 変化が無くなるまで回すループ: この hook は全 tool 呼び出しで毎回走るので、
+# 空白を数千個並べた病的入力で O(n^2) になる形は使わない。両端をインデックスで
+# 前進させ、substr は最後の 1 回だけにする (走査は入力長に対して線形)。
+# LC_ALL=C pin: UTF-8 ロケールの gawk は substr / length が文字単位になり、
+# バイト列比較が壊れる (CI の locale matrix が C / en_US.UTF-8 / ja_JP.UTF-8 を回す)。
+#
+# 剥がす集合を実パーサより広く取れば過剰 block (fail-closed)、狭ければ素通り
+# (fail-open) なので、集合は実パーサと同一に固定する。要素は 24 個で、
+# tests/hooks/guard-codex-dir.cases.jsonl の「ヘッダー行末」ケースと 1:1 に対応する
+# — ここに足したら向こうにも足す。
+extract_apply_patch_header_paths() {
+  LC_ALL=C awk -v tag="${1:-}" '
+    BEGIN {
+      nws = 0
+      ws[++nws] = " ";    ws[++nws] = "\011"; ws[++nws] = "\013"
+      ws[++nws] = "\014"; ws[++nws] = "\015"
+      ws[++nws] = "\302\205";     # U+0085
+      ws[++nws] = "\302\240";     # U+00A0
+      ws[++nws] = "\341\232\200"; # U+1680
+      ws[++nws] = "\342\200\200"; ws[++nws] = "\342\200\201" # U+2000 U+2001
+      ws[++nws] = "\342\200\202"; ws[++nws] = "\342\200\203" # U+2002 U+2003
+      ws[++nws] = "\342\200\204"; ws[++nws] = "\342\200\205" # U+2004 U+2005
+      ws[++nws] = "\342\200\206"; ws[++nws] = "\342\200\207" # U+2006 U+2007
+      ws[++nws] = "\342\200\210"; ws[++nws] = "\342\200\211" # U+2008 U+2009
+      ws[++nws] = "\342\200\212"                            # U+200A
+      ws[++nws] = "\342\200\250"; ws[++nws] = "\342\200\251" # U+2028 U+2029
+      ws[++nws] = "\342\200\257"; ws[++nws] = "\342\201\237" # U+202F U+205F
+      ws[++nws] = "\343\200\200"                            # U+3000
+    }
+    function trim_ws(s,   i, j, k, wl, hit) {
+      i = 1
+      j = length(s)
+      hit = 1
+      while (hit && i <= j) {
+        hit = 0
+        for (k = 1; k <= nws; k++) {
+          wl = length(ws[k])
+          if (substr(s, i, wl) == ws[k]) { i += wl; hit = 1; break }
+        }
+      }
+      hit = 1
+      while (hit && j >= i) {
+        hit = 0
+        for (k = 1; k <= nws; k++) {
+          wl = length(ws[k])
+          if (j - wl + 1 >= i && substr(s, j - wl + 1, wl) == ws[k]) { j -= wl; hit = 1; break }
+        }
+      }
+      return substr(s, i, j - i + 1)
+    }
+    {
+      line = trim_ws($0)
+      lower = tolower(line)
+      if (match(lower, /^\*\*\* (add file|update file|delete file|move to): /)) {
+        print tag substr(line, RLENGTH + 1)
+      }
+    }
+  '
+}
+
 # Bash command を shell メタ文字で分割し、path らしき token を吐き出す
 extract_bash_tokens() {
   local cmd="$1"
@@ -288,14 +362,7 @@ extract_paths() {
   bash_cmd=$(printf '%s' "$input" | jq -r '.tool_input | (.command? // empty)') || return 1
 
   {
-    printf '%s\n' "$patch_body" | awk '
-      {
-        lower = tolower($0)
-        if (match(lower, /^\*\*\* (add file|update file|delete file|move to): /)) {
-          print substr($0, RLENGTH + 1)
-        }
-      }
-    '
+    printf '%s\n' "$patch_body" | extract_apply_patch_header_paths
     printf '%s\n' "$direct_paths"
     if [[ "$mode" != "edit-only" && -n "$bash_cmd" ]]; then
       extract_bash_tokens "$bash_cmd"
@@ -331,14 +398,7 @@ extract_edit_paths_nul() {
 
   # apply_patch のヘッダーは行ベースの書式なので、path に改行は現れない。
   printf '%s' "$input" | jq -r '.tool_input | (.patch? // .input? // empty)' \
-    | awk '
-      {
-        lower = tolower($0)
-        if (match(lower, /^\*\*\* (add file|update file|delete file|move to): /)) {
-          print "P" substr($0, RLENGTH + 1)
-        }
-      }
-    ' \
+    | extract_apply_patch_header_paths P \
     | tr '\n' '\000' || return 1
 
   printf 'E\000'
