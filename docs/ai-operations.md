@@ -651,8 +651,9 @@ only**」「There is no built-in credential deny list」と明記し、その先
 なったとき。**そのときは下の実測をやり直してから判断する**(リストも強制も
 上流のバージョンで変わる)。
 
-以下は上の 3 点の根拠。**この変数が実際にやること**(2026-08-10 / Claude Code 2.1.226 のバイナリを
-`strings` で読んだもの。シンボル名 `isScrubEnabled` が残っている):
+以下は上の 3 点の根拠。**この変数が実際にやること**(2026-08-10 / Claude Code
+2.1.226 のバイナリを `strings` で読んだもの。シンボル名 `isScrubEnabled` が
+残っている):
 
 - 有効化条件は「truthy な文字列」で、受け付けるのは `1` / `true` / `yes` / `on`
   の 4 つだけ(小文字化 + trim 後の比較)。`2` や `enabled` では**有効にならない**
@@ -680,6 +681,11 @@ only**」「There is no built-in credential deny list」と明記し、その先
 - **必要バージョンは上流 docs に書かれていない**(`credentials` ブロックの
   v2.1.187、`mask` の v2.1.199 のような注記が無い)。2.1.226 に存在することを
   実測しただけで、下限は不明
+
+点 2 の根拠は、Bash tool から見える環境変数を `ANTHROPIC` / `AWS` / `GOOGLE` /
+`AZURE` / `GH_` / `GITHUB` 始まりで列挙して、上の 22 変数がどれも無いことを
+確認したもの(`ANTHROPIC_BASE_URL` はあるがリスト外)。**ログインシェル(fish)
+側は測っていない** — 下の棚卸しの表と同じ範囲の限界。
 
 **permission mode 強制の実測**(2026-08-10 / 2.1.226):
 `claude -p ... --permission-mode acceptEdits` を SCRUB 無し / 有りで 1 回ずつ
