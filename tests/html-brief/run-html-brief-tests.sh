@@ -39,6 +39,7 @@ fi
 
 WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/html-brief.XXXXXX")"
 OUTSIDE_ROOT=""
+TMP_ROOT_DIR=""
 # /tmp 直下に置く probe も固定名にしない (別プロセスや既存ファイルと衝突する)
 WORLD_WRITABLE_PROBE="/tmp/html-brief-ww-$(basename "$WORKDIR").html"
 
@@ -47,6 +48,7 @@ WORLD_WRITABLE_PROBE="/tmp/html-brief-ww-$(basename "$WORKDIR").html"
 cleanup() {
   [ -n "${WORKDIR:-}" ] && rm -rf "$WORKDIR"
   [ -n "${OUTSIDE_ROOT:-}" ] && rm -rf "$OUTSIDE_ROOT"
+  [ -n "${TMP_ROOT_DIR:-}" ] && rm -rf "$TMP_ROOT_DIR"
   rm -f "$WORLD_WRITABLE_PROBE"
 }
 trap cleanup EXIT
@@ -59,6 +61,33 @@ trap 'exit 143' TERM
 # 一意なディレクトリを掘る (中身ごと cleanup で消す)。
 OUTSIDE_ROOT="$(mktemp -d "$REPO_ROOT/.html-brief-outside.XXXXXX")"
 OUTSIDE_TMP="$OUTSIDE_ROOT/outside.html"
+
+# 「/tmp 配下」を測るケース専用の作業場所。**WORKDIR で代用しない** — WORKDIR は
+# `${TMPDIR:-/tmp}` 配下なので、TMPDIR が /tmp の外を指す環境 (macOS runner の
+# /var/folders/.../T) では /tmp 配下にならず、TMPDIR を差し替えたケースがどの
+# root にも入らなくなる (issue #316: Linux runner は TMPDIR 未設定で /tmp に
+# なるため再現せず、macOS CI だけが赤くなった)。
+# /tmp 直下そのものは 1777 でレンダラのガードに弾かれるので、0700 の
+# サブディレクトリを掘ってそこへ書く。
+# 掘る先を /tmp 直下に決め打ちしない — agent の sandbox は /tmp 直下への
+# 作成を拒否する一方 TMPDIR (= /tmp 配下) には書けるため、realpath が
+# /tmp 配下になる候補を順に試す。skip ではなく明示的に落とす (skip はケース数の
+# 下限検査を素通しにする)。
+real_tmp="$(cd /tmp && pwd -P)"
+for tmp_candidate in /tmp "${TMPDIR:-/tmp}"; do
+  real_candidate="$(cd "$tmp_candidate" 2>/dev/null && pwd -P || true)"
+  [ -n "$real_candidate" ] || continue
+  case "$real_candidate/" in
+    "$real_tmp"/*) ;;
+    *) continue ;;
+  esac
+  TMP_ROOT_DIR="$(mktemp -d "$tmp_candidate/html-brief-root.XXXXXX" 2>/dev/null || true)"
+  [ -n "$TMP_ROOT_DIR" ] && break
+done
+if [ -z "$TMP_ROOT_DIR" ]; then
+  echo "ERROR: cannot create a probe directory under /tmp (tried /tmp and \$TMPDIR)" >&2
+  exit 1
+fi
 
 # OUTSIDE_ROOT が本当に一時ディレクトリの外にあることを確かめる。ここが崩れると
 # レンダラが正しく受理してしまい、outside-tmp ケースが誤 FAIL する。
@@ -563,11 +592,11 @@ if [ "$rc" -ne 0 ] && stderr_is_clean "$WORKDIR/err.txt"; then
 
 # (a) TMPDIR が /tmp の外を指していても、/tmp 配下への出力は受理される
 set +e
-TMPDIR="$OUTSIDE_ROOT" node "$RENDERER" "$WORKDIR/guard.json" "$WORKDIR/root-tmp.html" \
+TMPDIR="$OUTSIDE_ROOT" node "$RENDERER" "$WORKDIR/guard.json" "$TMP_ROOT_DIR/root-tmp.html" \
   >/dev/null 2>"$WORKDIR/err.txt"
 rc=$?
 set -e
-if [ "$rc" -eq 0 ] && grep -q '<title>T</title>' "$WORKDIR/root-tmp.html"; then
+if [ "$rc" -eq 0 ] && grep -q '<title>T</title>' "$TMP_ROOT_DIR/root-tmp.html"; then
   ok; else ng "/tmp accepted as root when TMPDIR points elsewhere (rc=$rc)"; fi
 
 # (b) TMPDIR 側も受理側に効く (TMPDIR 配下なら /tmp の外でも書ける)
