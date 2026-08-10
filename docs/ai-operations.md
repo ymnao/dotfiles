@@ -697,11 +697,23 @@ only**」「There is no built-in credential deny list」と明記し、その先
 入るかもしれない」型の予防的追加になるため(CLAUDE.md「コード品質」節)。実際に
 トークンが書かれる形に変わったときに足す。
 
-**測っていないこと**: SCRUB を有効にした子プロセスの環境変数を live で
-差分測定するには子セッションの起動が要るが、この repo の
-`network.strictAllowlist` が `api.anthropic.com` を許可していないため、
-sandbox 内から起動した `claude -p` は認証前に 403 で落ちて hook まで到達しない。
-上記の 22 変数リストは**バイナリの静的解析**であって live 実測ではない。
+**リストの live 実測**(2026-08-10 / 2.1.226 / user の shell): canary 値を撒いた
+`claude -p` を SCRUB 無し / 有りで 1 回ずつ起動し、SessionStart hook から見える
+環境変数を比較した。無しでは 10 変数すべてが残り、有りでは
+`AWS_SECRET_ACCESS_KEY` / `AWS_SESSION_TOKEN` /
+`GOOGLE_APPLICATION_CREDENTIALS` / `AZURE_CLIENT_SECRET` / `SSH_SIGNING_KEY`
+が消え、`AWS_ACCESS_KEY_ID` / `GITHUB_TOKEN` / `GH_TOKEN` / `NPM_TOKEN` /
+`SSH_AUTH_SOCK` は残った。**上のリストの通りで、リスト外は剥がされない**。
+同じ SCRUB 有効下で `gh pr list` / `brew list` はいずれも exit 0(壊れない —
+`gh` が使う `GH_TOKEN` も Keychain もリスト外なので当然の結果)。
+
+測ったのは 22 変数のうち上記 6 個(+ リスト外 4 個)で、残りは静的解析のみ。
+
+**agent 側からは測れない**(この実測を user に依頼した理由): sandbox 内から
+`claude -p` を起動すると、`network.strictAllowlist` が `api.anthropic.com` を
+許可していないため認証前に 403 で落ち、SessionStart hook まで到達しない。
+`⚠ Permission mode forced to default` の警告だけは認証より前に出るので、
+permission mode 強制の対照実験は agent 側でも取れた。
 
 ### herdr socket API と各防御層の関係 — 実測結果
 
