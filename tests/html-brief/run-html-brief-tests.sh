@@ -55,6 +55,26 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+# ディレクトリの realpath を返す (解決できなければ空文字)。realpath(1) は BSD /
+# GNU で挙動が割れるので cd + pwd -P で取る。
+real_dir() {
+  (cd "$1" 2>/dev/null && pwd -P) || true
+}
+
+# $1 (realpath) が $2 (realpath) 自身か、その配下かを判定する。
+# 共有するのは**集合ではなく判定機構**で、使う側の問いは逆向き — 下の 2 箇所は
+# 「probe を掘る候補が /tmp 配下か (受理側)」と「fixture が一時ディレクトリの外に
+# あるか (拒否側)」を聞く。片方だけ symlink の扱いを直すと drift するので、
+# 判定そのものは 1 箇所に置く。
+# $1 が空 (解決できなかった) なら一致しない側に倒れる。$2 が空だと何にでも
+# 一致してしまうため、呼び出し側で root の非空を確かめる。
+is_under() {
+  case "$1/" in
+    "$2"/*) return 0 ;;
+  esac
+  return 1
+}
+
 # 「一時ディレクトリ外」のケース用の作業場所。**固定名を使わない** — repo 直下に
 # 固定名のファイルを作ると、同名の既存ファイルを上書きして壊しうる。
 # /var/tmp が使えればそちらが素直だが、agent の sandbox では書けないため repo 直下に
@@ -73,14 +93,13 @@ OUTSIDE_TMP="$OUTSIDE_ROOT/outside.html"
 # 作成を拒否する一方 TMPDIR (= /tmp 配下) には書けるため、realpath が
 # /tmp 配下になる候補を順に試す。skip ではなく明示的に落とす (skip はケース数の
 # 下限検査を素通しにする)。
-real_tmp="$(cd /tmp && pwd -P)"
+real_tmp="$(real_dir /tmp)"
+if [ -z "$real_tmp" ]; then
+  echo "ERROR: /tmp を解決できません" >&2
+  exit 1
+fi
 for tmp_candidate in /tmp "${TMPDIR:-/tmp}"; do
-  real_candidate="$(cd "$tmp_candidate" 2>/dev/null && pwd -P || true)"
-  [ -n "$real_candidate" ] || continue
-  case "$real_candidate/" in
-    "$real_tmp"/*) ;;
-    *) continue ;;
-  esac
+  is_under "$(real_dir "$tmp_candidate")" "$real_tmp" || continue
   TMP_ROOT_DIR="$(mktemp -d "$tmp_candidate/html-brief-root.XXXXXX" 2>/dev/null || true)"
   [ -n "$TMP_ROOT_DIR" ] && break
 done
@@ -92,16 +111,14 @@ fi
 # OUTSIDE_ROOT が本当に一時ディレクトリの外にあることを確かめる。ここが崩れると
 # レンダラが正しく受理してしまい、outside-tmp ケースが誤 FAIL する。
 # skip ではなく明示的に落とす (skip はケース数の下限検査を素通しにするため)。
-real_outside="$(cd "$OUTSIDE_ROOT" && pwd -P)"
+real_outside="$(real_dir "$OUTSIDE_ROOT")"
 for tmp_root in "${TMPDIR:-/tmp}" /tmp; do
-  real_root="$(cd "$tmp_root" 2>/dev/null && pwd -P || true)"
+  real_root="$(real_dir "$tmp_root")"
   [ -n "$real_root" ] || continue
-  case "$real_outside/" in
-    "$real_root"/*)
-      echo "ERROR: fixture ($real_outside) が一時ディレクトリ配下 ($real_root) にあるため outside-tmp ケースを実行できません" >&2
-      exit 1
-      ;;
-  esac
+  if is_under "$real_outside" "$real_root"; then
+    echo "ERROR: fixture ($real_outside) が一時ディレクトリ配下 ($real_root) にあるため outside-tmp ケースを実行できません" >&2
+    exit 1
+  fi
 done
 
 pass=0
