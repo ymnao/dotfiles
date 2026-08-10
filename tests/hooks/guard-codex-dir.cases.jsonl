@@ -148,6 +148,49 @@
 {"name":"allow: Bash で home 配下別プロジェクトへ書き込み (guard は素通し、sandbox+block-dangerous が担当)","expect":"allow","command":"echo x > ~/other-project/.codex/foo"}
 {"name":"allow: Bash で home 配下別プロジェクトを読む","expect":"allow","command":"cat ~/other-project/.codex/foo"}
 
+# --- apply_patch ヘッダーの空白正規化 (issue #308) ---
+# 何を測るか: パーサが空白として剥がす形でヘッダーを書いても block されること。
+# なぜそうあるべきか (パーサの正規化と、剥がす集合をそれに固定した理由) は
+# agents/hooks/guard-codex-dir.sh の extract_apply_patch_header_paths 側コメントが正本。
+# 行末は剥がす集合の全要素 24 形、行頭は代表 3 形。いずれも 2026-08-10 に
+# 対照付きで実測し、修正前は LF だけが block で残りは全て allow だった。
+# 行末ケースの件数は run-hook-tests.sh が ws[] の要素数と一致するか機械で測る。
+{"name":"block: apply_patch ヘッダー行末 U+0020 (space)","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Update File: {{HOME}}/.codex/config.toml \n+notify = [\"evil\"]\n*** End Patch\n"}}
+{"name":"block: apply_patch ヘッダー行末 U+0009 (tab)","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Update File: {{HOME}}/.codex/config.toml\t\n+notify = [\"evil\"]\n*** End Patch\n"}}
+{"name":"block: apply_patch ヘッダー行末 U+000B (VT)","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Update File: {{HOME}}/.codex/config.toml\u000b\n+notify = [\"evil\"]\n*** End Patch\n"}}
+{"name":"block: apply_patch ヘッダー行末 U+000C (FF)","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Update File: {{HOME}}/.codex/config.toml\u000c\n+notify = [\"evil\"]\n*** End Patch\n"}}
+{"name":"block: apply_patch ヘッダー行末 U+000D (CR = CRLF 改行)","expect":"block","tool_input":{"patch":"*** Begin Patch\r\n*** Update File: {{HOME}}/.codex/config.toml\r\n+notify = [\"evil\"]\r\n*** End Patch\r\n"}}
+{"name":"block: apply_patch ヘッダー行末 U+0085 (NEL)","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Update File: {{HOME}}/.codex/config.toml\n+notify = [\"evil\"]\n*** End Patch\n"}}
+{"name":"block: apply_patch ヘッダー行末 U+00A0 (NBSP)","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Update File: {{HOME}}/.codex/config.toml \n+notify = [\"evil\"]\n*** End Patch\n"}}
+{"name":"block: apply_patch ヘッダー行末 U+1680","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Update File: {{HOME}}/.codex/config.toml \n+notify = [\"evil\"]\n*** End Patch\n"}}
+{"name":"block: apply_patch ヘッダー行末 U+2000","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Update File: {{HOME}}/.codex/config.toml \n+notify = [\"evil\"]\n*** End Patch\n"}}
+{"name":"block: apply_patch ヘッダー行末 U+2001","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Update File: {{HOME}}/.codex/config.toml \n+notify = [\"evil\"]\n*** End Patch\n"}}
+{"name":"block: apply_patch ヘッダー行末 U+2002","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Update File: {{HOME}}/.codex/config.toml \n+notify = [\"evil\"]\n*** End Patch\n"}}
+{"name":"block: apply_patch ヘッダー行末 U+2003","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Update File: {{HOME}}/.codex/config.toml \n+notify = [\"evil\"]\n*** End Patch\n"}}
+{"name":"block: apply_patch ヘッダー行末 U+2004","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Update File: {{HOME}}/.codex/config.toml \n+notify = [\"evil\"]\n*** End Patch\n"}}
+{"name":"block: apply_patch ヘッダー行末 U+2005","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Update File: {{HOME}}/.codex/config.toml \n+notify = [\"evil\"]\n*** End Patch\n"}}
+{"name":"block: apply_patch ヘッダー行末 U+2006","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Update File: {{HOME}}/.codex/config.toml \n+notify = [\"evil\"]\n*** End Patch\n"}}
+{"name":"block: apply_patch ヘッダー行末 U+2007","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Update File: {{HOME}}/.codex/config.toml \n+notify = [\"evil\"]\n*** End Patch\n"}}
+{"name":"block: apply_patch ヘッダー行末 U+2008","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Update File: {{HOME}}/.codex/config.toml \n+notify = [\"evil\"]\n*** End Patch\n"}}
+{"name":"block: apply_patch ヘッダー行末 U+2009","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Update File: {{HOME}}/.codex/config.toml \n+notify = [\"evil\"]\n*** End Patch\n"}}
+{"name":"block: apply_patch ヘッダー行末 U+200A","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Update File: {{HOME}}/.codex/config.toml \n+notify = [\"evil\"]\n*** End Patch\n"}}
+{"name":"block: apply_patch ヘッダー行末 U+2028 (LINE SEPARATOR)","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Update File: {{HOME}}/.codex/config.toml \n+notify = [\"evil\"]\n*** End Patch\n"}}
+{"name":"block: apply_patch ヘッダー行末 U+2029 (PARAGRAPH SEPARATOR)","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Update File: {{HOME}}/.codex/config.toml \n+notify = [\"evil\"]\n*** End Patch\n"}}
+{"name":"block: apply_patch ヘッダー行末 U+202F","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Update File: {{HOME}}/.codex/config.toml \n+notify = [\"evil\"]\n*** End Patch\n"}}
+{"name":"block: apply_patch ヘッダー行末 U+205F","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Update File: {{HOME}}/.codex/config.toml \n+notify = [\"evil\"]\n*** End Patch\n"}}
+{"name":"block: apply_patch ヘッダー行末 U+3000 (IDEOGRAPHIC SPACE)","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Update File: {{HOME}}/.codex/config.toml　\n+notify = [\"evil\"]\n*** End Patch\n"}}
+{"name":"block: apply_patch ヘッダー行頭 U+0020 (space)","expect":"block","tool_input":{"patch":"*** Begin Patch\n  *** Update File: {{HOME}}/.codex/config.toml\n+notify = [\"evil\"]\n*** End Patch\n"}}
+{"name":"block: apply_patch ヘッダー行頭 U+0009 (tab)","expect":"block","tool_input":{"patch":"*** Begin Patch\n\t*** Update File: {{HOME}}/.codex/config.toml\n+notify = [\"evil\"]\n*** End Patch\n"}}
+{"name":"block: apply_patch ヘッダー行頭 U+00A0 (NBSP)","expect":"block","tool_input":{"patch":"*** Begin Patch\n *** Update File: {{HOME}}/.codex/config.toml\n+notify = [\"evil\"]\n*** End Patch\n"}}
+# 剥がしすぎていないことのラチェット。U+200B (ZERO WIDTH SPACE) は名前に反して
+# Unicode の White_Space ではないので、パーサは剥がさず「末尾に不可視文字が付いた
+# 別ファイル名」として扱う = 保護対象を指さない。hook がこれを剥がすと、集合を
+# パーサより広く取った状態 (過剰 block) を誰も検出できなくなる。
+{"name":"allow: apply_patch ヘッダー行末 U+200B (White_Space 非該当なので剥がさない)","expect":"allow","tool_input":{"patch":"*** Begin Patch\n*** Update File: {{HOME}}/.codex/config.toml​\n+notify = [\"evil\"]\n*** End Patch\n"}}
+# trim 導入の過剰側ラチェット。行頭空白を剥がしても `+` が先頭に残るので、
+# 本文行 (追加行) はヘッダーとして解釈されない。パーサ側も同じ (marker 不一致)。
+{"name":"allow: 行頭空白付きの本文行がヘッダーに見えない (trim の過剰マッチ検出)","expect":"allow","tool_input":{"patch":"*** Begin Patch\n*** Update File: README.md\n@@\n-old\n   +*** Update File: {{HOME}}/.codex/config.toml\n*** End Patch\n"}}
+
 # --- raw モード (malformed input fail-safe 検証) ---
 # raw:block: 壊れた JSON (jq が失敗) → fail-safe ブロック|block
 {"tool_input":{"file_path":".codex/config.toml"
