@@ -248,6 +248,7 @@ MEMORY.md 先頭 200 行が自動ロードされる。
 | Ralph loop 型の外側無人ループ(`while true; claude -p` 系) | merge ゲート・plan ゲートの人間監視を放棄することになる。2026-07-19 の検討で「パイプライン圧縮 + 人間ゲート再配置」(/dev + /next)を採用 | 完全無人で回してよい種類の反復タスク(大量 migration 等)が実際に発生したとき |
 | project-artifact プラグイン(公式 marketplace) | (2026-08-05)#264 で HTML 説明ページを検討した際に比較した。「固定 template.html + light/dark + Artifact publish」という**機構は同型**だが、作るページの**種類が違う** — あちらは 1 回の update に収まらないプロジェクトのタブ付きステータスページを per-project config で継続更新し delta を報告するもの。#264 が要るのは 1 回きりの判断・説明ページで、タブ機構と refresh 運用は使わない分だけ負債になる。自作の `html-brief` skill を採用した | 複数ワークストリームを継続追跡して同じ URL を更新し続ける必要が出たとき(そのときは html-brief を拡張せず、プラグインをそのまま有効化して評価する) |
 | `disableSideloadFlags`(Claude Code の managed 設定) | (2026-08-09 / #297)**実配置して実測し、見送った** — `--plugin-dir` を内部で渡す経路があり、Cowork 未使用でも Claude Code のプロセスが exit code 1 で落ちる。塞げるのは起動フラグ経路 1 本だけで `claude mcp add` / `.mcp.json` は素通り。実測とエラー全文は §10「[disableSideloadFlags — 実測して見送った](#disablesideloadflags--実測して見送った297)」 | 起動フラグ以外の経路も塞ぐ必要が出たとき(そのときは全 scope に効く `allowedMcpServers` / `allowManagedMcpServersOnly` を先に検討する)。ただし着手の可否は §10「[managed 設定は原則触らない](#managed-設定は原則触らない--判断基準は復旧に-sudo-が要るか)」の基準を先に通す |
+| `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`(sandbox の外まで及ぶ認証情報の剥がし) | (2026-08-10 / #298)**実測して見送った** — 剥がすのは固定 22 変数で、issue が名指しした `GITHUB_TOKEN` / `GH_TOKEN` / `NPM_TOKEN` は対象外。22 変数はこの host の環境に 1 つも無い一方、設定すると permission mode が `default` に強制され `permissions.defaultMode: auto` が失われる。実測は §10「[sandbox の外側の credential 保護](#sandbox-の外側の-credential-保護--scrub-は入れない298)」 | 剥がす対象に `GITHUB_TOKEN` 系が入るか、permission mode 強制が外れるか、この host が AWS / GCP / Azure の認証情報を環境変数で持つようになったとき(いずれも上流バージョン依存なので、再評価時は §10 の実測をやり直す) |
 | Context7 MCP(ライブラリドキュメント取得) | (2026-08-09 / #286)公式ドキュメントを直接 fetch すれば大半足りる。§5 の順序(CLI / skill で代替できるなら MCP を入れない)に該当 | 公式 doc の直接取得で調査が破綻するケースが 3 回起きたとき(そのときは §5 の導入審査 — 出所確認・全文監査・最小権限・lethal trifecta — を通す) |
 | リポジトリ内 `.agents/memory/`(教訓のマシン間共有) | (2026-08-09 / #286)HANDOFF.md 運用と重複する。auto memory と §7 の昇格運用で足りる | HANDOFF 経由の引き継ぎ漏れが 2 回起きたとき |
 | Workflow tool(skill の手順を決定的スクリプトに移す) | (2026-08-09 / #286)**harness 組み込みなので導入は済んでおり、見送っているのは運用への採用**(2026-08-09 に tool 一覧で存在を確認)。現行の skill 内 fan-out で足りており、採用すると同じ手順が SKILL.md と workflow スクリプトに二重管理になる | /adversarial-review や /simplify で見逃しが起き、その原因が並列数・検証回数のブレだと特定できたとき |
@@ -637,10 +638,20 @@ TLS 検証も通らない(実測: 上記 OSStatus -26276)ため外せない。�
 `credentials.envVars` の deny もまとめて外れる。上流 docs も
 `sandbox.credentials` について「**The setting affects sandboxed Bash commands
 only**」「There is no built-in credential deny list」と明記し、その先の手段として
-`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` を挙げている。**この変数は入れない**。
-判断の根拠を以下に置く(再提案されたら、まずここの実測をやり直すこと)。
+`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` を挙げている。**この変数は入れない**
+(§9 の見送り表にも 1 行ある)。理由は 3 点:
 
-**この変数が実際にやること**(2026-08-10 / Claude Code 2.1.226 のバイナリを
+1. issue #298 が名指しした素通り(`GITHUB_TOKEN` 系)を**この変数は剥がさない**
+2. 剥がす 22 変数は、この host の Claude Code 子プロセス環境に**1 つも無い**
+   (2026-08-10 実測。`ANTHROPIC_BASE_URL` はあるがリスト外)
+3. 対価として `permissions.defaultMode` の `auto` が失われる(強制的に `default`)
+
+**再評価条件**: 上のリストに `GITHUB_TOKEN` 系が入るか、permission mode 強制が
+外れるか、この host が実際に AWS / GCP / Azure の認証情報を環境変数で持つように
+なったとき。**そのときは下の実測をやり直してから判断する**(リストも強制も
+上流のバージョンで変わる)。
+
+以下は上の 3 点の根拠。**この変数が実際にやること**(2026-08-10 / Claude Code 2.1.226 のバイナリを
 `strings` で読んだもの。シンボル名 `isScrubEnabled` が残っている):
 
 - 有効化条件は「truthy な文字列」で、受け付けるのは `1` / `true` / `yes` / `on`
@@ -677,14 +688,27 @@ only**」「There is no built-in credential deny list」と明記し、その先
 が出た。この repo の `claude/settings.json` は `permissions.defaultMode` が
 `auto` なので、**入れると日常の実行モードがそのまま失われる**。
 
-**入れない理由**(3 点とも上記の実測に対応する):
+**リストの live 実測**(2026-08-10 / 2.1.226 / user の shell): canary 値を撒いた
+`claude -p` を SCRUB 無し / 有りで 1 回ずつ起動し、SessionStart hook から見える
+環境変数を比較した。無しでは 10 変数すべてが残り、有りでは
+`AWS_SECRET_ACCESS_KEY` / `AWS_SESSION_TOKEN` /
+`GOOGLE_APPLICATION_CREDENTIALS` / `AZURE_CLIENT_SECRET` / `SSH_SIGNING_KEY`
+が消え、`AWS_ACCESS_KEY_ID` / `GITHUB_TOKEN` / `GH_TOKEN` / `NPM_TOKEN` /
+`SSH_AUTH_SOCK` は残った。同じ SCRUB 有効下で `gh pr list` / `brew list` は
+いずれも exit 0(`gh` が使う `GH_TOKEN` も Keychain もリスト外なので壊れない)。
 
-1. issue #298 が名指しした素通り(`GITHUB_TOKEN` 系)を**この変数は剥がさない**
-2. 剥がす 22 変数は、この host の Claude Code 子プロセス環境に**1 つも無い**
-   (2026-08-10 実測。`ANTHROPIC_BASE_URL` はあるがリスト外)
-3. 対価(`defaultMode: auto` の喪失)だけが確実に発生する
+測ったのは 22 変数のうち上記 6 個(+ リスト外 4 個)で、残りは静的解析のみ。
 
-**同じ機会に行った credential の棚卸し**(2026-08-10 / この host):
+**agent 側からは測れない**(この実測を user に依頼した理由): sandbox 内から
+`claude -p` を起動すると、`network.strictAllowlist` が `api.anthropic.com` を
+許可していないため認証前に 403 で落ち、SessionStart hook まで到達しない。
+`⚠ Permission mode forced to default` の警告だけは認証より前に出るので、
+permission mode 強制の対照実験は agent 側でも取れた。
+
+### credential ファイル / 環境変数の棚卸し — deny は増やさない(#298)
+
+上の節と同じ機会に、`sandbox.credentials` の deny に足すものがあるかを見た
+(2026-08-10 / この host):
 
 | 対象 | 結果 | deny 追加 |
 |---|---|---|
@@ -695,25 +719,8 @@ only**」「There is no built-in credential deny list」と明記し、その先
 
 **トークンを含まないファイルに deny を足さない**のは、「今は入っていないが将来
 入るかもしれない」型の予防的追加になるため(CLAUDE.md「コード品質」節)。実際に
-トークンが書かれる形に変わったときに足す。
-
-**リストの live 実測**(2026-08-10 / 2.1.226 / user の shell): canary 値を撒いた
-`claude -p` を SCRUB 無し / 有りで 1 回ずつ起動し、SessionStart hook から見える
-環境変数を比較した。無しでは 10 変数すべてが残り、有りでは
-`AWS_SECRET_ACCESS_KEY` / `AWS_SESSION_TOKEN` /
-`GOOGLE_APPLICATION_CREDENTIALS` / `AZURE_CLIENT_SECRET` / `SSH_SIGNING_KEY`
-が消え、`AWS_ACCESS_KEY_ID` / `GITHUB_TOKEN` / `GH_TOKEN` / `NPM_TOKEN` /
-`SSH_AUTH_SOCK` は残った。**上のリストの通りで、リスト外は剥がされない**。
-同じ SCRUB 有効下で `gh pr list` / `brew list` はいずれも exit 0(壊れない —
-`gh` が使う `GH_TOKEN` も Keychain もリスト外なので当然の結果)。
-
-測ったのは 22 変数のうち上記 6 個(+ リスト外 4 個)で、残りは静的解析のみ。
-
-**agent 側からは測れない**(この実測を user に依頼した理由): sandbox 内から
-`claude -p` を起動すると、`network.strictAllowlist` が `api.anthropic.com` を
-許可していないため認証前に 403 で落ち、SessionStart hook まで到達しない。
-`⚠ Permission mode forced to default` の警告だけは認証より前に出るので、
-permission mode 強制の対照実験は agent 側でも取れた。
+トークンが書かれる形に変わったときに足す。なお deny を足したとしても、
+`excludedCommands` の 4 コマンドには**どのみち掛からない**(上の節)。
 
 ### herdr socket API と各防御層の関係 — 実測結果
 
