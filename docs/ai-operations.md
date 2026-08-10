@@ -1164,34 +1164,32 @@ Code merges entries from every scope」)。したがって user 設定側の既�
    (issue の受け入れ基準「移設後に外部通信が通ることを実測」が、この由来については
    原理的に閉じない)
 
-2. **塞ぎたい経路が lock の対象外**。`excludedCommands` の 4 コマンド(`docker` /
-   `gh` / `brew` / `pnpm test:e2e`)を含む行は sandbox 外で走るので `allowedDomains`
-   ごと素通りする(上の
+2. **塞ぎたい経路が lock の対象外**。上の docs 逐語のとおり lock は sandbox 内に
+   しか効かないが、`excludedCommands` の 4 コマンド(`docker` / `gh` / `brew` /
+   `pnpm test:e2e`)を含む行は sandbox 外で走る(上の
    「[sandbox の excludedCommands が「一次防御」を丸ごと外す経路](#sandbox-の-excludedcommands-が一次防御を丸ごと外す経路)」節の実測)。
-   lock は sandbox 内にしか効かない(上の docs 逐語)。**この host からいちばん広く
-   外に出られる `gh` は lock の後も任意ホストへ通る**
+   **この host からいちばん広く外に出られる `gh` は lock の後も任意ホストへ通る**
 
 3. **守る相手がいない**。managed 設定の価値は「管理者が開発者に policy を外させない」
    ことだが、この環境は user と管理者が同一人物。残る利得は「agent が Edit tool で
    `~/.claude/settings.json` の allowlist を広げる経路」を塞ぐこと 1 本だけ
 
-4. **対価は日常の摩擦**。ドメイン追加は実際に起きるイベントで、#184 / #188 で
-   `chatgpt.com` / `auth.openai.com` を足している。managed を正本にすると、その
-   たびに上の `sudo` 4 コマンドの配置手順が要る
+4. **対価は日常の摩擦**。ドメイン追加は実際に起きるイベントで、`chatgpt.com`
+   (`9c9c566`、2026-07-06)と `auth.openai.com`(`fa38ecb`、2026-07-22)を
+   別々の機会に足している。managed を正本にすると、そのたびに上の `sudo`
+   4 コマンドの配置手順が要る
 
 5. `allowManagedReadPathsOnly` は**効果が無い**。この repo は user / project / local の
    どこでも `allowRead` を使っていない(`denyRead` / `allowWrite` は使っている)。
    「将来 `allowRead` を使い始めたら効く」型の先回りは入れない
 
-**着手基準との関係**。[`claude/rules/managed-settings.md`](../claude/rules/managed-settings.md)
-は「そのキーが誤っていると**起動しなくなるか**」を基準にし、`sandbox.credentials` の
-deny のように**起動をゲートしない追加は別枠**としている。`allowManagedDomainsOnly` は
-起動をゲートしない(誤っても Claude Code は起動する)が、壊れたときの症状は
-「sandbox 内の通信が無言で全部落ちる」で、**復旧には `sudo rm` / `sudo cp` が要る**。
-別枠が別枠でいられるのは「起動さえすれば通常の手順で直せる」からなので、
-**この中間型は例外に当たらない**と判断した(この節の 2 つ上の見出しが採っている
-「復旧に `sudo` が要るか」の側で読む)。基準文そのものは二値のまま残している —
-同じ迷いをもう一度踏んだら整理する。
+**着手基準([`claude/rules/managed-settings.md`](../claude/rules/managed-settings.md))
+の当てはめ**。`allowManagedDomainsOnly` は**起動をゲートしない**(誤っても Claude Code
+は起動する)ので、一見すると基準が置いている別枠に入る。入らないと判断した —
+壊れたときの症状が「sandbox 内の通信が無言で全部落ちる」で、**復旧に `sudo rm` /
+`sudo cp` が要る**ため。別枠の条件は「起動しないこと」ではなく、基準が括弧で
+添えている「起動さえすれば**通常の手順で直せる**」の方で、この中間型はそちらを
+満たさない。基準文は複製せず、そちらを正本のまま置いている。
 
 ### network.strictAllowlist — 許可外ホストを確認ダイアログ抜きで拒否する
 
