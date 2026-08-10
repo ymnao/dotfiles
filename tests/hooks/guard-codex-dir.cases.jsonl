@@ -182,6 +182,11 @@
 {"name":"block: apply_patch ヘッダー行頭 U+0020 (space)","expect":"block","tool_input":{"patch":"*** Begin Patch\n  *** Update File: {{HOME}}/.codex/config.toml\n+notify = [\"evil\"]\n*** End Patch\n"}}
 {"name":"block: apply_patch ヘッダー行頭 U+0009 (tab)","expect":"block","tool_input":{"patch":"*** Begin Patch\n\t*** Update File: {{HOME}}/.codex/config.toml\n+notify = [\"evil\"]\n*** End Patch\n"}}
 {"name":"block: apply_patch ヘッダー行頭 U+00A0 (NBSP)","expect":"block","tool_input":{"patch":"*** Begin Patch\n *** Update File: {{HOME}}/.codex/config.toml\n+notify = [\"evil\"]\n*** End Patch\n"}}
+# 剥がしすぎていないことのラチェット。U+200B (ZERO WIDTH SPACE) は名前に反して
+# Unicode の White_Space ではないので、パーサは剥がさず「末尾に不可視文字が付いた
+# 別ファイル名」として扱う = 保護対象を指さない。hook がこれを剥がすと、集合を
+# パーサより広く取った状態 (過剰 block) を誰も検出できなくなる。
+{"name":"allow: apply_patch ヘッダー行末 U+200B (White_Space 非該当なので剥がさない)","expect":"allow","tool_input":{"patch":"*** Begin Patch\n*** Update File: {{HOME}}/.codex/config.toml​\n+notify = [\"evil\"]\n*** End Patch\n"}}
 # trim 導入の過剰側ラチェット。行頭空白を剥がしても `+` が先頭に残るので、
 # 本文行 (追加行) はヘッダーとして解釈されない。パーサ側も同じ (marker 不一致)。
 {"name":"allow: 行頭空白付きの本文行がヘッダーに見えない (trim の過剰マッチ検出)","expect":"allow","tool_input":{"patch":"*** Begin Patch\n*** Update File: README.md\n@@\n-old\n   +*** Update File: {{HOME}}/.codex/config.toml\n*** End Patch\n"}}

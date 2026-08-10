@@ -366,18 +366,42 @@ if [ -z "${HOOK_DIR:-}" ] && [ -f "$REPO_ROOT/agents/hooks/guard-codex-dir.sh" ]
   done
 
   # apply_patch ヘッダーから剥がす空白集合 (hook の ws[]) と、その全要素を行末位置で
-  # 測るケース群 (jsonl の「ヘッダー行末」) の数が一致することを見る。hook 側の
-  # コメントは 1:1 対応を宣言しているが、宣言だけだと集合に足したときテスト側の
-  # 追加を忘れても緑のまま通り、足した要素だけ無検査になる (shell.md の
-  # 「全部入り fixture は対象が増えた瞬間に黙って古くなる」)。
-  echo "==> guard-codex-dir (空白集合とケース数の一致)"
-  # 1 行に 2 要素書く行があるので、行数 (grep -c) ではなく出現数を数える。
-  ws_count=$(grep -o 'ws\[++nws\] = ' "$REPO_ROOT/agents/hooks/guard-codex-dir.sh" | grep -c .)
-  ws_case_count=$(grep -c 'apply_patch ヘッダー行末 ' "$REPO_ROOT/tests/hooks/guard-codex-dir.cases.jsonl")
-  if [ "$ws_count" -gt 0 ] && [ "$ws_count" = "$ws_case_count" ]; then
+  # 測るケース群 (jsonl の「ヘッダー行末」) が一致することを見る。hook 側のコメントは
+  # 1:1 対応を宣言しているが、宣言だけだと集合に足したときテスト側の追加を忘れても
+  # 緑のまま通り、足した要素だけ無検査になる (shell.md の「全部入り fixture は対象が
+  # 増えた瞬間に黙って古くなる」)。
+  #
+  # 突き合わせるのは**件数ではなくバイト列そのもの**。件数だけだと、要素を 1 つ足す
+  # と同時に既存コードポイントの重複ケースを足した形が釣り合ってしまい、足した要素
+  # だけ無検査で通る (codex-review qa-fixture 指摘)。ケース名の `U+XXXX` ラベルを
+  # 数える形も、ラベルは実際に入っているバイトのプロキシでしかないので使わない。
+  echo "==> guard-codex-dir (空白集合とケースのバイト一致)"
+  # ws[] の octal エスケープを実バイトへ戻して hex 化する。`printf "$esc"` は
+  # フォーマット文字列側の `\ddd` を octal として解釈する経路 (%b ではないのは、
+  # ws[] の表記が awk のリテラルと同じ `\302\240` 形式で、`\0` 前置が無いため)。
+  ws_bytes=$(grep -o 'ws\[++nws\] = "[^"]*"' "$REPO_ROOT/agents/hooks/guard-codex-dir.sh" \
+    | sed -e 's/^.*= "//' -e 's/"$//' \
+    | while IFS= read -r _esc; do
+        # shellcheck disable=SC2059  # octal エスケープの解釈がここでの目的
+        printf "$_esc" | od -An -tx1 | tr -d ' \n'
+        echo
+      done | LC_ALL=C sort)
+  # ケース側は「ヘッダー行に config.toml が現れたあとの残り」= 付けた空白そのもの。
+  # block ケースだけを数える。同じ「ヘッダー行末」でも、剥がしすぎを検出する
+  # allow 側のラチェット (U+200B) は**集合の外**の文字を測るケースなので混ぜない。
+  case_bytes=$(grep '"block: apply_patch ヘッダー行末 ' "$REPO_ROOT/tests/hooks/guard-codex-dir.cases.jsonl" \
+    | while IFS= read -r _line; do
+        printf '%s' "$_line" | jq -r '.tool_input.patch' \
+          | awk '/Update File:/ { i = index($0, "config.toml"); if (i) printf "%s", substr($0, i + 11) }' \
+          | od -An -tx1 | tr -d ' \n'
+        echo
+      done | LC_ALL=C sort)
+  ws_n=$(printf '%s\n' "$ws_bytes" | grep -c . || true)
+  case_uniq_n=$(printf '%s\n' "$case_bytes" | LC_ALL=C sort -u | grep -c . || true)
+  if [ "$ws_n" -gt 0 ] && [ "$ws_bytes" = "$case_bytes" ] && [ "$ws_n" = "$case_uniq_n" ]; then
     pass=$((pass + 1))
   else
-    echo "FAIL guard-codex-dir ws/case parity: ws[]=$ws_count 「ヘッダー行末」ケース=$ws_case_count"
+    echo "FAIL guard-codex-dir ws/case parity: ws[]=$ws_n 件 / ケース(重複除去後)=$case_uniq_n 件、バイト集合の一致=$([ "$ws_bytes" = "$case_bytes" ] && echo yes || echo no)"
     fail=$((fail + 1))
   fi
 fi
