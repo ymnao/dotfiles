@@ -149,12 +149,12 @@
 {"name":"allow: Bash で home 配下別プロジェクトを読む","expect":"allow","command":"cat ~/other-project/.codex/foo"}
 
 # --- apply_patch ヘッダーの空白正規化 (issue #308) ---
-# codex の apply_patch パーサは行末 CR を落としてから Rust の `str::trim`
-# (Unicode の White_Space 全部) で前後を trim し、その結果から path を取る
-# (codex-rs/apply-patch/src/streaming_parser.rs、2026-08-10 に一次情報で確認)。
-# hook 側が同じ正規化をしないと、パーサは実 path へ書くのに hook の完全一致判定
-# (is_protected_home_codex_config) だけが外れる。行末 24 形 (= 剥がす集合の全要素) と
-# 行頭 3 形は 2026-08-10 に対照付きで実測し、LF だけが block で残りは全て allow だった。
+# 何を測るか: パーサが空白として剥がす形でヘッダーを書いても block されること。
+# なぜそうあるべきか (パーサの正規化と、剥がす集合をそれに固定した理由) は
+# agents/hooks/guard-codex-dir.sh の extract_apply_patch_header_paths 側コメントが正本。
+# 行末は剥がす集合の全要素 24 形、行頭は代表 3 形。いずれも 2026-08-10 に
+# 対照付きで実測し、修正前は LF だけが block で残りは全て allow だった。
+# 行末ケースの件数は run-hook-tests.sh が ws[] の要素数と一致するか機械で測る。
 {"name":"block: apply_patch ヘッダー行末 U+0020 (space)","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Update File: {{HOME}}/.codex/config.toml \n+notify = [\"evil\"]\n*** End Patch\n"}}
 {"name":"block: apply_patch ヘッダー行末 U+0009 (tab)","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Update File: {{HOME}}/.codex/config.toml\t\n+notify = [\"evil\"]\n*** End Patch\n"}}
 {"name":"block: apply_patch ヘッダー行末 U+000B (VT)","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Update File: {{HOME}}/.codex/config.toml\u000b\n+notify = [\"evil\"]\n*** End Patch\n"}}

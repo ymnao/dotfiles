@@ -364,6 +364,22 @@ if [ -z "${HOOK_DIR:-}" ] && [ -f "$REPO_ROOT/agents/hooks/guard-codex-dir.sh" ]
       fail=$((fail + 1))
     fi
   done
+
+  # apply_patch ヘッダーから剥がす空白集合 (hook の ws[]) と、その全要素を行末位置で
+  # 測るケース群 (jsonl の「ヘッダー行末」) の数が一致することを見る。hook 側の
+  # コメントは 1:1 対応を宣言しているが、宣言だけだと集合に足したときテスト側の
+  # 追加を忘れても緑のまま通り、足した要素だけ無検査になる (shell.md の
+  # 「全部入り fixture は対象が増えた瞬間に黙って古くなる」)。
+  echo "==> guard-codex-dir (空白集合とケース数の一致)"
+  # 1 行に 2 要素書く行があるので、行数 (grep -c) ではなく出現数を数える。
+  ws_count=$(grep -o 'ws\[++nws\] = ' "$REPO_ROOT/agents/hooks/guard-codex-dir.sh" | grep -c .)
+  ws_case_count=$(grep -c 'apply_patch ヘッダー行末 ' "$REPO_ROOT/tests/hooks/guard-codex-dir.cases.jsonl")
+  if [ "$ws_count" -gt 0 ] && [ "$ws_count" = "$ws_case_count" ]; then
+    pass=$((pass + 1))
+  else
+    echo "FAIL guard-codex-dir ws/case parity: ws[]=$ws_count 「ヘッダー行末」ケース=$ws_case_count"
+    fail=$((fail + 1))
+  fi
 fi
 
 # guard-sandbox-exclusions: jq 不在時に exit 2 (フェイルセーフ) となることを検証。

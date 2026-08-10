@@ -266,19 +266,23 @@ is_protected_home_project_codex_path() {
 # 完全一致判定 (is_protected_home_codex_config) だけが外れる。2026-08-10 の実測では
 # LF だけが block で、行末 CR / 各種空白と行頭空白の 11 形は全て allow だった (issue #308)。
 #
-# Why not 文字クラス正規表現: 非 ASCII 空白は BSD awk の文字クラスで表現できず、
-# `\xNN` は POSIX awk 未定義。バイト列を octal エスケープで明示列挙する。
-# Why not `[[:space:]]`: ASCII 6 文字しか覆わず、実測で素通りした U+00A0 / U+3000 が漏れる。
-# Why not 変化が無くなるまで回すループ: この hook は全 tool 呼び出しで毎回走るので、
-# 空白を数千個並べた病的入力で O(n^2) になる形は使わない。両端をインデックスで
-# 前進させ、substr は最後の 1 回だけにする (走査は入力長に対して線形)。
-# LC_ALL=C pin: UTF-8 ロケールの gawk は substr / length が文字単位になり、
-# バイト列比較が壊れる (CI の locale matrix が C / en_US.UTF-8 / ja_JP.UTF-8 を回す)。
+# Why not `[[:space:]]` / 文字クラス: ASCII 6 文字しか覆わず、実測で素通りした
+# U+00A0 / U+3000 が漏れる。非 ASCII 空白は BSD awk の文字クラスで表現できず
+# `\xNN` も POSIX awk 未定義なので、バイト列を octal エスケープで明示列挙し、
+# それを alternation regex に組み立てて両端から剥がす。
+# LC_ALL=C pin: バイト列一致を守るため (regex / substr が文字単位になる awk 実装で
+# 崩れる)。手元の one-true-awk 20200816 では C / en_US.UTF-8 / ja_JP.UTF-8 の 3 つ
+# とも同じバイト列を返したので、この pin が load-bearing なのは他実装側
+# — gawk はこの host に無く未実測 (2026-08-10)。CI の locale matrix が 3 ロケールを回す。
 #
 # 剥がす集合を実パーサより広く取れば過剰 block (fail-closed)、狭ければ素通り
 # (fail-open) なので、集合は実パーサと同一に固定する。要素は 24 個で、
 # tests/hooks/guard-codex-dir.cases.jsonl の「ヘッダー行末」ケースと 1:1 に対応する
-# — ここに足したら向こうにも足す。
+# — 数の一致は tests/run-hook-tests.sh が機械で測る (コメントの宣言だけにしない)。
+#
+# 剥がす**位置**は実パーサと厳密には一致しない: パーサは Update File ハンク内の行を
+# `trim_end()` だけで見る (行頭は剥がさない) のに対し、ここは全行を前後 trim する。
+# ずれる向きは「hook だけが余計に一致する」= 過剰 block なので安全側に倒れる。
 extract_apply_patch_header_paths() {
   LC_ALL=C awk -v tag="${1:-}" '
     BEGIN {
@@ -297,30 +301,17 @@ extract_apply_patch_header_paths() {
       ws[++nws] = "\342\200\250"; ws[++nws] = "\342\200\251" # U+2028 U+2029
       ws[++nws] = "\342\200\257"; ws[++nws] = "\342\201\237" # U+202F U+205F
       ws[++nws] = "\343\200\200"                            # U+3000
-    }
-    function trim_ws(s,   i, j, k, wl, hit) {
-      i = 1
-      j = length(s)
-      hit = 1
-      while (hit && i <= j) {
-        hit = 0
-        for (k = 1; k <= nws; k++) {
-          wl = length(ws[k])
-          if (substr(s, i, wl) == ws[k]) { i += wl; hit = 1; break }
-        }
-      }
-      hit = 1
-      while (hit && j >= i) {
-        hit = 0
-        for (k = 1; k <= nws; k++) {
-          wl = length(ws[k])
-          if (j - wl + 1 >= i && substr(s, j - wl + 1, wl) == ws[k]) { j -= wl; hit = 1; break }
-        }
-      }
-      return substr(s, i, j - i + 1)
+      # 要素はどれも regex メタ文字を含まないバイト列なので、そのまま alternation に
+      # 並べられる。組み立ては BEGIN で 1 回だけ (行ごとに組むと毎行コンパイルが走る)。
+      alt = ws[1]
+      for (k = 2; k <= nws; k++) alt = alt "|" ws[k]
+      lead = "^(" alt ")+"
+      trail = "(" alt ")+$"
     }
     {
-      line = trim_ws($0)
+      line = $0
+      sub(lead, "", line)
+      sub(trail, "", line)
       lower = tolower(line)
       if (match(lower, /^\*\*\* (add file|update file|delete file|move to): /)) {
         print tag substr(line, RLENGTH + 1)
