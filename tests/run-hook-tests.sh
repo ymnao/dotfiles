@@ -436,7 +436,14 @@ fi
 # この hook は Bash tool 呼び出しごとに毎回走るので、遅さはそのままシェルの摩擦になる。
 # 全ケースに一律のタイムアウトを掛けないのは、事故が起きた経路だけを pin する方針
 # (claude/rules/shell.md「毎回走るゲートに suffix ごとに検査を回す形を足したら…」) に
-# 合わせるため。閾値 10s は正常 1s 未満 / 退行 82s の間で、どちらからも 1 桁離れている。
+# 合わせるため。
+# `a=/` を 2400 回 (7215 字) 並べるのは、**事故当時の 1816 字では足りないため**。
+# 同じ commit (95b690d) で `_matches_codex` に足した先頭 1 文字の fast path が
+# 効くので、`_check_components` の切り詰めだけを外した退行は 1816 字だと 2.92s に
+# しかならず 10s 閾値を下回る。2026-08-10 に切り詰めのみを外して実測した対比
+# (修正済み / 退行版): 915 字 0.10s / 0.68s、1816 字 0.12s / 2.92s、
+# 3615 字 0.18s / 15.19s、7215 字 0.36s / 91.0s。7215 字なら閾値 10s から
+# 正常側に 28 倍・退行側に 9 倍離れており、ランナーの性能差では跨げない。
 patho_hooks=()
 if [ -z "${HOOK_DIR:-}" ]; then
   for _h in "$REPO_ROOT/claude/hooks/block-dangerous-commands.sh" "$REPO_ROOT/codex/hooks/block-dangerous-commands.sh"; do
@@ -453,7 +460,7 @@ if [ "${#patho_hooks[@]}" -gt 0 ]; then
     # 制御群。タイムアウト機構が壊れて常に打ち切る状態でも本体は FAIL するので、
     # 「退行を検出した」と読み違えないよう、同型の短い入力が allow で返ることを先に見る。
     patho_ctrl=$(jq -nc '{tool_input:{command:"curl -o out a=/b $X"}}')
-    patho_seg=$(printf 'a=/%.0s' {1..600})
+    patho_seg=$(printf 'a=/%.0s' {1..2400})
     patho_cmd="curl -o out $patho_seg \$X"
     patho_input=$(jq -nc --arg c "$patho_cmd" '{tool_input:{command:$c}}')
     for _h in "${patho_hooks[@]}"; do
