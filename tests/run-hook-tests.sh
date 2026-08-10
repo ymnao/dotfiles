@@ -42,6 +42,8 @@ set -euo pipefail
 # テスト結果がリポジトリ cwd に依存しないようにする)。
 #
 # 依存: bash 3.2+ / jq / git (リポジトリルート解決のみ)
+#   病的入力セクション (issue #314) だけは追加で timeout(1) / gtimeout / perl の
+#   いずれか 1 つを使う。3 つとも解決できない環境ではそのセクションを SKIP する。
 #
 # 環境変数 HOOK_DIR: 指定すると claude/codex の両系統ではなく、そのディレクトリの
 # hook 単体に対してテストする (例: symlink 切り替え前の agents/hooks/ の検証用)。
@@ -166,6 +168,38 @@ run_hook() {
     printf '%s' "$2" | (cd "$WORKDIR" && HOME="$FAKE_HOME" CLAUDE_GUARD_MANAGED_SETTINGS="$nosettings" PATH="$WORKDIR/no-jq-bin:/usr/bin:/bin" bash "$1" >/dev/null 2>&1) || rc=$?
   else
     printf '%s' "$2" | (cd "$WORKDIR" && HOME="$FAKE_HOME" CLAUDE_GUARD_MANAGED_SETTINGS="$nosettings" bash "$1" >/dev/null 2>&1) || rc=$?
+  fi
+  printf '%s' "$rc"
+}
+
+# 病的入力セクション (issue #314) 用のタイムアウト機構。macOS には timeout(1) が
+# 無いので 3 段で検出し、どれも無ければセクションごと SKIP する。
+# perl 版が `alarm` + `exec` なのは、alarm タイマーが exec を跨いで生き残るため
+# — ラッパープロセスが残らず、子の exit code もそのまま返る。
+# 「この OS には perl がある」と決め打たずに実行時検出するのは、CI ランナーの
+# pre-install 内容をこの repo から実測できないため (断定を書かない側に倒す)。
+PATHO_TIMEOUT=10
+TIMEOUT_WRAP=""
+if command -v timeout >/dev/null 2>&1; then
+  TIMEOUT_WRAP="timeout"
+elif command -v gtimeout >/dev/null 2>&1; then
+  TIMEOUT_WRAP="gtimeout"
+elif command -v perl >/dev/null 2>&1; then
+  TIMEOUT_WRAP="perl"
+fi
+
+run_hook_timed() {
+  # $1=hook path, $2=input。run_hook と同じ隔離で走らせ、$PATHO_TIMEOUT 秒で打ち切る。
+  # 打ち切り時の exit code は timeout(1) / gtimeout が 124、perl が 142 (128+SIGALRM)。
+  # サブシェルの外側にもう一段 2>/dev/null を掛けるのは、SIGALRM で打ち切られたとき
+  # `Alarm clock: 14 ...` の job 通知を出すのが hook ではなく**このサブシェル自身**で、
+  # 内側の 2>&1 では落とせないため。
+  local rc=0
+  local nosettings="$BASEDIR/no-managed-settings.json"
+  if [ "$TIMEOUT_WRAP" = "perl" ]; then
+    printf '%s' "$2" | (cd "$WORKDIR" && HOME="$FAKE_HOME" CLAUDE_GUARD_MANAGED_SETTINGS="$nosettings" perl -e 'alarm shift; exec @ARGV' "$PATHO_TIMEOUT" bash "$1" >/dev/null 2>&1) 2>/dev/null || rc=$?
+  else
+    printf '%s' "$2" | (cd "$WORKDIR" && HOME="$FAKE_HOME" CLAUDE_GUARD_MANAGED_SETTINGS="$nosettings" "$TIMEOUT_WRAP" "$PATHO_TIMEOUT" bash "$1" >/dev/null 2>&1) 2>/dev/null || rc=$?
   fi
   printf '%s' "$rc"
 }
@@ -391,6 +425,56 @@ if [ -z "${HOOK_DIR:-}" ] && [ -f "$REPO_ROOT/claude/hooks/guard-sandbox-exclusi
   else
     echo "FAIL guard-sandbox-exclusions jq-missing fail-safe: expected exit 2 + jq 未インストール メッセージ, got rc=$excl_jq_rc msg=$excl_jq_err"
     fail=$((fail + 1))
+  fi
+fi
+
+# block-dangerous-commands: 病的入力が短時間で判定を返すことの pin (issue #314)。
+# `_check_glob_seg` の派生候補ループは、内側の検査が文字列全体を再走査する形にすると
+# 入力長に対して超線形に伸びる。PR #315 で実際に踏み、1816 字で 82.07s (main は 0.45s)
+# になったが、そのとき機能テストは 309 passed / 0 failed で退行を示さなかった
+# — exit code しか見ていないため、遅いだけのケースは pass になる。
+# この hook は Bash tool 呼び出しごとに毎回走るので、遅さはそのままシェルの摩擦になる。
+# 全ケースに一律のタイムアウトを掛けないのは、事故が起きた経路だけを pin する方針
+# (claude/rules/shell.md「毎回走るゲートに suffix ごとに検査を回す形を足したら…」) に
+# 合わせるため。閾値 10s は正常 1s 未満 / 退行 82s の間で、どちらからも 1 桁離れている。
+patho_hooks=()
+if [ -z "${HOOK_DIR:-}" ]; then
+  for _h in "$REPO_ROOT/claude/hooks/block-dangerous-commands.sh" "$REPO_ROOT/codex/hooks/block-dangerous-commands.sh"; do
+    if [ -f "$_h" ]; then
+      patho_hooks[${#patho_hooks[@]}]="$_h"
+    fi
+  done
+fi
+if [ "${#patho_hooks[@]}" -gt 0 ]; then
+  echo "==> block-dangerous-commands (病的入力の実行時間)"
+  if [ -z "$TIMEOUT_WRAP" ]; then
+    echo "SKIP block-dangerous-commands 病的入力: timeout / gtimeout / perl のいずれも解決できない"
+  else
+    # 制御群。タイムアウト機構が壊れて常に打ち切る状態でも本体は FAIL するので、
+    # 「退行を検出した」と読み違えないよう、同型の短い入力が allow で返ることを先に見る。
+    patho_ctrl=$(jq -nc '{tool_input:{command:"curl -o out a=/b $X"}}')
+    patho_seg=$(printf 'a=/%.0s' {1..600})
+    patho_cmd="curl -o out $patho_seg \$X"
+    patho_input=$(jq -nc --arg c "$patho_cmd" '{tool_input:{command:$c}}')
+    for _h in "${patho_hooks[@]}"; do
+      _label="${_h#"$REPO_ROOT/"}"
+
+      _rc=$(run_hook_timed "$_h" "$patho_ctrl")
+      if [ "$_rc" = "0" ]; then
+        pass=$((pass + 1))
+      else
+        echo "FAIL $_label 病的入力の制御群: expected exit 0, got $_rc (124/142 はタイムアウト = 計測機構側の異常)"
+        fail=$((fail + 1))
+      fi
+
+      _rc=$(run_hook_timed "$_h" "$patho_input")
+      if [ "$_rc" = "0" ]; then
+        pass=$((pass + 1))
+      else
+        echo "FAIL $_label 病的入力 (${#patho_cmd} 字): expected exit 0, got $_rc (124/142 は ${PATHO_TIMEOUT}s タイムアウト = 超線形化の退行を疑う)"
+        fail=$((fail + 1))
+      fi
+    done
   fi
 fi
 
