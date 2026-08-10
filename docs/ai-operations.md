@@ -251,6 +251,7 @@ MEMORY.md 先頭 200 行が自動ロードされる。
 | `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`(sandbox の外まで及ぶ認証情報の剥がし) | (2026-08-10 / #298)**実測して見送った** — 剥がすのは固定 22 変数で、issue が名指しした `GITHUB_TOKEN` / `GH_TOKEN` / `NPM_TOKEN` は対象外。22 変数はこの host の環境に 1 つも無い一方、設定すると permission mode が `default` に強制され `permissions.defaultMode: auto` が失われる。実測は §10「[sandbox の外側の credential 保護](#sandbox-の外側の-credential-保護--scrub-は入れない298)」 | 剥がす対象に `GITHUB_TOKEN` 系が入るか、permission mode 強制が外れるか、この host が AWS / GCP / Azure の認証情報を環境変数で持つようになったとき(いずれも上流バージョン依存なので、再評価時は §10 の実測をやり直す) |
 | Context7 MCP(ライブラリドキュメント取得) | (2026-08-09 / #286)公式ドキュメントを直接 fetch すれば大半足りる。§5 の順序(CLI / skill で代替できるなら MCP を入れない)に該当 | 公式 doc の直接取得で調査が破綻するケースが 3 回起きたとき(そのときは §5 の導入審査 — 出所確認・全文監査・最小権限・lethal trifecta — を通す) |
 | リポジトリ内 `.agents/memory/`(教訓のマシン間共有) | (2026-08-09 / #286)HANDOFF.md 運用と重複する。auto memory と §7 の昇格運用で足りる | HANDOFF 経由の引き継ぎ漏れが 2 回起きたとき |
+| `sandbox.network.allowManagedDomainsOnly` / `sandbox.filesystem.allowManagedReadPathsOnly`(Claude Code の managed 設定) | (2026-08-10 / #299)**一次情報で仕様を確認し、配置せずに見送った** — 有効にすると allowlist が managed tier だけになるが、いま効いている許可ホストには project 設定由来・gitignore 済み local 設定由来・**セッション承認由来**が混ざっており、移設対象を事前に列挙できない(= 移設完了を検証できない)。塞ぎたい `gh` / `brew` は `excludedCommands` で sandbox 外を走るので lock の対象外。user と管理者が同一人物のこの環境で得られるのは「agent が user 設定の allowlist を広げる経路」1 本だけで、対価はドメイン追加のたびの `sudo` 手順。`allowManagedReadPathsOnly` は `allowRead` 未使用のため効果が無い。詳細は §10「[allowManagedDomainsOnly — 配置せずに見送った](#allowmanageddomainsonly--配置せずに見送った299)」 | user と管理者が別人になる環境(共有マシン / 組織配布)で使い始めたとき、または `excludedCommands` を撤廃して sandbox 内が唯一の egress になったとき。ただし着手の可否は §10「[managed 設定は原則触らない](#managed-設定は原則触らない--判断基準は復旧に-sudo-が要るか)」の基準を先に通す |
 | Workflow tool(skill の手順を決定的スクリプトに移す) | (2026-08-09 / #286)**harness 組み込みなので導入は済んでおり、見送っているのは運用への採用**(2026-08-09 に tool 一覧で存在を確認)。現行の skill 内 fan-out で足りており、採用すると同じ手順が SKILL.md と workflow スクリプトに二重管理になる | /adversarial-review や /simplify で見逃しが起き、その原因が並列数・検証回数のブレだと特定できたとき |
 
 ## 10. codex / Claude Code の host 実行面の防御層
@@ -1108,6 +1109,87 @@ user 設定に直接 `filesystem.disabled` を書いた状態は試していな�
 Code merges entries from every scope」)。したがって user 設定側の既存 4 件は
 そのまま効き続ける。増えるのは「外せなくなる」ことだけで、**起動をゲートしない**
 (下限や `disableSideloadFlags` と違い、壊れても起動はする)。
+
+### allowManagedDomainsOnly — 配置せずに見送った(#299)
+
+`sandbox.network.allowManagedDomainsOnly` と
+`sandbox.filesystem.allowManagedReadPathsOnly` は、配列キーが全 scope から
+マージされる既定を止めて **managed 設定に書いたものだけを有効にする** managed 専用
+キー。2026-08-10 に一次情報で仕様を確認し、**managed 側には配置せず見送った**。
+
+**確認した範囲と、していない範囲**。上流 docs の逐語と、host の出荷バイナリ
+(`/opt/homebrew/Caskroom/claude-code@latest/2.1.226/claude` を `strings` で読む)まで
+は確認した。**このキーを実際に配置した状態の挙動は測っていない** — 以下の影響は
+すべて docs とバイナリ実装からの帰結であって、live 実測ではない。
+
+**バージョン**(issue の受け入れ基準 1 に対する回答):
+
+- 上流 docs に版の注記が**無い**。同じページの `strictAllowlist` には「Requires
+  Claude Code v2.1.219 or later」と明記があるので、この記法自体は使われている
+- host の 2.1.226 バイナリには実装が揃っている(schema 定義 / scope フィルタ /
+  判定関数 / ブロックログ文字列)
+- **導入版は特定できていない**。言えるのは「今使っている版では動く」まで
+
+**仕様**(docs 逐語):
+
+> if `allowManagedDomainsOnly` is set in managed settings, non-allowed domains are
+> blocked automatically instead of prompting, and only `allowedDomains` and
+> `WebFetch(domain:...)` allow rules from managed settings are honored.
+
+> Locking network domains with `allowManagedDomainsOnly` narrows the risk but
+> doesn't remove it, since that lock applies only to commands running inside the
+> sandbox.
+
+バイナリ側の実装もこれと整合する — allowlist 構築関数は有効時に managed tier だけを
+走査し、managed の `sandbox.network.allowedDomains` と managed の `permissions.allow`
+内の `WebFetch(domain:...)` の 2 つから組む。`deniedDomains` は全 scope から効き
+続ける。拒否は無言で、痕跡は debug ログの
+`[sandbox] Blocked network request to <host> (allowManagedDomainsOnly)` だけ。
+
+**見送った理由**:
+
+1. **移設すべき集合を事前に完全列挙できない**。issue #299 は「user 設定の 10 件を
+   managed へ移す」と書いていたが、いま効いている allowlist はそれより広い:
+
+   | 由来 | 中身 | 移設後 |
+   |---|---|---|
+   | user `claude/settings.json` | `allowedDomains` 10 件 | 移せる |
+   | project `.claude/settings.json` | `allowedDomains` 7 件(`formulae.brew.sh` / `ghcr.io` は**ここにしかない**) | 無効化 |
+   | `.claude/settings.local.json`(gitignore 済み) | `permissions.allow` の `WebFetch(domain:www.anthropic.com)` | 無効化 |
+   | セッション中に user が承認したホスト | **設定ファイルに現れないので列挙できない** | 無効化 |
+
+   前 3 つは書き下せるが 4 つ目は書き下せない(下の
+   「[network.strictAllowlist](#networkstrictallowlist--許可外ホストを確認ダイアログ抜きで拒否する)」節)。
+   採用するとこれらが一斉に無効化され、しかも**移設が完了したかを確かめる手段が無い**
+   (issue の受け入れ基準「移設後に外部通信が通ることを実測」が、この由来については
+   原理的に閉じない)
+
+2. **塞ぎたい経路が lock の対象外**。上の docs 逐語のとおり lock は sandbox 内に
+   しか効かないが、`excludedCommands` の 4 コマンド(`docker` / `gh` / `brew` /
+   `pnpm test:e2e`)を含む行は sandbox 外で走る(上の
+   「[sandbox の excludedCommands が「一次防御」を丸ごと外す経路](#sandbox-の-excludedcommands-が一次防御を丸ごと外す経路)」節の実測)。
+   **この host からいちばん広く外に出られる `gh` は lock の後も任意ホストへ通る**
+
+3. **守る相手がいない**。managed 設定の価値は「管理者が開発者に policy を外させない」
+   ことだが、この環境は user と管理者が同一人物。残る利得は「agent が Edit tool で
+   `~/.claude/settings.json` の allowlist を広げる経路」を塞ぐこと 1 本だけ
+
+4. **対価は日常の摩擦**。ドメイン追加は実際に起きるイベントで、`chatgpt.com`
+   (`9c9c566`、2026-07-06)と `auth.openai.com`(`fa38ecb`、2026-07-22)を
+   別々の機会に足している。managed を正本にすると、そのたびに上の `sudo`
+   4 コマンドの配置手順が要る
+
+5. `allowManagedReadPathsOnly` は**効果が無い**。この repo は user / project / local の
+   どこでも `allowRead` を使っていない(`denyRead` / `allowWrite` は使っている)。
+   「将来 `allowRead` を使い始めたら効く」型の先回りは入れない
+
+**着手基準([`claude/rules/managed-settings.md`](../claude/rules/managed-settings.md))
+の当てはめ**。`allowManagedDomainsOnly` は**起動をゲートしない**(誤っても Claude Code
+は起動する)ので、一見すると基準が置いている別枠に入る。入らないと判断した —
+壊れたときの症状が「sandbox 内の通信が無言で全部落ちる」で、**復旧に `sudo rm` /
+`sudo cp` が要る**ため。別枠の条件は「起動しないこと」ではなく、基準が括弧で
+添えている「起動さえすれば**通常の手順で直せる**」の方で、この中間型はそちらを
+満たさない。基準文は複製せず、そちらを正本のまま置いている。
 
 ### network.strictAllowlist — 許可外ホストを確認ダイアログ抜きで拒否する
 
