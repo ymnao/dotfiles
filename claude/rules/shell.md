@@ -373,19 +373,22 @@ paths:
   ディレクトリは、TMPDIR 未設定の環境でだけ /tmp 配下になる。macOS は
   per-user temp dir (`/var/folders/.../T`) を指すので、そこを「/tmp 配下」の
   代表として使う検査は**前提ごと崩れる**。
-  外れ方が悪質なのは、**Linux では原理的に再現しない**こと — CI の Linux
-  matrix は TMPDIR 未設定で /tmp になるため全 green のまま、macOS job だけが
-  落ちる。手元の macOS でも、agent の harness が TMPDIR を /tmp 配下の
-  scratchpad に差し替えていれば通ってしまう。「/tmp 配下」を測りたいなら
+  外れ方が悪質なのは、**Linux では原理的に再現しない**こと — この前提により
+  CI の Linux matrix は全 green のまま、macOS job だけが落ちる。手元の macOS
+  でも、agent の harness が TMPDIR を /tmp 配下の scratchpad
+  (`/tmp/claude-<uid>` 等) に差し替えていれば通る (2026-08-10 実測: 修正前の
+  スイートが手元では 80/80 pass)。「/tmp 配下」を測りたいなら
   **/tmp 配下であることを自分で確かめた probe ディレクトリ**を別に掘る
   (`/tmp` 直下は 1777 なので、掘るのは 0700 のサブディレクトリ)。
   実例: issue #316。html-brief renderer の「TMPDIR が /tmp の外を指しても
   /tmp 配下への出力は受理される」ケースが出力先に `WORKDIR`
   (= `${TMPDIR:-/tmp}` 配下) を使っており、macOS runner では TMPDIR を
   差し替えた時点でどの root にも入らなくなっていた。**レンダラは正しく
-  拒否しており、テストだけが 3 ロケールとも落ちて main の macOS CI を
-  8 日間赤くしていた** (週次実行なので、その間の実際の退行は既存の赤に
-  埋もれる)
+  拒否しており、落ちていたのはテストだけ** (3 ロケールとも同一箇所)。
+  退行が main に入ったのは 2026-08-02 〜 08-09 の間だが、macOS CI は週次
+  実行なので **検出は 08-09 の定期実行まで遅れた** (main の実行履歴で
+  failure はこの 1 本、直前の 08-02 は success。2026-08-10 実測)。
+  「赤かった期間」ではなく **気付けない期間が最長 7 日ある**ことがコスト
 - **テスト用の一時 git リポジトリを作ったら、`git init` の直後に
   `git config gc.auto 0` と `git config maintenance.auto false` を置く**。
   `git commit` は auto gc を detach して起動するため、これがテスト終了時の
