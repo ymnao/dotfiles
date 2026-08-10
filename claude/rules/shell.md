@@ -367,6 +367,25 @@ paths:
   実例: issue #225 / `tests/fish-pnpm/`・`tests/fish-version-managers/`・
   `tests/link/`(前 2 者は fish の `$fish_user_paths` と、後者は `readlink` が
   返す symlink target と比較していた)
+- **`${TMPDIR:-/tmp}` 配下に掘った作業ディレクトリを「`/tmp` 配下」の代用に
+  しない**。前項が TMPDIR の*表記*(末尾スラッシュ)の話なのに対し、これは
+  **TMPDIR がどこを指すか**の話。`mktemp -d "${TMPDIR:-/tmp}/…"` で掘った
+  ディレクトリは、TMPDIR 未設定の環境でだけ /tmp 配下になる。macOS は
+  per-user temp dir (`/var/folders/.../T`) を指すので、そこを「/tmp 配下」の
+  代表として使う検査は**前提ごと崩れる**。
+  外れ方が悪質なのは、**Linux では原理的に再現しない**こと — CI の Linux
+  matrix は TMPDIR 未設定で /tmp になるため全 green のまま、macOS job だけが
+  落ちる。手元の macOS でも、agent の harness が TMPDIR を /tmp 配下の
+  scratchpad に差し替えていれば通ってしまう。「/tmp 配下」を測りたいなら
+  **/tmp 配下であることを自分で確かめた probe ディレクトリ**を別に掘る
+  (`/tmp` 直下は 1777 なので、掘るのは 0700 のサブディレクトリ)。
+  実例: issue #316。html-brief renderer の「TMPDIR が /tmp の外を指しても
+  /tmp 配下への出力は受理される」ケースが出力先に `WORKDIR`
+  (= `${TMPDIR:-/tmp}` 配下) を使っており、macOS runner では TMPDIR を
+  差し替えた時点でどの root にも入らなくなっていた。**レンダラは正しく
+  拒否しており、テストだけが 3 ロケールとも落ちて main の macOS CI を
+  8 日間赤くしていた** (週次実行なので、その間の実際の退行は既存の赤に
+  埋もれる)
 - **テスト用の一時 git リポジトリを作ったら、`git init` の直後に
   `git config gc.auto 0` と `git config maintenance.auto false` を置く**。
   `git commit` は auto gc を detach して起動するため、これがテスト終了時の
