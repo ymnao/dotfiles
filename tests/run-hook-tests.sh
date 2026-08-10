@@ -154,52 +154,46 @@ fi
 pass=0
 fail=0
 
+# 病的入力セクション (issue #314) 用のタイムアウトラッパー。macOS には timeout(1) が
+# 無いので 3 段で検出し、どれも解決できなければ空のまま = セクションごと SKIP する。
+# perl 版が `alarm` + `exec` なのは、alarm タイマーが exec を跨いで生き残るため
+# — ラッパープロセスが残らず、子の exit code もそのまま返る。
+# 「この OS には perl がある」と決め打たずに実行時検出するのは、CI ランナーの
+# pre-install 内容をこの repo から実測できないため (断定を書かない側に倒す)。
+PATHO_TIMEOUT=10
+TIMEOUT_CMD=()
+if command -v timeout >/dev/null 2>&1; then
+  TIMEOUT_CMD=(timeout "$PATHO_TIMEOUT")
+elif command -v gtimeout >/dev/null 2>&1; then
+  TIMEOUT_CMD=(gtimeout "$PATHO_TIMEOUT")
+elif command -v perl >/dev/null 2>&1; then
+  TIMEOUT_CMD=(perl -e 'alarm shift; exec @ARGV' "$PATHO_TIMEOUT")
+fi
+
 run_hook() {
   # $1=hook path, $2=input (raw stdin content)。exit code を echo する (0/2 以外もそのまま)
+  # $3 が非空なら $TIMEOUT_CMD を前置して $PATHO_TIMEOUT 秒で打ち切る (呼び出し側が
+  # 先に TIMEOUT_CMD の非空を確かめる)。打ち切り時の exit code は timeout(1) /
+  # gtimeout が 124、perl が 142 (128+SIGALRM)。
   # HOOK_TEST_STRIP_JQ=1 のとき PATH から jq を除外して hook を実行 (fail-safe 検証)。
   # HOME は隔離 HOME に差し替える (実ユーザー環境からの分離)。
   # CLAUDE_GUARD_MANAGED_SETTINGS は guard-sandbox-exclusions.sh が読む managed
   # settings のパス。HOME / cwd の隔離ではホスト側の
   # /Library/Application Support/ClaudeCode/ を外せないため、存在しないパスを
   # 明示して MDM 管理端末でも CI と同じ結果になるようにする。
+  # 打ち切り経路を別関数に切らずここへ足すのは、隔離の 3 点セット (cd / HOME /
+  # CLAUDE_GUARD_MANAGED_SETTINGS) を 2 箇所で持つとドリフトするため。
   local rc=0
   local nosettings="$BASEDIR/no-managed-settings.json"
-  if [ "${HOOK_TEST_STRIP_JQ:-0}" = "1" ]; then
+  if [ -n "${3:-}" ]; then
+    # サブシェルの外側にもう一段 2>/dev/null を掛けるのは、SIGALRM で打ち切られたとき
+    # `Alarm clock: 14 ...` の job 通知を出すのが hook ではなく**このサブシェル自身**で、
+    # 内側の 2>&1 では落とせないため。
+    printf '%s' "$2" | (cd "$WORKDIR" && HOME="$FAKE_HOME" CLAUDE_GUARD_MANAGED_SETTINGS="$nosettings" "${TIMEOUT_CMD[@]}" bash "$1" >/dev/null 2>&1) 2>/dev/null || rc=$?
+  elif [ "${HOOK_TEST_STRIP_JQ:-0}" = "1" ]; then
     printf '%s' "$2" | (cd "$WORKDIR" && HOME="$FAKE_HOME" CLAUDE_GUARD_MANAGED_SETTINGS="$nosettings" PATH="$WORKDIR/no-jq-bin:/usr/bin:/bin" bash "$1" >/dev/null 2>&1) || rc=$?
   else
     printf '%s' "$2" | (cd "$WORKDIR" && HOME="$FAKE_HOME" CLAUDE_GUARD_MANAGED_SETTINGS="$nosettings" bash "$1" >/dev/null 2>&1) || rc=$?
-  fi
-  printf '%s' "$rc"
-}
-
-# 病的入力セクション (issue #314) 用のタイムアウト機構。macOS には timeout(1) が
-# 無いので 3 段で検出し、どれも無ければセクションごと SKIP する。
-# perl 版が `alarm` + `exec` なのは、alarm タイマーが exec を跨いで生き残るため
-# — ラッパープロセスが残らず、子の exit code もそのまま返る。
-# 「この OS には perl がある」と決め打たずに実行時検出するのは、CI ランナーの
-# pre-install 内容をこの repo から実測できないため (断定を書かない側に倒す)。
-PATHO_TIMEOUT=10
-TIMEOUT_WRAP=""
-if command -v timeout >/dev/null 2>&1; then
-  TIMEOUT_WRAP="timeout"
-elif command -v gtimeout >/dev/null 2>&1; then
-  TIMEOUT_WRAP="gtimeout"
-elif command -v perl >/dev/null 2>&1; then
-  TIMEOUT_WRAP="perl"
-fi
-
-run_hook_timed() {
-  # $1=hook path, $2=input。run_hook と同じ隔離で走らせ、$PATHO_TIMEOUT 秒で打ち切る。
-  # 打ち切り時の exit code は timeout(1) / gtimeout が 124、perl が 142 (128+SIGALRM)。
-  # サブシェルの外側にもう一段 2>/dev/null を掛けるのは、SIGALRM で打ち切られたとき
-  # `Alarm clock: 14 ...` の job 通知を出すのが hook ではなく**このサブシェル自身**で、
-  # 内側の 2>&1 では落とせないため。
-  local rc=0
-  local nosettings="$BASEDIR/no-managed-settings.json"
-  if [ "$TIMEOUT_WRAP" = "perl" ]; then
-    printf '%s' "$2" | (cd "$WORKDIR" && HOME="$FAKE_HOME" CLAUDE_GUARD_MANAGED_SETTINGS="$nosettings" perl -e 'alarm shift; exec @ARGV' "$PATHO_TIMEOUT" bash "$1" >/dev/null 2>&1) 2>/dev/null || rc=$?
-  else
-    printf '%s' "$2" | (cd "$WORKDIR" && HOME="$FAKE_HOME" CLAUDE_GUARD_MANAGED_SETTINGS="$nosettings" "$TIMEOUT_WRAP" "$PATHO_TIMEOUT" bash "$1" >/dev/null 2>&1) 2>/dev/null || rc=$?
   fi
   printf '%s' "$rc"
 }
@@ -444,43 +438,41 @@ fi
 # (修正済み / 退行版): 915 字 0.10s / 0.68s、1816 字 0.12s / 2.92s、
 # 3615 字 0.18s / 15.19s、7215 字 0.36s / 91.0s。7215 字なら閾値 10s から
 # 正常側に 28 倍・退行側に 9 倍離れており、ランナーの性能差では跨げない。
+patho_check() {
+  # $1=hook path, $2=input, $3=FAIL 時に出すラベル。allow (exit 0) で返れば pass。
+  local rc
+  rc=$(run_hook "$1" "$2" timed)
+  if [ "$rc" = "0" ]; then
+    pass=$((pass + 1))
+  else
+    echo "FAIL $3: expected exit 0, got $rc (124/142 は ${PATHO_TIMEOUT}s タイムアウト)"
+    fail=$((fail + 1))
+  fi
+}
+
 patho_hooks=()
 if [ -z "${HOOK_DIR:-}" ]; then
   for _h in "$REPO_ROOT/claude/hooks/block-dangerous-commands.sh" "$REPO_ROOT/codex/hooks/block-dangerous-commands.sh"; do
     if [ -f "$_h" ]; then
-      patho_hooks[${#patho_hooks[@]}]="$_h"
+      patho_hooks+=("$_h")
     fi
   done
 fi
 if [ "${#patho_hooks[@]}" -gt 0 ]; then
   echo "==> block-dangerous-commands (病的入力の実行時間)"
-  if [ -z "$TIMEOUT_WRAP" ]; then
+  if [ "${#TIMEOUT_CMD[@]}" -eq 0 ]; then
     echo "SKIP block-dangerous-commands 病的入力: timeout / gtimeout / perl のいずれも解決できない"
   else
-    # 制御群。タイムアウト機構が壊れて常に打ち切る状態でも本体は FAIL するので、
-    # 「退行を検出した」と読み違えないよう、同型の短い入力が allow で返ることを先に見る。
     patho_ctrl=$(jq -nc '{tool_input:{command:"curl -o out a=/b $X"}}')
     patho_seg=$(printf 'a=/%.0s' {1..2400})
     patho_cmd="curl -o out $patho_seg \$X"
     patho_input=$(jq -nc --arg c "$patho_cmd" '{tool_input:{command:$c}}')
     for _h in "${patho_hooks[@]}"; do
       _label="${_h#"$REPO_ROOT/"}"
-
-      _rc=$(run_hook_timed "$_h" "$patho_ctrl")
-      if [ "$_rc" = "0" ]; then
-        pass=$((pass + 1))
-      else
-        echo "FAIL $_label 病的入力の制御群: expected exit 0, got $_rc (124/142 はタイムアウト = 計測機構側の異常)"
-        fail=$((fail + 1))
-      fi
-
-      _rc=$(run_hook_timed "$_h" "$patho_input")
-      if [ "$_rc" = "0" ]; then
-        pass=$((pass + 1))
-      else
-        echo "FAIL $_label 病的入力 (${#patho_cmd} 字): expected exit 0, got $_rc (124/142 は ${PATHO_TIMEOUT}s タイムアウト = 超線形化の退行を疑う)"
-        fail=$((fail + 1))
-      fi
+      # 制御群を先に見るのは、タイムアウト機構が壊れて常に打ち切る状態でも本体は
+      # FAIL するため。同型の短い入力まで落ちていれば「退行を検出した」ではない。
+      patho_check "$_h" "$patho_ctrl" "$_label 病的入力の制御群 (落ちるのは計測機構側の異常)"
+      patho_check "$_h" "$patho_input" "$_label 病的入力 ${#patho_cmd} 字 (落ちるのは超線形化の退行)"
     done
   fi
 fi
