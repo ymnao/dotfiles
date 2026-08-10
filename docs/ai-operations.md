@@ -631,6 +631,78 @@ TLS 検証も通らない(実測: 上記 OSStatus -26276)ため外せない。�
   外しても、hook テストは green のまま(vacuous pass)になる。この 2 点は
   `tests/integrity/verify-sandbox-exclusion-guard.sh` が assert する
 
+### sandbox の外側の credential 保護 — SCRUB は入れない(#298)
+
+上の節のとおり、`excludedCommands` にマッチした行では `credentials.files` /
+`credentials.envVars` の deny もまとめて外れる。上流 docs も
+`sandbox.credentials` について「**The setting affects sandboxed Bash commands
+only**」「There is no built-in credential deny list」と明記し、その先の手段として
+`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` を挙げている。**この変数は入れない**。
+判断の根拠を以下に置く(再提案されたら、まずここの実測をやり直すこと)。
+
+**この変数が実際にやること**(2026-08-10 / Claude Code 2.1.226 のバイナリを
+`strings` で読んだもの。シンボル名 `isScrubEnabled` が残っている):
+
+- 有効化条件は「truthy な文字列」で、受け付けるのは `1` / `true` / `yes` / `on`
+  の 4 つだけ(小文字化 + trim 後の比較)。`2` や `enabled` では**有効にならない**
+- 剥がすのは 22 変数の固定リスト(と各 `INPUT_<name>`):
+  `ANTHROPIC_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN` /
+  `CLAUDE_CODE_ARTIFACTS_API_TOKEN` / `ANTHROPIC_AUTH_TOKEN` /
+  `ANTHROPIC_FOUNDRY_API_KEY` / `ANTHROPIC_FOUNDRY_AUTH_TOKEN` /
+  `ANTHROPIC_AWS_API_KEY` / `ANTHROPIC_CUSTOM_HEADERS` /
+  `AWS_SECRET_ACCESS_KEY` / `AWS_SESSION_TOKEN` / `AWS_BEARER_TOKEN_BEDROCK` /
+  `GOOGLE_APPLICATION_CREDENTIALS` / `AZURE_CLIENT_SECRET` /
+  `AZURE_CLIENT_CERTIFICATE_PATH` / `ACTIONS_ID_TOKEN_REQUEST_TOKEN` /
+  `ACTIONS_ID_TOKEN_REQUEST_URL` / `ACTIONS_RUNTIME_TOKEN` /
+  `ACTIONS_RUNTIME_URL` / `ALL_INPUTS` / `OVERRIDE_GITHUB_TOKEN` /
+  `DEFAULT_WORKFLOW_TOKEN` / `SSH_SIGNING_KEY`
+- **`GITHUB_TOKEN` / `GH_TOKEN` / `NPM_TOKEN` / `AWS_ACCESS_KEY_ID` は
+  リストに無い**。バイナリ同梱のリファレンス文も「It does not scrub arbitrary
+  secrets such as `GITHUB_TOKEN` or `NPM_TOKEN`」と明記している
+- **permission mode を `default` に強制する**。`--permission-mode` も
+  agent frontmatter も無視され、警告 1 行が stderr に出る
+- 変数を明示的に falsy(`0` / `false` / `no` / `off`)にしない限り、
+  `CLAUDE_CODE_ENTRYPOINT=local-agent` の起動では**変数を設定しなくても同じ
+  22 変数の scrub が既定で掛かる**
+- 設定されていると `sandbox.filesystem.disabled` を**全 scope(managed 含む)で
+  無視**してファイル隔離を on に固定する(docs)
+- **必要バージョンは上流 docs に書かれていない**(`credentials` ブロックの
+  v2.1.187、`mask` の v2.1.199 のような注記が無い)。2.1.226 に存在することを
+  実測しただけで、下限は不明
+
+**permission mode 強制の実測**(2026-08-10 / 2.1.226):
+`claude -p ... --permission-mode acceptEdits` を SCRUB 無し / 有りで 1 回ずつ
+起動し、stderr を比較した。無しでは出力なし、有りでは
+`⚠ Permission mode forced to default — CLAUDE_CODE_SUBPROCESS_ENV_SCRUB is set`
+が出た。この repo の `claude/settings.json` は `permissions.defaultMode` が
+`auto` なので、**入れると日常の実行モードがそのまま失われる**。
+
+**入れない理由**(3 点とも上記の実測に対応する):
+
+1. issue #298 が名指しした素通り(`GITHUB_TOKEN` 系)を**この変数は剥がさない**
+2. 剥がす 22 変数は、この host の Claude Code 子プロセス環境に**1 つも無い**
+   (2026-08-10 実測。`ANTHROPIC_BASE_URL` はあるがリスト外)
+3. 対価(`defaultMode: auto` の喪失)だけが確実に発生する
+
+**同じ機会に行った credential の棚卸し**(2026-08-10 / この host):
+
+| 対象 | 結果 | deny 追加 |
+|---|---|---|
+| `~/.netrc` | 存在しない | しない |
+| `~/.docker/config.json` | キーは `credsStore` と `currentContext` のみ(資格情報は Keychain 側) | しない |
+| `~/.config/gh/hosts.yml` | `oauth_token` の出現 0 件(token は Keychain) | しない |
+| `GITHUB_TOKEN` 系の環境変数 | Claude Code の子プロセス環境に無い。**ログインシェル(fish)側は未測定** | しない |
+
+**トークンを含まないファイルに deny を足さない**のは、「今は入っていないが将来
+入るかもしれない」型の予防的追加になるため(CLAUDE.md「コード品質」節)。実際に
+トークンが書かれる形に変わったときに足す。
+
+**測っていないこと**: SCRUB を有効にした子プロセスの環境変数を live で
+差分測定するには子セッションの起動が要るが、この repo の
+`network.strictAllowlist` が `api.anthropic.com` を許可していないため、
+sandbox 内から起動した `claude -p` は認証前に 403 で落ちて hook まで到達しない。
+上記の 22 変数リストは**バイナリの静的解析**であって live 実測ではない。
+
 ### herdr socket API と各防御層の関係 — 実測結果
 
 herdr(エージェント用ターミナル multiplexer)の socket API は**認証が無い**。
