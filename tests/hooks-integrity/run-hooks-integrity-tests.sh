@@ -368,6 +368,36 @@ codex_entry=$(jq -r '
 check_cmd "codex SessionStart entry が type/timeout/statusMessage/command とも期待どおりであること (got ${codex_entry})" \
   [ "$codex_entry" = 'command|10|hook 定義の未コミット変更を確認中...|bash "$HOME/.codex/hooks/hooks-integrity-warn.sh"' ]
 
+# --- 12d. 配線 (Claude): Notification entry の matcher (通知音の発火条件) ---
+# command 側は NON_REPO_EXPECTED (上) が全文 pin しているが、matcher は
+# 対象外だった。この entry の matcher は「ボールが user に回ったときだけ
+# 音を鳴らす」という意味を持つので、綴り違い・種別の脱落は
+# **承認待ちの通知が黙って無音になる**形で出る (テストも live も緑のまま)。
+# 実際に 1 種 (worker_permission_prompt) を落としたまま実装した回があるため
+# 全文 pin を置く。実測根拠は docs/ai-operations.md §10 の Notification 節。
+#
+# 「13 種を評価して 6 許可 / 7 拒否」型の表テストは書かない — matcher の
+# 評価規則は Claude Code 側の実装であって、こちらで再実装したものを
+# 突き合わせても vacuous に緑になるだけ。ここで守れるのは「意図した文字列が
+# そのまま配線されていること」だけであり、それが守りたい状態でもある。
+# 存在確認は **件数** で行う (12c と同じ理由: matcher 値だけを見ると
+# entry を丸ごと削除した mutant を取り逃がす)。
+# 期待値は settings.json から導出せず独立した定数として持つ (claude/rules/shell.md)。
+notif_count=$(jq '
+  [.hooks.Notification[]
+   | select([.hooks[].command] | any(startswith("afplay")))]
+  | length
+' "$REPO_ROOT/claude/settings.json")
+check_cmd "Notification に afplay の entry が 1 件だけあること (got: ${notif_count})" \
+  [ "$notif_count" = 1 ]
+notif_matcher=$(jq -r '
+  .hooks.Notification[]
+  | select([.hooks[].command] | any(startswith("afplay")))
+  | .matcher
+' "$REPO_ROOT/claude/settings.json")
+check_cmd "Notification matcher が操作待ち 6 種で pin されていること (got: ${notif_matcher})" \
+  [ "$notif_matcher" = "permission_prompt|worker_permission_prompt|idle_prompt|agent_needs_input|elicitation_dialog|elicitation_url_dialog" ]
+
 # --- 13. 配線: run-gate.sh / Makefile の「コメントでない実行行」から呼ばれている ---
 # 単なる grep だと直前の説明コメントに hook 名が残るだけで pass してしまうため、
 # 行頭が # でない行に限定して検査する。
