@@ -1539,6 +1539,40 @@ codex に配線するときは同じ pin を足すこと** — 自動では強�
 linter の取りこぼしを見つけたら、`tests/lint-hook-stdout/` に `form_case` として
 回帰ケースを足してから直す。
 
+### Notification hook の実測結果 — 通知種別は公式 docs より多い(この節が正本)
+
+**2026-08-16 実測、`claude` 2.1.233**(`/opt/homebrew/Caskroom/claude-code@latest/2.1.233/claude`)。
+上の 2b と同じく**配布バイナリの minify 済みバンドル**から読んだもので、
+**Claude Code を upgrade したら測り直す**。
+
+**1. 突合対象は `notification_type`**。バイナリ内の
+`matcherMetadata:{fieldToMatch:"notification_type",values:[...]}` がそれを示す。
+
+**2. Notification は許容文字集合の広い側**(`^[a-zA-Z0-9_|, -]+$` → `split(/[|,]/)`
+→ trim → 完全一致)。2b の「**『一部イベントでは』を落とさないこと**」に対する
+Notification 側の裏付けがこれ。`claude/settings.json` の Notification matcher は
+`|` 区切りのみなので exact 一致側に落ちる。
+
+**3. 値は 13 種で、公式 hooks docs が挙げる 9 種では足りない**。バイナリ内の
+enum が 11 種、`matcherMetadata` がそれに `elicitation_complete` /
+`elicitation_response` を足して 13 種:
+
+| 分類 | 値 |
+|---|---|
+| user の操作待ち | `permission_prompt` / `worker_permission_prompt` / `idle_prompt` / `agent_needs_input` / `elicitation_dialog` / `elicitation_url_dialog` |
+| 操作待ちではない | `agent_completed` / `elicitation_complete` / `elicitation_response` / `auth_success` / `computer_use_exit` / `push_notification` / `computer_use_enter` |
+
+このうち **`worker_permission_prompt` は公式 docs に載っていない**が、
+`<agent_id> needs permission for <tool_name>` と
+`<workerName> needs network access to <host>` の 2 か所で発火する承認待ちである。
+docs の 9 種を母集団として allowlist を組むと、**承認待ちの通知を 1 種類だけ
+黙って落とす**(実際にそれを踏んで直した。`claude/settings.json` の Notification
+matcher が現在の配線)。
+
+`elicitation_dialog` / `elicitation_url_dialog` は `notificationType:"..."` の
+リテラル代入では出てこない(`Prn("Claude Code needs your input", <種別>)` 経由で
+発火する)ため、**リテラル代入だけを grep すると 2 種取りこぼす**。
+
 ### scope 外(別 issue)
 
 - codex CLI 側で notify を禁止する設定の有無は未調査
