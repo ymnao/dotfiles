@@ -464,19 +464,22 @@ mkdir -p "$WORKDIR/e2e/home/.nodebrew/node/$nb_present_version/bin" \
 ln -sfn "$WORKDIR/e2e/home/.nodebrew/node/$nb_present_version" \
   "$WORKDIR/e2e/home/.nodebrew/current"
 cp -R "$REPO_ROOT/fish" "$WORKDIR/e2e/home/.config/fish"
-# repo 管理外の個人設定を fixture から落とす。link.sh は fish/ ごと
-# ~/.config/fish へ symlink するので config.local.fish の実体は repo の fish/
-# 直下に置かれ (.gitignore の `*.local.*` で追跡外)、cp -R だと付いてくる。
-# 残すと、個人設定が universal 変数を 1 つ作っただけで下の (a) が
-# そのマシンだけ FAIL する。config/ 側も glob (`config/*.fish`) に拾われる。
-rm -f "$WORKDIR/e2e/home/.config/fish/config.local.fish"
-rm -f "$WORKDIR"/e2e/home/.config/fish/config/*.local.fish
-# fish_variables も同じ経路で混入する。~/.config/fish は repo の fish/ への
-# symlink なので、user が fish を 1 度でも起動すると universal 変数の実体が
-# repo 側に書かれ (.gitignore 済み)、cp -R で fixture に付いてくる。残すと
-# 下の (a-2) が「config が作った」のか「持ち込んだ」のかを区別できず、
-# fish を使っているマシンでは必ず FAIL する。
-rm -f "$WORKDIR/e2e/home/.config/fish/fish_variables"
+# repo 管理外のファイルを fixture から落とす。link.sh は fish/ ごと
+# ~/.config/fish へ symlink するため、個人設定 (config.local.fish) も fish が
+# 書く universal 変数 (fish_variables) も実体は repo の fish/ 側にでき、
+# .gitignore 済みのまま cp -R で付いてくる。残すと下の (a-2) が「config が
+# 作った」のか「持ち込んだ」のかを区別できず、そのマシンだけ FAIL する。
+#
+# 個別に列挙しないのは、この経路での混入が 3 件目 (config.local.fish /
+# config/*.local.fish / fish_variables) になり、denylist が .gitignore に
+# 追随しないため。逆に tracked のみコピーする形 (git archive / ls-files) には
+# **しない** — 未 commit の編集が fixture に入らなくなり、mutation で検出力を
+# 確かめる手段が消える。落とすのは「repo 管理外か」であって「commit 済みか」
+# ではない。
+git -C "$REPO_ROOT" ls-files --others -i --exclude-standard -z fish |
+  while IFS= read -r -d '' ignored; do
+    rm -f "$WORKDIR/e2e/home/.config/$ignored"
+  done
 printf '%s\n' 'for p in $PATH' 'echo $p' 'end' > "$WORKDIR/e2e/show.fish"
 e2e_out=$(env "${UNSET_ARGS[@]}" \
   HOME="$WORKDIR/e2e/home" XDG_CONFIG_HOME="$WORKDIR/e2e/home/.config" \
