@@ -471,6 +471,12 @@ cp -R "$REPO_ROOT/fish" "$WORKDIR/e2e/home/.config/fish"
 # そのマシンだけ FAIL する。config/ 側も glob (`config/*.fish`) に拾われる。
 rm -f "$WORKDIR/e2e/home/.config/fish/config.local.fish"
 rm -f "$WORKDIR"/e2e/home/.config/fish/config/*.local.fish
+# fish_variables も同じ経路で混入する。~/.config/fish は repo の fish/ への
+# symlink なので、user が fish を 1 度でも起動すると universal 変数の実体が
+# repo 側に書かれ (.gitignore 済み)、cp -R で fixture に付いてくる。残すと
+# 下の (a-2) が「config が作った」のか「持ち込んだ」のかを区別できず、
+# fish を使っているマシンでは必ず FAIL する。
+rm -f "$WORKDIR/e2e/home/.config/fish/fish_variables"
 printf '%s\n' 'for p in $PATH' 'echo $p' 'end' > "$WORKDIR/e2e/show.fish"
 e2e_out=$(env "${UNSET_ARGS[@]}" \
   HOME="$WORKDIR/e2e/home" XDG_CONFIG_HOME="$WORKDIR/e2e/home/.config" \
