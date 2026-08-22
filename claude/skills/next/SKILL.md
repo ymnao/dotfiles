@@ -64,25 +64,43 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
    `git branch -d <branch>` と `git branch` を **`;` で continue** させて
    1 コマンドで打ち (`&&` にしない)、**警告文ではなく後者の出力**で消えた
    ことを確認する
-   - **squash merge の repo では `-d` が必ず拒否される** (元コミットが main の
-     祖先にならないため)。この場合に限り `-D` を使ってよいが、`-d` の安全判定を
-     代替する次の 2 点を**先に実測してから**打つ:
+   - **`-d` が拒否されたら** (squash merge の repo では元コミットが main の
+     祖先にならないため毎回こうなる)、`-d` の安全判定を代替する次の 3 点を
+     **すべて実測してから** `-D` を使う。1 つでも欠けたら `-D` は使わず
+     **報告して停止する**:
      1. step 1 の `gh pr view` が `MERGED` であること
-     2. `git diff main <branch>` の出力に `+` 行が無いこと
-        (= ブランチの内容がすべて main に入っていることの実測)
-        - **ファイル名の差分が空であることを条件にしない**。自分の PR より後に
-          別 PR が main へ入れば差分は必ず非空になり、squash merge のたびに
-          停止する。step 2 が checkout について同じ誤りを既に禁じているので、
-          ここだけ旧い条件を残すと skill 内部で矛盾する
-        - 2026-08-22 に ghirgana PR #54 で踏んだ。直前に PR #52 が main へ
-          入っていたため `--name-only` は `CLAUDE.md` を返したが、
-          `git diff main <branch>` の `+` 行は 0 で、作業内容は全部入っていた
-     どちらか一方でも欠けたら `-D` は使わず**報告して停止する**
-   - 上記 2 点を確認できていれば user に都度確認を取らない。squash merge は
+     2. `gh pr view --json headRefOid` の値と `git rev-parse <branch>` の
+        SHA が一致すること。**`-D` で実際に失われうるのは push していない
+        ローカル commit だけ**なので、ここが安全判定の本体
+     3. `gh pr view --json mergeCommit` が返す oid を `<sha>` として
+        `git merge-base --is-ancestor <sha> main` が **exit 0** を返すこと
+        (= PR が入った commit が手元の main に届いている)。exit 1 は未到達、
+        exit 128 は object 自体が手元に無い (step 2 の main 更新が実は
+        失敗している) — どちらも停止する
+     `gh` は他コマンドと同じ Bash 呼び出しに混ぜない (guard-sandbox-exclusions
+     に弾かれる)。単独で打って出力を読み、SHA はリテラルで次のコマンドへ渡す
+   - **差分の中身で判定しない**。`git diff main <branch>` の追加行を数える形は
+     2 つの理由で使えない:
+     - 非空の diff には必ず `+++ b/<path>` ヘッダが含まれるため、「`+` 行が
+       無い」は数え方を決めない限り字義通りには成立しない
+     - 後続 PR が既存行を *変更* すると、ブランチが完全に merge 済みでも
+       逆向き差分に本物の `+` 行 (書き換え前の内容) が立つ
+     step 2 が checkout について「diff 非空を条件にしない」としているのと
+     同じ理由で、条件をファイル名から行に移しても後続 merge で停止する性質は
+     消えない。上の 3 点は後続 merge に影響されない
+   - 上記 3 点を確認できていれば user に都度確認を取らない。squash merge は
      毎サイクル発生するため、確認を挟むと定型質問が毎回入る
    - 実測: 2026-08-17 に ghirgana で 3 回発生 (PR #11 / #12 / #20 の後始末)。
      remote ブランチは deleteBranchOnMerge で merge 時に消えているので、
      残るのはローカルだけ
+   - 実測 (2026-08-23、この repo と scratch repo):
+     - `gh pr view <n> --json state,mergeCommit,headRefOid` は 3 値とも返る
+       (dotfiles PR #324 で確認)
+     - `git merge-base --is-ancestor` は祖先 exit 0 / 非祖先 exit 1 /
+       object 不在 exit 128 (`fatal: Not a valid commit name`)
+     - main 側で既存 1 行を書き換えた scratch repo では、完全に squash
+       merge 済みのブランチに対して `git diff main <branch>` が
+       `+<書き換え前の行>` を出した (旧条件が誤って停止する経路)
 4. **学びの昇格チェック**: このセッションで CLAUDE.md / skill / memory に
    昇格すべき学び (同じ指摘を 2 回受けた・skill の手順が実態とズレていた等)
    がないか振り返り、あれば提案する (勝手に書き換えない)。
