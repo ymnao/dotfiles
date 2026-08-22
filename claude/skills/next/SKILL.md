@@ -8,9 +8,14 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
 
 ## Steps
 
-1. **merged 確認**: `gh pr view --json state,mergedAt,url` で現ブランチの
-   PR 状態を確認する。merged でなければ (open / closed-unmerged / PR なし)
-   状態を報告して**停止する** (pull もブランチ削除もしない)
+1. **merged 確認**: `gh pr view --json state,mergedAt,url,headRefOid,mergeCommit`
+   で現ブランチの PR 状態を確認する。merged でなければ (open /
+   closed-unmerged / PR なし) 状態を報告して**停止する** (pull もブランチ
+   削除もしない)
+   - `headRefOid` と `mergeCommit` は step 3 のブランチ削除判定で使う。
+     merge 後は不変な値なので**ここで 1 回だけ取り、step 3 で `gh` を
+     打ち直さない** (`gh` は単独 Bash 呼び出しを強制されるので、呼び直す
+     ぶんだけ tool call が増える)
 2. **main 更新**: `git checkout main` → `git pull origin main --ff-only`。
    sandbox denyWithinAllow に含まれるパス (settings 系 / skills 系 /
    hooks 系 / agents・rules・commands・workflows・mcp 等の Claude 設定
@@ -65,42 +70,37 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
    1 コマンドで打ち (`&&` にしない)、**警告文ではなく後者の出力**で消えた
    ことを確認する
    - **`-d` が拒否されたら** (squash merge の repo では元コミットが main の
-     祖先にならないため毎回こうなる)、`-d` の安全判定を代替する次の 3 点を
-     **すべて実測してから** `-D` を使う。1 つでも欠けたら `-D` は使わず
-     **報告して停止する**:
-     1. step 1 の `gh pr view` が `MERGED` であること
-     2. `gh pr view --json headRefOid` の値と `git rev-parse <branch>` の
-        SHA が一致すること。**`-D` で実際に失われうるのは push していない
-        ローカル commit だけ**なので、ここが安全判定の本体
-     3. `gh pr view --json mergeCommit` が返す oid を `<sha>` として
+     祖先にならないため毎回こうなる)、`-d` の安全判定を代替する次の 2 点を
+     **step 1 で取った値と照合してから** `-D` を使う。どちらか一方でも
+     欠けたら `-D` は使わず**報告して停止する** (step 1 を通過している時点で
+     PR が MERGED であることは確定しているので、ここでは確認しない):
+     1. step 1 の `headRefOid` と `git rev-parse <branch>` の SHA が一致
+        すること。**`-D` で実際に失われうるのは push していないローカル
+        commit だけ**なので、ここが安全判定の本体
+     2. step 1 の `mergeCommit` の oid を `<sha>` として
         `git merge-base --is-ancestor <sha> main` が **exit 0** を返すこと
-        (= PR が入った commit が手元の main に届いている)。exit 1 は未到達、
-        exit 128 は object 自体が手元に無い (step 2 の main 更新が実は
-        失敗している) — どちらも停止する
-     `gh` は他コマンドと同じ Bash 呼び出しに混ぜない (guard-sandbox-exclusions
-     に弾かれる)。単独で打って出力を読み、SHA はリテラルで次のコマンドへ渡す
-   - **差分の中身で判定しない**。`git diff main <branch>` の追加行を数える形は
-     2 つの理由で使えない:
-     - 非空の diff には必ず `+++ b/<path>` ヘッダが含まれるため、「`+` 行が
-       無い」は数え方を決めない限り字義通りには成立しない
-     - 後続 PR が既存行を *変更* すると、ブランチが完全に merge 済みでも
-       逆向き差分に本物の `+` 行 (書き換え前の内容) が立つ
-     step 2 が checkout について「diff 非空を条件にしない」としているのと
-     同じ理由で、条件をファイル名から行に移しても後続 merge で停止する性質は
-     消えない。上の 3 点は後続 merge に影響されない
-   - 上記 3 点を確認できていれば user に都度確認を取らない。squash merge は
+        (= PR が入った commit が手元の main に届いている)。exit 1 は未到達。
+        exit 128 は object 自体が手元に無い状態で、step 2 の main 更新が
+        成功確認をすり抜けて失敗していた場合をここで捕まえる
+   - **差分の中身で判定しない**。`git diff main <branch>` の追加行を数える形は、
+     後続 PR が既存行を *変更* すると、ブランチが完全に merge 済みでも逆向き
+     差分に本物の `+` 行 (書き換え前の内容) が立つため誤って停止する
+     (非空 diff に必ず含まれる `+++ b/<path>` ヘッダをどう数えるかでも揺れる)。
+     step 2 が checkout について「diff 非空を条件にしない」としているのと同じで、
+     条件をファイル名から行に移しても後続 merge で停止する性質は消えない。
+     上の 2 点は後続 merge に影響されない
+   - 上記 2 点を確認できていれば user に都度確認を取らない。squash merge は
      毎サイクル発生するため、確認を挟むと定型質問が毎回入る
    - 実測: 2026-08-17 に ghirgana で 3 回発生 (PR #11 / #12 / #20 の後始末)。
      remote ブランチは deleteBranchOnMerge で merge 時に消えているので、
      残るのはローカルだけ
-   - 実測 (2026-08-23、この repo と scratch repo):
-     - `gh pr view <n> --json state,mergeCommit,headRefOid` は 3 値とも返る
-       (dotfiles PR #324 で確認)
-     - `git merge-base --is-ancestor` は祖先 exit 0 / 非祖先 exit 1 /
-       object 不在 exit 128 (`fatal: Not a valid commit name`)
-     - main 側で既存 1 行を書き換えた scratch repo では、完全に squash
-       merge 済みのブランチに対して `git diff main <branch>` が
-       `+<書き換え前の行>` を出した (旧条件が誤って停止する経路)
+   - 実測: 2026-08-23 に dotfiles PR #324 で `gh pr view` が
+     `state,mergedAt,url,headRefOid,mergeCommit` の 5 値を 1 回で返すことを
+     確認した。`git merge-base --is-ancestor` は祖先 exit 0 / 非祖先 exit 1 /
+     object 不在 exit 128 (`fatal: Not a valid commit name`)。旧条件の誤停止は
+     scratch repo で再現した — main 側で既存 1 行を書き換えると、完全に squash
+     merge 済みのブランチに対して `git diff main <branch>` が
+     `+<書き換え前の行>` を出す
 4. **学びの昇格チェック**: このセッションで CLAUDE.md / skill / memory に
    昇格すべき学び (同じ指摘を 2 回受けた・skill の手順が実態とズレていた等)
    がないか振り返り、あれば提案する (勝手に書き換えない)。
