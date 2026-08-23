@@ -8,7 +8,7 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
 
 ## Steps
 
-1. **merged 確認**: `gh pr view --json state,mergedAt,url,headRefOid,mergeCommit`
+1. **merged 確認**: `gh pr view --json state,mergedAt,url,headRefName,headRefOid,mergeCommit`
    で現ブランチの PR 状態を確認する。merged でなければ (open /
    closed-unmerged / PR なし) 状態を報告して**停止する** (pull もブランチ
    削除もしない)
@@ -40,9 +40,18 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
        「動的展開を含む書き込み系リダイレクト」としてブロックする。分けて打てば
        どちらも通る (2026-08-23 に両方向とも実測)。step 1 と step 3 は元々
        別の呼び出しなので、通常の手順どおりに進めれば問題にならない
-     - `$TMPDIR` はセッション内で不変なので step 1 → step 3 で読める。step 3 に
-       着いたときファイルが無ければ、step 1 を飛ばしている異常なので削除は
-       行わず報告して次へ進む
+     - **このファイルは stale でありうる**。`$TMPDIR` は uid スコープの固定パス
+       で (実測: `/tmp/claude-501`)、セッション ID も repo 名も含まないため、
+       **前回の `/next` が別 repo・別ブランチで書いたものがそのまま残る**。
+       「無ければ step 1 を飛ばした異常」という判定は成立しない — 飛ばしても
+       ファイルは在るからで、そのまま step 3 に進むと**別のブランチを消す**
+       (squash merge repo では `-D` へ escalate するので、push 前のローカル
+       commit が失われうる)。したがって step 3 では**消す前に中身を step 1 の
+       `headRefName` と突き合わせ**、一致しなければ削除せず報告する。
+       `headRefName` は GitHub が返す当該 PR の head ブランチ名なので、
+       stale なファイルとは一致しない
+     - step 3 は削除後にこのファイルを消す。残さなければ次回の stale 化も
+       起きない
 2. **main 更新**: `git checkout main` → `git pull origin main --ff-only`。
    sandbox denyWithinAllow に含まれるパス (settings 系 / skills 系 /
    hooks 系 / agents・rules・commands・workflows・mcp 等の Claude 設定
@@ -98,6 +107,13 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
    **警告文ではなく後者の出力**で消えたことを確認する
    - **ブランチ名をタイプして埋め込まない**。step 1 で控えたファイルから
      `"$(cat ...)"` で渡す (根拠は step 1 に書いた)
+   - **打つ前に stale チェック**: `cat "$TMPDIR/merged-branch.txt"` を打って
+     中身を出し、step 1 の `headRefName` と一致することを確かめる。
+     **一致しなければ削除しない** — ファイルは前回の `/next` が別 repo・
+     別ブランチで残したものなので、消すと無関係なブランチが消える。
+     状況を報告して次の step へ進む
+   - 削除できたら `rm -f "$TMPDIR/merged-branch.txt"` でファイルを消す
+     (残すと次回の stale 化の種になる)
    - `--` を置くのは、`-` で始まる ref 名が `git branch` のオプションとして
      読まれるのを防ぐため
    - **`-d` が拒否されたら** (squash merge の repo では元コミットが main の

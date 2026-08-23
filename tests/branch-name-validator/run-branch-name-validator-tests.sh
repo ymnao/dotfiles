@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# /issue と /next が使うブランチ名バリデータの exit code を pin する。
+# /issue が使うブランチ名バリデータの exit code を pin する。
+# (/next は検証ではなく「git が書いたファイルを shell が読む」機械的な
+#  受け渡しなので、バリデータを使わない)
 #
 # 2026-08-23 に、main rule 側で `{exit 1}` する形を出荷して false ACCEPT を
 # 作った。awk の `exit` は END を実行してから終了し、END の `exit <expr>` が
@@ -73,6 +75,32 @@ run_case 'space'                 1 'a b
 '
 run_case 'redirect'              1 'a>b
 '
+# 許容集合は allowlist なので、「広げすぎ」の mutation (char class にメタ文字を
+# 足す形) を捕まえるにはメタ文字ごとの reject を pin する必要がある。
+# 上の 7 件だけだと glob / tilde 展開を足す変更が緑のまま通る。
+run_case 'glob star'             1 'a*b
+'
+run_case 'glob question'         1 'a?b
+'
+run_case 'bracket'               1 'a[b]c
+'
+run_case 'tilde'                 1 '~a
+'
+run_case 'paren'                 1 'a(b)c
+'
+run_case 'brace'                 1 'a{b}c
+'
+run_case 'dollar'                1 'a$b
+'
+run_case 'backslash'             1 'a\b
+'
+run_case 'single quote'          1 "a'b
+"
+run_case 'double quote'          1 'a"b
+'
+run_case 'newline escape'        1 'a
+b
+'
 
 # --- reject (exit 1): option injection と文字集合外 ---
 run_case 'leading dash'          1 '-d
@@ -93,15 +121,15 @@ run_case 'newline only'          1 '
 '
 
 # --- SKILL.md との同一性 ---
-for skill in claude/skills/issue/SKILL.md; do
-  if grep -qF "$VALIDATOR" "$REPO_ROOT/$skill"; then
-    pass=$((pass + 1))
-  else
-    fail=$((fail + 1))
-    echo "FAIL: $skill にこのテストと同一のバリデータ式が見つからない" >&2
-    echo "      期待する式: $VALIDATOR" >&2
-  fi
-done
+# 現在バリデータを持つのは /issue だけ (codex 側は symlink で同じ実体)。
+SKILL='claude/skills/issue/SKILL.md'
+if grep -qF "$VALIDATOR" "$REPO_ROOT/$SKILL"; then
+  pass=$((pass + 1))
+else
+  fail=$((fail + 1))
+  echo "FAIL: $SKILL にこのテストと同一のバリデータ式が見つからない" >&2
+  echo "      期待する式: $VALIDATOR" >&2
+fi
 
 echo "branch-name-validator tests: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
