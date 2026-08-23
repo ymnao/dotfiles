@@ -16,6 +16,14 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      merge 後は不変な値なので**ここで 1 回だけ取り、step 3 で `gh` を
      打ち直さない** (`gh` は単独 Bash 呼び出しを強制されるので、呼び直す
      ぶんだけ tool call が増える)
+   - あわせて `git rev-parse HEAD` を打ち、作業ブランチの SHA を控える。
+     step 3 でこの値を使う。**ブランチ名をコマンドに埋め込んで
+     `git rev-parse <branch>` とはしない** — ref 名には `$(...)` や `;` を
+     含められる (`git check-ref-format --branch 'foo$(id);x'` は通る) ため、
+     コマンド文字列へ代入すると shell 展開が起きる。この repo は public で
+     `/issue` は issue title からブランチ名を作るので、外部文字列が名前に
+     入る経路がある。ここでまだ作業ブランチ上にいる (step 2 の checkout は
+     この後) ので、`HEAD` で足りる
 2. **main 更新**: `git checkout main` → `git pull origin main --ff-only`。
    sandbox denyWithinAllow に含まれるパス (settings 系 / skills 系 /
    hooks 系 / agents・rules・commands・workflows・mcp 等の Claude 設定
@@ -74,9 +82,9 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      **step 1 で取った値と照合してから** `-D` を使う。どちらか一方でも
      欠けたら `-D` は使わず**報告して停止する** (step 1 を通過している時点で
      PR が MERGED であることは確定しているので、ここでは確認しない):
-     1. step 1 の `headRefOid` と `git rev-parse <branch>` の SHA が一致
-        すること。**`-D` で実際に失われうるのは push していないローカル
-        commit だけ**なので、ここが安全判定の本体
+     1. step 1 の `headRefOid` と、同じく step 1 で控えた作業ブランチの
+        SHA が一致すること。**`-D` で実際に失われうるのは push していない
+        ローカル commit だけ**なので、ここが安全判定の本体
      2. step 1 の `mergeCommit` の oid を `<sha>` として
         `git merge-base --is-ancestor <sha> main` が **exit 0** を返すこと
         (= PR が入った commit が手元の main に届いている)。exit 1 は未到達。
