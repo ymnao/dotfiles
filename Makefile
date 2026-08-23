@@ -118,6 +118,7 @@ test: lint-locale-pin ## Verify shell scripts (shellcheck), JSON files (jq), and
 	@bash tests/brewfile-drift/run-brewfile-drift-tests.sh
 	@bash tests/link/run-link-tests.sh
 	@bash tests/codex-review-skip/run-codex-skip-tests.sh
+	@bash tests/branch-name-validator/run-branch-name-validator-tests.sh
 	@bash tests/locale-matrix/run-locale-matrix-tests.sh
 	@bash tests/lint-locale-pin/run-lint-locale-pin-tests.sh
 	@bash tests/lint-hook-stdout/run-lint-hook-stdout-tests.sh

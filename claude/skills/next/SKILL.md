@@ -8,7 +8,7 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
 
 ## Steps
 
-1. **merged 確認**: `gh pr view --json state,mergedAt,url,headRefOid,mergeCommit`
+1. **merged 確認**: `gh pr view --json state,mergedAt,url,headRefName,headRefOid,mergeCommit`
    で現ブランチの PR 状態を確認する。merged でなければ (open /
    closed-unmerged / PR なし) 状態を報告して**停止する** (pull もブランチ
    削除もしない)
@@ -24,6 +24,34 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      `/issue` は issue title からブランチ名を作るので、外部文字列が名前に
      入る経路がある。ここでまだ作業ブランチ上にいる (step 2 の checkout は
      この後) ので、`HEAD` で足りる
+   - **step 3 のブランチ削除だけは名前が要る** (`git branch -d` に `HEAD` は
+     渡せない)。そこで**ここで名前をファイルに控える**。step 2 で main へ移ると
+     `git branch --show-current` は main を返してしまうので、作業ブランチ上に
+     いるこの時点が最後の機会:
+     `git branch --show-current > "$TMPDIR/merged-branch.txt"`
+     - **名前を検証するのではなく、agent がタイプし直さない形にする**。step 3
+       では `"$(cat "$TMPDIR/merged-branch.txt")"` として渡す。コマンド置換の
+       *出力* は shell に再スキャンされないので、`$(...)` や `;` を含む ref 名
+       でもリテラルな 1 引数として git に届く。**書いたのは git、読むのも
+       shell で、名前が LLM の出力を経由しない** — 文字集合の検証と違って
+       「検証した文字列と実際に使う文字列が同じである」ことが構造的に保証される
+     - **この 2 コマンドは別々の Bash 呼び出しで打つこと**。同じ呼び出しに
+       redirect と `$(cat ...)` を同居させると `block-dangerous-commands.sh` が
+       「動的展開を含む書き込み系リダイレクト」としてブロックする。分けて打てば
+       どちらも通る (2026-08-23 に両方向とも実測)。step 1 と step 3 は元々
+       別の呼び出しなので、通常の手順どおりに進めれば問題にならない
+     - **このファイルは stale でありうる**。`$TMPDIR` は uid スコープの固定パス
+       で (実測: `/tmp/claude-501`)、セッション ID も repo 名も含まないため、
+       **前回の `/next` が別 repo・別ブランチで書いたものがそのまま残る**。
+       「無ければ step 1 を飛ばした異常」という判定は成立しない — 飛ばしても
+       ファイルは在るからで、そのまま step 3 に進むと**別のブランチを消す**
+       (squash merge repo では `-D` へ escalate するので、push 前のローカル
+       commit が失われうる)。したがって step 3 では**消す前に中身を step 1 の
+       `headRefName` と突き合わせ**、一致しなければ削除せず報告する。
+       `headRefName` は GitHub が返す当該 PR の head ブランチ名なので、
+       stale なファイルとは一致しない
+     - step 3 は削除後にこのファイルを消す。残さなければ次回の stale 化も
+       起きない
 2. **main 更新**: `git checkout main` → `git pull origin main --ff-only`。
    sandbox denyWithinAllow に含まれるパス (settings 系 / skills 系 /
    hooks 系 / agents・rules・commands・workflows・mcp 等の Claude 設定
@@ -74,14 +102,27 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      使い、`git diff` 空 → ref 前進 → clean を確認した
 3. **ブランチ削除**: merge 済みの作業ブランチを `git branch -d` で削除する。
    これも config lock の警告を出しながら削除には成功するので、
-   `git branch -d <branch>` と `git branch` を **`;` で continue** させて
-   1 コマンドで打ち (`&&` にしない)、**警告文ではなく後者の出力**で消えた
-   ことを確認する
+   `git branch -d -- "$(cat "$TMPDIR/merged-branch.txt")"` と `git branch` を
+   **`;` で continue** させて 1 コマンドで打ち (`&&` にしない)、
+   **警告文ではなく後者の出力**で消えたことを確認する
+   - **ブランチ名をタイプして埋め込まない**。step 1 で控えたファイルから
+     `"$(cat ...)"` で渡す (根拠は step 1 に書いた)
+   - **打つ前に stale チェック**: `cat "$TMPDIR/merged-branch.txt"` を打って
+     中身を出し、step 1 の `headRefName` と一致することを確かめる。
+     **一致しなければ削除しない** — ファイルは前回の `/next` が別 repo・
+     別ブランチで残したものなので、消すと無関係なブランチが消える。
+     状況を報告して次の step へ進む
+   - 削除できたら `rm -f "$TMPDIR/merged-branch.txt"` でファイルを消す
+     (残すと次回の stale 化の種になる)
+   - `--` を置くのは、`-` で始まる ref 名が `git branch` のオプションとして
+     読まれるのを防ぐため
    - **`-d` が拒否されたら** (squash merge の repo では元コミットが main の
      祖先にならないため毎回こうなる)、`-d` の安全判定を代替する次の 2 点を
      **step 1 で取った値と照合してから** `-D` を使う。どちらか一方でも
      欠けたら `-D` は使わず**報告して停止する** (step 1 を通過している時点で
-     PR が MERGED であることは確定しているので、ここでは確認しない):
+     PR が MERGED であることは確定しているので、ここでは確認しない)。
+     `-D` も名前の渡し方は `-d` と同じ
+     (`git branch -D -- "$(cat "$TMPDIR/merged-branch.txt")"`):
      1. step 1 の `headRefOid` と、同じく step 1 で控えた作業ブランチの
         SHA が一致すること。**`-D` で実際に失われうるのは push していない
         ローカル commit だけ**なので、ここが安全判定の本体
@@ -90,7 +131,7 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
         (= PR が入った commit が手元の main に届いている)。exit 1 は未到達。
         exit 128 は object 自体が手元に無い状態で、step 2 の main 更新が
         成功確認をすり抜けて失敗していた場合をここで捕まえる
-   - **差分の中身で判定しない**。`git diff main <branch>` の追加行を数える形は、
+   - **差分の中身で判定しない**。main と作業ブランチの差分の追加行を数える形は、
      後続 PR が既存行を *変更* すると、ブランチが完全に merge 済みでも逆向き
      差分に本物の `+` 行 (書き換え前の内容) が立つため誤って停止する
      (非空 diff に必ず含まれる `+++ b/<path>` ヘッダをどう数えるかでも揺れる)。
@@ -107,7 +148,7 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      確認した。`git merge-base --is-ancestor` は祖先 exit 0 / 非祖先 exit 1 /
      object 不在 exit 128 (`fatal: Not a valid commit name`)。旧条件の誤停止は
      scratch repo で再現した — main 側で既存 1 行を書き換えると、完全に squash
-     merge 済みのブランチに対して `git diff main <branch>` が
+     merge 済みのブランチに対して main との差分が
      `+<書き換え前の行>` を出す
 4. **学びの昇格チェック**: このセッションで CLAUDE.md / skill / memory に
    昇格すべき学び (同じ指摘を 2 回受けた・skill の手順が実態とズレていた等)
