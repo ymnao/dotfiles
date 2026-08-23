@@ -27,10 +27,12 @@ Fetch the specified issue, create a branch, and propose an implementation plan.
     - Derive an appropriate name from the issue title (e.g., `feature/add-user-auth-#42`, `fix/login-redirect-loop-#15`)
 7. Validate the generated name **before it is substituted into any command**. The issue title is attacker-controlled on a public repo, and git accepts shell metacharacters in ref names (`git check-ref-format --branch 'foo$(id);x'` exits 0), so a name carried straight into a command string gets expanded by the shell. Quoting is not the fix — `"$(...)"` still expands.
     - Write the generated name to `$TMPDIR/branch-name.txt` with the Write tool (this path does not go through the shell)
-    - Run `LC_ALL=C grep -qE '^[abcdefghijklmnopqrstuvwxyz0123456789][abcdefghijklmnopqrstuvwxyz0123456789/._#-]*$' "$TMPDIR/branch-name.txt"`
+    - Run `LC_ALL=C awk 'NR>1 || $0 !~ /^[abcdefghijklmnopqrstuvwxyz0123456789][abcdefghijklmnopqrstuvwxyz0123456789\/._#-]*$/ {exit 1} END{exit NR!=1}' "$TMPDIR/branch-name.txt"`
     - **exit 0** → the name is inside the safe set; substitute it literally in steps 8-9
     - **exit 1** → do NOT substitute it anywhere. Report the rejected name and stop
-    - The character class is spelled out instead of using ranges (`[a-z0-9]` collates differently per locale; same reason as `agents/hooks/block-dangerous-commands.sh`), and the first character is pinned to alphanumeric so a leading `-` cannot be read as an option by `git branch -d` / `git checkout`
+    - The check requires the file to be **exactly one line** and that line to match. A per-line `grep -q` is not enough here: it exits 0 as soon as *any* line matches, so a two-line name whose first line is safe and whose second line is `$(id)` would pass validation and then have the newline act as a command separator. `git` itself rejects a newline in a ref name (`git check-ref-format --branch "$(printf 'a\nb')"` exits 128), but at this point the name is still a plain string with no ref behind it, so that protection has not applied yet
+    - Do not swap the `awk` for `grep -qv`: the exit status of `-q` combined with `-v` is not consistent across grep implementations (measured on macOS with ugrep 7.8.4, `grep -qvE` returns 1 on a file where `grep -vE` prints a non-matching line and returns 0)
+    - The character class is spelled out instead of using ranges (`[a-z0-9]` collates differently per locale; same reason as `agents/hooks/block-dangerous-commands.sh`), and the first character is pinned to alphanumeric so a leading `-` cannot be read as an option by `git branch -d` / `git checkout`. `#` is in the set because the naming examples above use it, and a `#` that is not at the start of a word does not begin a shell comment
 8. Check if the branch name already exists with `git rev-parse --verify <branch-name>`:
     - If it exists, report the conflict and stop
 9. Run `git checkout -b <branch-name>` to create the branch

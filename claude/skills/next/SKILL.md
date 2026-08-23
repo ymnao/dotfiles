@@ -28,9 +28,24 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      渡せない)。そこで**ここで名前を検証しておく**。step 2 で main へ移ると
      `git branch --show-current` は main を返してしまうので、作業ブランチ上に
      いるこの時点が最後の機会:
-     `git branch --show-current | LC_ALL=C grep -qE '^[abcdefghijklmnopqrstuvwxyz0123456789][abcdefghijklmnopqrstuvwxyz0123456789/._#-]*$'`
+     ``git branch --show-current | LC_ALL=C awk 'NR>1 || $0 !~ /^[abcdefghijklmnopqrstuvwxyz0123456789][abcdefghijklmnopqrstuvwxyz0123456789\/._#-]*$/ {exit 1} END{exit NR!=1}'``
      - 名前は pipe を流れるだけで**コマンド文字列に入らない**ので、この検証
        自体は安全な文字集合の外でも成立する
+     - **なぜ検証なのか** (`/pr` の step 7 は `git ls-remote --heads origin
+       "$(git branch --show-current)"` のようにコマンド置換で済ませている):
+       あちらは名前が要る時点でまだ作業ブランチが current なので git に
+       尋ね直せる。step 3 は main へ移った後なので `--show-current` は main を
+       返し、同じ手は使えない。step 1 で `git branch --show-current >
+       "$TMPDIR/..."` と控えて step 3 で `"$(cat ...)"` する完全に機械的な形は、
+       `block-dangerous-commands.sh` が「動的展開を含む書き込み系リダイレクト」
+       として**ブロックする** (リテラルパスなら通るので、原因は redirect 先の
+       変数展開。2026-08-23 に実測)。この repo で取れるのが検証だけなので検証にしている
+     - `grep -q` ではなく `awk` を使うのは、`/issue` の step 7 と**同じ判定を
+       1 つの形に揃える**ため (向こうは ref がまだ無いので 1 行であることも
+       確かめる必要があり、`grep -q` では足りない。理由は step 7 に書いた)。
+       ここは git が返す既存 ref なので改行は原理的に入らないが
+       (`git check-ref-format` が control 文字を拒否する)、判定を 2 種類に
+       分けると片方だけ直す drift が起きる
      - **exit 0** → step 3 で名前を literal 代入してよい
      - **exit 1** → step 3 の削除を**スキップし**、名前を報告して手動削除を
        促す (main の pull など名前が要らない step は続行してよい)
