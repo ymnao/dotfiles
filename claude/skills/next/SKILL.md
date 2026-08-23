@@ -8,9 +8,22 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
 
 ## Steps
 
-1. **merged 確認**: `gh pr view --json state,mergedAt,url` で現ブランチの
-   PR 状態を確認する。merged でなければ (open / closed-unmerged / PR なし)
-   状態を報告して**停止する** (pull もブランチ削除もしない)
+1. **merged 確認**: `gh pr view --json state,mergedAt,url,headRefOid,mergeCommit`
+   で現ブランチの PR 状態を確認する。merged でなければ (open /
+   closed-unmerged / PR なし) 状態を報告して**停止する** (pull もブランチ
+   削除もしない)
+   - `headRefOid` と `mergeCommit` は step 3 のブランチ削除判定で使う。
+     merge 後は不変な値なので**ここで 1 回だけ取り、step 3 で `gh` を
+     打ち直さない** (`gh` は単独 Bash 呼び出しを強制されるので、呼び直す
+     ぶんだけ tool call が増える)
+   - あわせて `git rev-parse HEAD` を打ち、作業ブランチの SHA を控える。
+     step 3 でこの値を使う。**ブランチ名をコマンドに埋め込んで
+     `git rev-parse <branch>` とはしない** — ref 名には `$(...)` や `;` を
+     含められる (`git check-ref-format --branch 'foo$(id);x'` は通る) ため、
+     コマンド文字列へ代入すると shell 展開が起きる。この repo は public で
+     `/issue` は issue title からブランチ名を作るので、外部文字列が名前に
+     入る経路がある。ここでまだ作業ブランチ上にいる (step 2 の checkout は
+     この後) ので、`HEAD` で足りる
 2. **main 更新**: `git checkout main` → `git pull origin main --ff-only`。
    sandbox denyWithinAllow に含まれるパス (settings 系 / skills 系 /
    hooks 系 / agents・rules・commands・workflows・mcp 等の Claude 設定
@@ -64,25 +77,38 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
    `git branch -d <branch>` と `git branch` を **`;` で continue** させて
    1 コマンドで打ち (`&&` にしない)、**警告文ではなく後者の出力**で消えた
    ことを確認する
-   - **squash merge の repo では `-d` が必ず拒否される** (元コミットが main の
-     祖先にならないため)。この場合に限り `-D` を使ってよいが、`-d` の安全判定を
-     代替する次の 2 点を**先に実測してから**打つ:
-     1. step 1 の `gh pr view` が `MERGED` であること
-     2. `git diff main <branch>` の出力に `+` 行が無いこと
-        (= ブランチの内容がすべて main に入っていることの実測)
-        - **ファイル名の差分が空であることを条件にしない**。自分の PR より後に
-          別 PR が main へ入れば差分は必ず非空になり、squash merge のたびに
-          停止する。step 2 が checkout について同じ誤りを既に禁じているので、
-          ここだけ旧い条件を残すと skill 内部で矛盾する
-        - 2026-08-22 に ghirgana PR #54 で踏んだ。直前に PR #52 が main へ
-          入っていたため `--name-only` は `CLAUDE.md` を返したが、
-          `git diff main <branch>` の `+` 行は 0 で、作業内容は全部入っていた
-     どちらか一方でも欠けたら `-D` は使わず**報告して停止する**
+   - **`-d` が拒否されたら** (squash merge の repo では元コミットが main の
+     祖先にならないため毎回こうなる)、`-d` の安全判定を代替する次の 2 点を
+     **step 1 で取った値と照合してから** `-D` を使う。どちらか一方でも
+     欠けたら `-D` は使わず**報告して停止する** (step 1 を通過している時点で
+     PR が MERGED であることは確定しているので、ここでは確認しない):
+     1. step 1 の `headRefOid` と、同じく step 1 で控えた作業ブランチの
+        SHA が一致すること。**`-D` で実際に失われうるのは push していない
+        ローカル commit だけ**なので、ここが安全判定の本体
+     2. step 1 の `mergeCommit` の oid を `<sha>` として
+        `git merge-base --is-ancestor <sha> main` が **exit 0** を返すこと
+        (= PR が入った commit が手元の main に届いている)。exit 1 は未到達。
+        exit 128 は object 自体が手元に無い状態で、step 2 の main 更新が
+        成功確認をすり抜けて失敗していた場合をここで捕まえる
+   - **差分の中身で判定しない**。`git diff main <branch>` の追加行を数える形は、
+     後続 PR が既存行を *変更* すると、ブランチが完全に merge 済みでも逆向き
+     差分に本物の `+` 行 (書き換え前の内容) が立つため誤って停止する
+     (非空 diff に必ず含まれる `+++ b/<path>` ヘッダをどう数えるかでも揺れる)。
+     step 2 が checkout について「diff 非空を条件にしない」としているのと同じで、
+     条件をファイル名から行に移しても後続 merge で停止する性質は消えない。
+     上の 2 点は後続 merge に影響されない
    - 上記 2 点を確認できていれば user に都度確認を取らない。squash merge は
      毎サイクル発生するため、確認を挟むと定型質問が毎回入る
    - 実測: 2026-08-17 に ghirgana で 3 回発生 (PR #11 / #12 / #20 の後始末)。
      remote ブランチは deleteBranchOnMerge で merge 時に消えているので、
      残るのはローカルだけ
+   - 実測: 2026-08-23 に dotfiles PR #324 で `gh pr view` が
+     `state,mergedAt,url,headRefOid,mergeCommit` の 5 値を 1 回で返すことを
+     確認した。`git merge-base --is-ancestor` は祖先 exit 0 / 非祖先 exit 1 /
+     object 不在 exit 128 (`fatal: Not a valid commit name`)。旧条件の誤停止は
+     scratch repo で再現した — main 側で既存 1 行を書き換えると、完全に squash
+     merge 済みのブランチに対して `git diff main <branch>` が
+     `+<書き換え前の行>` を出す
 4. **学びの昇格チェック**: このセッションで CLAUDE.md / skill / memory に
    昇格すべき学び (同じ指摘を 2 回受けた・skill の手順が実態とズレていた等)
    がないか振り返り、あれば提案する (勝手に書き換えない)。
