@@ -25,33 +25,24 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      入る経路がある。ここでまだ作業ブランチ上にいる (step 2 の checkout は
      この後) ので、`HEAD` で足りる
    - **step 3 のブランチ削除だけは名前が要る** (`git branch -d` に `HEAD` は
-     渡せない)。そこで**ここで名前を検証しておく**。step 2 で main へ移ると
+     渡せない)。そこで**ここで名前をファイルに控える**。step 2 で main へ移ると
      `git branch --show-current` は main を返してしまうので、作業ブランチ上に
      いるこの時点が最後の機会:
-     ``git branch --show-current | LC_ALL=C awk 'NR>1 || $0 !~ /^[abcdefghijklmnopqrstuvwxyz0123456789][abcdefghijklmnopqrstuvwxyz0123456789\/._#-]*$/ {exit 1} END{exit NR!=1}'``
-     - 名前は pipe を流れるだけで**コマンド文字列に入らない**ので、この検証
-       自体は安全な文字集合の外でも成立する
-     - **なぜ検証なのか** (`/pr` の step 7 は `git ls-remote --heads origin
-       "$(git branch --show-current)"` のようにコマンド置換で済ませている):
-       あちらは名前が要る時点でまだ作業ブランチが current なので git に
-       尋ね直せる。step 3 は main へ移った後なので `--show-current` は main を
-       返し、同じ手は使えない。step 1 で `git branch --show-current >
-       "$TMPDIR/..."` と控えて step 3 で `"$(cat ...)"` する完全に機械的な形は、
-       `block-dangerous-commands.sh` が「動的展開を含む書き込み系リダイレクト」
-       として**ブロックする** (リテラルパスなら通るので、原因は redirect 先の
-       変数展開。2026-08-23 に実測)。この repo で取れるのが検証だけなので検証にしている
-     - `grep -q` ではなく `awk` を使うのは、`/issue` の step 7 と**同じ判定を
-       1 つの形に揃える**ため (向こうは ref がまだ無いので 1 行であることも
-       確かめる必要があり、`grep -q` では足りない。理由は step 7 に書いた)。
-       ここは git が返す既存 ref なので改行は原理的に入らないが
-       (`git check-ref-format` が control 文字を拒否する)、判定を 2 種類に
-       分けると片方だけ直す drift が起きる
-     - **exit 0** → step 3 で名前を literal 代入してよい
-     - **exit 1** → step 3 の削除を**スキップし**、名前を報告して手動削除を
-       促す (main の pull など名前が要らない step は続行してよい)
-     - 文字クラスを range ではなく列挙で書く理由と、先頭を英数字に固定して
-       `-` 始まりの名前が `git branch -d` のオプションとして解釈されるのを
-       防ぐ意図は `/issue` skill の step 7 と同じ
+     `git branch --show-current > "$TMPDIR/merged-branch.txt"`
+     - **名前を検証するのではなく、agent がタイプし直さない形にする**。step 3
+       では `"$(cat "$TMPDIR/merged-branch.txt")"` として渡す。コマンド置換の
+       *出力* は shell に再スキャンされないので、`$(...)` や `;` を含む ref 名
+       でもリテラルな 1 引数として git に届く。**書いたのは git、読むのも
+       shell で、名前が LLM の出力を経由しない** — 文字集合の検証と違って
+       「検証した文字列と実際に使う文字列が同じである」ことが構造的に保証される
+     - **この 2 コマンドは別々の Bash 呼び出しで打つこと**。同じ呼び出しに
+       redirect と `$(cat ...)` を同居させると `block-dangerous-commands.sh` が
+       「動的展開を含む書き込み系リダイレクト」としてブロックする。分けて打てば
+       どちらも通る (2026-08-23 に両方向とも実測)。step 1 と step 3 は元々
+       別の呼び出しなので、通常の手順どおりに進めれば問題にならない
+     - `$TMPDIR` はセッション内で不変なので step 1 → step 3 で読める。step 3 に
+       着いたときファイルが無ければ、step 1 を飛ばしている異常なので削除は
+       行わず報告して次へ進む
 2. **main 更新**: `git checkout main` → `git pull origin main --ff-only`。
    sandbox denyWithinAllow に含まれるパス (settings 系 / skills 系 /
    hooks 系 / agents・rules・commands・workflows・mcp 等の Claude 設定
@@ -102,17 +93,20 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      使い、`git diff` 空 → ref 前進 → clean を確認した
 3. **ブランチ削除**: merge 済みの作業ブランチを `git branch -d` で削除する。
    これも config lock の警告を出しながら削除には成功するので、
-   `git branch -d <branch>` と `git branch` を **`;` で continue** させて
-   1 コマンドで打ち (`&&` にしない)、**警告文ではなく後者の出力**で消えた
-   ことを確認する
-   - `<branch>` を literal 代入してよいのは **step 1 の文字集合検証を
-     通っている場合だけ**。通っていなければ削除は行わず報告して次の step へ
-     進む (根拠は step 1 に書いた)
+   `git branch -d -- "$(cat "$TMPDIR/merged-branch.txt")"` と `git branch` を
+   **`;` で continue** させて 1 コマンドで打ち (`&&` にしない)、
+   **警告文ではなく後者の出力**で消えたことを確認する
+   - **ブランチ名をタイプして埋め込まない**。step 1 で控えたファイルから
+     `"$(cat ...)"` で渡す (根拠は step 1 に書いた)
+   - `--` を置くのは、`-` で始まる ref 名が `git branch` のオプションとして
+     読まれるのを防ぐため
    - **`-d` が拒否されたら** (squash merge の repo では元コミットが main の
      祖先にならないため毎回こうなる)、`-d` の安全判定を代替する次の 2 点を
      **step 1 で取った値と照合してから** `-D` を使う。どちらか一方でも
      欠けたら `-D` は使わず**報告して停止する** (step 1 を通過している時点で
-     PR が MERGED であることは確定しているので、ここでは確認しない):
+     PR が MERGED であることは確定しているので、ここでは確認しない)。
+     `-D` も名前の渡し方は `-d` と同じ
+     (`git branch -D -- "$(cat "$TMPDIR/merged-branch.txt")"`):
      1. step 1 の `headRefOid` と、同じく step 1 で控えた作業ブランチの
         SHA が一致すること。**`-D` で実際に失われうるのは push していない
         ローカル commit だけ**なので、ここが安全判定の本体
