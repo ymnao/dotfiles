@@ -12,7 +12,7 @@ Execute these steps faithfully in order. Do not skip steps or make independent j
    - Run `gh repo view --json owner --jq '.owner.login'` → `<owner>`
    - Run `gh repo view --json name --jq '.name'` → `<repo>`
    - Run `gh pr view --json number --jq .number` (uses upstream tracking; may fail). If a number comes back, use it as `<pr_number>`.
-   - Otherwise fall back: get the branch with `git branch --show-current`, then run `gh pr list --head <branch> --state open --json number,baseRefName,headRepositoryOwner --jq '[.[] | select(.headRepositoryOwner.login == "<owner>")]'`
+   - Otherwise fall back: get the branch with `git branch --show-current`, then run `gh pr list --state open --json number,baseRefName,headRefName,headRepositoryOwner` as a bare invocation and read the output, keeping the rows whose `headRefName` equals that branch and whose `headRepositoryOwner.login` equals `<owner>`. **Do not substitute the branch name into the command** — ref names may contain `$(...)` or `;` (`git check-ref-format --branch 'foo$(id);x'` exits 0) and this repo is public, so an issue title can reach a branch name via `/issue`; quoting does not stop `$(...)` from expanding. Matching on the output side keeps the name out of the command string.
      - 0 matches → report "No PR found for the current branch" and stop.
      - >1 matches → list `PR #<n> -> <baseRefName>` for each, ask the user which one, then proceed.
 2. Fetch unresolved review threads:

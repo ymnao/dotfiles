@@ -24,6 +24,19 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      `/issue` は issue title からブランチ名を作るので、外部文字列が名前に
      入る経路がある。ここでまだ作業ブランチ上にいる (step 2 の checkout は
      この後) ので、`HEAD` で足りる
+   - **step 3 のブランチ削除だけは名前が要る** (`git branch -d` に `HEAD` は
+     渡せない)。そこで**ここで名前を検証しておく**。step 2 で main へ移ると
+     `git branch --show-current` は main を返してしまうので、作業ブランチ上に
+     いるこの時点が最後の機会:
+     `git branch --show-current | LC_ALL=C grep -qE '^[abcdefghijklmnopqrstuvwxyz0123456789][abcdefghijklmnopqrstuvwxyz0123456789/._#-]*$'`
+     - 名前は pipe を流れるだけで**コマンド文字列に入らない**ので、この検証
+       自体は安全な文字集合の外でも成立する
+     - **exit 0** → step 3 で名前を literal 代入してよい
+     - **exit 1** → step 3 の削除を**スキップし**、名前を報告して手動削除を
+       促す (main の pull など名前が要らない step は続行してよい)
+     - 文字クラスを range ではなく列挙で書く理由と、先頭を英数字に固定して
+       `-` 始まりの名前が `git branch -d` のオプションとして解釈されるのを
+       防ぐ意図は `/issue` skill の step 7 と同じ
 2. **main 更新**: `git checkout main` → `git pull origin main --ff-only`。
    sandbox denyWithinAllow に含まれるパス (settings 系 / skills 系 /
    hooks 系 / agents・rules・commands・workflows・mcp 等の Claude 設定
@@ -77,6 +90,9 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
    `git branch -d <branch>` と `git branch` を **`;` で continue** させて
    1 コマンドで打ち (`&&` にしない)、**警告文ではなく後者の出力**で消えた
    ことを確認する
+   - `<branch>` を literal 代入してよいのは **step 1 の文字集合検証を
+     通っている場合だけ**。通っていなければ削除は行わず報告して次の step へ
+     進む (根拠は step 1 に書いた)
    - **`-d` が拒否されたら** (squash merge の repo では元コミットが main の
      祖先にならないため毎回こうなる)、`-d` の安全判定を代替する次の 2 点を
      **step 1 で取った値と照合してから** `-D` を使う。どちらか一方でも
@@ -90,7 +106,7 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
         (= PR が入った commit が手元の main に届いている)。exit 1 は未到達。
         exit 128 は object 自体が手元に無い状態で、step 2 の main 更新が
         成功確認をすり抜けて失敗していた場合をここで捕まえる
-   - **差分の中身で判定しない**。`git diff main <branch>` の追加行を数える形は、
+   - **差分の中身で判定しない**。main と作業ブランチの差分の追加行を数える形は、
      後続 PR が既存行を *変更* すると、ブランチが完全に merge 済みでも逆向き
      差分に本物の `+` 行 (書き換え前の内容) が立つため誤って停止する
      (非空 diff に必ず含まれる `+++ b/<path>` ヘッダをどう数えるかでも揺れる)。
@@ -107,7 +123,7 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      確認した。`git merge-base --is-ancestor` は祖先 exit 0 / 非祖先 exit 1 /
      object 不在 exit 128 (`fatal: Not a valid commit name`)。旧条件の誤停止は
      scratch repo で再現した — main 側で既存 1 行を書き換えると、完全に squash
-     merge 済みのブランチに対して `git diff main <branch>` が
+     merge 済みのブランチに対して main との差分が
      `+<書き換え前の行>` を出す
 4. **学びの昇格チェック**: このセッションで CLAUDE.md / skill / memory に
    昇格すべき学び (同じ指摘を 2 回受けた・skill の手順が実態とズレていた等)

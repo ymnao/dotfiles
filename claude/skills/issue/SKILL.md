@@ -25,13 +25,19 @@ Fetch the specified issue, create a branch, and propose an implementation plan.
     - Format: `<type>/<concise-english-description>`
     - Use lowercase and hyphens
     - Derive an appropriate name from the issue title (e.g., `feature/add-user-auth-#42`, `fix/login-redirect-loop-#15`)
-7. Check if the branch name already exists with `git rev-parse --verify <branch-name>`:
+7. Validate the generated name **before it is substituted into any command**. The issue title is attacker-controlled on a public repo, and git accepts shell metacharacters in ref names (`git check-ref-format --branch 'foo$(id);x'` exits 0), so a name carried straight into a command string gets expanded by the shell. Quoting is not the fix — `"$(...)"` still expands.
+    - Write the generated name to `$TMPDIR/branch-name.txt` with the Write tool (this path does not go through the shell)
+    - Run `LC_ALL=C grep -qE '^[abcdefghijklmnopqrstuvwxyz0123456789][abcdefghijklmnopqrstuvwxyz0123456789/._#-]*$' "$TMPDIR/branch-name.txt"`
+    - **exit 0** → the name is inside the safe set; substitute it literally in steps 8-9
+    - **exit 1** → do NOT substitute it anywhere. Report the rejected name and stop
+    - The character class is spelled out instead of using ranges (`[a-z0-9]` collates differently per locale; same reason as `agents/hooks/block-dangerous-commands.sh`), and the first character is pinned to alphanumeric so a leading `-` cannot be read as an option by `git branch -d` / `git checkout`
+8. Check if the branch name already exists with `git rev-parse --verify <branch-name>`:
     - If it exists, report the conflict and stop
-8. Run `git checkout -b <branch-name>` to create the branch
-9. Explore the project structure:
+9. Run `git checkout -b <branch-name>` to create the branch
+10. Explore the project structure:
     - Review directory layout
     - Understand existing code patterns and architecture
-10. Propose an implementation plan based on the issue:
+11. Propose an implementation plan based on the issue:
     - Files to change
     - Implementation steps
     - Considerations and caveats
