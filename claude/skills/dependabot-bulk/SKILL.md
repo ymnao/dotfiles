@@ -17,9 +17,11 @@ open な Dependabot PR を 1 branch に統合し、push を 1 回にして CI �
    - `git status --porcelain` が空でなければ報告して停止
    - 現在ブランチがデフォルトブランチでなければ、デフォルトブランチに移動する
 2. **列挙 + 分類**
-   - 作業用 tmp dir を作る: `WORK=$(mktemp -d "${TMPDIR:-/tmp}/dependabot-bulk.XXXXXX")` (並行実行や失敗残置での上書きを防ぐ。skill flow の全 tmp ファイルはこの下に置く)
-   - `gh pr list --author app/dependabot --state open --json number,title,headRefName,url,body,labels > "$WORK/prs.json"`
-   - `bash "$HOME/.claude/skills/dependabot-bulk/scripts/list-dependabot-prs.sh" < "$WORK/prs.json" > "$WORK/classified.json"`
+   - 作業用 tmp dir を作る: `mkdir -p "$TMPDIR/dependabot-bulk"` (skill flow の全 tmp ファイルはこの下に置く)
+     - **`WORK=$(mktemp -d ...)` は使わない**。Bash tool 呼び出し間で shell 変数は persist しないので次の呼び出しで `$WORK` は空になり、加えて `block-dangerous-commands.sh` は `$HOME` / `$TMPDIR` / `$XDG_*` **以外**の変数を残したまま「動的展開を含む書き込み系リダイレクト」判定に流すため、`> "$WORK/..."` はブロックされる (2026-09-02 に両方向とも実測)
+     - このパスは uid スコープの固定パス (実測: `$TMPDIR` = `/tmp/claude-501`) で、前回の別 repo / 別 run のファイルが残りうる。step 2 が毎回 `prs.json` / `classified.json` を上書きするので通常は問題にならないが、**step 2 を飛ばして step 7 以降だけを再開しない** (stale な PR 一覧を読む)
+   - `gh pr list --author app/dependabot --state open --json number,title,headRefName,url,body,labels > "$TMPDIR/dependabot-bulk/prs.json"`
+   - `bash "$HOME/.claude/skills/dependabot-bulk/scripts/list-dependabot-prs.sh" < "$TMPDIR/dependabot-bulk/prs.json" > "$TMPDIR/dependabot-bulk/classified.json"`
    - 出力 JSON の各要素: `{number, title, headRefName, url, package, ecosystem, semver, security}`
    - semver は grouped PR (dependabot.yml `groups` 由来の複合 title)・v prefix (`v4.1.1`)・commit-message prefix (`Chore(deps): Bump ...` のような dependabot.yml `commit-message` 由来の接頭辞) を吸収して判定する。判別不能は `unknown`
    - semver / package は title のみ、ecosystem は headRefName、security は body と labels から判定する。title は誰でも書ける文字列で、**Dependabot 生成物であることの保証は上の `--author app/dependabot` フィルタが担う**ので、このスクリプトを別経路の PR 一覧に流用しない
@@ -43,11 +45,15 @@ open な Dependabot PR を 1 branch に統合し、push を 1 回にして CI �
    - 既存の場合 (同日リトライ / 朝夕 2 回運用) は `deps/bulk-<YYYY-MM-DD>-2` `-3` と suffix を付けて空きを探す
    - 決めた名前で `git checkout -b <名前>`
 7. **依存ごとに 1 commit を積む** (ecosystem で取り込み方が違う)
-   - **github-actions**: `git fetch origin <headRefName> && git cherry-pick FETCH_HEAD`
+   - **PR の headRefName / title / package 名をコマンド文字列にタイプし直さない**。下記のとおり `classified.json` から `"$(jq ...)"` で引数として渡す。二重引用符は `$(...)` の展開を止めないので、`Bump $(id) from 1.0.0 to 1.0.1` のような title が **`extract_package` の `[^ ]+` を通って**そのままコマンドになる経路を塞ぐため (`/next` `/pr` と同じ理屈: コマンド置換の *出力* は shell に再スキャンされないので、`$(...)` や `;` を含む値でもリテラルな 1 引数として届く。名前を検証するのではなく agent がタイプし直さない形にする)
+   - `// "NO-MATCH"` は**空文字を渡さない**ため。`git fetch origin ""` は失敗せず remote の HEAD を `FETCH_HEAD` に入れて exit 0 を返すので (2026-09-02 実測)、番号不一致を空文字のまま流すと**デフォルトブランチの HEAD を cherry-pick する**。`NO-MATCH` なら `fatal: couldn't find remote ref NO-MATCH` で止まる
+   - **github-actions**: `git fetch origin "$(jq -r --argjson n <N> 'first(.[]|select(.number==$n)|.headRefName) // "NO-MATCH"' "$TMPDIR/dependabot-bulk/classified.json")" && git cherry-pick FETCH_HEAD`
      - 同一ファイル (test.yml) 複数 bump でも pin コメント行単位で解消可能
    - **npm**: cherry-pick **しない** (lockfile が世代衝突するため)
-     - この repo は pnpm なので `pnpm up <pkg>@<Y>` を使う (対象 ecosystem の複数依存があればまとめて指定)。他 lockfile (`package-lock.json` / `yarn.lock`) の repo に流用する場合は該当マネージャの update コマンドに置き換える
-     - `git add package.json pnpm-lock.yaml && git commit -m "<原本 title>" -m "統合元: #<N>"`
+     - この repo は pnpm なので `pnpm up "$(jq -r --argjson n <N> 'first(.[]|select(.number==$n)|.package) // "NO-MATCH"' "$TMPDIR/dependabot-bulk/classified.json")@<Y>"` を使う (対象 ecosystem の複数依存があればまとめて指定)。他 lockfile (`package-lock.json` / `yarn.lock`) の repo に流用する場合は該当マネージャの update コマンドに置き換える
+       - `<Y>` (ターゲットバージョン) だけは表から読んだ値をタイプしてよい。`classify_semver` は `from` / `to` を数字とドットだけの正規表現でしか受け付けず、外れた title は `semver=unknown` → step 4 で個別維持に落ちてここへ到達しないため
+     - `git add package.json pnpm-lock.yaml && git commit -m "$(jq -r --argjson n <N> 'first(.[]|select(.number==$n)|.title) // "NO-MATCH"' "$TMPDIR/dependabot-bulk/classified.json")" -m "統合元: #<N>"`
+       - `-F <file>` にしないのは、message ファイルを作る呼び出しが 1 つ増えるうえ、そのファイル自体が `$TMPDIR` で stale 化しうるため。memory の「commit 本文はファイル方式」は HEREDOC / `$(cat ...)` が hook にブロックされることへの回避策で、`$(jq ...)` の引数渡しは通る (実測)
      - 依存ごとに 1 commit を保つ (CI 赤時の bisect のため)
    - commit message body に `統合元: #<N>` を書けば統合 PR body から原本 PR に辿れる。release notes 全文転記は不要
 8. **ローカル検証**: `make test && make lint`
@@ -58,7 +64,7 @@ open な Dependabot PR を 1 branch に統合し、push を 1 回にして CI �
     - 一致する run が無ければ数秒スリープして再問い合わせ (最大 30 秒程度)。出現したらその `databaseId` を取り出す
     - `gh run watch <run-id> --exit-status` で完走待ち
     - verify-ci-before-pr hook が最終ゲート。`--draft` bypass は使わない
-11. **統合 PR 作成**: `gh pr create --title <title> --body-file "$WORK/pr-body.md"`
+11. **統合 PR 作成**: `gh pr create --title <title> --body-file "$TMPDIR/dependabot-bulk/pr-body.md"` (本文は Write tool で書く)
     - PR body テンプレは下記 「PR body」 節を参照
     - block-dangerous-commands hook 対策のため `--body-file` (heredoc / インライン文字列は使わない)
 12. **原本 PR の close (統合 PR 作成直後)** ← rebase 起因 CI を止めるため作成直後に閉じる
@@ -90,7 +96,7 @@ step 7 の cherry-pick / lockfile 更新 / `make test` などが失敗した状�
 - cherry-pick 中の conflict: `git cherry-pick --abort` で作業を打ち切る
 - lockfile 更新中のエラー: `git restore package.json pnpm-lock.yaml`
 - 統合 branch そのものを捨てる場合: 元ブランチ (default branch) へ `git checkout main` → `git branch -D <統合branch名>`
-- `$WORK` の tmp dir は残しておくと partial state のデバッグに使えるが、確認後に `rm -rf "$WORK"` で明示的に削除する (mktemp -d 由来なので trap での自動削除に頼らない)
+- `$TMPDIR/dependabot-bulk/` は残しておくと partial state のデバッグに使える。次 run の step 2 が `prs.json` / `classified.json` を上書きするので消さなくてよい (`rm -rf` は `claude/settings.json` の deny 対象)
 
 ### やらないこと
 
