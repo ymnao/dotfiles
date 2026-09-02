@@ -110,8 +110,8 @@ assert_field "prefix: with v prefix versions"       "$PREFIX_JSON" '.[3].semver'
 assert_field "prefix + grouped → unknown"           "$PREFIX_JSON" '.[4].semver'  'unknown'
 assert_field "prefix + pre-release to → unknown"    "$PREFIX_JSON" '.[5].semver'  'unknown'
 
-# 受理パターンの広さ検査 (claude/rules/shell.md「fail-closed にしたら、次は
-# 『受理パターンの広さ』を検査する」)。緩めた prefix パターンに
+# 受理パターンの広さ検査 (claude/rules/acceptance-patterns.md「fail-closed に
+# したら、次は『受理パターンの広さ』を検査する」)。緩めた prefix パターンに
 # **マッチしてしまう / してはいけない** 入力を構成して pin する。
 PREFIX_NEG_JSON='[
   {"number":1,"title":"a(x): b: Bump foo from 1.0.0 to 2.0.0","headRefName":"dependabot/npm_and_yarn/foo","url":"u","body":"","labels":[]},
