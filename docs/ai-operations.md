@@ -33,9 +33,11 @@ fail-loud になる場所の版数固定はこの規約の対象外**(eval 実�
 | 独立第二意見(別モデル系統) | Fable 世代など | - | fresh context のレビュー、難しい設計判断、cascade でメインが疑わしいと判定したときのエスカレーション先 |
 | 探索・情報収集 | Haiku 世代 | - | 軽い調査・ファイル探索 |
 
-**実測 (2026-08-04 / `claude` 2.1.220)**: メインは Opus 5 (`claude-opus-5`)、
+**実測 (2026-09-02 / `claude` 2.1.252)**: メインは Opus 5 (`claude-opus-5`)、
 `code-reviewer` サブエージェント(frontmatter は `model: opus`)も Opus 5 に
-解決された(2026-08-03 の測定から変わらず)。根拠はどちらもセッションの
+解決された(2026-08-04 の測定から変わらず)。`fable` alias は **Fable 5.1
+(`claude-fable-5-1`)** を指す(2026-08-04 時点は Fable 5)。世代内の変化なので
+上の表と skill の `model: "fable"` 指定はいずれも無変更。根拠はどちらもセッションの
 システムプロンプトが報告するモデル名で、**alias の解決先を実行基盤の外から検証した
 ものではない**。なお `opus` の指す先が Opus 5 になったのは 2.1.219(公式
 CHANGELOG の "Added Claude Opus 5 (`claude-opus-5`), now the default Opus
@@ -60,6 +62,8 @@ ID 直書きにはしない — alias は上流の世代交代に追随するの
 
 - **Agent tool の `model` パラメータは効く** — `subagent_type: "code-reviewer"`
   + `model: "fable"` で起動した subagent は `Fable 5 / claude-fable-5` と自己申告した
+  (2026-09-02 / 2.1.252 の再測では `Fable 5.1 / claude-fable-5-1`。alias の
+  指す先だけが動き、パラメータが効くという結論は変わらない)
 - **frontmatter の `model:` はセッション内では検証できない** — `model: fable` に
   書き換えて起動しても `Opus 5`、対照として確実に有効な alias である
   `model: sonnet` に変えても `Opus 5` のまま。つまり**agent 定義はセッション開始時に
