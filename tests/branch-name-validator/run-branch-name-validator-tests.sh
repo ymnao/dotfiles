@@ -120,6 +120,26 @@ run_case 'empty file'            1 ''
 run_case 'newline only'          1 '
 '
 
+# --- NUL バイト: awk 単体では見えない範囲を非表示文字ゲートで塞ぐ ---
+# NUL の扱いは awk 実装ごとに割れる: macOS awk (20200816) は NUL でレコードを
+# 切るため `fix/a\0zzz;x` は `fix/a` だけが照合されて exit 0、ubuntu の awk は
+# exit 1 (どちらも 2026-09-02 実測。後者は CI run 33639136424 で、当初この
+# テストが awk 側の挙動を pin していて 3 ロケールとも落ちた)。
+# `$(cat …)` は NUL を落として `fix/azzz;x` を git に渡すので、awk が通す実装では
+# 「検証した文字列」と「使う文字列」がずれる = vacuous pass になる。
+# **awk の挙動は pin しない** — 実装差はここで守りたい不変条件ではないし、
+# プロキシを pin すると上流が変わった瞬間に無関係な赤が出る。守りたいのは
+# 「SKILL.md step 7 の非表示文字ゲートが NUL を落とし、正当な名前は通す」ことだけ。
+nul_file="$WORKDIR/nul.txt"
+printf 'fix/a\0zzz;x\n' > "$nul_file"
+nul_ctrl=$(LC_ALL=C tr -d '[:print:]\n' < "$nul_file" | LC_ALL=C wc -c | tr -d '[:space:]')
+check 'NUL: 非表示文字ゲートが検出する' 1 "$nul_ctrl"
+ok_ctrl=$(printf 'fix/safe-name\n' | LC_ALL=C tr -d '[:print:]\n' | LC_ALL=C wc -c | tr -d '[:space:]')
+check '正当な名前は非表示文字ゲートを通る' 0 "$ok_ctrl"
+
+# ゲートのコマンドが SKILL.md に書かれているものと同じであること。
+CTRL_GATE="LC_ALL=C tr -d '[:print:]\\n' < \"\$TMPDIR/branch-name.txt\" | LC_ALL=C wc -c"
+
 # --- SKILL.md との同一性 ---
 # 現在バリデータを持つのは /issue だけ (codex 側は symlink で同じ実体)。
 SKILL='claude/skills/issue/SKILL.md'
@@ -129,6 +149,14 @@ else
   fail=$((fail + 1))
   echo "FAIL: $SKILL にこのテストと同一のバリデータ式が見つからない" >&2
   echo "      期待する式: $VALIDATOR" >&2
+fi
+
+if grep -qF "$CTRL_GATE" "$REPO_ROOT/$SKILL"; then
+  pass=$((pass + 1))
+else
+  fail=$((fail + 1))
+  echo "FAIL: $SKILL に非表示文字ゲートのコマンドが見つからない" >&2
+  echo "      期待するコマンド: $CTRL_GATE" >&2
 fi
 
 echo "branch-name-validator tests: $pass passed, $fail failed"
