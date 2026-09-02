@@ -123,8 +123,13 @@ run_preflight_case() {
 # 資格情報つき proxy → codex を起動せず 3。host は実測した localhost だけでなく
 # 一般の proxy でも SKIP に倒す (誤検出側 = fail-safe。判定の広さの根拠は
 # run-review.sh の preflight コメント)
-run_preflight_case proxy-authed-localhost 3 no "http://user:pass@localhost:54619"
-run_preflight_case proxy-authed-remote    3 no "http://user:pass@proxy.example.com:8080"
+#
+# userinfo を変数経由で組み立てるのは、`http://<user>:<pass>@host` の形を
+# リテラルで書くと secretlint の BasicAuth ルールが実在の資格情報として
+# 検出し `make lint` が落ちるため (2026-09-02 実測)。
+FAKE_USERINFO='user:pass'
+run_preflight_case proxy-authed-localhost 3 no "http://$FAKE_USERINFO@localhost:54619"
+run_preflight_case proxy-authed-remote    3 no "http://$FAKE_USERINFO@proxy.example.com:8080"
 
 # 資格情報の無い proxy / proxy 無し → preflight を通り抜けて codex が起動し、
 # stub の汎用エラーで 1 になる (preflight が広すぎないことの負例)

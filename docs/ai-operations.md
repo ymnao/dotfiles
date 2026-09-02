@@ -93,13 +93,11 @@ frontmatter は `model: opus` のまま据え置く。呼び出し側が指定�
 代替する設計なので、そのフォールバックが常態化していたらこれに当たる。
 
 **現状 (2026-09-02 実測 / codex-cli 0.152.1): agent の Bash sandbox 内では
-`codex-review` は動かない**。sandbox の egress は資格情報つき HTTP CONNECT proxy
-一択で、codex の HTTP クライアントはこの経路でトンネルを確立できない
-(allowlist に入っている `chatgpt.com` / `auth.openai.com` も同じく失敗する。
-codex 側の内部原因は sandbox が listen socket の bind を禁じているため特定できて
-いない)。`run-review.sh` は起動前の network preflight でこの環境を検出して
-exit 3 (SKIP) を返す。詳細は `claude/skills/codex-review/SKILL.md` の
-「Running under a shell sandbox」節、追跡は issue #335。
+`codex-review` は動かない**。原因は sandbox の egress (資格情報つき proxy) を
+codex の HTTP クライアントが通れないことで、`run-review.sh` は起動前の
+network preflight でこの環境を検出して exit 3 (SKIP) を返す。**実測の詳細と
+特定できていない範囲は `claude/skills/codex-review/SKILL.md` の
+「Running under a shell sandbox」節が正本**、追跡は issue #335。
 
 つまり**独立第二意見は当面 Fable 系サブエージェントだけ**で、`agents/AGENTS.md`
 「生成者とレビュアーは同一モデル系統にしない」は満たすが、vendor をまたぐ層は
@@ -1259,9 +1257,8 @@ trust_level 記録)/ `[plugins.*]` / `[notice.*]` / `[tui.*]` /
   `codex/hooks.json` 変更後の再承認。日常の codex-review (trust 済み repo・
   hooks.json 不変) では発生しない
 - 症状: codex 側の warning、または trust 確認の再表示。なお **sandbox 内の
-  codex-review はこの節の deny 以前に network 側で止まる** — `run-review.sh` の
-  network preflight が起動前に exit 3 (SKIP) を返すので、config 書き込みの
-  可否は観測されない (2026-09-02 実測。§1 の「現状」と issue #335)
+  codex-review はこの節の deny 以前に network 側で止まる**ので、config 書き込みの
+  可否はそもそも観測されない (§1 の「現状」を参照。2026-09-02 実測)
 - 復旧: **ユーザーが sandbox 外で codex を 1 回起動**して記録を書かせる
 - `make link` / `make install` を agent が実行した場合、config.toml のマージだけが
   warn でスキップされ他の symlink 処理は継続する(`scripts/link.sh` /
