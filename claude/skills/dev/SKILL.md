@@ -207,13 +207,13 @@ Tier3 を記録しないのは情報を捨てているのではない。同じ�
     誤りが静かに防御を無効化するので厚さを維持する
   - **この例外の判定はパスではなく内容で行う**。`claude/skills/` 配下でも、
     **SKILL.md が agent の実行するコマンド形そのものを変える変更**は例外側
-    (拡張子は `.md` でも中のコマンドは agent がそのまま実行するので同じ
-    危険を持つ — `claude/rules/acceptance-patterns.md` が `**/SKILL.md` を
-    paths に含めているのと同じ理由)。実例: PR #337 は `claude/skills/` のみ
-    の変更だったが、規約どおり `/simplify` だけで進めていれば code-reviewer
-    が出した Critical (`git fetch origin ""` は失敗せず remote の HEAD を
-    `FETCH_HEAD` に入れて exit 0 を返すため、空文字が渡るとデフォルト
-    ブランチを cherry-pick する) をそのまま merge していた
+    (理由は `claude/rules/acceptance-patterns.md` 冒頭。同じ前提で
+    `**/SKILL.md` を paths に含めている)。実例: PR #337 は着手時点では
+    `claude/skills/` のみの変更で、規約上は `/simplify` 1 回だけだったが、
+    判断で厚くした code-reviewer が Critical (空文字の fail-open。詳細は
+    `dependabot-bulk/SKILL.md` step 7) を出した。**ここで足すのは 4-1 の
+    隊列側だけ** — `/pr` 側は `classify-risk.sh` の medium 床 (issue #255)
+    で既に内容判定しており、この節が無くても最低 1 観点は走る
 - **それ以外の変更** (`fish/` `nvim/` `wezterm/` 等の実際の設定、
   `scripts/link.sh` のような配置ロジック): 下記のフル隊列
 
