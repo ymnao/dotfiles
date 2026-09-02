@@ -927,15 +927,24 @@ function feed(t,   low, k, ch, rest, trig) {
       if (index(trig, ch) > 0) {
         rest = substr(t, k + 1)
         flag = 1
-        if (rest != "") check(rest)
+        if (rest != "") { check(rest); done() }
         return
       }
     }
     return
   }
+  if (flag == 2) return
   if (substr(t, 1, 1) == "-") return
   check(t)
+  done()
 }
+# checkout / switch は名前の次の位置引数が start-point で、名前ではない。
+# `git checkout -b foo @{-1}` `git switch -c foo @{u}` `git checkout -b x stash@{0}`
+# のようなリビジョン式は `@ { }` を含むので、名前と同じ集合で縛ると日常的な
+# git 操作を無音で奪う (全リポジトリに掛かる hook なので影響が広い)。
+# branch -d/-D は逆に位置引数が全部ブランチ名 (start-point を取らない) なので
+# 打ち切らない。
+function done() { if (scmd != "branch") flag = 2 }
 BEGIN {
   # ダブルクォートとシングルクォートの 2 文字。awk プログラム自体がシェルの
   # シングルクォートで囲まれているためリテラルでは書けず、コードポイントから作る。

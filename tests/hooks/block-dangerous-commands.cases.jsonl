@@ -439,3 +439,7 @@
 {"name":"branch-name-single-quoted","expect":"block","command":"git checkout -b 'feature/x$(id)'","reason":"シェル注入は起きない形だが ref 名にメタ文字が入る。段階2 が sq を空白化するため $command だけでは届かず、command_pre_sq 側で拾う"}
 {"name":"branch-name-assigned-var","expect":"block","command":"d=$(id); git checkout -b $d","reason":"代入展開後を見る $command 側でしか拾えない (command_pre_sq だけにしない理由)"}
 {"name":"branch-name-global-flag-no-value","expect":"block","command":"git --no-pager checkout -b feature/x$(id)","reason":"値を取らないグローバルオプションでサブコマンドを取りこぼさない"}
+{"name":"branch-name-issue-step9","expect":"allow","command":"git checkout -b \"$(cat \"$TMPDIR/branch-name.txt\")\"","reason":"/issue step 9 が実際に打つ形"}
+{"name":"branch-name-start-point","expect":"allow","command":"git checkout -b feature/x origin/main","reason":"start-point つきの 2 引数形"}
+{"name":"branch-name-start-point-revision","expect":"allow","command":"git checkout -b foo @{-1}","reason":"start-point は名前と別扱い。リビジョン式の @ { } で落とさない"}
+{"name":"branch-delete-second-name","expect":"block","command":"git branch -d ok \"$(id)\"","reason":"branch -d は位置引数が全部ブランチ名なので 2 つ目以降も見る"}
