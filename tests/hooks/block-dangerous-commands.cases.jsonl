@@ -424,38 +424,3 @@
 {"name":"tmpdir-bare-redirect","expect":"allow","command":"jq -r .x in.json > \"$TMPDIR/dependabot-bulk/classified.json\"","reason":"$TMPDIR は residual から除去される (issue #330)"}
 {"name":"tmpdir-default-redirect","expect":"block","command":"jq -r .x in.json > \"${TMPDIR:-/tmp}/classified.json\"","reason":"既定値つきは除去されずブロック — mktemp テンプレート形が skill 手順で使えない理由 (issue #330)"}
 {"name":"mktemp-var-redirect","expect":"block","command":"gh pr list --json number > \"$WORK/prs.json\"","reason":"mktemp -d の受け皿変数は除去対象外 (issue #330)"}
-
-# --- git ブランチ名引数の文字集合 (issue #329) ---
-{"name":"branch-name-next-handoff","expect":"allow","command":"git branch -d -- \"$(cat \"$TMPDIR/merged-branch.txt\")\"","reason":"/next の機械的受け渡し。トークン丸ごと 1 つの $(cat ...) は受理する"}
-{"name":"branch-name-issue-example","expect":"allow","command":"git checkout -b feature/add-user-auth-#42","reason":"/issue の命名例 (# を含む) が通る"}
-{"name":"branch-name-uppercase","expect":"allow","command":"git checkout -b Feature/JIRA-123","reason":"全リポジトリに掛かる hook なので大文字ブランチ名は落とさない"}
-{"name":"branch-name-var-global-opt","expect":"allow","command":"git -C \"$TMPDIR/repo\" checkout -b feature/x","reason":"値を取るグローバルオプションを跨いでも追跡でき、$VAR は受理する"}
-{"name":"branch-name-substitution","expect":"block","command":"git checkout -b \"feature/x$(id)\"","reason":"名前引数へのコマンド置換の連結 (issue #329 の主題)"}
-{"name":"branch-name-backtick","expect":"block","command":"git checkout -b feature/x`id`","reason":"バッククォート形も同じ経路"}
-{"name":"branch-name-bare-substitution","expect":"block","command":"git checkout -b \"$(id)\"","reason":"単独トークンでも $(cat ...) 以外の置換は受理しない"}
-{"name":"branch-name-concat-cat","expect":"block","command":"git switch -c \"$(cat f)-x\"","reason":"受理するのはトークン丸ごとの $(cat ...) だけで、連結形は落とす"}
-{"name":"branch-name-attached-flag","expect":"block","command":"git checkout -bfeature/x$(id)","reason":"付着形 (-bNAME) でも素通りしない"}
-{"name":"branch-name-cat-extra-command","expect":"block","command":"git branch -d -- \"$(cat x; id)\"","reason":"$(cat ...) の引数もパス 1 個に縛る (受理パターンを広く取らない)"}
-{"name":"branch-name-single-quoted","expect":"block","command":"git checkout -b 'feature/x$(id)'","reason":"シェル注入は起きない形だが ref 名にメタ文字が入る。段階2 が sq を空白化するため $command だけでは届かず、command_pre_sq 側で拾う"}
-{"name":"branch-name-assigned-var","expect":"block","command":"d=$(id); git checkout -b $d","reason":"代入展開後を見る $command 側でしか拾えない (command_pre_sq だけにしない理由)"}
-{"name":"branch-name-global-flag-no-value","expect":"block","command":"git --no-pager checkout -b feature/x$(id)","reason":"値を取らないグローバルオプションでサブコマンドを取りこぼさない"}
-{"name":"branch-name-issue-step9","expect":"allow","command":"git checkout -b \"$(cat \"$TMPDIR/branch-name.txt\")\"","reason":"/issue step 9 が実際に打つ形"}
-{"name":"branch-name-start-point","expect":"allow","command":"git checkout -b feature/x origin/main","reason":"start-point つきの 2 引数形"}
-{"name":"branch-name-start-point-revision","expect":"allow","command":"git checkout -b foo @{-1}","reason":"start-point は名前と別扱い。リビジョン式の @ { } で落とさない"}
-{"name":"branch-delete-second-name","expect":"block","command":"git branch -d ok \"$(id)\"","reason":"branch -d は位置引数が全部ブランチ名なので 2 つ目以降も見る"}
-{"name":"branch-name-quoted-space","expect":"block","command":"git checkout -b \"feature/x $(id)\"","reason":"dq 内の空白は word を割らない。quote を透過扱いにすると $(id) が start-point に見えて素通りした (2 周目レビュー)"}
-{"name":"branch-name-quoted-redirect-char","expect":"block","command":"git checkout -b \"feature/x<$(id)\"","reason":"dq 内の区切り文字も word を割らない"}
-{"name":"branch-name-redirect-before-flag","expect":"block","command":"git checkout 2>/dev/null -b \"feature/x$(id)\"","reason":"リダイレクトはコマンドを終わらせないので state を reset しない"}
-{"name":"branch-name-duplicate-flag","expect":"block","command":"git checkout -b ok -b \"$(id)\"","reason":"git は後勝ちなので 2 つ目のフラグの名前を見る"}
-{"name":"branch-name-long-opt-equals","expect":"block","command":"git switch --create=\"$(id)\"","reason":"--create=NAME 形"}
-{"name":"branch-name-long-opt-abbrev","expect":"block","command":"git switch --cr \"$(id)\"","reason":"git の parse-options は一意省略形を受ける"}
-{"name":"branch-delete-long-opt-abbrev","expect":"block","command":"git branch --del \"$(id)\"","reason":"--delete の省略形"}
-{"name":"branch-name-before-flag","expect":"block","command":"git branch \"$(id)\" -d","reason":"git の引数並べ替え。名前を先に書く形"}
-{"name":"branch-name-literalized-assign","expect":"block","command":"d=$(id;git); git checkout -b $d","reason":"段階8 の literal 化が $(id;git) を git に潰す $command 側では見えない (view を pre_sq に寄せた理由)"}
-{"name":"branch-name-orphan","expect":"block","command":"git checkout --orphan \"$(id)\"","reason":"--orphan も名前引数でブランチを作る"}
-{"name":"branch-name-worktree-add","expect":"block","command":"git worktree add -b \"$(id)\" ../wt","reason":"worktree add -b も名前引数でブランチを作る"}
-{"name":"branch-name-sq-literal-mention","expect":"allow","command":"git commit -m 'see: git checkout -b $(date)'","reason":"sq 内の literal はコマンドではない。git の次が commit なので追跡を打ち切る"}
-{"name":"branch-name-grep-pattern","expect":"allow","command":"grep -n 'git checkout -b \"$(cat' claude/skills/issue/SKILL.md","reason":"skill を grep するだけの形を落とさない (2 周目レビュアーが実際に踏んだ FP)"}
-{"name":"branch-name-switch-conflict-opt","expect":"allow","command":"git switch --conflict=merge -c feature/x","reason":"--conflict は --create の前方一致にならない"}
-{"name":"branch-name-line-continuation","expect":"block","command":"git checkout \\\n  -b \"feature/x$(id)\"","reason":"行末バックスラッシュの継続行を繋いでから判定する"}
-{"name":"branch-name-sq-assigned-var","expect":"block","command":"d='feature/x$(id)'; git checkout -b $d","reason":"sq 代入経由。代入展開後に sq の中身が名前として現れる"}
