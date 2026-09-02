@@ -205,6 +205,15 @@ Tier3 を記録しないのは情報を捨てているのではない。同じ�
     `codex/hooks/` `claude/settings.json` `codex/config.toml` など
     **security 境界・秘密情報・破壊的操作のガードに触る変更**。ここは
     誤りが静かに防御を無効化するので厚さを維持する
+  - **この例外の判定はパスではなく内容で行う**。`claude/skills/` 配下でも、
+    **SKILL.md が agent の実行するコマンド形そのものを変える変更**は例外側
+    (拡張子は `.md` でも中のコマンドは agent がそのまま実行するので同じ
+    危険を持つ — `claude/rules/acceptance-patterns.md` が `**/SKILL.md` を
+    paths に含めているのと同じ理由)。実例: PR #337 は `claude/skills/` のみ
+    の変更だったが、規約どおり `/simplify` だけで進めていれば code-reviewer
+    が出した Critical (`git fetch origin ""` は失敗せず remote の HEAD を
+    `FETCH_HEAD` に入れて exit 0 を返すため、空文字が渡るとデフォルト
+    ブランチを cherry-pick する) をそのまま merge していた
 - **それ以外の変更** (`fish/` `nvim/` `wezterm/` 等の実際の設定、
   `scripts/link.sh` のような配置ロジック): 下記のフル隊列
 
