@@ -918,10 +918,11 @@ function stopafter() { return (scmd != "branch") }
 # 長オプションは前方一致で見る。git の parse-options は一意省略形を受けるので
 # (`--cr` = --create、`--del` = --delete。git 2.55.0 で実測)、完全一致だけだと
 # 1 文字削るだけで素通りする。
-function islong(base,   k) {
+function islong(base,   k, m, cand) {
   if (length(base) < 3) return 0
-  for (k = 1; k <= nlong; k++)
-    if (longsub[k] == scmd && base == substr(longopt[k], 1, length(base))) return 1
+  m = split(longopt[scmd], cand, " ")
+  for (k = 1; k <= m; k++)
+    if (base == substr("--" cand[k], 1, length(base))) return 1
   return 0
 }
 function flushpending(   k) {
@@ -948,7 +949,7 @@ function feed(t,   low, k, ch, rest, trig, base, val, eq) {
       if (islong(base)) {
         if (val != "") { check(val); flag = stopafter() ? 2 : 1 }
         else flag = 1
-        if (scmd == "branch") flushpending()
+        flushpending()
       }
       return
     }
@@ -959,7 +960,7 @@ function feed(t,   low, k, ch, rest, trig, base, val, eq) {
         rest = substr(t, k + 1)
         if (rest != "") { check(rest); flag = stopafter() ? 2 : 1 }
         else flag = 1
-        if (scmd == "branch") flushpending()
+        flushpending()
         return
       }
     }
@@ -982,12 +983,13 @@ BEGIN {
   # 受理パターンの側を広く取る理由が無い)。
   okcat = "^[$][(][ \t]*cat[ \t]+" okname "[)]$"
   okname = "^" okname "$"
-  nlong = 0
-  longopt[++nlong] = "--create";       longsub[nlong] = "switch"
-  longopt[++nlong] = "--force-create"; longsub[nlong] = "switch"
-  longopt[++nlong] = "--orphan";       longsub[nlong] = "switch"
-  longopt[++nlong] = "--orphan";       longsub[nlong] = "checkout"
-  longopt[++nlong] = "--delete";       longsub[nlong] = "branch"
+  # サブコマンドごとの「名前引数を取る長オプション」。並行配列 (名前の配列 +
+  # サブコマンドの配列) にすると片方だけ足したときに添字がずれるので、
+  # サブコマンドを添字にした 1 本にまとめる。
+  longopt["switch"] = "create force-create orphan"
+  longopt["checkout"] = "orphan"
+  longopt["branch"] = "delete"
+  longopt["worktree"] = ""
 }
 function scan(L,   n, i, c, nx, j, cj, depth, op, cl, piece, tok, inq) {
   reset()
