@@ -385,7 +385,10 @@ paths:
   実例: issue #196 の対応中、sandbox 下で `TMPDIR` を書き込み可能な場所に
   差し替えて手元検証したところ `mkdtemp failed on /var/folders/...:
   Operation not permitted` で落ちた (スクリプト側のバグではなく mktemp の
-  仕様差)。テンプレートを明示すると BSD / GNU どちらでも TMPDIR に従う
+  仕様差)。テンプレートを明示すると BSD / GNU どちらでも TMPDIR に従う。
+  **ただしこれはスクリプト内の話。agent が Bash tool から直接打つ手順
+  (`SKILL.md` 等) では `mktemp -d` 自体が使えない** — 理由と代わりに書く形は
+  `claude/rules/acceptance-patterns.md` の「一時ファイルの置き場」を参照
 - **一時ディレクトリのパスを「外部ツールが返す値」と文字列比較するテストでは、
   `${TMPDIR:-/tmp}` を連結する前に末尾スラッシュを落とす**。macOS の TMPDIR は
   末尾がスラッシュ(`getconf DARWIN_USER_TEMP_DIR` → `/var/folders/.../T/`)

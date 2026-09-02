@@ -89,6 +89,51 @@ assert_field "semver: pre-release from"       "$SEMVER_JSON" '.[6].semver' 'unkn
 assert_field "semver: no version"    "$SEMVER_JSON" '.[7].semver' 'unknown'
 assert_field "semver: trailing path" "$SEMVER_JSON" '.[8].semver' 'patch'
 
+# ---- toVersion: SKILL.md step 7 が pnpm up に渡す値 (issue #330) ----
+# regex が検証した部分文字列そのものを出力に載せる契約。agent が生 title から
+# 転記すると検証した文字列と使う文字列が別物になるため。
+assert_field "toVersion: 3-part"            "$SEMVER_JSON" '.[0].toVersion' '2.0.0'
+assert_field "toVersion: 2-part"            "$SEMVER_JSON" '.[3].toVersion' '1.1'
+assert_field "toVersion: v prefix を剥がす" "$SEMVER_JSON" '.[4].toVersion' '4.2.0'
+assert_field "toVersion: 末尾 in /path は入らない" "$SEMVER_JSON" '.[8].toVersion' '1.0.1'
+assert_field "toVersion: semver unknown なら空" "$SEMVER_JSON" '.[7].toVersion' ''
+
+# ---- package 名の whitelist (issue #330) ----
+# `pnpm up <spec>` の引数は「名前」ではなく依存 spec 全体として解釈されるので、
+# title 編集だけで別物を入れられる (実測: alias 形は既存依存を別 package に置換、
+# glob は全依存を書き換え、tarball URL は当該ホストへ resolve しにいく)。
+# npm 名 / GitHub Actions の owner/repo に一致しないものは個別維持に倒す。
+BADPKG_JSON='[
+  {"number":1,"title":"Bump --registry=http://evil from 1.0.0 to 1.0.1","headRefName":"dependabot/npm_and_yarn/x","url":"u","body":"","labels":[]},
+  {"number":2,"title":"Bump -g from 1.0.0 to 1.0.1","headRefName":"dependabot/npm_and_yarn/x","url":"u","body":"","labels":[]},
+  {"number":3,"title":"Bump lodash@npm:evil-pkg from 1.0.0 to 1.0.1","headRefName":"dependabot/npm_and_yarn/x","url":"u","body":"","labels":[]},
+  {"number":4,"title":"Bump * from 1.0.0 to 1.0.1","headRefName":"dependabot/npm_and_yarn/x","url":"u","body":"","labels":[]},
+  {"number":5,"title":"Bump !lodash from 1.0.0 to 1.0.1","headRefName":"dependabot/npm_and_yarn/x","url":"u","body":"","labels":[]},
+  {"number":6,"title":"Bump foo@https://evil.example/x.tgz from 1.0.0 to 1.0.1","headRefName":"dependabot/npm_and_yarn/x","url":"u","body":"","labels":[]},
+  {"number":7,"title":"Bump foo from 1.0.0 to 1.0.1\nBump --registry=http://evil from 2.0.0 to 3.0.0","headRefName":"dependabot/npm_and_yarn/x","url":"u","body":"","labels":[]}
+]'
+assert_field "bad package: option 形は unknown"          "$BADPKG_JSON" '.[0].semver' 'unknown'
+assert_field "bad package: option 形は package を空に"   "$BADPKG_JSON" '.[0].package' ''
+assert_field "bad package: option 形は toVersion も空に" "$BADPKG_JSON" '.[0].toVersion' ''
+assert_field "bad package: 単一ハイフン形"               "$BADPKG_JSON" '.[1].semver' 'unknown'
+assert_field "bad package: npm alias 形"                 "$BADPKG_JSON" '.[2].semver' 'unknown'
+assert_field "bad package: glob"                         "$BADPKG_JSON" '.[3].semver' 'unknown'
+assert_field "bad package: negation"                     "$BADPKG_JSON" '.[4].semver' 'unknown'
+assert_field "bad package: tarball URL"                  "$BADPKG_JSON" '.[5].semver' 'unknown'
+assert_field "bad package: 改行入り title"               "$BADPKG_JSON" '.[6].semver' 'unknown'
+assert_field "bad package: 改行入り title は package も空" "$BADPKG_JSON" '.[6].package' ''
+
+# whitelist が正規の名前を落としていないこと (fail-closed が広すぎると
+# 統合が丸ごと機能しなくなるので、受理側も同じ強さで pin する)
+GOODPKG_JSON='[
+  {"number":1,"title":"Bump actions/checkout from 4.1.0 to 4.1.1","headRefName":"dependabot/github_actions/x","url":"u","body":"","labels":[]},
+  {"number":2,"title":"Bump @secretlint/secretlint-formatter-sarif from 1.0.0 to 1.0.1","headRefName":"dependabot/npm_and_yarn/x","url":"u","body":"","labels":[]},
+  {"number":3,"title":"Bump lodash.merge from 1.0.0 to 1.0.1","headRefName":"dependabot/npm_and_yarn/x","url":"u","body":"","labels":[]}
+]'
+assert_field "good package: owner/repo"  "$GOODPKG_JSON" '.[0].package' 'actions/checkout'
+assert_field "good package: scoped npm"  "$GOODPKG_JSON" '.[1].package' '@secretlint/secretlint-formatter-sarif'
+assert_field "good package: dot 入り"    "$GOODPKG_JSON" '.[2].package' 'lodash.merge'
+
 # ---- commit-message prefix 付き title (issue #266) ----
 # dependabot.yml の commit-message.prefix / include: scope で title 冒頭に
 # 'Chore(deps): ' 等が付くと、以前は全件 semver=unknown / package="" に落ちた
