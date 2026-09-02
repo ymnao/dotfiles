@@ -92,6 +92,19 @@ frontmatter は `model: opus` のまま据え置く。呼び出し側が指定�
 第二意見という緩和が消えるため。`/pr` は codex 不能時に Fable 系サブエージェントで
 代替する設計なので、そのフォールバックが常態化していたらこれに当たる。
 
+**現状 (2026-09-02 実測 / codex-cli 0.152.1): agent の Bash sandbox 内では
+`codex-review` は動かない**。原因は sandbox の egress (資格情報つき proxy) を
+codex の HTTP クライアントが通れないことで、`run-review.sh` は起動前の
+network preflight でこの環境を検出して exit 3 (SKIP) を返す。**実測の詳細と
+特定できていない範囲は `claude/skills/codex-review/SKILL.md` の
+「Running under a shell sandbox」節が正本**、追跡は issue #335。
+
+つまり**独立第二意見は当面 Fable 系サブエージェントだけ**で、`agents/AGENTS.md`
+「生成者とレビュアーは同一モデル系統にしない」は満たすが、vendor をまたぐ層は
+欠けている。回復の選択肢 (`sandbox.excludedCommands` に `codex *` を足す /
+user が sandbox 外で手動実行する / cross-vendor 第二意見を諦める) は
+security 境界に関わるため user 判断とし、issue #335 で扱う。
+
 - 切り替え: `/model`、Agent ツールの `model` パラメータ
   (例: `Agent(subagent_type: "general-purpose", model: "sonnet", prompt: ...)`
   独立第二意見は `model: "fable"`)
@@ -1243,8 +1256,9 @@ trust_level 記録)/ `[plugins.*]` / `[notice.*]` / `[tui.*]` /
 - 発生条件: **未 trust の repo で初回実行**・codex 更新後の notice/tui 記録・
   `codex/hooks.json` 変更後の再承認。日常の codex-review (trust 済み repo・
   hooks.json 不変) では発生しない
-- 症状: codex 側の warning、または trust 確認の再表示。sandbox 内の
-  codex-review が失敗した場合は `run-review.sh` の exit 3 (SKIP) 経路になる
+- 症状: codex 側の warning、または trust 確認の再表示。なお **sandbox 内の
+  codex-review はこの節の deny 以前に network 側で止まる**ので、config 書き込みの
+  可否はそもそも観測されない (§1 の「現状」を参照。2026-09-02 実測)
 - 復旧: **ユーザーが sandbox 外で codex を 1 回起動**して記録を書かせる
 - `make link` / `make install` を agent が実行した場合、config.toml のマージだけが
   warn でスキップされ他の symlink 処理は継続する(`scripts/link.sh` /
