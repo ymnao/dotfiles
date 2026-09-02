@@ -144,6 +144,13 @@ is_security() {
 # 「commit-message prefix を読み飛ばした後の Dependabot 生成 title を読む」
 # という同じ問いに答えているため。個別に regex へ埋め込むと drift し、
 # 「semver は unknown なのに package だけ取れる」不整合が構造的に起こりうる。
+# 受理する package 名: npm の名前 (`lodash` / `@scope/pkg`) と GitHub Actions の
+# `owner/repo`。segment は英数始まりで、以降は `._~-` のみ許す。`@` は先頭の
+# scope prefix 位置にしか置けないので `name@npm:other` / `name@https://...` は
+# 落ちる。bash 3.2 の `[[ =~ ]]` で使うため変数に置く (リテラル埋め込みは
+# 3.2 でクォート規則が版依存になる)
+PACKAGE_NAME_RE='^@?[A-Za-z0-9][A-Za-z0-9._~-]*(/[A-Za-z0-9][A-Za-z0-9._~-]*)?$'
+
 extract_package() {
   strip_commit_prefix "$1" | sed -nE 's/^[Bb]ump[s]? +([^ ]+) +from .*/\1/p'
 }
@@ -179,14 +186,21 @@ printf '%s' "$INPUT" | jq -c '.[]' \
       PACKAGE=$(extract_package "$TITLE")
       TO_VERSION=$(extract_to_version "$TITLE")
 
-      # `-` 始まりの package 名 (`Bump --registry=http://evil from 1.0.0 to 1.0.1`)
-      # は shell の再スキャンを経なくても `pnpm up` にオプションとして解釈されうる。
-      # extract_package の `[^ ]+` は通してしまうので、ここで unknown に倒して
-      # SKILL.md step 4 の「個別維持」へ落とす (名前を書き換えて通すと、人が
-      # 見ないまま統合対象に残る)
-      case "$PACKAGE" in
-        -*) PACKAGE=''; TO_VERSION=''; SEMVER='unknown' ;;
-      esac
+      # package 名は blacklist ではなく whitelist で受ける。`pnpm up <spec>` の
+      # 引数は「名前」ではなく **依存 spec 全体**として解釈されるので、shell の
+      # 再スキャンを経なくても title の編集だけで別物を入れられる (2026-09-02 実測:
+      # `pnpm up 'secretlint@npm:left-pad@1.3.0'` は package.json の secretlint を
+      # 別 package の alias に置換して exit 0、`'*@1.0.1'` は全依存を書き換え、
+      # `'foo@https://host/x.tgz'` は当該ホストへ resolve しにいく)。
+      # extract_package の `[^ ]+` はこれらを全部通すため、npm 名 / GitHub Actions
+      # の `owner/repo` に一致しないものは unknown に倒して SKILL.md step 4 の
+      # 「個別維持」へ落とす。改行を含む title もここで落ちる (`=~` は行単位では
+      # なく文字列全体に anchor するため)
+      if ! [[ "$PACKAGE" =~ $PACKAGE_NAME_RE ]]; then
+        PACKAGE=''
+        TO_VERSION=''
+        SEMVER='unknown'
+      fi
 
       jq -n \
         --argjson number "$NUMBER" \

@@ -53,7 +53,8 @@ open な Dependabot PR を 1 branch に統合し、push を 1 回にして CI �
    - **github-actions**: `git fetch origin "refs/heads/$(jq -r --argjson n <N> 'first(.[]|select(.number==$n)|.headRefName) // "NO-MATCH"' "$TMPDIR/dependabot-bulk/classified.json")" && git cherry-pick FETCH_HEAD`
      - 同一ファイル (test.yml) 複数 bump でも pin コメント行単位で解消可能
    - **npm**: cherry-pick **しない** (lockfile が世代衝突するため)
-     - この repo は pnpm なので `pnpm up "$(jq -r --argjson n <N> 'first(.[]|select(.number==$n)|"\(.package)@\(.toVersion)") // "NO-MATCH"' "$TMPDIR/dependabot-bulk/classified.json")"` を使う (依存ごとに 1 commit を保つため、複数依存があっても 1 件ずつ回す)。他 lockfile (`package-lock.json` / `yarn.lock`) の repo に流用する場合は該当マネージャの update コマンドに置き換える
+     - この repo は pnpm なので `spec=$(jq -r --argjson n <N> 'first(.[]|select(.number==$n)|"\(.package)@\(.toVersion)")' "$TMPDIR/dependabot-bulk/classified.json"); pnpm up "${spec:?classified.json から #<N> の spec を取れない}"` を使う (依存ごとに 1 commit を保つため、複数依存があっても 1 件ずつ回す)。他 lockfile (`package-lock.json` / `yarn.lock`) の repo に流用する場合は該当マネージャの update コマンドに置き換える
+       - ここだけ変数に受けるのは、**`pnpm up ""` が fail-open だから**。空文字を渡すと exit 0 で**全依存が最新に更新される** (実測)。`git fetch` の `refs/heads/` 前置や `git commit` の単一 `-m` に相当する「空なら止まる」形が pnpm の引数側に無いので、`${spec:?...}` で shell に止めさせる。変数は同じ呼び出し内でしか使わないので persist の制約には掛からない
        - **ターゲットバージョンも表から転記しない**。classifier が `toVersion` として出すのは `classify_semver` の regex が実際に検証した部分文字列そのもので、agent が生 title から読み直すと「検証した文字列と使う文字列が別物」に戻る (regex は `Bump foo from 1.0.0 to 1.0.1 to 9.9.9` のような末尾も許すので、目視の転記は一致しない)
      - `git add package.json pnpm-lock.yaml && git commit -m "$(jq -r --argjson n <N> 'first(.[]|select(.number==$n)|"\(.title)\n\n統合元: #\(.number)")' "$TMPDIR/dependabot-bulk/classified.json")"`
        - memory の「commit 本文はファイル方式」が避けているのは `$(cat <<EOF ...)` のような heredoc 内包形で、`$(jq ...)` / `$(cat <file>)` の引数渡しは通る (実測。`/next` step 1 も同じ形を使っている)。`-F <file>` にすると message ファイルを作る呼び出しが 1 つ増えるだけなので採らない
