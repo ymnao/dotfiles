@@ -35,11 +35,13 @@ fail-loud になる場所の版数固定はこの規約の対象外**(eval 実�
 
 **実測 (2026-09-02 / `claude` 2.1.252)**: メインは Opus 5 (`claude-opus-5`)、
 `code-reviewer` サブエージェント(frontmatter は `model: opus`)も Opus 5 に
-解決された(2026-08-04 の測定から変わらず)。`fable` alias は **Fable 5.1
-(`claude-fable-5-1`)** を指す(2026-08-04 時点は Fable 5)。世代内の変化なので
-上の表と skill の `model: "fable"` 指定はいずれも無変更。根拠はどちらもセッションの
+解決された(2026-08-04 の測定から変わらず)。根拠はどちらもセッションの
 システムプロンプトが報告するモデル名で、**alias の解決先を実行基盤の外から検証した
-ものではない**。なお `opus` の指す先が Opus 5 になったのは 2.1.219(公式
+ものではない**。同日の再測で `fable` alias は **Fable 5.1
+(`claude-fable-5-1`)** を指した(2026-08-04 時点は Fable 5。根拠は起動した
+subagent 自身の自己申告で、下の「なぜ frontmatter ではなく呼び出し側か」と
+同じ手段)。世代内の変化なので、上の表も skill の `model: "fable"` 指定も
+無変更で済んだ。なお `opus` の指す先が Opus 5 になったのは 2.1.219(公式
 CHANGELOG の "Added Claude Opus 5 (`claude-opus-5`), now the default Opus
 model" より。バイナリからは観測できないので出所は CHANGELOG)。この repo は
 alias 運用を採っているため**設定の変更は不要だった**(下記のとおり alias 運用は
