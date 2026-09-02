@@ -121,17 +121,17 @@ run_case 'newline only'          1 '
 '
 
 # --- NUL バイト: awk 単体では見えない範囲を非表示文字ゲートで塞ぐ ---
-# macOS awk (20200816) は NUL でレコードを切るため、`fix/a\0zzz;x` は
-# `fix/a` だけが文字集合と照合され exit 0 になる (2026-09-02 実測)。
-# 一方 `$(cat …)` は NUL を落として `fix/azzz;x` を git へ渡すので、
-# 「検証した文字列」と「使う文字列」がずれる = vacuous pass。
-# SKILL.md step 7 はこれを awk ではなく tr の非表示文字ゲートで塞ぐので、
-# ここでも両方を測る (awk が通すこと自体は仕様として pin する)。
+# NUL の扱いは awk 実装ごとに割れる: macOS awk (20200816) は NUL でレコードを
+# 切るため `fix/a\0zzz;x` は `fix/a` だけが照合されて exit 0、ubuntu の awk は
+# exit 1 (どちらも 2026-09-02 実測。後者は CI run 33639136424 で、当初この
+# テストが awk 側の挙動を pin していて 3 ロケールとも落ちた)。
+# `$(cat …)` は NUL を落として `fix/azzz;x` を git に渡すので、awk が通す実装では
+# 「検証した文字列」と「使う文字列」がずれる = vacuous pass になる。
+# **awk の挙動は pin しない** — 実装差はここで守りたい不変条件ではないし、
+# プロキシを pin すると上流が変わった瞬間に無関係な赤が出る。守りたいのは
+# 「SKILL.md step 7 の非表示文字ゲートが NUL を落とし、正当な名前は通す」ことだけ。
 nul_file="$WORKDIR/nul.txt"
 printf 'fix/a\0zzz;x\n' > "$nul_file"
-nul_awk=0
-LC_ALL=C awk "$VALIDATOR" "$nul_file" || nul_awk=$?
-check 'NUL: awk 単体では素通りする (この事実を pin する)' 0 "$nul_awk"
 nul_ctrl=$(LC_ALL=C tr -d '[:print:]\n' < "$nul_file" | LC_ALL=C wc -c | tr -d '[:space:]')
 check 'NUL: 非表示文字ゲートが検出する' 1 "$nul_ctrl"
 ok_ctrl=$(printf 'fix/safe-name\n' | LC_ALL=C tr -d '[:print:]\n' | LC_ALL=C wc -c | tr -d '[:space:]')
