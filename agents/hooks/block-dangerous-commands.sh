@@ -882,6 +882,9 @@ fi
 # として出るため、awk 側は tokenize するだけで文字を消さない。
 # word 区切りに [[:space:]] を使わないのも同じ理由 (bash は VT/FF/CR を区切りに
 # しないので、区切り扱いすると連結形が単独トークンに見える)。
+# クォートも「無視する」のではなく状態として持つ。無視すると dq 内の空白・区切り
+# 文字が word を割り、割れた後ろ半分が名前ではない位置 (start-point) に見えて
+# 検査から外れる — 実際に `git checkout -b "x $(id)"` が空白 1 個で素通りした。
 #
 # 受理する形は 3 つだけ:
 #   1. 安全文字だけの名前 (英大小文字・数字・/ . _ - # + = ~ ^)。/issue の命名規約
@@ -895,60 +898,82 @@ fi
 #      (`git branch -d -- "$(cat "$TMPDIR/merged-branch.txt")"`) の形。
 #      任意コマンドの `$(...)` を通さないのは、名前が `$(id)` そのものである形まで
 #      素通りしてしまうため — 逃がすのは「名前をファイルに書いて読ませる」経路だけでよい
-# 対象は checkout -b/-B / switch -c/-C/--create/--force-create / branch -d/-D/--delete。
-# 束ね (-qb) と付着 (-bNAME) も見るのは、1 文字足すだけで素通りできては
-# enforcement にする意味がないため。`git branch <name>` (フラグ無し作成) と -m/-M は
-# 対象外 (--list / --contains 等の読み取り系と機械的に区別できず false positive が
-# 跳ねる / どの skill も使っていない)。
+# 対象は checkout -b/-B/--orphan / switch -c/-C/--create/--force-create/--orphan /
+# branch -d/-D/--delete / worktree add -b/-B。束ね (-qb)・付着 (-bNAME)・
+# 長オプションの `=NAME` 形と一意省略形 (`--cr` = --create) も見るのは、1 文字
+# 足す・削るだけで素通りできては enforcement にする意味がないため。
+# `git branch <name>` (フラグ無し作成) と -m/-M は対象外 (--list / --contains 等の
+# 読み取り系と機械的に区別できず false positive が跳ねる / どの skill も使って
+# いない)。この 2 つは「名前引数に $() を書くと実行される」という、この hook が
+# 引数位置について一般に取っている立場と同じ扱いになる。
 _branch_awk='
-function reset() { g = 0; scmd = ""; flag = 0; prevopt = 0 }
+function reset() { g = 0; scmd = ""; flag = 0; prevopt = 0; np = 0 }
 function check(t) { if (t !~ okcat && t !~ okname) print t }
-function feed(t,   low, k, ch, rest, trig) {
+# フラグ確定後に名前を 1 個だけ見るか、以降も見続けるか。
+# checkout / switch / worktree add は名前の次の位置引数が start-point で名前では
+# ない (`git checkout -b foo @{-1}` `git switch -c foo @{u}` のようなリビジョン式は
+# `@ { }` を含み、名前と同じ集合で縛ると日常的な git 操作を無音で奪う)。
+# branch -d/-D は逆に位置引数が全部ブランチ名なので打ち切らない。
+function stopafter() { return (scmd != "branch") }
+# 長オプションは前方一致で見る。git の parse-options は一意省略形を受けるので
+# (`--cr` = --create、`--del` = --delete。git 2.55.0 で実測)、完全一致だけだと
+# 1 文字削るだけで素通りする。
+function islong(base,   k) {
+  if (length(base) < 3) return 0
+  for (k = 1; k <= nlong; k++)
+    if (longsub[k] == scmd && base == substr(longopt[k], 1, length(base))) return 1
+  return 0
+}
+function flushpending(   k) {
+  for (k = 1; k <= np; k++) check(pending[k])
+  np = 0
+}
+function feed(t,   low, k, ch, rest, trig, base, val, eq) {
   if (t == "") return
   low = tolower(t)
   if (g == 0) { if (low == "git" || low ~ /\/git$/) g = 1; return }
   if (scmd == "") {
-    if (low == "checkout" || low == "switch" || low == "branch") { scmd = low; return }
+    if (low == "checkout" || low == "switch" || low == "branch" || low == "worktree") { scmd = low; return }
     if (substr(t, 1, 1) == "-") { prevopt = 1; return }
     if (prevopt == 1) { prevopt = 0; return }
     g = 0
     return
   }
-  if (flag == 0) {
-    if (substr(t, 1, 1) != "-") return
+  if (substr(t, 1, 1) == "-") {
+    if (t == "--") return
     if (substr(t, 1, 2) == "--") {
-      if (scmd == "switch" && (low == "--create" || low == "--force-create")) flag = 1
-      else if (scmd == "branch" && low == "--delete") flag = 1
+      eq = index(t, "=")
+      base = (eq > 0) ? substr(low, 1, eq - 1) : low
+      val = (eq > 0) ? substr(t, eq + 1) : ""
+      if (islong(base)) {
+        if (val != "") { check(val); flag = stopafter() ? 2 : 1 }
+        else flag = 1
+        if (scmd == "branch") flushpending()
+      }
       return
     }
-    trig = (scmd == "checkout") ? "bB" : ((scmd == "switch") ? "cC" : "dD")
+    trig = (scmd == "branch") ? "dD" : ((scmd == "switch") ? "cC" : "bB")
     for (k = 2; k <= length(t); k++) {
       ch = substr(t, k, 1)
       if (index(trig, ch) > 0) {
         rest = substr(t, k + 1)
-        flag = 1
-        if (rest != "") { check(rest); done() }
+        if (rest != "") { check(rest); flag = stopafter() ? 2 : 1 }
+        else flag = 1
+        if (scmd == "branch") flushpending()
         return
       }
     }
     return
   }
-  if (flag == 2) return
-  if (substr(t, 1, 1) == "-") return
-  check(t)
-  done()
+  if (flag == 1) { check(t); if (stopafter()) flag = 2; return }
+  # `git branch <name> -d` のように名前を先に書く形 (git の引数並べ替え) がある。
+  # branch のときだけ位置引数を控えておき、削除フラグが出た時点で検査する。
+  if (flag == 0 && scmd == "branch") pending[++np] = t
 }
-# checkout / switch は名前の次の位置引数が start-point で、名前ではない。
-# `git checkout -b foo @{-1}` `git switch -c foo @{u}` `git checkout -b x stash@{0}`
-# のようなリビジョン式は `@ { }` を含むので、名前と同じ集合で縛ると日常的な
-# git 操作を無音で奪う (全リポジトリに掛かる hook なので影響が広い)。
-# branch -d/-D は逆に位置引数が全部ブランチ名 (start-point を取らない) なので
-# 打ち切らない。
-function done() { if (scmd != "branch") flag = 2 }
 BEGIN {
-  # ダブルクォートとシングルクォートの 2 文字。awk プログラム自体がシェルの
-  # シングルクォートで囲まれているためリテラルでは書けず、コードポイントから作る。
-  q = sprintf("%c%c", 34, 39)
+  dq = sprintf("%c", 34)
+  sq = sprintf("%c", 39)
+  q = dq sq
   s = "[ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789/._#+=~^-]"
   w = "[ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_][ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_]*"
   okname = "(" s "|[$]" w "|[$][{]" w "[}])+"
@@ -957,62 +982,98 @@ BEGIN {
   # 受理パターンの側を広く取る理由が無い)。
   okcat = "^[$][(][ \t]*cat[ \t]+" okname "[)]$"
   okname = "^" okname "$"
+  nlong = 0
+  longopt[++nlong] = "--create";       longsub[nlong] = "switch"
+  longopt[++nlong] = "--force-create"; longsub[nlong] = "switch"
+  longopt[++nlong] = "--orphan";       longsub[nlong] = "switch"
+  longopt[++nlong] = "--orphan";       longsub[nlong] = "checkout"
+  longopt[++nlong] = "--delete";       longsub[nlong] = "branch"
 }
-{
+function scan(L,   n, i, c, nx, j, cj, depth, op, cl, piece, tok, inq) {
   reset()
-  n = length($0)
   tok = ""
+  inq = 0
+  n = length(L)
   i = 1
   while (i <= n) {
-    c = substr($0, i, 1)
-    nx = substr($0, i + 1, 1)
+    c = substr(L, i, 1)
+    # シングルクォート内は中身が全部リテラル。展開が起きないので注入にはならないが、
+    # ref 名にメタ文字が入ること自体が /issue の検証が防いでいるものなので検査する。
+    if (inq == 1) {
+      if (c == sq) inq = 0
+      else tok = tok c
+      i++
+      continue
+    }
+    nx = substr(L, i + 1, 1)
     if (c == "$" && (nx == "(" || nx == "{")) {
       op = nx
       cl = (op == "(") ? ")" : "}"
       depth = 0
       j = i + 1
       while (j <= n) {
-        cj = substr($0, j, 1)
+        cj = substr(L, j, 1)
         if (cj == op) depth++
         else if (cj == cl) { depth--; if (depth == 0) break }
         j++
       }
       if (j > n) j = n
-      piece = substr($0, i, j - i + 1)
+      piece = substr(L, i, j - i + 1)
       gsub("[" q "]", "", piece)
       tok = tok piece
       i = j + 1
       continue
     }
-    if (index(q, c) > 0) { i++; continue }
+    if (c == dq) { inq = (inq == 2) ? 0 : 2; i++; continue }
+    if (c == sq && inq == 0) { inq = 1; i++; continue }
+    # ダブルクォート内では空白も区切り文字も word を割らない。透過扱いにすると
+    # `git checkout -b "x $(id)"` の $(id) が start-point の位置に見えて検査から
+    # 外れる (1 周目のレビューで実測。issue #329 の主題が空白 1 個で素通りする)。
+    if (inq == 2) { tok = tok c; i++; continue }
     if (c == " " || c == "\t") { feed(tok); tok = ""; i++; continue }
-    if (index(";&|<>(){}", c) > 0) { feed(tok); tok = ""; reset(); i++; continue }
+    # リダイレクトはコマンドを終わらせない。reset すると
+    # `git checkout 2>/dev/null -b "x$(id)"` で名前が検査から外れる。
+    if (index("<>", c) > 0) { feed(tok); tok = ""; i++; continue }
+    if (index(";&|(){}", c) > 0) { feed(tok); tok = ""; reset(); i++; continue }
     tok = tok c
     i++
   }
   feed(tok)
-}'
-# 判定は $command と $command_pre_sq の**両方**に掛ける (どちらか一方で受理外の
-# 名前が出たらブロック)。片方では足りない理由がそれぞれ違う:
-#   - $command だけ: 段階2 は「$ を含むシングルクォートは展開されない」という
-#     .codex 判定向けの意味論で sq を空白化するため、`git checkout -b 'x$(id)'` は
-#     名前トークンごと消えて判定に届かない。シェル注入は起きない形だが、
-#     ref 名にメタ文字が入ること自体が /issue の検証が防いでいるもの (issue #329)
-#   - $command_pre_sq だけ: 代入展開 (expand_assignments) が効いていないので
-#     `d=$(id); git checkout -b $d` を素通りさせる
-# awk 側は quote を区切りでも文字でもなく透過扱いにする。quote を落として困る
-# のは「名前に空白が入る形」だけで、落として危険側に倒れることはない
-# (見えるメタ文字が増える方向にしか動かない)。
+}
+{
+  # 行末のバックスラッシュは次行への継続。awk は 1 行 1 レコードなので自前で繋ぐ
+  # (繋がないと `git checkout \` + 改行 + `-b "x$(id)"` が判定から外れる)。
+  if (substr($0, length($0), 1) == "\\") {
+    cont = cont substr($0, 1, length($0) - 1)
+    next
+  }
+  scan(cont $0)
+  cont = ""
+}
+END { if (cont != "") scan(cont) }'
+# 判定に使う view は $command ではなく「$command_pre_sq に代入展開を掛けたもの」。
+# それぞれ理由がある:
+#   - $command を使わない: 段階2 は「$ を含むシングルクォートは展開されない」という
+#     .codex 判定向けの意味論で sq を空白化するので `git checkout -b 'x$(id)'` が
+#     名前トークンごと消える。さらに段階8 の literal 化が `$(id;git)` を `git` に
+#     潰すため、代入経由の名前が安全文字に見える (どちらも実測)
+#   - 代入展開は掛ける: `d=$(id); git checkout -b $d` は pre_sq のままだと
+#     `$d` が受理形 2 にマッチして素通りする
+# クォートは awk 側が状態として持つ (透過扱いにしない)。透過だと dq 内の空白や
+# 区切り文字が word を割り、`git checkout -b "x $(id)"` の $(id) が start-point の
+# 位置に見えて検査から外れる。
 # サブコマンド名を含まない入力では awk を起動しない (hot path 最適化。早期
 # スクリーニングは `$` を含むだけで通すため、ここに来る入力自体は多い)。
 # 実測 2026-09-02 (macOS の /usr/bin/awk, one-true-awk): 63KB / 8000 トークンの
-# コマンドで hook 全体が 0.68s、この判定を足す前は 0.36s。40KB の 1 トークンでは
-# 0.49s / 0.26s。数 KB の通常のコマンドでは 0.12s 前後で増分は既存判定に埋もれる。
+# コマンドで hook 全体が 0.53s、この判定を足す前は 0.36s。40KB の 1 トークンでは
+# 0.39s / 0.26s。数 KB の通常のコマンドでは 0.12s 前後で増分は既存判定に埋もれる。
 # トークナイザは 1 パスだが one-true-awk の substr が位置依存コストを持つため
 # 入力長に対して超線形に伸びる。ゲートの語彙を広げるときはここを測り直すこと。
-if printf '%s\n%s\n' "$command" "$command_pre_sq" | grep -qiE 'checkout|switch|branch'; then
+_branch_view=$command_pre_sq
+expand_assignments _branch_view
+if printf '%s\n' "$_branch_view" | grep -qiE 'checkout|switch|branch|worktree'; then
   # LC_ALL=C pin: tolower / 文字クラス比較をロケール非依存にする。
-  _branch_bad=$(printf '%s\n%s\n' "$command" "$command_pre_sq" | LC_ALL=C awk "$_branch_awk" | head -n 1)
+  _branch_bad=$(printf '%s\n' "$_branch_view" | LC_ALL=C awk "$_branch_awk" | head -n 1)
   if [[ -n "$_branch_bad" ]]; then
     echo "ブロック: git のブランチ名引数にシェル特殊文字が含まれています: $_branch_bad" >&2
     echo "英大小文字・数字と / . _ - # + = ~ ^ だけで書き直すか、名前をファイルに書いて \"\$(cat <file>)\" を単独の引数として渡してください（例: git checkout -b \"\$(cat \"\$TMPDIR/branch-name.txt\")\"）" >&2

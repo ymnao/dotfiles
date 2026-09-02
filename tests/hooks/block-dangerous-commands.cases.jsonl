@@ -443,3 +443,19 @@
 {"name":"branch-name-start-point","expect":"allow","command":"git checkout -b feature/x origin/main","reason":"start-point つきの 2 引数形"}
 {"name":"branch-name-start-point-revision","expect":"allow","command":"git checkout -b foo @{-1}","reason":"start-point は名前と別扱い。リビジョン式の @ { } で落とさない"}
 {"name":"branch-delete-second-name","expect":"block","command":"git branch -d ok \"$(id)\"","reason":"branch -d は位置引数が全部ブランチ名なので 2 つ目以降も見る"}
+{"name":"branch-name-quoted-space","expect":"block","command":"git checkout -b \"feature/x $(id)\"","reason":"dq 内の空白は word を割らない。quote を透過扱いにすると $(id) が start-point に見えて素通りした (2 周目レビュー)"}
+{"name":"branch-name-quoted-redirect-char","expect":"block","command":"git checkout -b \"feature/x<$(id)\"","reason":"dq 内の区切り文字も word を割らない"}
+{"name":"branch-name-redirect-before-flag","expect":"block","command":"git checkout 2>/dev/null -b \"feature/x$(id)\"","reason":"リダイレクトはコマンドを終わらせないので state を reset しない"}
+{"name":"branch-name-duplicate-flag","expect":"block","command":"git checkout -b ok -b \"$(id)\"","reason":"git は後勝ちなので 2 つ目のフラグの名前を見る"}
+{"name":"branch-name-long-opt-equals","expect":"block","command":"git switch --create=\"$(id)\"","reason":"--create=NAME 形"}
+{"name":"branch-name-long-opt-abbrev","expect":"block","command":"git switch --cr \"$(id)\"","reason":"git の parse-options は一意省略形を受ける"}
+{"name":"branch-delete-long-opt-abbrev","expect":"block","command":"git branch --del \"$(id)\"","reason":"--delete の省略形"}
+{"name":"branch-name-before-flag","expect":"block","command":"git branch \"$(id)\" -d","reason":"git の引数並べ替え。名前を先に書く形"}
+{"name":"branch-name-literalized-assign","expect":"block","command":"d=$(id;git); git checkout -b $d","reason":"段階8 の literal 化が $(id;git) を git に潰す $command 側では見えない (view を pre_sq に寄せた理由)"}
+{"name":"branch-name-orphan","expect":"block","command":"git checkout --orphan \"$(id)\"","reason":"--orphan も名前引数でブランチを作る"}
+{"name":"branch-name-worktree-add","expect":"block","command":"git worktree add -b \"$(id)\" ../wt","reason":"worktree add -b も名前引数でブランチを作る"}
+{"name":"branch-name-sq-literal-mention","expect":"allow","command":"git commit -m 'see: git checkout -b $(date)'","reason":"sq 内の literal はコマンドではない。git の次が commit なので追跡を打ち切る"}
+{"name":"branch-name-grep-pattern","expect":"allow","command":"grep -n 'git checkout -b \"$(cat' claude/skills/issue/SKILL.md","reason":"skill を grep するだけの形を落とさない (2 周目レビュアーが実際に踏んだ FP)"}
+{"name":"branch-name-switch-conflict-opt","expect":"allow","command":"git switch --conflict=merge -c feature/x","reason":"--conflict は --create の前方一致にならない"}
+{"name":"branch-name-line-continuation","expect":"block","command":"git checkout \\\n  -b \"feature/x$(id)\"","reason":"行末バックスラッシュの継続行を繋いでから判定する"}
+{"name":"branch-name-sq-assigned-var","expect":"block","command":"d='feature/x$(id)'; git checkout -b $d","reason":"sq 代入経由。代入展開後に sq の中身が名前として現れる"}
