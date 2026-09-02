@@ -63,20 +63,41 @@ strip_commit_prefix() {
 # 'Bump[s]? <pkg> from [v]X.Y[.Z] to [v]A.B[.C]' パターンで from/to を抜く。
 # v prefix (v4.1.1) を許容。grouped は先に unknown。
 # パース不能は unknown → 統合しない扱いに倒す。
+parse_version_pair() {
+  local title
+  title=$(strip_commit_prefix "$1")
+  # 末尾は空白または EOL でバージョンを閉じる。'to 2.0.0-beta.1' のような
+  # pre-release suffix を .* で吸って通常 major/minor/patch と誤分類しないよう、
+  # to 側の trailing .* を ( .*)?$ に置換して境界を明示する。
+  # 区切りは `|`。両辺とも数字とドットだけの regex で取るので値に混ざらない
+  printf '%s' "$title" | sed -nE 's/^[Bb]ump[s]? +[^ ]+ +from +v?([0-9]+\.[0-9]+(\.[0-9]+)?) +to +v?([0-9]+\.[0-9]+(\.[0-9]+)?)( .*)?$/\1|\3/p'
+}
+
+# ターゲットバージョン: SKILL.md step 7 が `pnpm up <pkg>@<Y>` に渡す値。
+# 分類にしか使わない from と違い、この値はコマンド引数として外に出るので
+# **regex が検証した部分文字列そのもの**を出力に載せる。agent が生 title から
+# 転記する形にすると、検証した文字列と実際に使う文字列が別物になる。
+extract_to_version() {
+  local pair
+  if is_grouped "$1"; then
+    printf ''
+    return
+  fi
+  pair=$(parse_version_pair "$1")
+  printf '%s' "${pair##*|}"
+}
+
 classify_semver() {
-  local title from to fmaj fmin tmaj tmin
+  local pair from to fmaj fmin tmaj tmin
   # grouped 判定は prefix 剥がし前の生 title で行う (substring 判定なので
   # prefix の有無に影響されない。テストで prefix + grouped を pin 済み)
   if is_grouped "$1"; then
     printf 'unknown'
     return
   fi
-  title=$(strip_commit_prefix "$1")
-  # 末尾は空白または EOL でバージョンを閉じる。'to 2.0.0-beta.1' のような
-  # pre-release suffix を .* で吸って通常 major/minor/patch と誤分類しないよう、
-  # to 側の trailing .* を ( .*)?$ に置換して境界を明示する。
-  from=$(printf '%s' "$title" | sed -nE 's/^[Bb]ump[s]? +[^ ]+ +from +v?([0-9]+\.[0-9]+(\.[0-9]+)?) +to +v?[0-9]+\.[0-9]+(\.[0-9]+)?( .*)?$/\1/p')
-  to=$(printf '%s' "$title"   | sed -nE 's/^[Bb]ump[s]? +[^ ]+ +from +v?[0-9]+\.[0-9]+(\.[0-9]+)? +to +v?([0-9]+\.[0-9]+(\.[0-9]+)?)( .*)?$/\2/p')
+  pair=$(parse_version_pair "$1")
+  from=${pair%%|*}
+  to=${pair##*|}
   if [ -z "$from" ] || [ -z "$to" ]; then
     printf 'unknown'
     return
@@ -156,6 +177,16 @@ printf '%s' "$INPUT" | jq -c '.[]' \
       SEMVER=$(classify_semver "$TITLE")
       SECURITY=$(is_security "$BODY" "$LABELS")
       PACKAGE=$(extract_package "$TITLE")
+      TO_VERSION=$(extract_to_version "$TITLE")
+
+      # `-` 始まりの package 名 (`Bump --registry=http://evil from 1.0.0 to 1.0.1`)
+      # は shell の再スキャンを経なくても `pnpm up` にオプションとして解釈されうる。
+      # extract_package の `[^ ]+` は通してしまうので、ここで unknown に倒して
+      # SKILL.md step 4 の「個別維持」へ落とす (名前を書き換えて通すと、人が
+      # 見ないまま統合対象に残る)
+      case "$PACKAGE" in
+        -*) PACKAGE=''; TO_VERSION=''; SEMVER='unknown' ;;
+      esac
 
       jq -n \
         --argjson number "$NUMBER" \
@@ -163,9 +194,10 @@ printf '%s' "$INPUT" | jq -c '.[]' \
         --arg headRefName "$HEAD" \
         --arg url "$URL" \
         --arg package "$PACKAGE" \
+        --arg toVersion "$TO_VERSION" \
         --arg ecosystem "$ECOSYSTEM" \
         --arg semver "$SEMVER" \
         --argjson security "$SECURITY" \
-        '{number: $number, title: $title, headRefName: $headRefName, url: $url, package: $package, ecosystem: $ecosystem, semver: $semver, security: $security}'
+        '{number: $number, title: $title, headRefName: $headRefName, url: $url, package: $package, toVersion: $toVersion, ecosystem: $ecosystem, semver: $semver, security: $security}'
     done \
   | jq -s '.'

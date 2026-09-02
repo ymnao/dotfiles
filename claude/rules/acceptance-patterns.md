@@ -35,6 +35,17 @@ paths:
   判定器の exit code も主張の一部**として両方向で測る
   (`tests/branch-name-validator/` が「修正後の式が敵対入力を reject する」
   ことを pin している。壊れた形そのものは pin していない)
+- **一時ファイルの置き場: agent が打つ手順では `$TMPDIR` を裸で書く**。
+  `WORK=$(mktemp -d "${TMPDIR:-/tmp}/x.XXXXXX")` は 2 つの理由で使えない。
+  (1) Bash tool 呼び出し間で shell 変数は persist しないので次の呼び出しで
+  `$WORK` は空になる。(2) `block-dangerous-commands.sh` の「動的展開を含む
+  書き込み系リダイレクト」判定が residual から除去するのは `$TMPDIR` /
+  `$HOME` / `$XDG_*` (と同名の `${...}` 形) だけなので、`> "$WORK/f"` も
+  既定値つきの `> "${TMPDIR:-/tmp}/f"` もブロックされる (2026-09-02 実測)。
+  スクリプト (`.sh`) 内では `mktemp -d` が正しい — 制約は agent が Bash tool
+  から直接打つ形にだけ掛かる (`claude/rules/shell.md` の `mktemp` 項と対)。
+  実例: `dependabot-bulk` skill は 2026-07-14 から 7 週間、この形で step 2 が
+  実行不能なまま気付かれずにいた (issue #330 の対応中に判明)
 - **ロードは適用の必要条件であって十分条件ではない。** この項の適用漏れは
   `*.sh` 側でも起きている (issue #284 は 3 周連続)。この rule が context に
   入っていることを「検査した」の代わりにしない
