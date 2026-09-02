@@ -205,6 +205,21 @@ Tier3 を記録しないのは情報を捨てているのではない。同じ�
     `codex/hooks/` `claude/settings.json` `codex/config.toml` など
     **security 境界・秘密情報・破壊的操作のガードに触る変更**。ここは
     誤りが静かに防御を無効化するので厚さを維持する
+  - **内容による判定を、上のパス列挙への「追加の入口」として持つ**。
+    **上のパス例外は無条件で維持する** — そちらは内容を見て薄くしてよい
+    という意味ではない。加えて `claude/skills/` `codex/skills/` 配下でも、
+    **agent がそのまま実行するもの (SKILL.md の中のコマンド形、
+    `scripts/` 配下の判定器・分類器) を変える変更**は例外側に入れる
+    (理由は `claude/rules/acceptance-patterns.md` 冒頭。同じ前提で
+    `**/SKILL.md` と `**/*.sh` を paths に含めている)。実例: PR #337 は
+    着手時点では `claude/skills/` のみの変更で、規約上は `/simplify` 1 回
+    だけだったが、判断で厚くした code-reviewer が Critical (空文字の
+    fail-open。詳細は `dependabot-bulk/SKILL.md` step 7) を出した。
+    **ここで足すのは 4-1 の隊列側だけ** — `/pr` 側は `classify-risk.sh` の
+    medium 床 (issue #255) が tier 上は最低 1 観点を要求する。ただし
+    **要求されるのは tier であって実行ではない** (sandbox では
+    codex-review が exit 3 で skip されるので、実際に走るかは `/pr` の
+    フォールバック遵守に依存する)。4-1 を薄くする根拠には使わない
 - **それ以外の変更** (`fish/` `nvim/` `wezterm/` 等の実際の設定、
   `scripts/link.sh` のような配置ロジック): 下記のフル隊列
 
