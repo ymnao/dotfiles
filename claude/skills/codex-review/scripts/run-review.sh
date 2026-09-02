@@ -14,8 +14,11 @@ set -euo pipefail
 # Output: validated review JSON on stdout (single line, schema-checked by
 # parse-review-output.sh).
 # Exit codes: 0 = verdict pass / 2 = findings / 1 = setup or parse error /
-#             3 = sandbox skip (codex CLI cannot initialize in the caller's
-#                 shell sandbox; treated as SKIP, not ERROR, by SKILL.md) /
+#             3 = sandbox skip (codex CLI がその shell sandbox では使えない。
+#                 2 経路ある: 起動前の network preflight = 資格情報つき proxy
+#                 が egress の環境 (issue #335)、および起動後の
+#                 in-process app-server client 初期化失敗。
+#                 SKILL.md は ERROR ではなく SKIP として扱う) /
 #             4 = rate-limit skip (codex アカウントの usage/rate limit 到達。
 #                 5 時間窓/週次窓のためセッション内リトライは無意味 —
 #                 SKILL.md は SKIP 扱いにして ERROR カウントに入れない).
@@ -117,6 +120,32 @@ fi
 if [ "$(git rev-list --count "$BASE_BRANCH..HEAD")" -eq 0 ]; then
   error "no commits beyond $BASE_BRANCH on the current branch (cwd: $CWD)"
 fi
+
+# Network preflight: egress が「資格情報つき HTTP proxy」の環境では codex を
+# 起動せずに SKIP する。この経路では codex の HTTP クライアントがトンネルを
+# 確立できず、auth.openai.com / chatgpt.com への全リクエストが
+# `error sending request` で失敗したのち `responses_retry` の 60s バックオフに
+# 入って **プロセスが終了しない**
+# (2026-09-02 実測 / codex-cli 0.152.1 / Claude Code の Bash sandbox。issue #335)。
+#
+# Why not 下の stderr シグネチャ判定に条件を足す: あれは codex が終了した後に
+# しか走らない。終了しないのだから、判定を増やしても永久に到達しない。
+#
+# Why not timeout(1) で包む: このマシンには timeout / gtimeout が無く、
+# background + poll + kill を自前で書くことになる。それは「原因不明のハング
+# 一般」に対する予防機構で、ここで観測されたハングは条件が特定できている。
+#
+# 判定は proxy URL の userinfo (資格情報) の有無で行う。実測したのは
+# Claude Code sandbox の localhost proxy 1 例だけで、**他形態の認証付き proxy で
+# codex が通るかは未検証**。誤って SKIP した場合は下のメッセージが理由を示す。
+# proxy の値そのものは資格情報を含むため出力しない。
+PROXY_URL="${HTTPS_PROXY:-${https_proxy:-}}"
+case "$PROXY_URL" in
+  *://*@*)
+    skip "codex-review $PERSPECTIVE: egress proxy requires credentials; codex cannot tunnel through it (issue #335)" >&2
+    exit 3
+    ;;
+esac
 
 # Fetch the diff once and embed it in the prompt so codex does not need to
 # spawn its own `git diff` on every iteration. Trade-off: larger prompt payload
