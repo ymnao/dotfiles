@@ -436,3 +436,6 @@
 {"name":"branch-name-concat-cat","expect":"block","command":"git switch -c \"$(cat f)-x\"","reason":"受理するのはトークン丸ごとの $(cat ...) だけで、連結形は落とす"}
 {"name":"branch-name-attached-flag","expect":"block","command":"git checkout -bfeature/x$(id)","reason":"付着形 (-bNAME) でも素通りしない"}
 {"name":"branch-name-cat-extra-command","expect":"block","command":"git branch -d -- \"$(cat x; id)\"","reason":"$(cat ...) の引数もパス 1 個に縛る (受理パターンを広く取らない)"}
+{"name":"branch-name-single-quoted","expect":"block","command":"git checkout -b 'feature/x$(id)'","reason":"シェル注入は起きない形だが ref 名にメタ文字が入る。段階2 が sq を空白化するため $command だけでは届かず、command_pre_sq 側で拾う"}
+{"name":"branch-name-assigned-var","expect":"block","command":"d=$(id); git checkout -b $d","reason":"代入展開後を見る $command 側でしか拾えない (command_pre_sq だけにしない理由)"}
+{"name":"branch-name-global-flag-no-value","expect":"block","command":"git --no-pager checkout -b feature/x$(id)","reason":"値を取らないグローバルオプションでサブコマンドを取りこぼさない"}

@@ -888,7 +888,9 @@ fi
 #      (小文字のみ) より広いのは、この hook が全リポジトリの Bash 呼び出しに掛かり、
 #      他 repo の `Feature/JIRA-123` を巻き込まないため
 #   2. 変数展開 $NAME / ${NAME} (安全文字との連結も可)。展開結果は再パースされない
-#      ので注入経路にならない
+#      ので注入経路にならない。repo 内の skill はこの形を使っていないが、
+#      `BRANCH=feature/x; git checkout -b "$BRANCH"` は agent が素朴に書く形で、
+#      全リポジトリに掛かる hook としては落とす方が誤りになる
 #   3. トークン丸ごと 1 つの `$(cat ...)`。`/next` が使う機械的受け渡し
 #      (`git branch -d -- "$(cat "$TMPDIR/merged-branch.txt")"`) の形。
 #      任意コマンドの `$(...)` を通さないのは、名前が `$(id)` そのものである形まで
@@ -935,6 +937,9 @@ function feed(t,   low, k, ch, rest, trig) {
   check(t)
 }
 BEGIN {
+  # ダブルクォートとシングルクォートの 2 文字。awk プログラム自体がシェルの
+  # シングルクォートで囲まれているためリテラルでは書けず、コードポイントから作る。
+  q = sprintf("%c%c", 34, 39)
   s = "[ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789/._#+=~^-]"
   w = "[ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_][ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_]*"
   okname = "(" s "|[$]" w "|[$][{]" w "[}])+"
@@ -964,10 +969,13 @@ BEGIN {
         j++
       }
       if (j > n) j = n
-      tok = tok substr($0, i, j - i + 1)
+      piece = substr($0, i, j - i + 1)
+      gsub("[" q "]", "", piece)
+      tok = tok piece
       i = j + 1
       continue
     }
+    if (index(q, c) > 0) { i++; continue }
     if (c == " " || c == "\t") { feed(tok); tok = ""; i++; continue }
     if (index(";&|<>(){}", c) > 0) { feed(tok); tok = ""; reset(); i++; continue }
     tok = tok c
@@ -975,11 +983,27 @@ BEGIN {
   }
   feed(tok)
 }'
+# 判定は $command と $command_pre_sq の**両方**に掛ける (どちらか一方で受理外の
+# 名前が出たらブロック)。片方では足りない理由がそれぞれ違う:
+#   - $command だけ: 段階2 は「$ を含むシングルクォートは展開されない」という
+#     .codex 判定向けの意味論で sq を空白化するため、`git checkout -b 'x$(id)'` は
+#     名前トークンごと消えて判定に届かない。シェル注入は起きない形だが、
+#     ref 名にメタ文字が入ること自体が /issue の検証が防いでいるもの (issue #329)
+#   - $command_pre_sq だけ: 代入展開 (expand_assignments) が効いていないので
+#     `d=$(id); git checkout -b $d` を素通りさせる
+# awk 側は quote を区切りでも文字でもなく透過扱いにする。quote を落として困る
+# のは「名前に空白が入る形」だけで、落として危険側に倒れることはない
+# (見えるメタ文字が増える方向にしか動かない)。
 # サブコマンド名を含まない入力では awk を起動しない (hot path 最適化。早期
 # スクリーニングは `$` を含むだけで通すため、ここに来る入力自体は多い)。
-if printf '%s\n' "$command" | grep -qiE 'checkout|switch|branch'; then
+# 実測 2026-09-02 (macOS の /usr/bin/awk, one-true-awk): 63KB / 8000 トークンの
+# コマンドで hook 全体が 0.68s、この判定を足す前は 0.36s。40KB の 1 トークンでは
+# 0.49s / 0.26s。数 KB の通常のコマンドでは 0.12s 前後で増分は既存判定に埋もれる。
+# トークナイザは 1 パスだが one-true-awk の substr が位置依存コストを持つため
+# 入力長に対して超線形に伸びる。ゲートの語彙を広げるときはここを測り直すこと。
+if printf '%s\n%s\n' "$command" "$command_pre_sq" | grep -qiE 'checkout|switch|branch'; then
   # LC_ALL=C pin: tolower / 文字クラス比較をロケール非依存にする。
-  _branch_bad=$(printf '%s\n' "$command" | LC_ALL=C awk "$_branch_awk" | head -n 1)
+  _branch_bad=$(printf '%s\n%s\n' "$command" "$command_pre_sq" | LC_ALL=C awk "$_branch_awk" | head -n 1)
   if [[ -n "$_branch_bad" ]]; then
     echo "ブロック: git のブランチ名引数にシェル特殊文字が含まれています: $_branch_bad" >&2
     echo "英大小文字・数字と / . _ - # + = ~ ^ だけで書き直すか、名前をファイルに書いて \"\$(cat <file>)\" を単独の引数として渡してください（例: git checkout -b \"\$(cat \"\$TMPDIR/branch-name.txt\")\"）" >&2
