@@ -424,3 +424,15 @@
 {"name":"tmpdir-bare-redirect","expect":"allow","command":"jq -r .x in.json > \"$TMPDIR/dependabot-bulk/classified.json\"","reason":"$TMPDIR は residual から除去される (issue #330)"}
 {"name":"tmpdir-default-redirect","expect":"block","command":"jq -r .x in.json > \"${TMPDIR:-/tmp}/classified.json\"","reason":"既定値つきは除去されずブロック — mktemp テンプレート形が skill 手順で使えない理由 (issue #330)"}
 {"name":"mktemp-var-redirect","expect":"block","command":"gh pr list --json number > \"$WORK/prs.json\"","reason":"mktemp -d の受け皿変数は除去対象外 (issue #330)"}
+
+# --- git ブランチ名引数の文字集合 (issue #329) ---
+{"name":"branch-name-next-handoff","expect":"allow","command":"git branch -d -- \"$(cat \"$TMPDIR/merged-branch.txt\")\"","reason":"/next の機械的受け渡し。トークン丸ごと 1 つの $(cat ...) は受理する"}
+{"name":"branch-name-issue-example","expect":"allow","command":"git checkout -b feature/add-user-auth-#42","reason":"/issue の命名例 (# を含む) が通る"}
+{"name":"branch-name-uppercase","expect":"allow","command":"git checkout -b Feature/JIRA-123","reason":"全リポジトリに掛かる hook なので大文字ブランチ名は落とさない"}
+{"name":"branch-name-var-global-opt","expect":"allow","command":"git -C \"$TMPDIR/repo\" checkout -b feature/x","reason":"値を取るグローバルオプションを跨いでも追跡でき、$VAR は受理する"}
+{"name":"branch-name-substitution","expect":"block","command":"git checkout -b \"feature/x$(id)\"","reason":"名前引数へのコマンド置換の連結 (issue #329 の主題)"}
+{"name":"branch-name-backtick","expect":"block","command":"git checkout -b feature/x`id`","reason":"バッククォート形も同じ経路"}
+{"name":"branch-name-bare-substitution","expect":"block","command":"git checkout -b \"$(id)\"","reason":"単独トークンでも $(cat ...) 以外の置換は受理しない"}
+{"name":"branch-name-concat-cat","expect":"block","command":"git switch -c \"$(cat f)-x\"","reason":"受理するのはトークン丸ごとの $(cat ...) だけで、連結形は落とす"}
+{"name":"branch-name-attached-flag","expect":"block","command":"git checkout -bfeature/x$(id)","reason":"付着形 (-bNAME) でも素通りしない"}
+{"name":"branch-name-cat-extra-command","expect":"block","command":"git branch -d -- \"$(cat x; id)\"","reason":"$(cat ...) の引数もパス 1 個に縛る (受理パターンを広く取らない)"}

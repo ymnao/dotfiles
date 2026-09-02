@@ -863,6 +863,130 @@ if printf '%s\n' "$command" | grep -qiE '(^|[;&|({`[:space:]/\])git[[:space:]]+(
   exit 2
 fi
 
+# --- Git ブランチ名引数のシェル特殊文字 (issue #329) ---
+# `/issue` はブランチ名を LLM が発明するため、SKILL.md 側の awk 検証は「検証した
+# 文字列」と「実際にコマンドへ書かれる文字列」が機械的に連結されておらず、協力的な
+# agent にしか効かない (git は ref 名にシェルメタ文字を許す:
+# `git check-ref-format --branch 'foo$(id);x'` は exit 0)。ここでブランチ名を取る
+# git サブコマンドの**名前引数だけ**を取り出して allowlist 判定する。
+#
+# セグメント全体ではなく名前引数に絞るのは、この hook が「引数位置の動的展開は
+# 対象外」(段階6 のコメント) という方針で書かれているため。全体を見る形にすると
+# `git checkout -b x 2>$(...)` のような無関係な引数まで巻き込み、方針が判定ごとに
+# 割れる。issue #329 が塞ぎたいのは attacker-controlled な文字列が**名前として**
+# コマンドに入る経路。
+#
+# 判定は「検出だけを行い元テキストは保つ」形にしてある (claude/rules/shell.md の
+# 「判定の前処理で文字列を削除しない」)。$(...) を placeholder に潰してから
+# メタ文字を探す形だと、境界の見誤りが「危険な形を無害な形に化かす」= fail-open
+# として出るため、awk 側は tokenize するだけで文字を消さない。
+# word 区切りに [[:space:]] を使わないのも同じ理由 (bash は VT/FF/CR を区切りに
+# しないので、区切り扱いすると連結形が単独トークンに見える)。
+#
+# 受理する形は 3 つだけ:
+#   1. 安全文字だけの名前 (英大小文字・数字・/ . _ - # + = ~ ^)。/issue の命名規約
+#      (小文字のみ) より広いのは、この hook が全リポジトリの Bash 呼び出しに掛かり、
+#      他 repo の `Feature/JIRA-123` を巻き込まないため
+#   2. 変数展開 $NAME / ${NAME} (安全文字との連結も可)。展開結果は再パースされない
+#      ので注入経路にならない
+#   3. トークン丸ごと 1 つの `$(cat ...)`。`/next` が使う機械的受け渡し
+#      (`git branch -d -- "$(cat "$TMPDIR/merged-branch.txt")"`) の形。
+#      任意コマンドの `$(...)` を通さないのは、名前が `$(id)` そのものである形まで
+#      素通りしてしまうため — 逃がすのは「名前をファイルに書いて読ませる」経路だけでよい
+# 対象は checkout -b/-B / switch -c/-C/--create/--force-create / branch -d/-D/--delete。
+# 束ね (-qb) と付着 (-bNAME) も見るのは、1 文字足すだけで素通りできては
+# enforcement にする意味がないため。`git branch <name>` (フラグ無し作成) と -m/-M は
+# 対象外 (--list / --contains 等の読み取り系と機械的に区別できず false positive が
+# 跳ねる / どの skill も使っていない)。
+_branch_awk='
+function reset() { g = 0; scmd = ""; flag = 0; prevopt = 0 }
+function check(t) { if (t !~ okcat && t !~ okname) print t }
+function feed(t,   low, k, ch, rest, trig) {
+  if (t == "") return
+  low = tolower(t)
+  if (g == 0) { if (low == "git" || low ~ /\/git$/) g = 1; return }
+  if (scmd == "") {
+    if (low == "checkout" || low == "switch" || low == "branch") { scmd = low; return }
+    if (substr(t, 1, 1) == "-") { prevopt = 1; return }
+    if (prevopt == 1) { prevopt = 0; return }
+    g = 0
+    return
+  }
+  if (flag == 0) {
+    if (substr(t, 1, 1) != "-") return
+    if (substr(t, 1, 2) == "--") {
+      if (scmd == "switch" && (low == "--create" || low == "--force-create")) flag = 1
+      else if (scmd == "branch" && low == "--delete") flag = 1
+      return
+    }
+    trig = (scmd == "checkout") ? "bB" : ((scmd == "switch") ? "cC" : "dD")
+    for (k = 2; k <= length(t); k++) {
+      ch = substr(t, k, 1)
+      if (index(trig, ch) > 0) {
+        rest = substr(t, k + 1)
+        flag = 1
+        if (rest != "") check(rest)
+        return
+      }
+    }
+    return
+  }
+  if (substr(t, 1, 1) == "-") return
+  check(t)
+}
+BEGIN {
+  s = "[ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789/._#+=~^-]"
+  w = "[ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_][ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_]*"
+  okname = "(" s "|[$]" w "|[$][{]" w "[}])+"
+  # cat の引数もパス 1 個の allowlist に縛る。`[^()]*` で済ませると
+  # `$(cat x; rm -rf /)` が受理形にマッチする (中身は他の判定が拾うとはいえ、
+  # 受理パターンの側を広く取る理由が無い)。
+  okcat = "^[$][(][ \t]*cat[ \t]+" okname "[)]$"
+  okname = "^" okname "$"
+}
+{
+  reset()
+  n = length($0)
+  tok = ""
+  i = 1
+  while (i <= n) {
+    c = substr($0, i, 1)
+    nx = substr($0, i + 1, 1)
+    if (c == "$" && (nx == "(" || nx == "{")) {
+      op = nx
+      cl = (op == "(") ? ")" : "}"
+      depth = 0
+      j = i + 1
+      while (j <= n) {
+        cj = substr($0, j, 1)
+        if (cj == op) depth++
+        else if (cj == cl) { depth--; if (depth == 0) break }
+        j++
+      }
+      if (j > n) j = n
+      tok = tok substr($0, i, j - i + 1)
+      i = j + 1
+      continue
+    }
+    if (c == " " || c == "\t") { feed(tok); tok = ""; i++; continue }
+    if (index(";&|<>(){}", c) > 0) { feed(tok); tok = ""; reset(); i++; continue }
+    tok = tok c
+    i++
+  }
+  feed(tok)
+}'
+# サブコマンド名を含まない入力では awk を起動しない (hot path 最適化。早期
+# スクリーニングは `$` を含むだけで通すため、ここに来る入力自体は多い)。
+if printf '%s\n' "$command" | grep -qiE 'checkout|switch|branch'; then
+  # LC_ALL=C pin: tolower / 文字クラス比較をロケール非依存にする。
+  _branch_bad=$(printf '%s\n' "$command" | LC_ALL=C awk "$_branch_awk" | head -n 1)
+  if [[ -n "$_branch_bad" ]]; then
+    echo "ブロック: git のブランチ名引数にシェル特殊文字が含まれています: $_branch_bad" >&2
+    echo "英大小文字・数字と / . _ - # + = ~ ^ だけで書き直すか、名前をファイルに書いて \"\$(cat <file>)\" を単独の引数として渡してください（例: git checkout -b \"\$(cat \"\$TMPDIR/branch-name.txt\")\"）" >&2
+    exit 2
+  fi
+fi
+
 # --- .codex 読み取り専用アクセスの許可判定 ---
 # .codex 保護の趣旨は「プロジェクト内 .codex/ の生成・改変の防止」（Cymulate
 # notify エスケープ対策）であり、読み取りは無害。以下をすべて満たす場合のみ

@@ -28,16 +28,18 @@ Fetch the specified issue, create a branch, and propose an implementation plan.
 7. Validate the generated name **before it is substituted into any command**. The issue title is attacker-controlled on a public repo, and git accepts shell metacharacters in ref names (`git check-ref-format --branch 'foo$(id);x'` exits 0), so a name carried straight into a command string gets expanded by the shell. Quoting is not the fix — `"$(...)"` still expands.
     - Write the generated name to `$TMPDIR/branch-name.txt` using your file-writing tool, **not** a shell redirect — the point is that the name must never appear in a command string (Claude Code: the Write tool; codex: `apply_patch`)
     - Run `LC_ALL=C awk 'NR>1 || $0 !~ /^[abcdefghijklmnopqrstuvwxyz0123456789][abcdefghijklmnopqrstuvwxyz0123456789\/._#-]*$/ {bad=1} END{exit (bad || NR!=1)}' "$TMPDIR/branch-name.txt"`
-    - **exit 0** → the name is inside the safe set; substitute it literally in steps 8-9
+    - **exit 0** → the name is inside the safe set; steps 8-9 read it back out of the same file
     - **exit 1** → do NOT substitute it anywhere. Report the rejected name and stop
     - **Set a flag and decide in `END`; do not write `{exit 1}` in the main rule.** `exit` inside a main rule still runs `END`, and an `exit <expr>` there *replaces* the status — so `... {exit 1} END{exit NR!=1}` returns 0 for any single-line input, accepting `foo$(id);x`. Measured 2026-08-23: `printf 'x\n' | awk '{exit 7} END{exit 3}'` exits 3
     - The check requires the file to be **exactly one line** and that line to match. A per-line `grep -q` is not enough: it exits 0 as soon as *any* line matches, so a two-line name whose first line is safe and whose second is `$(id)` would pass and then have the newline act as a command separator. `git` itself rejects a newline in a ref name (`git check-ref-format --branch "$(printf 'a\nb')"` exits 128), but the name here is still a plain string with no ref behind it, so that protection has not applied yet
     - Do not swap the `awk` for `grep -qv`: the exit status of `-q` combined with `-v` is not consistent across grep implementations (measured with ugrep 7.8.4 — `grep -qvE` returns 1 on a file where `grep -vE` prints a non-matching line and returns 0)
     - The character class is spelled out instead of using ranges (`[a-z0-9]` collates differently per locale; same reason as `agents/hooks/block-dangerous-commands.sh`), and the first character is pinned to alphanumeric so a leading `-` cannot be read as an option by `git branch -d` / `git checkout`. `#` is in the set because the naming examples above use it, and a `#` that is not at the start of a word does not begin a shell comment
     - `tests/branch-name-validator/run-branch-name-validator-tests.sh` pins these exit codes and asserts that its own copy of the expression is byte-identical to the one above, so the two cannot drift apart
-8. Check if the branch name already exists with `git rev-parse --verify <branch-name>`:
+8. Check if the branch name already exists with `git rev-parse --verify -- "$(cat "$TMPDIR/branch-name.txt")"`:
     - If it exists, report the conflict and stop
-9. Run `git checkout -b <branch-name>` to create the branch
+9. Run `git checkout -b "$(cat "$TMPDIR/branch-name.txt")"` to create the branch
+    - **Do not retype the name into these two commands.** Reading it back from the file that step 7 validated is what makes the check an actual gate: a name you type is a *different string* from the one that was checked, so the validation would only bind a cooperative agent. This is the same mechanical hand-off `/next` uses for `git branch -d` (the writer is a tool, the reader is the shell, and the name never passes through model output)
+    - `agents/hooks/block-dangerous-commands.sh` enforces the same boundary from the other side: it rejects branch-name arguments outside the safe set, and accepts a whole-token `"$(cat <file>)"` as the escape hatch (issue #329). A retyped name containing shell metacharacters is blocked there even if this step is skipped
 10. Explore the project structure:
     - Review directory layout
     - Understand existing code patterns and architecture
