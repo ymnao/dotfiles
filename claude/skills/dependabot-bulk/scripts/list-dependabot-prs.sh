@@ -26,6 +26,7 @@ classify_ecosystem() {
   case "$1" in
     dependabot/github_actions/*) printf 'github-actions' ;;
     dependabot/npm_and_yarn/*)   printf 'npm' ;;
+    dependabot/uv/*)             printf 'uv' ;;
     *)                           printf 'unknown' ;;
   esac
 }
