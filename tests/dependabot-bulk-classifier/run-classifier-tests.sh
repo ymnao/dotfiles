@@ -60,12 +60,14 @@ ECO_JSON='[
   {"number":1,"title":"Bump a from 1.0.0 to 1.0.1","headRefName":"dependabot/github_actions/a-1.0.1","url":"u","body":"","labels":[]},
   {"number":2,"title":"Bump b from 1.0.0 to 1.0.1","headRefName":"dependabot/npm_and_yarn/b-1.0.1","url":"u","body":"","labels":[]},
   {"number":3,"title":"Bump c from 1.0.0 to 1.0.1","headRefName":"dependabot/bundler/c-1.0.1","url":"u","body":"","labels":[]},
-  {"number":4,"title":"Bump d from 1.0.0 to 1.0.1","headRefName":"random/branch","url":"u","body":"","labels":[]}
+  {"number":4,"title":"Bump d from 1.0.0 to 1.0.1","headRefName":"random/branch","url":"u","body":"","labels":[]},
+  {"number":5,"title":"Bump e from 1.0.0 to 1.0.1","headRefName":"dependabot/uv/e-1.0.1","url":"u","body":"","labels":[]}
 ]'
 assert_field "ecosystem: github_actions"  "$ECO_JSON" '.[0].ecosystem' 'github-actions'
 assert_field "ecosystem: npm_and_yarn"    "$ECO_JSON" '.[1].ecosystem' 'npm'
 assert_field "ecosystem: other dependabot"    "$ECO_JSON" '.[2].ecosystem' 'unknown'
 assert_field "ecosystem: non-dependabot"      "$ECO_JSON" '.[3].ecosystem' 'unknown'
+assert_field "ecosystem: uv"                  "$ECO_JSON" '.[4].ecosystem' 'uv'
 
 # ---- semver: major/minor/patch/unknown 各分岐 (F4) ----
 SEMVER_JSON='[

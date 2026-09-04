@@ -20,7 +20,8 @@ open な Dependabot PR を 1 branch に統合し、push を 1 回にして CI �
    - 作業用 tmp dir を作る: `mkdir -p "$TMPDIR/dependabot-bulk"` (skill flow の全 tmp ファイルはこの下に置く)
      - **`WORK=$(mktemp -d ...)` は使わない**。Bash tool 呼び出し間で shell 変数が persist しないことに加え、`> "$WORK/..."` は `block-dangerous-commands.sh` の「動的展開を含む書き込み系リダイレクト」でブロックされる。**リダイレクト先に書ける変数は `$TMPDIR` / `$HOME` / `$XDG_*` (と同名の `${...}` 形) だけ**で、既定値つきの `${TMPDIR:-/tmp}` は落ちる (2026-09-02 実測。`claude/rules/acceptance-patterns.md` も参照)
      - `$TMPDIR` は uid スコープの固定パス (実測: `/tmp/claude-501`) で、前回の別 repo / 別 run のファイルが残りうる (stale 性は `/next` step 1 の `merged-branch.txt` と同型)。step 2 が毎回 `prs.json` / `classified.json` を上書きするので通常は問題にならないが、**step 2 を飛ばして step 7 以降だけを再開しない**
-   - `gh pr list --author app/dependabot --state open --json number,title,headRefName,url,body,labels > "$TMPDIR/dependabot-bulk/prs.json"`
+     - **`gh` のリダイレクト先には `$TMPDIR` を書かない**。`gh` は `guard-sandbox-exclusions.sh` の除外コマンドなので **sandbox 外**で走り、そこでの `$TMPDIR` は macOS 本来の値 (`/var/folders/…/T/`) に展開される。直前の `mkdir -p "$TMPDIR/dependabot-bulk"` は sandbox 内なので `/tmp/claude-501/dependabot-bulk` を作っており、**同じ変数が 2 つの別ディレクトリを指す**。結果 `gh … > "$TMPDIR/dependabot-bulk/prs.json"` は `no such file or directory` で必ず落ちる (2026-09-04 実測)。1 つ上の hook 制約 (書ける変数の限定) とは別軸の話で、あちらは「どう書けばブロックされないか」、こちらは「**sandbox 境界をまたぐと同じ変数の値そのものが変わる**」。したがって `gh` の出力先だけ sandbox 内の実パスをリテラルで書く。`bash scripts/…` 側は sandbox 内で走るので `$TMPDIR` のままでよい
+   - `gh pr list --author app/dependabot --state open --json number,title,headRefName,url,body,labels > /tmp/claude-501/dependabot-bulk/prs.json`
    - `bash "$HOME/.claude/skills/dependabot-bulk/scripts/list-dependabot-prs.sh" < "$TMPDIR/dependabot-bulk/prs.json" > "$TMPDIR/dependabot-bulk/classified.json"`
    - 出力 JSON の各要素: `{number, title, headRefName, url, package, toVersion, ecosystem, semver, security}`
    - semver は grouped PR (dependabot.yml `groups` 由来の複合 title)・v prefix (`v4.1.1`)・commit-message prefix (`Chore(deps): Bump ...` のような dependabot.yml `commit-message` 由来の接頭辞) を吸収して判定する。判別不能は `unknown`
@@ -59,6 +60,19 @@ open な Dependabot PR を 1 branch に統合し、push を 1 回にして CI �
      - `git add package.json pnpm-lock.yaml && git commit -m "$(jq -r --argjson n <N> 'first(.[]|select(.number==$n)|"\(.title)\n\n統合元: #\(.number)")' "$TMPDIR/dependabot-bulk/classified.json")"`
        - memory の「commit 本文はファイル方式」が避けているのは `$(cat <<EOF ...)` のような heredoc 内包形で、`$(jq ...)` / `$(cat <file>)` の引数渡しは通る (実測。`/next` step 1 も同じ形を使っている)。`-F <file>` にすると message ファイルを作る呼び出しが 1 つ増えるだけなので採らない
      - 依存ごとに 1 commit を保つ (CI 赤時の bisect のため)
+   - **uv** (Python): npm と同じく cherry-pick しない (`uv.lock` が世代衝突するため)
+     - **pin を書き換えてから `uv lock`** の順で回す。`pyproject.toml` が
+       `ruff==0.16.1` のように `==` 固定なら、`uv lock --upgrade-package <pkg>` を
+       打っても制約側が動かないのでバージョンは上がらない (2026-09-04 実測)。
+       pin の書き換えは Edit tool で行い、`"$(jq -r --argjson n <N>
+       'first(.[]|select(.number==$n)|"\(.package)==\(.toVersion)")'
+       "$TMPDIR/dependabot-bulk/classified.json")"` を打って**表示された文字列を
+       そのまま置換後の値にする** (npm 側と同じ理由で表から転記しない)
+     - `build-system` の `requires` に入る依存 (hatchling 等) は `uv.lock` に
+       現れないので、`uv lock` の diff が空でも失敗ではない。その場合の commit は
+       `pyproject.toml` のみになる
+     - `git add pyproject.toml uv.lock && git commit -m "$(jq -r --argjson n <N> 'first(.[]|select(.number==$n)|"\(.title)\n\n統合元: #\(.number)")' "$TMPDIR/dependabot-bulk/classified.json")"`
+       (`uv.lock` が未変更でも `git add` は成功する)
    - commit message body に `統合元: #<N>` を書けば統合 PR body から原本 PR に辿れる。release notes 全文転記は不要
 8. **ローカル検証**: `make test && make lint`
 9. **push は 1 回だけ**: `git push origin <step 6 で決めた branch 名>` (collision で `-2`/`-3` を付けた場合はその名前で push する。literal `deps/bulk-<YYYY-MM-DD>` を貼らない。`-u` を付けない理由は `/pr` skill の step 7 参照)
