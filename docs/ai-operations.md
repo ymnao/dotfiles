@@ -271,7 +271,7 @@ MEMORY.md 先頭 200 行が自動ロードされる。
 | Context7 MCP(ライブラリドキュメント取得) | (2026-08-09 / #286)公式ドキュメントを直接 fetch すれば大半足りる。§5 の順序(CLI / skill で代替できるなら MCP を入れない)に該当 | 公式 doc の直接取得で調査が破綻するケースが 3 回起きたとき(そのときは §5 の導入審査 — 出所確認・全文監査・最小権限・lethal trifecta — を通す) |
 | リポジトリ内 `.agents/memory/`(教訓のマシン間共有) | (2026-08-09 / #286)HANDOFF.md 運用と重複する。auto memory と §7 の昇格運用で足りる | HANDOFF 経由の引き継ぎ漏れが 2 回起きたとき |
 | `sandbox.network.allowManagedDomainsOnly` / `sandbox.filesystem.allowManagedReadPathsOnly`(Claude Code の managed 設定) | (2026-08-10 / #299)**一次情報で仕様を確認し、配置せずに見送った** — 有効にすると allowlist が managed tier だけになるが、いま効いている許可ホストには project 設定由来・gitignore 済み local 設定由来・**セッション承認由来**が混ざっており、移設対象を事前に列挙できない(= 移設完了を検証できない)。塞ぎたい `gh` / `brew` は `excludedCommands` で sandbox 外を走るので lock の対象外。user と管理者が同一人物のこの環境で得られるのは「agent が user 設定の allowlist を広げる経路」1 本だけで、対価はドメイン追加のたびの `sudo` 手順。`allowManagedReadPathsOnly` は `allowRead` 未使用のため効果が無い。詳細は §10「[allowManagedDomainsOnly — 配置せずに見送った](#allowmanageddomainsonly--配置せずに見送った299)」 | user と管理者が別人になる環境(共有マシン / 組織配布)で使い始めたとき、または `excludedCommands` を撤廃して sandbox 内が唯一の egress になったとき。ただし着手の可否は §10「[managed 設定は原則触らない](#managed-設定は原則触らない--判断基準は復旧に-sudo-が要るか)」の基準を先に通す |
-| `sandbox.filesystem.denyRead` への `.env.production`(派生名を含む)追加 | (2026-09-07)**host を実測して見送った** — 決め手は件数ではなく中身で、唯一実在する `.env.production` はキー名が `VITE_*` 3 つのみ = Vite がクライアントバンドルに埋め込む前提の公開値なので、deny しても止まる秘密が無い。一方 deny の残余(削除不可・`unable to unlink old`)は名前ごとに等しくかかる。実測値は §10「[denyRead の実測](#denyread-の実測--glob-は効くが削除リネームまで止まる)」 | host に**公開値でない** `.env.production`(派生名を含む)が実在するようになったとき、または Bash 経路で当該名の内容が transcript に流れる事故が起きたとき。そのときも名前を機械的に増やさず、中身と削除不可コストを突き合わせて決める |
+| `sandbox.filesystem.denyRead` への `.env.production`(派生名を含む)追加 | (2026-09-07)**host を実測して見送った** — 決め手は件数ではなく中身で、唯一実在する `.env.production` はキーがすべて `VITE_` 接頭辞 = Vite がクライアントバンドルに埋め込む前提の公開値なので、**この 1 ファイルに関しては** deny しても止まる秘密が無い。一方 deny の残余(削除不可・`unable to unlink old`)は名前ごとに等しくかかる。**名前そのものが安全という主張ではない** — 一般には server-side の秘密置き場。実測値は §10「[denyRead の実測](#denyread-の実測--glob-は効くが削除リネームまで止まる)」 | **新しいマシンを `make install` でセットアップしたとき**、および `.env.production`(派生名を含む)を新規に作ったときに §10 の `find` を打ち直し、**公開値でない**中身が出たら足す。加えて、当該名の内容が Bash 経路で transcript に流れた事故、または `excludedCommands` 経路(`gh gist create` 等、transcript には出ない)でファイル引数として外部送信された事故に気付いたときも再評価する。そのときも名前を機械的に増やさず、中身と削除不可コストを突き合わせて決める |
 | Workflow tool(skill の手順を決定的スクリプトに移す) | (2026-08-09 / #286)**harness 組み込みなので導入は済んでおり、見送っているのは運用への採用**(2026-08-09 に tool 一覧で存在を確認)。現行の skill 内 fan-out で足りており、採用すると同じ手順が SKILL.md と workflow スクリプトに二重管理になる | /adversarial-review や /simplify で見逃しが起き、その原因が並列数・検証回数のブレだと特定できたとき |
 
 ## 10. codex / Claude Code の host 実行面の防御層
@@ -605,18 +605,26 @@ sandbox ごと外れるので、`gh gist create .env` や `gh issue comment --bo
 
 **その後 2026-09-07 に実測して「足さない」と決めた**(見送りの正本と再評価条件は
 §9 の表。ここには実測値を残す)。**決め手は件数ではなく中身**で、host にある
-唯一の `.env.production` は 3 行、キー名が `VITE_GITHUB_CLIENT_ID` /
-`VITE_API_BASE_URL` / `VITE_VAPID_PUBLIC_KEY`(値は読んでいない)。**`VITE_*` は
+唯一の `.env.production` は 3 行、キーはすべて `VITE_` 接頭辞だった
+(client ID / API base URL / VAPID public key の類。値は読んでいない)。**`VITE_*` は
 Vite がクライアントバンドルに埋め込む前提の変数なので、構造上「公開される値」**
-であり、deny しても止まる秘密が無い。一方で**削除不可・`unable to unlink old`
-の残余は名前ぶん増える**(このコストは全エントリに等しくかかる)。
+であり、この 1 ファイルに関しては deny しても止まる秘密が無い。一方で
+**削除不可・`unable to unlink old` の残余は名前ぶん増える**(このコストは
+全エントリに等しくかかる)。
+
+**この根拠は「`.env.production` という名前が安全」ではない。** 一般には
+server-side の秘密置き場そのもので、Vite でも `VITE_` を持たない変数
+(sourcemap upload token 等)は同じファイルに置けるし、Next.js / dotenv-flow
+系ではむしろ秘密の既定の置き場になる。**公開値だったのはこの host のこの
+1 ファイルの事情**であって、名前の性質ではない。
 
 件数はその傍証。`~` 以下 `maxdepth 6` / node_modules 除外で `.env` が 4 件、
 `.env.local` が 1 件、`.env.production` が 1 件、`.env.production.local` /
 `.env.development` / `.env.development.local` / `.env.test` / `.env.staging`
 は各 0 件だった(候補名を後で数え直さずに済むよう、0 件の名前も残す)。
-**件数が増えても、中身が公開値であるかぎり結論は変わらない。** また
-**この実測は 1 host 分**で、他マシンでの実在は確認していない。
+**この実測は 1 host 分**で、他マシンでの実在は確認していない。件数が増えたとき
+結論が変わるかは中身次第なので、**この節の `find` を打ち直す契機**を §9 の
+再評価条件に書いてある。
 
 ### sandbox の excludedCommands が「一次防御」を丸ごと外す経路
 
