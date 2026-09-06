@@ -222,5 +222,6 @@
   "effortLevel": "high",
   "skipAutoPermissionPrompt": true,
   "skipWorkflowUsageWarning": true,
-  "tui": "fullscreen"
+  "tui": "fullscreen",
+  "agentPushNotifEnabled": true
 }
