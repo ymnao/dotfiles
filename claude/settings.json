@@ -56,7 +56,9 @@
         "~/.ssh",
         "~/.gnupg",
         "~/.aws",
-        "~/.config/gcloud"
+        "~/.config/gcloud",
+        "~/*/**/.env",
+        "~/*/**/.env.local"
       ],
       "denyWrite": [
         "~/.zshrc",
