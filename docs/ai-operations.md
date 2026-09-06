@@ -486,6 +486,107 @@ sandbox が届かない 4 経路の一次防御として残す**。
 効く真の境界だが、**保護対象が存在しないプロジェクトでは事前にロックできず**、
 ロックのために全 repo に `.codex/` を作って回るのは保護目的と本末転倒なので却下した。
 
+### denyRead の実測 — glob は効くが、削除・リネームまで止まる
+
+`.env` 系を `denyRead` に足すかを決めるために実測した(2026-09-06 / macOS
+Seatbelt)。**上の測定表はすべて `denyWrite` に対するもので、`denyRead` が同じ
+表記規則・同じ glob 挙動を持つかは測っていなかった。** denyWrite では無効な
+表記を設定しても警告が出ないことが観測されている(上記「denyWrite のパス表記」節)。
+**denyRead で無効表記を設定して警告の有無を見た測定はしていない**が、同じ
+性質なら流用は「設定したのに一度も効いていない」状態を緑のまま作る。
+
+表記規則の測定は保護対象と無関係な `.sbxprobe-*` で行い、**正の対照**として
+`/Users/<user>/development/important/dotfiles/.sbxprobe-ctl` という非 glob の
+絶対パスを 1 本混ぜた(対照が読めてしまったら「設定が反映されていない」で
+あって glob の可否は結論できない、を切り分けるため)。**出荷形の確認だけは
+実名 `.env*` で行っている**(表の該当行に明記)。判定は読み取りの行は
+**中身が出力されたか**、`rm` / `mv` / 書き込みの行は**操作後の状態**
+(ファイルが消えたか / 内容が変わったか)、`ls -la` と `git status` の行だけ
+exit code で行った。
+
+| 測ったこと | 結果 |
+|---|---|
+| `~/*/**/.sbxprobe-env`(repo 直下 / 1 段 / 2 段ネスト) | 拒否 |
+| `~/*/**/.sbxprobe-env.*`(repo 直下 / 1 段 / 2 段ネスト) | 拒否 |
+| 非 glob 絶対パス(正の対照) | 拒否 = **設定は反映されている** |
+| `.sbxprobe-envother` / 無関係なファイル(負の対照) | 読めた |
+| `~/*/**/.env.*` を設定した状態の実名 `.env.example` / `.env.sample` | 拒否 |
+| 出荷形 `~/*/**/.env` + `~/*/**/.env.local`(実名で確認) | `.env` / `.env.local` / `tests/.env.local` を拒否、`.env.example` は読めた |
+| deny 配下への `rm` / `mv` / `ls <name>` | 拒否。書き込み(作成・上書き)だけは通る |
+| deny 配下を含むディレクトリの `ls -la` / `git status` | 正常 |
+| **Read tool** で deny 配下を読む | **中身が返った(素通り)** |
+| deny 配下への symlink 経由の読み(相対 / 絶対とも)・`cp` の読み取り元 | 拒否 = **symlink での回避は成立しない** |
+| deny 配下を `pnpm exec secretlint` に渡す | `EPERM ... stat` で **exit 2**(黙って素通りはしない) |
+
+読み取れること:
+
+- **表記規則は denyWrite と同じに見える**(上記「denyWrite のパス表記」節の表が
+  正本。ここで確かめたのは `~/*/**/…` の 1 パターンが denyRead でも効くこと)。
+  **`~/**/…` 型と、`**` が 0 段にマッチする `~/<dir>/.env` の形は今回測っていない**
+- **マッチはファイル名の完全一致で、前方一致では広がらない。**
+  `~/*/**/.sbxprobe-env` を設定しても `.sbxprobe-envother` は読めた。
+  したがって `.env` 1 本では `.env.local` を覆えず、名前ごとにエントリが要る
+- **deny 配下は読み取りだけでなく削除・リネーム・名前指定の `ls` も止まる。**
+  **書き込みだけは通る**ので、**agent が deny 配下にファイルを作ると自分では
+  消せなくなる**(この測定でも片付けのたびに設定からエントリを外す必要があった)。
+  **未測定だが同じ機構から導かれる懸念**として、`.env` を tracked で持つ repo での
+  `git checkout` / `git merge` が `unable to unlink old` で止まる形がある
+  (CLAUDE.md「変更時の注意」に `claude/skills/` での同型の中断が記録済み)
+- **`denyRead` だけでは完全性は守れない。** 同じ 2 名を `denyWrite` には入れて
+  いないので、**読めないまま `> .env` で上書き・破壊することは通る**(実測)。
+  agent は中身を読めないぶん**壊したことに気付けず、バックアップも取れない**。
+  `denyWrite` にも入れる案は、`cp .env.example .env` のような正当な初期設定まで
+  止めるため採らず、**受容する残余**とした(2026-09-06 / user 判断)
+- **この性質のため、denyRead には
+  `tests/integrity/verify-sandbox-codex-enforcement.sh` 型の enforcement probe を
+  置けない。** probe の fixture は `~/*/**` 配下に実名 `.env` で置くしかないが、
+  **agent 自身が消せないので trap での後始末が効かず repo が汚れる**。tracked
+  fixture にする案も、その fixture を持たないブランチへ移るときに上の
+  `unable to unlink old` を再生産する。**enforcement の根拠はこの節の測定記録の側**
+  (denyWrite 側と同じ構造)
+
+**非カバーの経路は denyWrite と同じ 4 つ**(home の外 / excludedCommands で
+sandbox ごと外れる行 / tool 経路 / この設定自体の改ざん。内訳は上記
+「denyWrite のパス表記」節の末尾)。ただし **3 番目の中身が denyWrite とは違う** —
+あちらで測ったのは Edit tool が denyWrite を素通りすることで、こちらで測ったのは
+**Read tool が denyRead を素通りする**こと(上表)。**Grep / Glob tool は未測定**。
+形の上での非カバーがもう 1 つあり、**`~/*/` が home 直下 1 階層を必ず消費するので
+`~/.env` は覆われない**(`~/.codex` が同じ理由で `~/*/**/…` の外にあるのと同型)。
+
+**この tool 経路のギャップは、`.codex/` のように二次 hook で揃えず残余として
+受容する。理由は「他に経路があるから」ではなく、対策のコストと目的が
+釣り合わないこと。** `.codex/` に二次 hook を置いたのは、**sandbox が効かない
+file 編集 tool 経路をそのままにすると片方だけでは穴が残る**からで(上記層別表)、
+しかも issue #190 / #291 という**実際の事故**が根拠になっている。今回の
+`denyRead` にはその事故がなく、塞ぐには Read / Grep / Glob を対象にした
+**新しい hook 機構を予防的に新設する**ことになる — CLAUDE.md の
+「事故が起きた挙動を pin するときだけ」に反する。**踏んだら作る**、が
+このギャップの扱い。
+
+**excludedCommands 経路は「transcript に出ない外部送信」まで開く。** `gh *` は
+sandbox ごと外れるので、`gh gist create .env` や `gh issue comment --body-file .env`
+のようにファイル引数で秘密を読ませる形は deny を通らずに**そのまま GitHub へ出る**
+(transcript には内容が現れない)。上の 4 経路の 2 番目はこの具体形を含む。
+
+その帰結として、**`denyRead` は防御境界ではなく「Bash 経路で秘密が transcript に
+流れるのを止める」もの**であり、**秘密が agent の context に入らないことの
+根拠にはならない**。**外部送信を止めるものでもない**。
+
+**出荷形は `~/*/**/.env` と `~/*/**/.env.local` の 2 本。** 当初案の
+`~/*/**/.env.*` は `.env.production` のような別 suffix まで覆えるが、
+**`.env.example` / `.env.sample` のような「コミット済みで秘密でないテンプレート」
+まで巻き込む**(上表)。`cp .env.example .env` のような正当な初期設定が Bash
+経路で止まるため、実際に秘密が入る 2 名に絞った。
+
+**`.env.production` を 3 本目に足さなかったのは「テンプレートを巻き込むから」
+ではない** — マッチは完全一致なので `~/*/**/.env.production` を足しても
+`.env.production.example` は巻き込まない。出荷形を決めた時点の判断が
+「テンプレート巻き込みを避けて 2 名に絞る」だったためで、**別 suffix を
+覆わない選択を積極的に根拠づけたわけではない**。その後 host を実測すると
+この名前は 1 件だった(2026-09-06 / `maxdepth 6` / node_modules 除外。
+同条件で `.env` + `.env.local` は 5 件)。**名前を増やすかは、削除不可コストが
+全エントリに等しくかかることと実在件数を突き合わせて判断する**。
+
 ### sandbox の excludedCommands が「一次防御」を丸ごと外す経路
 
 上表の「一次: sandbox」は、**同じ Bash 呼び出しに excludedCommands マッチが

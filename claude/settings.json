@@ -56,7 +56,9 @@
         "~/.ssh",
         "~/.gnupg",
         "~/.aws",
-        "~/.config/gcloud"
+        "~/.config/gcloud",
+        "~/*/**/.env",
+        "~/*/**/.env.local"
       ],
       "denyWrite": [
         "~/.zshrc",
@@ -222,5 +224,6 @@
   "effortLevel": "high",
   "skipAutoPermissionPrompt": true,
   "skipWorkflowUsageWarning": true,
-  "tui": "fullscreen"
+  "tui": "fullscreen",
+  "agentPushNotifEnabled": true
 }
