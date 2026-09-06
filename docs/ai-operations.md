@@ -515,6 +515,8 @@ exit code で行った。
 | deny 配下への `rm` / `mv` / `ls <name>` | 拒否。書き込み(作成・上書き)だけは通る |
 | deny 配下を含むディレクトリの `ls -la` / `git status` | 正常 |
 | **Read tool** で deny 配下を読む | **中身が返った(素通り)** |
+| deny 配下への symlink 経由の読み(相対 / 絶対とも)・`cp` の読み取り元 | 拒否 = **symlink での回避は成立しない** |
+| deny 配下を `pnpm exec secretlint` に渡す | `EPERM ... stat` で **exit 2**(黙って素通りはしない) |
 
 読み取れること:
 
@@ -530,6 +532,18 @@ exit code で行った。
   **未測定だが同じ機構から導かれる懸念**として、`.env` を tracked で持つ repo での
   `git checkout` / `git merge` が `unable to unlink old` で止まる形がある
   (CLAUDE.md「変更時の注意」に `claude/skills/` での同型の中断が記録済み)
+- **`denyRead` だけでは完全性は守れない。** 同じ 2 名を `denyWrite` には入れて
+  いないので、**読めないまま `> .env` で上書き・破壊することは通る**(実測)。
+  agent は中身を読めないぶん**壊したことに気付けず、バックアップも取れない**。
+  `denyWrite` にも入れる案は、`cp .env.example .env` のような正当な初期設定まで
+  止めるため採らず、**受容する残余**とした(2026-09-06 / user 判断)
+- **この性質のため、denyRead には
+  `tests/integrity/verify-sandbox-codex-enforcement.sh` 型の enforcement probe を
+  置けない。** probe の fixture は `~/*/**` 配下に実名 `.env` で置くしかないが、
+  **agent 自身が消せないので trap での後始末が効かず repo が汚れる**。tracked
+  fixture にする案も、その fixture を持たないブランチへ移るときに上の
+  `unable to unlink old` を再生産する。**enforcement の根拠はこの節の測定記録の側**
+  (denyWrite 側と同じ構造)
 
 **非カバーの経路は denyWrite と同じ 4 つ**(home の外 / excludedCommands で
 sandbox ごと外れる行 / tool 経路 / この設定自体の改ざん。内訳は上記
@@ -549,9 +563,14 @@ file 編集 tool 経路をそのままにすると片方だけでは穴が残る
 「事故が起きた挙動を pin するときだけ」に反する。**踏んだら作る**、が
 このギャップの扱い。
 
+**excludedCommands 経路は「transcript に出ない外部送信」まで開く。** `gh *` は
+sandbox ごと外れるので、`gh gist create .env` や `gh issue comment --body-file .env`
+のようにファイル引数で秘密を読ませる形は deny を通らずに**そのまま GitHub へ出る**
+(transcript には内容が現れない)。上の 4 経路の 2 番目はこの具体形を含む。
+
 その帰結として、**`denyRead` は防御境界ではなく「Bash 経路で秘密が transcript に
 流れるのを止める」もの**であり、**秘密が agent の context に入らないことの
-根拠にはならない**。
+根拠にはならない**。**外部送信を止めるものでもない**。
 
 **出荷形は `~/*/**/.env` と `~/*/**/.env.local` の 2 本。** 当初案の
 `~/*/**/.env.*` は `.env.production` のような別 suffix まで覆えるが、
