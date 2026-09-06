@@ -526,6 +526,19 @@ schema は `array(string)` のままで、粒度を指定するフィールド�
 上流ドキュメントは逆に `docker` / `gh` について excludedCommands の使用を
 推奨しており、compound 行での粒度には言及がない。
 
+除外コマンドは sandbox 外で走るため、**環境変数の値そのものも sandbox 内と
+一致しない**。`$TMPDIR` は sandbox 内では uid スコープの `/tmp/claude-<uid>`、
+sandbox 外では macOS 本来の `/var/folders/…/T/` に展開される(2026-09-04 実測)。
+したがって除外コマンドの出力先に `$TMPDIR` を書くと、sandbox 内で `mkdir` した
+ディレクトリとは別の場所を指して `no such file or directory` で落ちる。対処は
+**出力先だけ sandbox 内の実パスをリテラルで書く**。実パスは `echo "$TMPDIR"` を
+sandbox 内で 1 回打って得る(uid は環境ごとに違うので値を文書に固定しない)。
+読む側が sandbox 内なら `$TMPDIR` のままでよく、この往復は成立する
+(2026-09-06 実測: sandbox 外の `gh … > /tmp/claude-501/…` で書き、sandbox 内の
+`cat "$TMPDIR/…"` で読めた)。なお `gh … | bash <script>` のような pipe 形は
+行全体が sandbox 外に落ちるため `guard-sandbox-exclusions.sh` がブロックする
+(2026-09-06 実測)。
+
 上流の判定は tree-sitter の `program` / `list` / `pipeline` /
 `redirected_statement` を降下して sub-command に割り、wrapper コマンド
 (`command` / `builtin` / `noglob` / `nohup` / `nice` / `time` / `stdbuf` /
