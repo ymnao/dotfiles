@@ -600,10 +600,25 @@ sandbox ごと外れるので、`gh gist create .env` や `gh issue comment --bo
 ではない** — マッチは完全一致なので `~/*/**/.env.production` を足しても
 `.env.production.example` は巻き込まない。出荷形を決めた時点の判断が
 「テンプレート巻き込みを避けて 2 名に絞る」だったためで、**別 suffix を
-覆わない選択を積極的に根拠づけたわけではない**。その後 host を実測すると
-この名前は 1 件だった(2026-09-06 / `maxdepth 6` / node_modules 除外。
-同条件で `.env` + `.env.local` は 5 件)。**名前を増やすかは、削除不可コストが
-全エントリに等しくかかることと実在件数を突き合わせて判断する**。
+覆わない選択を積極的に根拠づけたわけではない**。
+
+**その後 2026-09-07 に実在件数と突き合わせて「足さない」と決めた。** host
+(`~` 以下 `maxdepth 6` / node_modules 除外)の実在件数は `.env` が 4 件、
+`.env.local` が 1 件、`.env.production` が 1 件、`.env.production.local` /
+`.env.development` / `.env.development.local` / `.env.test` / `.env.staging`
+が各 0 件。唯一の `.env.production` は 3 行で、キー名は
+`VITE_GITHUB_CLIENT_ID` / `VITE_API_BASE_URL` / `VITE_VAPID_PUBLIC_KEY`
+(値は読んでいない)。**`VITE_*` は Vite がクライアントバンドルに埋め込む
+前提の変数なので、キー名から見るかぎり構造上「公開される値」しか入っていない。**
+つまり足しても止まる秘密が実在しない一方で、**削除不可・`unable to unlink old`
+の残余は名前ぶん増える**(このコストは全エントリに等しくかかる)。denyRead は
+Read tool を素通りする「Bash 経路の transcript 流出止め」であって防御境界では
+ないので、名前ベースで先回りする価値も小さい。
+
+**再判断の契機は 2 つ**: (a) host に**公開値でない** `.env.production`
+(派生名を含む)が実在するようになったとき、(b) Bash 経路で当該名の内容が
+transcript に流れる事故が起きたとき。そのときも「実在件数 × 削除不可コスト」を
+突き合わせて決める(名前を機械的に増やさない)。
 
 ### sandbox の excludedCommands が「一次防御」を丸ごと外す経路
 
