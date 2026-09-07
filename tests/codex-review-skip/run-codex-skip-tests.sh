@@ -116,6 +116,31 @@ else
   fail=$((fail + 1))
 fi
 
+# 打ち切りの巻き添えに子プロセスも入ること。codex だけ kill すると stub の
+# sleep が孤児として残り、実物では codex の子が API を叩き続ける。
+orphans="$( { pgrep -f 'sleep 30' 2>/dev/null || true; } | wc -l | tr -d ' ')"
+if [ "$orphans" = 0 ]; then
+  pass=$((pass + 1))
+else
+  echo "FAIL watchdog-orphan: expected=(no leftover child) got=($orphans leftover)"
+  fail=$((fail + 1))
+fi
+
+# CODEX_REVIEW_TIMEOUT が非数値 → 入口で ERROR。素通りさせると `-ge` 比較が
+# 毎回エラーになり、watchdog が永久に回る (打ち切りたい相手と同じ壊れ方)。
+timeout_rc=0
+(cd "$FAKE_REPO" \
+  && HTTPS_PROXY='' https_proxy='' \
+     PATH="$WORKDIR/bin:$PATH" CODEX_STDERR="some other fatal error" \
+     CODEX_REVIEW_TIMEOUT=abc \
+     bash "$TARGET" security >/dev/null 2>&1) || timeout_rc=$?
+if [ "$timeout_rc" = 1 ]; then
+  pass=$((pass + 1))
+else
+  echo "FAIL watchdog-bad-timeout: expected=(exit 1) got=(exit $timeout_rc)"
+  fail=$((fail + 1))
+fi
+
 echo "codex-review-skip tests: $pass passed, $fail failed"
 [ "$fail" = 0 ] || exit 1
 exit 0

@@ -128,6 +128,16 @@ fi
 # SKIP を返す機会ごと失われるため。既定 300s の根拠は 2026-09-07 の実測で、
 # 同日の diff (7 ファイル) に対し 1 観点 9s。
 CODEX_REVIEW_TIMEOUT="${CODEX_REVIEW_TIMEOUT:-300}"
+# 非数値だと下の `-ge` 比較が毎回エラーになり、条件が偽のまま watchdog が
+# 永久に回る (打ち切りたい相手と同じ壊れ方をする) ので入口で弾く。
+case "$CODEX_REVIEW_TIMEOUT" in
+  ''|*[!0-9]*)
+    error "CODEX_REVIEW_TIMEOUT must be a positive integer (got: $CODEX_REVIEW_TIMEOUT)"
+    ;;
+esac
+if [ "$CODEX_REVIEW_TIMEOUT" -lt 1 ]; then
+  error "CODEX_REVIEW_TIMEOUT must be >= 1 (got: $CODEX_REVIEW_TIMEOUT)"
+fi
 
 # Fetch the diff once and embed it in the prompt so codex does not need to
 # spawn its own `git diff` on every iteration. Trade-off: larger prompt payload
@@ -148,8 +158,35 @@ DIFF_CONTENT="$(git diff "$BASE_BRANCH...HEAD")"
 RAW_OUT="$(mktemp "${TMPDIR:-/tmp}/codex-review.XXXXXX")"
 RAW_ERR="$(mktemp "${TMPDIR:-/tmp}/codex-review.err.XXXXXX")"
 PROMPT_TMP="$(mktemp "${TMPDIR:-/tmp}/codex-review.prompt.XXXXXX")"
-cleanup() { rm -f "$RAW_OUT" "$RAW_ERR" "$PROMPT_TMP"; }
+CODEX_PID=""
+# codex とその子を確実に終わらせる。SIGTERM を 1 度送って待つだけだと、
+# 無視された場合に watchdog 自身がハングして目的を失う。子を先に落とすのは、
+# codex が終了しても孫プロセスが孤児として残り続けるため (回帰テストの
+# stub でも sleep が残る)。プロセスグループ単位で殺さないのは、job control
+# 無しの bash では background job が script 自身と同じ PGID になり、
+# `kill -- -PGID` が呼び出し元ごと巻き込むため。
+terminate_codex() {
+  [ -n "$CODEX_PID" ] || return 0
+  kill -0 "$CODEX_PID" 2>/dev/null || return 0
+  pkill -P "$CODEX_PID" 2>/dev/null || true
+  kill -TERM "$CODEX_PID" 2>/dev/null || true
+  local grace=0
+  while kill -0 "$CODEX_PID" 2>/dev/null; do
+    if [ "$grace" -ge 5 ]; then
+      pkill -KILL -P "$CODEX_PID" 2>/dev/null || true
+      kill -KILL "$CODEX_PID" 2>/dev/null || true
+      break
+    fi
+    sleep 1
+    grace=$((grace + 1))
+  done
+}
+cleanup() { terminate_codex; rm -f "$RAW_OUT" "$RAW_ERR" "$PROMPT_TMP"; }
 trap cleanup EXIT
+# INT / TERM でも codex を道連れにする。EXIT trap だけだと、シグナルで
+# 落とされたときに background の codex が生き残って API を叩き続ける。
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM
 
 # --sandbox read-only を明示。config.toml のデフォルト (workspace-write 等)
 # に依存すると、レビュー中に codex が working tree を書き換える構成になる
@@ -188,7 +225,7 @@ CODEX_PID=$!
 waited=0
 while kill -0 "$CODEX_PID" 2>/dev/null; do
   if [ "$waited" -ge "$CODEX_REVIEW_TIMEOUT" ]; then
-    kill -TERM "$CODEX_PID" 2>/dev/null || true
+    terminate_codex
     wait "$CODEX_PID" 2>/dev/null || true
     cat "$RAW_ERR" >&2
     skip "codex-review $PERSPECTIVE: codex did not finish within ${CODEX_REVIEW_TIMEOUT}s (hang; see stderr above)" >&2
