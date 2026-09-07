@@ -10,18 +10,22 @@ set -euo pipefail
 #                      refs/remotes/origin/HEAD, falls back to "main").
 #   CODEX_REVIEW_REPO  cd into this directory before running git ops. Without
 #                      it, the caller's cwd is the review target.
+#   CODEX_REVIEW_TIMEOUT
+#                      Seconds before the watchdog kills a hung codex and
+#                      returns exit 3 (default: 300).
 #
 # Output: validated review JSON on stdout (single line, schema-checked by
 # parse-review-output.sh).
 # Exit codes: 0 = verdict pass / 2 = findings / 1 = setup or parse error /
-#             3 = sandbox skip (codex CLI がその shell sandbox では使えない。
-#                 2 経路ある: 起動前の network preflight = 資格情報つき proxy
-#                 が egress の環境 (issue #335)、および起動後の
-#                 in-process app-server client 初期化失敗。
-#                 SKILL.md は ERROR ではなく SKIP として扱う) /
+#             3 = sandbox skip (codex CLI がその実行環境では使えない。2 経路ある:
+#                 watchdog が CODEX_REVIEW_TIMEOUT 秒でハングを打ち切った場合
+#                 (issue #335)、および in-process app-server client の初期化
+#                 失敗。SKILL.md は ERROR ではなく SKIP として扱う) /
 #             4 = rate-limit skip (codex アカウントの usage/rate limit 到達。
 #                 5 時間窓/週次窓のためセッション内リトライは無意味 —
-#                 SKILL.md は SKIP 扱いにして ERROR カウントに入れない).
+#                 SKILL.md は SKIP 扱いにして ERROR カウントに入れない) /
+#             130 / 143 = INT / TERM で中断された (trap が codex を道連れに
+#                 してから返す。レビュー結果ではないので呼び側は再実行する).
 #
 # The review target is the caller's cwd (or CODEX_REVIEW_REPO if set). This
 # script does not `cd` unless CODEX_REVIEW_REPO is set. DOTFILES_ROOT is used
@@ -121,31 +125,32 @@ if [ "$(git rev-list --count "$BASE_BRANCH..HEAD")" -eq 0 ]; then
   error "no commits beyond $BASE_BRANCH on the current branch (cwd: $CWD)"
 fi
 
-# Network preflight: egress が「資格情報つき HTTP proxy」の環境では codex を
-# 起動せずに SKIP する。この経路では codex の HTTP クライアントがトンネルを
-# 確立できず、auth.openai.com / chatgpt.com への全リクエストが
-# `error sending request` で失敗したのち `responses_retry` の 60s バックオフに
-# 入って **プロセスが終了しない**
-# (2026-09-02 実測 / codex-cli 0.152.1 / Claude Code の Bash sandbox。issue #335)。
+# Watchdog の秒数。**呼び側が先に切ると SKIP を返す機会ごと失われる**ので、
+# 呼び側 (Claude Code の Bash tool) は timeout を明示して呼ぶ必要がある
+# — 既定は 120s、最大 600s。SKILL.md step 1 に「600000ms を指定して呼ぶ」と
+# 書いてあるのはこのため。
 #
-# Why not 下の stderr シグネチャ判定に条件を足す: あれは codex が終了した後に
-# しか走らない。終了しないのだから、判定を増やしても永久に到達しない。
-#
-# Why not timeout(1) で包む: このマシンには timeout / gtimeout が無く、
-# background + poll + kill を自前で書くことになる。それは「原因不明のハング
-# 一般」に対する予防機構で、ここで観測されたハングは条件が特定できている。
-#
-# 判定は proxy URL の userinfo (資格情報) の有無で行う。実測したのは
-# Claude Code sandbox の localhost proxy 1 例だけで、**他形態の認証付き proxy で
-# codex が通るかは未検証**。誤って SKIP した場合は下のメッセージが理由を示す。
-# proxy の値そのものは資格情報を含むため出力しない。
-PROXY_URL="${HTTPS_PROXY:-${https_proxy:-}}"
-case "$PROXY_URL" in
-  *://*@*)
-    skip "codex-review $PERSPECTIVE: egress proxy requires credentials; codex cannot tunnel through it (issue #335)" >&2
-    exit 3
+# 既定値を 120s の内側 (100s) に置く案は 2026-09-07 に試して**捨てた**。
+# 7 ファイルの diff では 1 観点 9s だが、本スクリプト自身を含む 5 commit の
+# diff では 100s を超え、**ハングしていない正当なレビューを SKIP した**。
+# 過剰 SKIP は issue #335 でまさに直した失敗形なので、既定は余裕のある側に
+# 倒し、呼び側の timeout 明示で辻褄を合わせる。
+CODEX_REVIEW_TIMEOUT="${CODEX_REVIEW_TIMEOUT:-300}"
+# 非数値だと下の `-ge` 比較が毎回エラーになり、条件が偽のまま watchdog が
+# 永久に回る (打ち切りたい相手と同じ壊れ方をする) ので入口で弾く。
+case "$CODEX_REVIEW_TIMEOUT" in
+  ''|*[!0-9]*)
+    error "CODEX_REVIEW_TIMEOUT must be a positive integer (got: $CODEX_REVIEW_TIMEOUT)"
     ;;
 esac
+# 上限を置くのは、桁数が bash の整数を超えると数字チェックを通った後で
+# `-ge` がエラーになり、非数値と同じ「永久に回る」経路に落ちるため。
+# 600 に合わせるのは Bash tool の最大タイムアウトがそこだから — それを
+# 超える値は、呼び側が必ず先に切るので watchdog として意味を持たない。
+if [ "${#CODEX_REVIEW_TIMEOUT}" -gt 3 ] || [ "$CODEX_REVIEW_TIMEOUT" -lt 1 ] \
+  || [ "$CODEX_REVIEW_TIMEOUT" -gt 600 ]; then
+  error "CODEX_REVIEW_TIMEOUT must be an integer in 1..600 (got: $CODEX_REVIEW_TIMEOUT)"
+fi
 
 # Fetch the diff once and embed it in the prompt so codex does not need to
 # spawn its own `git diff` on every iteration. Trade-off: larger prompt payload
@@ -165,26 +170,114 @@ DIFF_CONTENT="$(git diff "$BASE_BRANCH...HEAD")"
 # 3 = sandbox skip (本スクリプト自身が返す。パーサは関与しない)。
 RAW_OUT="$(mktemp "${TMPDIR:-/tmp}/codex-review.XXXXXX")"
 RAW_ERR="$(mktemp "${TMPDIR:-/tmp}/codex-review.err.XXXXXX")"
-cleanup() { rm -f "$RAW_OUT" "$RAW_ERR"; }
+PROMPT_TMP="$(mktemp "${TMPDIR:-/tmp}/codex-review.prompt.XXXXXX")"
+CODEX_PID=""
+# codex とその子孫をプロセスグループごと落とす。codex 本体だけに signal を
+# 送ると孫が孤児として残り、実物では API を叩き続ける。SIGTERM を 1 度送って
+# 無期限に待たないのは、無視された場合に watchdog 自身がハングして目的を
+# 失うため。
+#
+# Why not pgrep / ps で子孫を辿る: **この sandbox では動かない**。
+# `pgrep -P <pid>` は `sysmond service not found` / `Cannot get process list`、
+# `ps` は `Operation not permitted` を返す (2026-09-07 実測)。列挙が常に空に
+# なるので、孫は素通りする。
+#
+# グループ ID を得るために codex の起動だけ `set -m` (job control) を有効に
+# する。job control 下の background job は **自分自身の PGID を持つ**ので、
+# `kill -- -$CODEX_PID` が呼び出し元の script を巻き込まない (同じ PGID を
+# 共有する job control 無しの場合と違う。2026-09-07 に repro で実測)。
+#
+# 引き換えに、呼び側がこの script のプロセスグループごと **SIGKILL** した場合、
+# codex は別グループなので道連れにならず trap も走らない (孤児化する)。
+# SIGTERM なら下の trap が受けて道連れにする。既定の watchdog を呼び側の
+# タイムアウトより内側に置いてあるのは、この経路に入る前に自分で畳むため。
+terminate_codex() {
+  [ -n "$CODEX_PID" ] || return 0
+  local grace=0
+  kill -TERM -- "-$CODEX_PID" 2>/dev/null || kill -TERM "$CODEX_PID" 2>/dev/null || true
+  while kill -0 "$CODEX_PID" 2>/dev/null; do
+    if [ "$grace" -ge 5 ]; then
+      break
+    fi
+    sleep 1
+    grace=$((grace + 1))
+  done
+  # 本体の生死で打ち切らず、最後に必ずグループへ KILL を送る。codex 本体が
+  # TERM で先に落ちても、TERM を無視した子孫はグループに残る (本体を待つ
+  # ループはそこで終わってしまう)。空のグループへの KILL は無害。
+  kill -KILL -- "-$CODEX_PID" 2>/dev/null || kill -KILL "$CODEX_PID" 2>/dev/null || true
+  # reap してから PID を捨てる。放置すると後続の cleanup が zombie に対して
+  # 5 秒の猶予ループを回し、PID が再利用された場合は無関係なグループを撃つ。
+  wait "$CODEX_PID" 2>/dev/null || true
+  CODEX_PID=""
+}
+cleanup() { terminate_codex; rm -f "$RAW_OUT" "$RAW_ERR" "$PROMPT_TMP"; }
 trap cleanup EXIT
+# INT / TERM でも codex を道連れにする。EXIT trap だけだと、シグナルで
+# 落とされたときに background の codex が生き残って API を叩き続ける。
+# `trap - EXIT` を先に打つのは、EXIT trap が再入して cleanup を 2 度走らせ
+# ないため。
+trap 'trap - EXIT; cleanup; exit 130' INT
+trap 'trap - EXIT; cleanup; exit 143' TERM
 
 # --sandbox read-only を明示。config.toml のデフォルト (workspace-write 等)
 # に依存すると、レビュー中に codex が working tree を書き換える構成になる
 # 環境が生まれうる。プロンプトの「Do NOT modify」は副次的な多層防御で、
 # 主防御はここで CLI に強制する。
 #
-# `if !` で包む理由: 素の pipeline のままだと `set -euo pipefail` により
-# codex の非ゼロ終了 (不明フラグ / 認証エラー等) が即座に script を kill し、
-# 下の parser 実行と exit code 正規化 (0/1/2/3) に到達しない。契約を壊さない
-# ため必須。
+# codex の終了コードを `wait ... || codex_rc=$?` で受けるのは、`set -euo
+# pipefail` の下で非ゼロ終了 (不明フラグ / 認証エラー等) が即座に script を
+# kill すると、下の parser 実行と exit code 正規化 (0/1/2/3/4) に到達しない
+# ため。契約を壊さないため必須。
 #
 # stderr は $RAW_ERR に振り分ける。sandbox で initialize 失敗した場合の
 # シグネチャ検出 (下の Sandbox skip 判定) と、通常失敗時の診断表示の両方で使う。
-if ! {
+{
   cat "$PROMPT_FILE"
   printf '\n\n## Target\n\nReview the diff below (produced by "git diff %s...HEAD" in %s). Do NOT modify any files. Output only the fenced JSON block per the Output contract above.\n\n```diff\n%s\n```\n' \
     "$BASE_BRANCH" "$CWD" "$DIFF_CONTENT"
-} | codex exec --sandbox read-only - > "$RAW_OUT" 2> "$RAW_ERR"; then
+} > "$PROMPT_TMP"
+
+# codex を background + poll + kill で包む。pipeline のまま前景で走らせない
+# 理由は、2026-09-02 に codex 0.152.1 が資格情報つき proxy 下で
+# `responses_retry` の 60s バックオフに入り **終了しなくなった**のを実測した
+# ため (issue #335)。下の stderr シグネチャ判定は codex が終了しないと走らず、
+# 呼び側は 600s 待たされて出力ゼロで終わっていた。
+#
+# Why not proxy を見て起動前に SKIP する: それが 2026-09-02 に置いた対処
+# だったが、proxy の形は「codex がこの環境で動くか」のプロキシでしかない。
+# 2026-09-07 に同じ sandbox (proxy の形は当時と同じ) で 3 観点とも完走する
+# ことを実測したのに、skill は SKIP を返し続けていた。**再現しなくなった
+# 原因が codex 側 (0.152.1 → 0.153.4) か sandbox 側かは未確定** — 0.152.1 の
+# 再測はしていない。だからこそ、症状 (時間内に終わらないこと) を直接測る形に
+# しておく方が、どちらが動いても追随できる。
+#
+# Why not timeout(1): この host に timeout / gtimeout が無い (2026-09-07 実測)。
+codex_rc=0
+# set -m は codex を独立したプロセスグループに置くためだけに使う
+# (理由は terminate_codex のコメント)。起動直後に戻す。
+set -m
+codex exec --sandbox read-only - < "$PROMPT_TMP" > "$RAW_OUT" 2> "$RAW_ERR" &
+CODEX_PID=$!
+set +m
+waited=0
+while kill -0 "$CODEX_PID" 2>/dev/null; do
+  if [ "$waited" -ge "$CODEX_REVIEW_TIMEOUT" ]; then
+    terminate_codex
+    cat "$RAW_ERR" >&2
+    skip "codex-review $PERSPECTIVE: codex did not finish within ${CODEX_REVIEW_TIMEOUT}s (hang; see stderr above)" >&2
+    exit 3
+  fi
+  # 1s 刻みにするのは、正常終了の検知が遅れるとその分だけ毎回の待ちに乗る
+  # ため (codex 1 観点の実測は 9s、1 回の /pr で 3 観点回す)。
+  sleep 1
+  waited=$((waited + 1))
+done
+wait "$CODEX_PID" || codex_rc=$?
+# 回収済みの PID を残さない (EXIT trap が再利用された PID のグループを撃つ)。
+CODEX_PID=""
+
+if [ "$codex_rc" -ne 0 ]; then
   cat "$RAW_ERR" >&2
   # Sandbox skip 判定: Claude Code の Bash sandbox 等、外側シェルが
   # $HOME/.codex/ 配下の SQLite 系ファイル (state_5.sqlite / goals_1.sqlite /
@@ -230,7 +323,7 @@ rc=0
 bash "$PARSER" < "$RAW_OUT" || rc=$?
 # parser 失敗時 (rc=1: codex は exit 0 だが stdout が malformed JSON / 空) は
 # codex 側の stderr に degraded 理由 (rate limit fallback 等) が入る場合が
-# あるため dump する。codex 失敗パス (line 147) の cat と対称。
+# あるため dump する。codex 失敗パス (`codex_rc` が非ゼロの分岐) の cat と対称。
 # rc=2 (findings ありの success) では codex stderr の progress ノイズを
 # 呼び側に流さないよう対象を rc=1 に限定する。
 if [ "$rc" -eq 1 ]; then

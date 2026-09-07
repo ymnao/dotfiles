@@ -27,7 +27,7 @@ Default: run all 3 in the order above. If the user named one (`/codex-review sec
 
 ### 1. Detect
 
-Run `bash "$HOME/.claude/skills/codex-review/scripts/run-review.sh" <P>` and branch on the exit code:
+Run `bash "$HOME/.claude/skills/codex-review/scripts/run-review.sh" <P>` **with the Bash tool's `timeout` set to `600000` (10 分)** and branch on the exit code。timeout を省くと Bash tool の既定 120s で呼び側が先に切り、watchdog が SKIP を返す機会ごと失われる (2026-09-07 実測: 5 commit ぶんの diff で 1 観点が 100s を超えた)。`CODEX_REVIEW_TIMEOUT` を上げるときも 600s を超えない — それ以上は呼び側が必ず先に切る。
 
 - `0` (pass) → record perspective as PASS. Go to the next perspective.
 - `2` (findings) → stdout is validated JSON. Parse `findings` and go to step 2.
@@ -85,11 +85,12 @@ Then per-perspective details, one line per finding:
 |----------|--------|
 | `CODEX_REVIEW_BASE` | Override the base branch. Default: `git symbolic-ref refs/remotes/origin/HEAD` → fallback `main`. |
 | `CODEX_REVIEW_REPO` | `cd` into this directory before running git ops. Without it, the caller's cwd is the review target. |
+| `CODEX_REVIEW_TIMEOUT` | Seconds before the watchdog kills a hung codex and returns exit 3. Default 300, range 1..600. 呼び側の Bash tool `timeout` (step 1 で 600000ms) より内側であること — 呼び側が先に切ると SKIP を返せない。 |
 
 ## Notes
 
 - **Review target = caller's cwd**: the script does not `cd` unless `CODEX_REVIEW_REPO` is set. This skill is not dotfiles-specific.
-- **Output contract**: run-review.sh returns validated JSON (schema-checked by `parse-review-output.sh`). Exit codes: 0 pass / 2 findings / 1 error / 3 sandbox skip / 4 rate-limit skip. Do NOT attempt to parse codex prose yourself; if you get exit 1, treat it as an error, not as PASS.
+- **Output contract**: run-review.sh returns validated JSON (schema-checked by `parse-review-output.sh`). Exit codes: 0 pass / 2 findings / 1 error / 3 sandbox skip / 4 rate-limit skip / 130 も 143 も中断 (INT / TERM。レビュー結果ではないので再実行する)。Do NOT attempt to parse codex prose yourself; if you get exit 1, treat it as an error, not as PASS.
 - **Model selection**: run-review.sh はモデルを指定しない — `codex/config.toml` の global 設定 (`model` / `model_reasoning_effort`) が唯一の選択点。観点別・リスク tier 別の切り替えは意図的に持たない (計測なしの最適化はしない)。必要になったら `codex exec -c model=... -c model_reasoning_effort=...` の per-call override で実現できる。
 - **Why verify-then-fix**: cross-vendor reviewers have non-overlapping blind spots but also produce false positives; verification against the actual code filters them before they cost edit time. Detection is instructed to over-report ("report everything") and this skill filters downstream — do not skip verification because findings "look obviously right".
 - **Do not commit** fixes from this skill — ただし confirm run (step 4) の直前だけは commit する。run-review.sh が渡すのは `<base>...HEAD` の commit 済み diff なので、commit しないと confirm が古い状態を見る。
@@ -97,13 +98,15 @@ Then per-perspective details, one line per finding:
 - **Design: split file layout**: this skill's scripts live in `claude/skills/codex-review/scripts/`; the perspective prompts live in `codex/review-prompts/` (codex-facing content). The split is intentional — to tweak a perspective, edit the `.md` under `codex/review-prompts/`.
 - **Running under a shell sandbox** (Claude Code の Bash sandbox 等): 失敗モードは 2 つあり、run-review.sh はどちらも exit 3 (SKIP) にする (ERROR ではなく明示的 skip)。
 
-  **(A) network 起因 — 起動前の preflight で止める。**`HTTPS_PROXY` が資格情報つきの proxy を指す環境では、codex の HTTP リクエストが**すべて** `error sending request` で失敗する。sandbox の egress はこの proxy 一択で (外すと DNS 解決も不可)、同じ sandbox 内の python は同じ proxy 経由で `chatgpt.com` / `auth.openai.com` に到達できる (トンネル確立に `Proxy-Authorization` が要り、証明書は本物 = MITM ではない) 一方、codex はトンネル確立の段階で落ちる。**codex 側の内部原因は特定できていない** — 中継 proxy を立てて実際の応答を見る必要があるが、sandbox は listen socket の bind を禁止している。失敗後 codex は `responses_retry` の 60s バックオフに入って**終了しない**ので、(B) のような stderr シグネチャ検出では捕まえられない。run-review.sh は codex を起動する前にこの環境を検出して exit 3 を返す (2026-09-02 実測 / codex-cli 0.152.1、issue #335)。
+  **(A) ハング — watchdog で打ち切る。**2026-09-02 に codex-cli 0.152.1 は、`HTTPS_PROXY` が資格情報つき proxy を指すこの sandbox で HTTP リクエストが**すべて** `error sending request` で失敗し、`responses_retry` の 60s バックオフに入って**終了しなくなった** (issue #335)。(B) の stderr シグネチャ検出は codex が終了しないと走らないので捕まえられない。run-review.sh は codex を background で起動し、`CODEX_REVIEW_TIMEOUT` (既定 300s) を超えたら kill して exit 3 を返す。
+
+  **2026-09-07 の実測 (codex-cli 0.153.4): 同じ sandbox から 3 観点とも完走する。**ハングは再現せず、失敗するのは `chatgpt.com/backend-api/ps/mcp` への MCP 接続だけで、レビュー本体には影響しない。**再現しなくなった原因が codex 側 (0.152.1 → 0.153.4) か sandbox 側かは未確定** — 0.152.1 の再測はしていない。ここには以前「proxy URL に userinfo があれば codex を起動せず SKIP」する preflight を置いていたが、proxy の形は「codex がこの環境で動くか」のプロキシでしかなく、動くようになった後も skill 全体を SKIP させ続けていた。ハングを直接測る watchdog に置き換えて削除した (回帰テスト: `tests/codex-review-skip/` の watchdog-hang ケース)。
 
   **(B) filesystem 起因 — 起動後の stderr シグネチャで検出する。**外側シェルが `$HOME/.codex/` 配下の SQLite (`state_*.sqlite` / `goals_*.sqlite` / `memories_*.sqlite`) の write を allow していない場合、`codex` CLI 内部の in-process app-server client が state DB を open できず `failed to initialize in-process app-server client: Operation not permitted (os error 1)` で exit する。run-review.sh はこのシグネチャを検出して exit 3 を返す。
 
   回避策は 2 通り:
 
   1. **sandbox 外で実行** ((A) / (B) どちらにも効く) — user が別 terminal で `bash "$HOME/.claude/skills/codex-review/scripts/run-review.sh" <perspective>` を叩き、出力を PR body / evidence に paste。
-  2. **Claude Code settings で許可を拡張** (**(B) にしか効かない** — (A) はドメインを許可済みのまま失敗する) — `~/.claude/settings.json` の `permissions` で `~/.codex/**` を write allow に、network allowlist に `chatgpt.com` + `auth.openai.com` (auth mode = chatgpt の場合) または `api.openai.com` (API key の場合) を追加。ChatGPT auth では実 API call でも `chatgpt.com/backend-api/` を叩くため、SQLite だけでなく network 側も allow が必要。加えて token refresh は `auth.openai.com` の OAuth endpoint を叩くため、`chatgpt.com` だけでは refresh 時に exit 1 になる (chatgpt.com のみ許可した状態で 3 回連続失敗した実例あり)。
+  2. **Claude Code settings で許可を拡張** ((B) に効く。(A) のハングは許可の問題ではないので、これで防げるものではない) — `~/.claude/settings.json` の `permissions` で `~/.codex/**` を write allow に、network allowlist に `chatgpt.com` + `auth.openai.com` (auth mode = chatgpt の場合) または `api.openai.com` (API key の場合) を追加。ChatGPT auth では実 API call でも `chatgpt.com/backend-api/` を叩くため、SQLite だけでなく network 側も allow が必要。加えて token refresh は `auth.openai.com` の OAuth endpoint を叩くため、`chatgpt.com` だけでは refresh 時に exit 1 になる (chatgpt.com のみ許可した状態で 3 回連続失敗した実例あり)。
 
-  この dotfiles の `claude/settings.json` は回避策 2 を配線済みだが (`sandbox.filesystem.allowWrite` に `~/.codex`、`sandbox.network.allowedDomains` に `chatgpt.com` + `auth.openai.com`)、**(A) には効かない** — ドメインは許可済みのまま失敗する。したがって現在 sandbox 内から codex-review を回す経路は無く、残るのは回避策 1 だけ。**回避策 1 が生きていることは user の terminal で実測済み** — 同じ `codex exec --sandbox read-only -` が数秒で応答を返した (2026-09-02 / codex-cli 0.152.1)。つまり (A) は codex 側の故障ではなく sandbox 固有。write allow を SQLite ファイルに絞らずディレクトリ単位にしているのは、codex CLI が sessions/ / history.jsonl / log/ / auth.json (token refresh) 等にも書き込むため。`excludedCommands` に `codex *` を足す案は sandbox を丸ごと外すためより広く path/domain を絞る現方式を採ったが、(A) を踏まえて issue #335 で再検討中 (security 境界を広げるため user 判断)。
+  この dotfiles の `claude/settings.json` は回避策 2 を配線済みで (`sandbox.filesystem.allowWrite` に `~/.codex`、`sandbox.network.allowedDomains` に `chatgpt.com` + `auth.openai.com`)、**2026-09-07 時点では sandbox 内から codex-review が回る**。回避策 1 は watchdog が SKIP を返したときの退避先として残す。write allow を SQLite ファイルに絞らずディレクトリ単位にしているのは、codex CLI が sessions/ / history.jsonl / log/ / auth.json (token refresh) 等にも書き込むため。`excludedCommands` に `codex *` を足す案は sandbox を丸ごと外すので採らない — path/domain を絞る現方式で足りていることが実測で確かめられた。
