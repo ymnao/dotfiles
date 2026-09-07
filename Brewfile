@@ -67,7 +67,8 @@ brew "actionlint"
 # pinact の出番は tag pin のまま残っている repo の初回移行と、Dependabot を
 # 置いていない repo の手動更新だけ。
 # 既定モードは GitHub API を叩くため agent の Bash tool からは実行できず
-# (2026-09-07 実測: exit 3)、user の手元 shell か CI で流す。原因は gh と同じ
+# (2026-09-07 実測: exit 3。オフライン検査 `pinact run -fix=false -no-api` だけは
+# sandbox 内でも通る)、user の手元 shell か CI で流す。原因は gh と同じ
 # Go + macOS の TLS 検証で、実測は docs/ai-operations.md §10「sandbox の
 # excludedCommands が『一次防御』を丸ごと外す経路」にある。
 brew "pinact"

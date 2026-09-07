@@ -24,6 +24,8 @@ end
 # 常時有効化する `update.githubActions` は **repo の pnpm-workspace.yaml にしか
 # 置けず** グローバル設定では無視されるため (pnpm 11.25.0 で実測)、
 # repo をまたいで効かせる手段としてフラグを abbr に置く。
+# actions だけを上げるフラグではない。通常の `pnpm update` に足す形なので npm 依存と
+# lockfile も動く (`pnpm update --help`: "Also update GitHub Actions dependencies")。
 # 継続更新は各 repo の Dependabot が担うので、これを打つのは weekly を待たずに
 # 今すぐ上げたいときと、Dependabot を置いていない repo だけ。
 # `--latest` は major を越えるので既定にしない (`pnua --latest` と手で足す)。

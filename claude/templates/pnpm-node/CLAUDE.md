@@ -28,9 +28,9 @@
 ## CI (GitHub Actions)
 
 - workflow の `uses:` は **full commit SHA + `# vN` コメント**で pin する (tag pin にしない)。tag は後から動かせるので、action 側のリポジトリを乗っ取られると指す先が変わる
-- **同時に `.github/dependabot.yml` に `github-actions` ecosystem (weekly / grouped) を置く**。SHA pin にすると Dependabot の脆弱性アラートが出なくなる (アラートは semver pin にしか出ない) ため、version update と組にして初めて割に合う
+- **同時に `.github/dependabot.yml` に `github-actions` ecosystem (weekly / grouped) を置く**。SHA pin にすると Dependabot の脆弱性アラートが出なくなる (アラートは semver pin にしか出ない — GitHub docs、2026-09-07 時点)。**version update を置いてもアラート自体は戻らない**ので、週次で上げ続けて古い版に留まらない形で埋める
 - 既存 workflow が tag pin のままなら `pinact run` で一括移行する (GitHub API を叩くので手元の shell で実行)
-- 継続更新は Dependabot に任せ、pnpm 11.16+ の `pnpm update --include-github-actions` (fish abbr `pnua`) は **weekly を待たずに手元で上げたいときだけ**使う。常時有効化する `update: githubActions: true` は **この repo の `pnpm-workspace.yaml` にしか置けない** (グローバル設定では無視される)
+- 継続更新は Dependabot に任せ、pnpm 11.16+ の `pnpm update --include-github-actions` (fish abbr `pnua`) は **weekly を待たずに手元で上げたいときだけ**使う。npm 依存と lockfile も一緒に動く点に注意 (actions を「足す」フラグ)。常時有効化する `update.githubActions` は **この repo の `pnpm-workspace.yaml` にしか置けない** (グローバル設定では無視される)
 
 ## プロジェクト固有の注意点
 
