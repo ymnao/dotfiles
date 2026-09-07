@@ -129,6 +129,16 @@ fi
 # 孫が孤児として残り、実物では API を叩き続ける。stub が記録した PID だけを
 # 見る (パターン一致だと host 上の無関係な sleep を数えてしまう)。
 grandchild_pid="$(cat "$GRANDCHILD_FILE" 2>/dev/null || true)"
+# 消えるまで少し待つ: 直後の単発 kill -0 は、reap 前の zombie に対しても
+# 成功しうるので偽 FAIL になる。
+gc_waited=0
+while [ -n "$grandchild_pid" ] && kill -0 "$grandchild_pid" 2>/dev/null; do
+  if [ "$gc_waited" -ge 5 ]; then
+    break
+  fi
+  sleep 1
+  gc_waited=$((gc_waited + 1))
+done
 if [ -n "$grandchild_pid" ] && ! kill -0 "$grandchild_pid" 2>/dev/null; then
   pass=$((pass + 1))
 else

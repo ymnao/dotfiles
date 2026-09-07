@@ -193,24 +193,32 @@ CODEX_PID=""
 # タイムアウトより内側に置いてあるのは、この経路に入る前に自分で畳むため。
 terminate_codex() {
   [ -n "$CODEX_PID" ] || return 0
-  kill -0 "$CODEX_PID" 2>/dev/null || return 0
   local grace=0
   kill -TERM -- "-$CODEX_PID" 2>/dev/null || kill -TERM "$CODEX_PID" 2>/dev/null || true
   while kill -0 "$CODEX_PID" 2>/dev/null; do
     if [ "$grace" -ge 5 ]; then
-      kill -KILL -- "-$CODEX_PID" 2>/dev/null || kill -KILL "$CODEX_PID" 2>/dev/null || true
       break
     fi
     sleep 1
     grace=$((grace + 1))
   done
+  # 本体の生死で打ち切らず、最後に必ずグループへ KILL を送る。codex 本体が
+  # TERM で先に落ちても、TERM を無視した子孫はグループに残る (本体を待つ
+  # ループはそこで終わってしまう)。空のグループへの KILL は無害。
+  kill -KILL -- "-$CODEX_PID" 2>/dev/null || kill -KILL "$CODEX_PID" 2>/dev/null || true
+  # reap してから PID を捨てる。放置すると後続の cleanup が zombie に対して
+  # 5 秒の猶予ループを回し、PID が再利用された場合は無関係なグループを撃つ。
+  wait "$CODEX_PID" 2>/dev/null || true
+  CODEX_PID=""
 }
 cleanup() { terminate_codex; rm -f "$RAW_OUT" "$RAW_ERR" "$PROMPT_TMP"; }
 trap cleanup EXIT
 # INT / TERM でも codex を道連れにする。EXIT trap だけだと、シグナルで
 # 落とされたときに background の codex が生き残って API を叩き続ける。
-trap 'cleanup; exit 130' INT
-trap 'cleanup; exit 143' TERM
+# `trap - EXIT` を先に打つのは、EXIT trap が再入して cleanup を 2 度走らせ
+# ないため。
+trap 'trap - EXIT; cleanup; exit 130' INT
+trap 'trap - EXIT; cleanup; exit 143' TERM
 
 # --sandbox read-only を明示。config.toml のデフォルト (workspace-write 等)
 # に依存すると、レビュー中に codex が working tree を書き換える構成になる
@@ -256,7 +264,6 @@ waited=0
 while kill -0 "$CODEX_PID" 2>/dev/null; do
   if [ "$waited" -ge "$CODEX_REVIEW_TIMEOUT" ]; then
     terminate_codex
-    wait "$CODEX_PID" 2>/dev/null || true
     cat "$RAW_ERR" >&2
     skip "codex-review $PERSPECTIVE: codex did not finish within ${CODEX_REVIEW_TIMEOUT}s (hang; see stderr above)" >&2
     exit 3
@@ -267,6 +274,8 @@ while kill -0 "$CODEX_PID" 2>/dev/null; do
   waited=$((waited + 1))
 done
 wait "$CODEX_PID" || codex_rc=$?
+# 回収済みの PID を残さない (EXIT trap が再利用された PID のグループを撃つ)。
+CODEX_PID=""
 
 if [ "$codex_rc" -ne 0 ]; then
   cat "$RAW_ERR" >&2
