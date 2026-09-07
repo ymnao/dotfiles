@@ -134,7 +134,9 @@ if [ -n "$grandchild_pid" ] && ! kill -0 "$grandchild_pid" 2>/dev/null; then
 else
   echo "FAIL watchdog-orphan: expected=(grandchild reaped) got=(pid '$grandchild_pid' still alive or unrecorded)"
   fail=$((fail + 1))
-  [ -n "$grandchild_pid" ] && kill -KILL "$grandchild_pid" 2>/dev/null
+  if [ -n "$grandchild_pid" ]; then
+    kill -KILL "$grandchild_pid" 2>/dev/null || true
+  fi
 fi
 
 # CODEX_REVIEW_TIMEOUT の不正値 → codex を起動する前に ERROR。素通りさせると
@@ -152,7 +154,8 @@ run_marker_case() {
   (cd "$FAKE_REPO" \
     && HTTPS_PROXY="$proxy" https_proxy="$proxy" \
        PATH="$WORKDIR/bin:$PATH" CODEX_STDERR="some other fatal error" \
-       CODEX_CALLED_MARKER="$marker" CODEX_REVIEW_TIMEOUT="${timeout:-300}" \
+       CODEX_CALLED_MARKER="$marker" \
+       env ${timeout:+"CODEX_REVIEW_TIMEOUT=$timeout"} \
        bash "$TARGET" security >/dev/null 2>&1) || rc=$?
   local called=no
   [ -f "$marker" ] && called=yes

@@ -23,7 +23,9 @@ set -euo pipefail
 #                 失敗。SKILL.md は ERROR ではなく SKIP として扱う) /
 #             4 = rate-limit skip (codex アカウントの usage/rate limit 到達。
 #                 5 時間窓/週次窓のためセッション内リトライは無意味 —
-#                 SKILL.md は SKIP 扱いにして ERROR カウントに入れない).
+#                 SKILL.md は SKIP 扱いにして ERROR カウントに入れない) /
+#             130 / 143 = INT / TERM で中断された (trap が codex を道連れに
+#                 してから返す。レビュー結果ではないので呼び側は再実行する).
 #
 # The review target is the caller's cwd (or CODEX_REVIEW_REPO if set). This
 # script does not `cd` unless CODEX_REVIEW_REPO is set. DOTFILES_ROOT is used
@@ -123,11 +125,14 @@ if [ "$(git rev-list --count "$BASE_BRANCH..HEAD")" -eq 0 ]; then
   error "no commits beyond $BASE_BRANCH on the current branch (cwd: $CWD)"
 fi
 
-# Watchdog の秒数。ハングを検出して SKIP に落とすまでの上限で、呼び側の
-# Bash tool タイムアウト (既定 600s) より短く取る — 呼び側が先に切ると
-# SKIP を返す機会ごと失われるため。既定 300s の根拠は 2026-09-07 の実測で、
-# 同日の diff (7 ファイル) に対し 1 観点 9s。
-CODEX_REVIEW_TIMEOUT="${CODEX_REVIEW_TIMEOUT:-300}"
+# Watchdog の秒数。**呼び側が先に切ると SKIP を返す機会ごと失われる**ので、
+# 既定は Claude Code の Bash tool の既定タイムアウト (120s) より内側に置く。
+# SKILL.md step 1 は timeout を指定せずにこのスクリプトを呼ぶ手順なので、
+# 300s のような値を既定にすると watchdog は既定経路で一度も発火しない。
+# 100s の根拠は 2026-09-07 の実測 (7 ファイルの diff に対し 1 観点 9s)。
+# 大きい diff で足りないときは、呼び側の tool timeout (最大 600s) と
+# この値を**両方**上げる。
+CODEX_REVIEW_TIMEOUT="${CODEX_REVIEW_TIMEOUT:-100}"
 # 非数値だと下の `-ge` 比較が毎回エラーになり、条件が偽のまま watchdog が
 # 永久に回る (打ち切りたい相手と同じ壊れ方をする) ので入口で弾く。
 case "$CODEX_REVIEW_TIMEOUT" in
@@ -137,10 +142,11 @@ case "$CODEX_REVIEW_TIMEOUT" in
 esac
 # 上限を置くのは、桁数が bash の整数を超えると数字チェックを通った後で
 # `-ge` がエラーになり、非数値と同じ「永久に回る」経路に落ちるため。
-# 86400 (1 日) は呼び側の Bash tool タイムアウト (600s) より十分大きい。
-if [ "${#CODEX_REVIEW_TIMEOUT}" -gt 5 ] || [ "$CODEX_REVIEW_TIMEOUT" -lt 1 ] \
-  || [ "$CODEX_REVIEW_TIMEOUT" -gt 86400 ]; then
-  error "CODEX_REVIEW_TIMEOUT must be an integer in 1..86400 (got: $CODEX_REVIEW_TIMEOUT)"
+# 600 に合わせるのは Bash tool の最大タイムアウトがそこだから — それを
+# 超える値は、呼び側が必ず先に切るので watchdog として意味を持たない。
+if [ "${#CODEX_REVIEW_TIMEOUT}" -gt 3 ] || [ "$CODEX_REVIEW_TIMEOUT" -lt 1 ] \
+  || [ "$CODEX_REVIEW_TIMEOUT" -gt 600 ]; then
+  error "CODEX_REVIEW_TIMEOUT must be an integer in 1..600 (got: $CODEX_REVIEW_TIMEOUT)"
 fi
 
 # Fetch the diff once and embed it in the prompt so codex does not need to
@@ -177,6 +183,11 @@ CODEX_PID=""
 # する。job control 下の background job は **自分自身の PGID を持つ**ので、
 # `kill -- -$CODEX_PID` が呼び出し元の script を巻き込まない (同じ PGID を
 # 共有する job control 無しの場合と違う。2026-09-07 に repro で実測)。
+#
+# 引き換えに、呼び側がこの script のプロセスグループごと **SIGKILL** した場合、
+# codex は別グループなので道連れにならず trap も走らない (孤児化する)。
+# SIGTERM なら下の trap が受けて道連れにする。既定の watchdog を呼び側の
+# タイムアウトより内側に置いてあるのは、この経路に入る前に自分で畳むため。
 terminate_codex() {
   [ -n "$CODEX_PID" ] || return 0
   kill -0 "$CODEX_PID" 2>/dev/null || return 0
@@ -203,10 +214,10 @@ trap 'cleanup; exit 143' TERM
 # 環境が生まれうる。プロンプトの「Do NOT modify」は副次的な多層防御で、
 # 主防御はここで CLI に強制する。
 #
-# `if !` で包む理由: 素の pipeline のままだと `set -euo pipefail` により
-# codex の非ゼロ終了 (不明フラグ / 認証エラー等) が即座に script を kill し、
-# 下の parser 実行と exit code 正規化 (0/1/2/3) に到達しない。契約を壊さない
-# ため必須。
+# codex の終了コードを `wait ... || codex_rc=$?` で受けるのは、`set -euo
+# pipefail` の下で非ゼロ終了 (不明フラグ / 認証エラー等) が即座に script を
+# kill すると、下の parser 実行と exit code 正規化 (0/1/2/3/4) に到達しない
+# ため。契約を壊さないため必須。
 #
 # stderr は $RAW_ERR に振り分ける。sandbox で initialize 失敗した場合の
 # シグネチャ検出 (下の Sandbox skip 判定) と、通常失敗時の診断表示の両方で使う。
@@ -223,10 +234,12 @@ trap 'cleanup; exit 143' TERM
 # 呼び側は 600s 待たされて出力ゼロで終わっていた。
 #
 # Why not proxy を見て起動前に SKIP する: それが 2026-09-02 に置いた対処
-# だったが、環境ではなく **上流のバージョン**に依存する挙動を環境で判定して
-# いたため、codex 0.153.4 で直った後も skill 全体が使えないままだった
-# (2026-09-07 に同じ sandbox で 3 観点とも完走することを実測)。ハングを
-# 直接測る方が、上流が再び壊れたときも直ったときも追随できる。
+# だったが、proxy の形は「codex がこの環境で動くか」のプロキシでしかない。
+# 2026-09-07 に同じ sandbox (proxy の形は当時と同じ) で 3 観点とも完走する
+# ことを実測したのに、skill は SKIP を返し続けていた。**再現しなくなった
+# 原因が codex 側 (0.152.1 → 0.153.4) か sandbox 側かは未確定** — 0.152.1 の
+# 再測はしていない。だからこそ、症状 (時間内に終わらないこと) を直接測る形に
+# しておく方が、どちらが動いても追随できる。
 #
 # Why not timeout(1): この host に timeout / gtimeout が無い (2026-09-07 実測)。
 codex_rc=0
@@ -298,7 +311,7 @@ rc=0
 bash "$PARSER" < "$RAW_OUT" || rc=$?
 # parser 失敗時 (rc=1: codex は exit 0 だが stdout が malformed JSON / 空) は
 # codex 側の stderr に degraded 理由 (rate limit fallback 等) が入る場合が
-# あるため dump する。codex 失敗パス (line 147) の cat と対称。
+# あるため dump する。codex 失敗パス (`codex_rc` が非ゼロの分岐) の cat と対称。
 # rc=2 (findings ありの success) では codex stderr の progress ノイズを
 # 呼び側に流さないよう対象を rc=1 に限定する。
 if [ "$rc" -eq 1 ]; then
