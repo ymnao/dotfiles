@@ -126,13 +126,16 @@ if [ "$(git rev-list --count "$BASE_BRANCH..HEAD")" -eq 0 ]; then
 fi
 
 # Watchdog の秒数。**呼び側が先に切ると SKIP を返す機会ごと失われる**ので、
-# 既定は Claude Code の Bash tool の既定タイムアウト (120s) より内側に置く。
-# SKILL.md step 1 は timeout を指定せずにこのスクリプトを呼ぶ手順なので、
-# 300s のような値を既定にすると watchdog は既定経路で一度も発火しない。
-# 100s の根拠は 2026-09-07 の実測 (7 ファイルの diff に対し 1 観点 9s)。
-# 大きい diff で足りないときは、呼び側の tool timeout (最大 600s) と
-# この値を**両方**上げる。
-CODEX_REVIEW_TIMEOUT="${CODEX_REVIEW_TIMEOUT:-100}"
+# 呼び側 (Claude Code の Bash tool) は timeout を明示して呼ぶ必要がある
+# — 既定は 120s、最大 600s。SKILL.md step 1 に「600000ms を指定して呼ぶ」と
+# 書いてあるのはこのため。
+#
+# 既定値を 120s の内側 (100s) に置く案は 2026-09-07 に試して**捨てた**。
+# 7 ファイルの diff では 1 観点 9s だが、本スクリプト自身を含む 5 commit の
+# diff では 100s を超え、**ハングしていない正当なレビューを SKIP した**。
+# 過剰 SKIP は issue #335 でまさに直した失敗形なので、既定は余裕のある側に
+# 倒し、呼び側の timeout 明示で辻褄を合わせる。
+CODEX_REVIEW_TIMEOUT="${CODEX_REVIEW_TIMEOUT:-300}"
 # 非数値だと下の `-ge` 比較が毎回エラーになり、条件が偽のまま watchdog が
 # 永久に回る (打ち切りたい相手と同じ壊れ方をする) ので入口で弾く。
 case "$CODEX_REVIEW_TIMEOUT" in

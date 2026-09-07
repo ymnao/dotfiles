@@ -27,7 +27,7 @@ Default: run all 3 in the order above. If the user named one (`/codex-review sec
 
 ### 1. Detect
 
-Run `bash "$HOME/.claude/skills/codex-review/scripts/run-review.sh" <P>` and branch on the exit code:
+Run `bash "$HOME/.claude/skills/codex-review/scripts/run-review.sh" <P>` **with the Bash tool's `timeout` set to `600000` (10 分)** and branch on the exit code。timeout を省くと Bash tool の既定 120s で呼び側が先に切り、watchdog が SKIP を返す機会ごと失われる (2026-09-07 実測: 5 commit ぶんの diff で 1 観点が 100s を超えた)。`CODEX_REVIEW_TIMEOUT` を上げるときも 600s を超えない — それ以上は呼び側が必ず先に切る。
 
 - `0` (pass) → record perspective as PASS. Go to the next perspective.
 - `2` (findings) → stdout is validated JSON. Parse `findings` and go to step 2.
@@ -85,7 +85,7 @@ Then per-perspective details, one line per finding:
 |----------|--------|
 | `CODEX_REVIEW_BASE` | Override the base branch. Default: `git symbolic-ref refs/remotes/origin/HEAD` → fallback `main`. |
 | `CODEX_REVIEW_REPO` | `cd` into this directory before running git ops. Without it, the caller's cwd is the review target. |
-| `CODEX_REVIEW_TIMEOUT` | Seconds before the watchdog kills a hung codex and returns exit 3. Default 100, range 1..600. **上げるときは呼び側の Bash tool の `timeout` も一緒に上げる** — 呼び側が先に切ると SKIP を返せない。 |
+| `CODEX_REVIEW_TIMEOUT` | Seconds before the watchdog kills a hung codex and returns exit 3. Default 300, range 1..600. 呼び側の Bash tool `timeout` (step 1 で 600000ms) より内側であること — 呼び側が先に切ると SKIP を返せない。 |
 
 ## Notes
 
