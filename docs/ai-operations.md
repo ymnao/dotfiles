@@ -716,12 +716,22 @@ sandbox 内で 1 回打って得る(uid は環境ごとに違うので値を文�
 Claude Code のリリースノートでこの種のオプションを見かけたら §10 のこの節ごと
 畳むこと。
 
-**根治の候補として `gh` を sandbox 内で動かす道は、2026-08-04 時点では塞がって
+**根治の候補として `gh` を sandbox 内で動かす道は、2026-09-07 時点でも塞がって
 いる**。Keychain 依存は `GH_TOKEN` で外せる見込みだが、TLS 側は外せなかった —
 `SSL_CERT_FILE=/etc/ssl/cert.pem` を与えても `tls: failed to verify certificate:
-x509: OSStatus -26276` のまま(実測)。Go は macOS では Security framework を使い、
-`SSL_CERT_FILE` を見ないため。**この経路を再提案する前に、まずこの実測を
-やり直すこと**(Go / gh の更新で変わりうる)。
+x509: OSStatus -26276` のまま(2026-08-04 実測)。Go は macOS では Security
+framework を使い、`SSL_CERT_FILE` を見ないため。**この経路を再提案する前に、
+まずこの実測をやり直すこと**(Go / gh の更新で変わりうる)。直近のやり直しは
+下記の 2026-09-07 で、それ以降 `gh` が上がっていなければ再実行せず下記を使う。
+
+**再実測 (2026-09-07 / `gh` 2.100.0)**: 結果は変わっていない。sandbox 内
+(subshell 形にして excludedCommands のマッチを外した状態)で `gh api rate_limit`
+を打つと同じ `x509: OSStatus -26276` が返る。`GODEBUG=x509usefallbackroots=1` を
+`SSL_CERT_FILE=/etc/ssl/cert.pem` と併せて与えても同一。一方 **同じ proxy 環境で
+`git ls-remote origin HEAD` は成功する**(`3701f906` を取得)ので、塞がっているのは
+proxy の CA 配布側ではなく Go の macOS verifier 側。**`codex` が同じ proxy を
+通れることをこの前提の反証として扱わないこと** — 判定に使えるのは上の `gh` の
+実測だけで、別実装のツールが通ることは `gh` について何も言っていない。
 
 **ハードニングはここで打ち切る**。探索空間は「非公開・可変」(上流の正規化)から
 「公知・有界」(POSIX シェルの字句規則)に縮んだが、後者も完全には尽くせない。
