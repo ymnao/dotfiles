@@ -10,15 +10,17 @@ set -euo pipefail
 #                      refs/remotes/origin/HEAD, falls back to "main").
 #   CODEX_REVIEW_REPO  cd into this directory before running git ops. Without
 #                      it, the caller's cwd is the review target.
+#   CODEX_REVIEW_TIMEOUT
+#                      Seconds before the watchdog kills a hung codex and
+#                      returns exit 3 (default: 300).
 #
 # Output: validated review JSON on stdout (single line, schema-checked by
 # parse-review-output.sh).
 # Exit codes: 0 = verdict pass / 2 = findings / 1 = setup or parse error /
-#             3 = sandbox skip (codex CLI がその shell sandbox では使えない。
-#                 2 経路ある: 起動前の network preflight = 資格情報つき proxy
-#                 が egress の環境 (issue #335)、および起動後の
-#                 in-process app-server client 初期化失敗。
-#                 SKILL.md は ERROR ではなく SKIP として扱う) /
+#             3 = sandbox skip (codex CLI がその実行環境では使えない。2 経路ある:
+#                 watchdog が CODEX_REVIEW_TIMEOUT 秒でハングを打ち切った場合
+#                 (issue #335)、および in-process app-server client の初期化
+#                 失敗。SKILL.md は ERROR ではなく SKIP として扱う) /
 #             4 = rate-limit skip (codex アカウントの usage/rate limit 到達。
 #                 5 時間窓/週次窓のためセッション内リトライは無意味 —
 #                 SKILL.md は SKIP 扱いにして ERROR カウントに入れない).
@@ -121,31 +123,11 @@ if [ "$(git rev-list --count "$BASE_BRANCH..HEAD")" -eq 0 ]; then
   error "no commits beyond $BASE_BRANCH on the current branch (cwd: $CWD)"
 fi
 
-# Network preflight: egress が「資格情報つき HTTP proxy」の環境では codex を
-# 起動せずに SKIP する。この経路では codex の HTTP クライアントがトンネルを
-# 確立できず、auth.openai.com / chatgpt.com への全リクエストが
-# `error sending request` で失敗したのち `responses_retry` の 60s バックオフに
-# 入って **プロセスが終了しない**
-# (2026-09-02 実測 / codex-cli 0.152.1 / Claude Code の Bash sandbox。issue #335)。
-#
-# Why not 下の stderr シグネチャ判定に条件を足す: あれは codex が終了した後に
-# しか走らない。終了しないのだから、判定を増やしても永久に到達しない。
-#
-# Why not timeout(1) で包む: このマシンには timeout / gtimeout が無く、
-# background + poll + kill を自前で書くことになる。それは「原因不明のハング
-# 一般」に対する予防機構で、ここで観測されたハングは条件が特定できている。
-#
-# 判定は proxy URL の userinfo (資格情報) の有無で行う。実測したのは
-# Claude Code sandbox の localhost proxy 1 例だけで、**他形態の認証付き proxy で
-# codex が通るかは未検証**。誤って SKIP した場合は下のメッセージが理由を示す。
-# proxy の値そのものは資格情報を含むため出力しない。
-PROXY_URL="${HTTPS_PROXY:-${https_proxy:-}}"
-case "$PROXY_URL" in
-  *://*@*)
-    skip "codex-review $PERSPECTIVE: egress proxy requires credentials; codex cannot tunnel through it (issue #335)" >&2
-    exit 3
-    ;;
-esac
+# Watchdog の秒数。ハングを検出して SKIP に落とすまでの上限で、呼び側の
+# Bash tool タイムアウト (既定 600s) より短く取る — 呼び側が先に切ると
+# SKIP を返す機会ごと失われるため。既定 300s の根拠は 2026-09-07 の実測で、
+# 同日の diff (7 ファイル) に対し 1 観点 9s。
+CODEX_REVIEW_TIMEOUT="${CODEX_REVIEW_TIMEOUT:-300}"
 
 # Fetch the diff once and embed it in the prompt so codex does not need to
 # spawn its own `git diff` on every iteration. Trade-off: larger prompt payload
@@ -165,7 +147,8 @@ DIFF_CONTENT="$(git diff "$BASE_BRANCH...HEAD")"
 # 3 = sandbox skip (本スクリプト自身が返す。パーサは関与しない)。
 RAW_OUT="$(mktemp "${TMPDIR:-/tmp}/codex-review.XXXXXX")"
 RAW_ERR="$(mktemp "${TMPDIR:-/tmp}/codex-review.err.XXXXXX")"
-cleanup() { rm -f "$RAW_OUT" "$RAW_ERR"; }
+PROMPT_TMP="$(mktemp "${TMPDIR:-/tmp}/codex-review.prompt.XXXXXX")"
+cleanup() { rm -f "$RAW_OUT" "$RAW_ERR" "$PROMPT_TMP"; }
 trap cleanup EXIT
 
 # --sandbox read-only を明示。config.toml のデフォルト (workspace-write 等)
@@ -180,11 +163,43 @@ trap cleanup EXIT
 #
 # stderr は $RAW_ERR に振り分ける。sandbox で initialize 失敗した場合の
 # シグネチャ検出 (下の Sandbox skip 判定) と、通常失敗時の診断表示の両方で使う。
-if ! {
+{
   cat "$PROMPT_FILE"
   printf '\n\n## Target\n\nReview the diff below (produced by "git diff %s...HEAD" in %s). Do NOT modify any files. Output only the fenced JSON block per the Output contract above.\n\n```diff\n%s\n```\n' \
     "$BASE_BRANCH" "$CWD" "$DIFF_CONTENT"
-} | codex exec --sandbox read-only - > "$RAW_OUT" 2> "$RAW_ERR"; then
+} > "$PROMPT_TMP"
+
+# codex を background + poll + kill で包む。pipeline のまま前景で走らせない
+# 理由は、2026-09-02 に codex 0.152.1 が資格情報つき proxy 下で
+# `responses_retry` の 60s バックオフに入り **終了しなくなった**のを実測した
+# ため (issue #335)。下の stderr シグネチャ判定は codex が終了しないと走らず、
+# 呼び側は 600s 待たされて出力ゼロで終わっていた。
+#
+# Why not proxy を見て起動前に SKIP する: それが 2026-09-02 に置いた対処
+# だったが、環境ではなく **上流のバージョン**に依存する挙動を環境で判定して
+# いたため、codex 0.153.4 で直った後も skill 全体が使えないままだった
+# (2026-09-07 に同じ sandbox で 3 観点とも完走することを実測)。ハングを
+# 直接測る方が、上流が再び壊れたときも直ったときも追随できる。
+#
+# Why not timeout(1): この host に timeout / gtimeout が無い (2026-09-07 実測)。
+codex_rc=0
+codex exec --sandbox read-only - < "$PROMPT_TMP" > "$RAW_OUT" 2> "$RAW_ERR" &
+CODEX_PID=$!
+waited=0
+while kill -0 "$CODEX_PID" 2>/dev/null; do
+  if [ "$waited" -ge "$CODEX_REVIEW_TIMEOUT" ]; then
+    kill -TERM "$CODEX_PID" 2>/dev/null || true
+    wait "$CODEX_PID" 2>/dev/null || true
+    cat "$RAW_ERR" >&2
+    skip "codex-review $PERSPECTIVE: codex did not finish within ${CODEX_REVIEW_TIMEOUT}s (hang; see stderr above)" >&2
+    exit 3
+  fi
+  sleep 2
+  waited=$((waited + 2))
+done
+wait "$CODEX_PID" || codex_rc=$?
+
+if [ "$codex_rc" -ne 0 ]; then
   cat "$RAW_ERR" >&2
   # Sandbox skip 判定: Claude Code の Bash sandbox 等、外側シェルが
   # $HOME/.codex/ 配下の SQLite 系ファイル (state_5.sqlite / goals_1.sqlite /

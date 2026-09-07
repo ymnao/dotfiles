@@ -92,18 +92,21 @@ frontmatter は `model: opus` のまま据え置く。呼び出し側が指定�
 第二意見という緩和が消えるため。`/pr` は codex 不能時に Fable 系サブエージェントで
 代替する設計なので、そのフォールバックが常態化していたらこれに当たる。
 
-**現状 (2026-09-02 実測 / codex-cli 0.152.1): agent の Bash sandbox 内では
-`codex-review` は動かない**。原因は sandbox の egress (資格情報つき proxy) を
-codex の HTTP クライアントが通れないことで、`run-review.sh` は起動前の
-network preflight でこの環境を検出して exit 3 (SKIP) を返す。**実測の詳細と
-特定できていない範囲は `claude/skills/codex-review/SKILL.md` の
-「Running under a shell sandbox」節が正本**、追跡は issue #335。
+**現状 (2026-09-07 実測 / codex-cli 0.153.4): agent の Bash sandbox 内で
+`codex-review` は 3 観点とも完走する**。2026-09-02 に 0.152.1 で観測された
+ハング (資格情報つき proxy を codex の HTTP クライアントが通れず、60s
+バックオフに入って終了しない) は再現しない。**実測の詳細と特定できていない
+範囲は `claude/skills/codex-review/SKILL.md` の「Running under a shell
+sandbox」節が正本**、経緯は issue #335。
 
-つまり**独立第二意見は当面 Fable 系サブエージェントだけ**で、`agents/AGENTS.md`
-「生成者とレビュアーは同一モデル系統にしない」は満たすが、vendor をまたぐ層は
-欠けている。回復の選択肢 (`sandbox.excludedCommands` に `codex *` を足す /
-user が sandbox 外で手動実行する / cross-vendor 第二意見を諦める) は
-security 境界に関わるため user 判断とし、issue #335 で扱う。
+**このとき「動かない」と決め打つ判定を skill 側に埋めない**。0.152.1 の
+ハングに対して置いた対処は「proxy URL に userinfo があれば codex を起動せず
+SKIP」という preflight だったが、これは**上流のバージョンに依存する挙動を
+環境で判定する**形なので、上流が直っても skill は使えないままだった
+(0.153.4 で直っていたことに 5 日気付かなかった)。現在は症状 (ハング) を
+直接測る watchdog (`CODEX_REVIEW_TIMEOUT`、既定 300s) に置き換えてある。
+**`sandbox.excludedCommands` に `codex *` を足す案は採らない** — path/domain
+を絞る現方式で足りることが実測で確かめられ、sandbox を丸ごと外す必要が無い。
 
 - 切り替え: `/model`、Agent ツールの `model` パラメータ
   (例: `Agent(subagent_type: "general-purpose", model: "sonnet", prompt: ...)`
