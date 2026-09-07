@@ -135,8 +135,12 @@ case "$CODEX_REVIEW_TIMEOUT" in
     error "CODEX_REVIEW_TIMEOUT must be a positive integer (got: $CODEX_REVIEW_TIMEOUT)"
     ;;
 esac
-if [ "$CODEX_REVIEW_TIMEOUT" -lt 1 ]; then
-  error "CODEX_REVIEW_TIMEOUT must be >= 1 (got: $CODEX_REVIEW_TIMEOUT)"
+# 上限を置くのは、桁数が bash の整数を超えると数字チェックを通った後で
+# `-ge` がエラーになり、非数値と同じ「永久に回る」経路に落ちるため。
+# 86400 (1 日) は呼び側の Bash tool タイムアウト (600s) より十分大きい。
+if [ "${#CODEX_REVIEW_TIMEOUT}" -gt 5 ] || [ "$CODEX_REVIEW_TIMEOUT" -lt 1 ] \
+  || [ "$CODEX_REVIEW_TIMEOUT" -gt 86400 ]; then
+  error "CODEX_REVIEW_TIMEOUT must be an integer in 1..86400 (got: $CODEX_REVIEW_TIMEOUT)"
 fi
 
 # Fetch the diff once and embed it in the prompt so codex does not need to
@@ -165,16 +169,26 @@ CODEX_PID=""
 # stub でも sleep が残る)。プロセスグループ単位で殺さないのは、job control
 # 無しの bash では background job が script 自身と同じ PGID になり、
 # `kill -- -PGID` が呼び出し元ごと巻き込むため。
+# codex とその子孫をプロセスグループごと落とす。codex 本体だけに signal を
+# 送ると孫が孤児として残り、実物では API を叩き続ける。
+#
+# Why not pgrep / ps で子孫を辿る: **この sandbox では動かない**。
+# `pgrep -P <pid>` は `sysmond service not found` / `Cannot get process list`、
+# `ps` は `Operation not permitted` を返す (2026-09-07 実測)。列挙が常に空に
+# なるので、孫は素通りする。
+#
+# グループ ID を得るために codex の起動だけ `set -m` (job control) を有効に
+# する。job control 下の background job は **自分自身の PGID を持つ**ので、
+# `kill -- -$CODEX_PID` が呼び出し元の script を巻き込まない (同じ PGID を
+# 共有する job control 無しの場合と違う。2026-09-07 に repro で実測)。
 terminate_codex() {
   [ -n "$CODEX_PID" ] || return 0
   kill -0 "$CODEX_PID" 2>/dev/null || return 0
-  pkill -P "$CODEX_PID" 2>/dev/null || true
-  kill -TERM "$CODEX_PID" 2>/dev/null || true
   local grace=0
+  kill -TERM -- "-$CODEX_PID" 2>/dev/null || kill -TERM "$CODEX_PID" 2>/dev/null || true
   while kill -0 "$CODEX_PID" 2>/dev/null; do
     if [ "$grace" -ge 5 ]; then
-      pkill -KILL -P "$CODEX_PID" 2>/dev/null || true
-      kill -KILL "$CODEX_PID" 2>/dev/null || true
+      kill -KILL -- "-$CODEX_PID" 2>/dev/null || kill -KILL "$CODEX_PID" 2>/dev/null || true
       break
     fi
     sleep 1
@@ -220,8 +234,12 @@ trap 'cleanup; exit 143' TERM
 #
 # Why not timeout(1): この host に timeout / gtimeout が無い (2026-09-07 実測)。
 codex_rc=0
+# set -m は codex を独立したプロセスグループに置くためだけに使う
+# (理由は terminate_codex のコメント)。起動直後に戻す。
+set -m
 codex exec --sandbox read-only - < "$PROMPT_TMP" > "$RAW_OUT" 2> "$RAW_ERR" &
 CODEX_PID=$!
+set +m
 waited=0
 while kill -0 "$CODEX_PID" 2>/dev/null; do
   if [ "$waited" -ge "$CODEX_REVIEW_TIMEOUT" ]; then
