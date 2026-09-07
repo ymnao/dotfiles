@@ -65,12 +65,14 @@ brew "actionlint"
 # 常用はしない — 移行後の継続更新は各 repo の Dependabot (github-actions
 # ecosystem) が SHA ごと上げるので (この repo では commit 1e0c726 で実証済み)、
 # pinact の出番は tag pin のまま残っている repo の初回移行と、Dependabot を
-# 置いていない repo の手動更新だけ。
-# 既定モードは GitHub API を叩くため agent の Bash tool からは実行できず
-# (2026-09-07 実測: exit 3。オフライン検査 `pinact run -fix=false -no-api` だけは
-# sandbox 内でも通る)、user の手元 shell か CI で流す。原因は gh と同じ
-# Go + macOS の TLS 検証で、実測は docs/ai-operations.md §10「sandbox の
-# excludedCommands が『一次防御』を丸ごと外す経路」にある。
+# 置いていない repo の手動更新 (`pinact run -u`。引数なしの `run` は今の参照先を
+# SHA に固定するだけで版は動かない) だけ。
+# 既定モードは GitHub API を叩くため agent の Bash tool からは実行できない
+# (2026-09-07 実測: `x509: OSStatus -26276` で exit 3。オフライン検査
+# `pinact run -fix=false -no-api` は通るが 40 文字 SHA の構文しか見ない)。
+# user の手元 shell か CI で流す。原因は gh と同じ Go + macOS の TLS 検証で、
+# その実測は docs/ai-operations.md §10「sandbox の excludedCommands が
+# 『一次防御』を丸ごと外す経路」にある。
 brew "pinact"
 brew "jq"  # Makefile / hooks / statusline が command -v jq で hard-fail
 
