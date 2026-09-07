@@ -21,9 +21,10 @@ function npx --description "Block npx; use pnpm dlx instead"
     return 1
 end
 
-# 依存と GitHub Actions をまとめて更新する (pnpm 11.16+)。
 # 常時有効化する `update.githubActions` は **repo の pnpm-workspace.yaml にしか
 # 置けず** グローバル設定では無視されるため (pnpm 11.25.0 で実測)、
 # repo をまたいで効かせる手段としてフラグを abbr に置く。
+# 継続更新は各 repo の Dependabot が担うので、これを打つのは weekly を待たずに
+# 今すぐ上げたいときと、Dependabot を置いていない repo だけ。
 # `--latest` は major を越えるので既定にしない (`pnua --latest` と手で足す)。
 abbr -a pnua 'pnpm update --include-github-actions'
