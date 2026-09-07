@@ -67,6 +67,8 @@ brew "actionlint"
 # pinact の出番は tag pin のまま残っている repo の初回移行と、Dependabot を
 # 置いていない repo の手動更新 (`pinact run -u`。引数なしの `run` は今の参照先を
 # SHA に固定するだけで版は動かない) だけ。
+# `-u` は最新 release をその場で採るので、乗っ取られた release を公開直後に
+# 掴まないよう `--min-age <日数>` ($PINACT_MIN_AGE) を併せて渡す。
 # 既定モードは GitHub API を叩くため agent の Bash tool からは実行できない
 # (2026-09-07 実測: `x509: OSStatus -26276` で exit 3。オフライン検査
 # `pinact run -fix=false -no-api` は通るが 40 文字 SHA の構文しか見ない)。
