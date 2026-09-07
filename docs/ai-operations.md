@@ -721,7 +721,8 @@ Claude Code のリリースノートでこの種のオプションを見かけ�
 `SSL_CERT_FILE=/etc/ssl/cert.pem` を与えても `tls: failed to verify certificate:
 x509: OSStatus -26276` のまま(2026-08-04 実測)。Go は macOS では Security
 framework を使い、`SSL_CERT_FILE` を見ないため。**この経路を再提案する前に、
-まずこの実測をやり直すこと**(Go / gh の更新で変わりうる)。
+まずこの実測をやり直すこと**(Go / gh の更新で変わりうる)。直近のやり直しは
+下記の 2026-09-07 で、それ以降 `gh` が上がっていなければ再実行せず下記を使う。
 
 **再実測 (2026-09-07 / `gh` 2.100.0)**: 結果は変わっていない。sandbox 内
 (subshell 形にして excludedCommands のマッチを外した状態)で `gh api rate_limit`
