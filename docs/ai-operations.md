@@ -99,12 +99,11 @@ frontmatter は `model: opus` のまま据え置く。呼び出し側が指定�
 範囲は `claude/skills/codex-review/SKILL.md` の「Running under a shell
 sandbox」節が正本**、経緯は issue #335。
 
-**このとき「動かない」と決め打つ判定を skill 側に埋めない**。0.152.1 の
-ハングに対して置いた対処は「proxy URL に userinfo があれば codex を起動せず
-SKIP」という preflight だったが、これは**上流のバージョンに依存する挙動を
-環境で判定する**形なので、上流が直っても skill は使えないままだった
-(0.153.4 で直っていたことに 5 日気付かなかった)。現在は症状 (ハング) を
-直接測る watchdog (`CODEX_REVIEW_TIMEOUT`、既定 300s) に置き換えてある。
+**上流の不調への対処を「環境の判定」として埋めない**。0.152.1 のハングに
+対して proxy URL の形で起動可否を判定していたため、上流が直っても 5 日間
+SKIP のままだった。規約の正本は `claude/rules/shell.md`「環境の前提を assert
+するときは『守りたい挙動そのもの』を測る」で、この件はその実例として同
+ファイルに載せてある (`*.sh` を編集するときに自動で load される場所)。
 **`sandbox.excludedCommands` に `codex *` を足す案は採らない** — path/domain
 を絞る現方式で足りることが実測で確かめられ、sandbox を丸ごと外す必要が無い。
 

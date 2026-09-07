@@ -163,14 +163,10 @@ RAW_OUT="$(mktemp "${TMPDIR:-/tmp}/codex-review.XXXXXX")"
 RAW_ERR="$(mktemp "${TMPDIR:-/tmp}/codex-review.err.XXXXXX")"
 PROMPT_TMP="$(mktemp "${TMPDIR:-/tmp}/codex-review.prompt.XXXXXX")"
 CODEX_PID=""
-# codex とその子を確実に終わらせる。SIGTERM を 1 度送って待つだけだと、
-# 無視された場合に watchdog 自身がハングして目的を失う。子を先に落とすのは、
-# codex が終了しても孫プロセスが孤児として残り続けるため (回帰テストの
-# stub でも sleep が残る)。プロセスグループ単位で殺さないのは、job control
-# 無しの bash では background job が script 自身と同じ PGID になり、
-# `kill -- -PGID` が呼び出し元ごと巻き込むため。
 # codex とその子孫をプロセスグループごと落とす。codex 本体だけに signal を
-# 送ると孫が孤児として残り、実物では API を叩き続ける。
+# 送ると孫が孤児として残り、実物では API を叩き続ける。SIGTERM を 1 度送って
+# 無期限に待たないのは、無視された場合に watchdog 自身がハングして目的を
+# 失うため。
 #
 # Why not pgrep / ps で子孫を辿る: **この sandbox では動かない**。
 # `pgrep -P <pid>` は `sysmond service not found` / `Cannot get process list`、
@@ -249,8 +245,10 @@ while kill -0 "$CODEX_PID" 2>/dev/null; do
     skip "codex-review $PERSPECTIVE: codex did not finish within ${CODEX_REVIEW_TIMEOUT}s (hang; see stderr above)" >&2
     exit 3
   fi
-  sleep 2
-  waited=$((waited + 2))
+  # 1s 刻みにするのは、正常終了の検知が遅れるとその分だけ毎回の待ちに乗る
+  # ため (codex 1 観点の実測は 9s、1 回の /pr で 3 観点回す)。
+  sleep 1
+  waited=$((waited + 1))
 done
 wait "$CODEX_PID" || codex_rc=$?
 

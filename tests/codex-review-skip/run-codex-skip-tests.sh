@@ -143,28 +143,29 @@ fi
 # 検証を削除しても exit 1 は返ってしまう (vacuous pass)。codex を起動して
 # いないことをマーカーで見る。
 #
-# $1=名前, $2=渡す timeout 値
-run_bad_timeout_case() {
-  local name="$1" value="$2" rc=0
+# $1=名前, $2=期待 exit, $3=codex が起動されるべきか (yes|no),
+# $4=CODEX_REVIEW_TIMEOUT (空なら既定の 300), $5=proxy URL (空なら proxy 無し)
+run_marker_case() {
+  local name="$1" want="$2" want_called="$3" timeout="$4" proxy="$5" rc=0
   local marker="$WORKDIR/codex-called"
   rm -f "$marker"
   (cd "$FAKE_REPO" \
-    && HTTPS_PROXY='' https_proxy='' \
+    && HTTPS_PROXY="$proxy" https_proxy="$proxy" \
        PATH="$WORKDIR/bin:$PATH" CODEX_STDERR="some other fatal error" \
-       CODEX_CALLED_MARKER="$marker" CODEX_REVIEW_TIMEOUT="$value" \
+       CODEX_CALLED_MARKER="$marker" CODEX_REVIEW_TIMEOUT="${timeout:-300}" \
        bash "$TARGET" security >/dev/null 2>&1) || rc=$?
   local called=no
   [ -f "$marker" ] && called=yes
-  if [ "$rc" = 1 ] && [ "$called" = no ]; then
+  if [ "$rc" = "$want" ] && [ "$called" = "$want_called" ]; then
     pass=$((pass + 1))
   else
-    echo "FAIL $name: expected=(exit 1, codex not called) got=(exit $rc, called $called)"
+    echo "FAIL $name: expected=(exit $want, called $want_called) got=(exit $rc, called $called)"
     fail=$((fail + 1))
   fi
 }
 
-run_bad_timeout_case bad-timeout-nonnumeric abc
-run_bad_timeout_case bad-timeout-zero       0
+run_marker_case bad-timeout-nonnumeric 1 no abc ''
+run_marker_case bad-timeout-zero       1 no 0   ''
 
 # 資格情報つき proxy でも codex を起動すること。ここを「起動せず SKIP」に
 # 戻すと、上流が直っても skill が使えないままになる (2026-09-02 に置いた
@@ -174,23 +175,7 @@ run_bad_timeout_case bad-timeout-zero       0
 # リテラルで書くと secretlint の BasicAuth ルールが実在の資格情報として
 # 検出し `make lint` が落ちるため (2026-09-02 実測)。
 FAKE_USERINFO='user:pass'
-proxy_marker="$WORKDIR/codex-called"
-rm -f "$proxy_marker"
-proxy_rc=0
-(cd "$FAKE_REPO" \
-  && HTTPS_PROXY="http://$FAKE_USERINFO@localhost:54619" \
-     https_proxy="http://$FAKE_USERINFO@localhost:54619" \
-     PATH="$WORKDIR/bin:$PATH" CODEX_STDERR="some other fatal error" \
-     CODEX_CALLED_MARKER="$proxy_marker" \
-     bash "$TARGET" security >/dev/null 2>&1) || proxy_rc=$?
-proxy_called=no
-[ -f "$proxy_marker" ] && proxy_called=yes
-if [ "$proxy_rc" = 1 ] && [ "$proxy_called" = yes ]; then
-  pass=$((pass + 1))
-else
-  echo "FAIL proxy-authed-still-runs: expected=(exit 1, codex called) got=(exit $proxy_rc, called $proxy_called)"
-  fail=$((fail + 1))
-fi
+run_marker_case proxy-authed-still-runs 1 yes '' "http://$FAKE_USERINFO@localhost:54619"
 
 echo "codex-review-skip tests: $pass passed, $fail failed"
 [ "$fail" = 0 ] || exit 1
