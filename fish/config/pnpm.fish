@@ -20,3 +20,10 @@ function npx --description "Block npx; use pnpm dlx instead"
     echo "  bypass: 'command npx ...'" >&2
     return 1
 end
+
+# 依存と GitHub Actions をまとめて更新する (pnpm 11.16+)。
+# 常時有効化する `update.githubActions` は **repo の pnpm-workspace.yaml にしか
+# 置けず** グローバル設定では無視されるため (pnpm 11.25.0 で実測)、
+# repo をまたいで効かせる手段としてフラグを abbr に置く。
+# `--latest` は major を越えるので既定にしない (`pnua --latest` と手で足す)。
+abbr -a pnua 'pnpm update --include-github-actions'
