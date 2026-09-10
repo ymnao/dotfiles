@@ -45,7 +45,16 @@ paths:
   スクリプト (`.sh`) 内では `mktemp -d` が正しい — 制約は agent が Bash tool
   から直接打つ形にだけ掛かる (`claude/rules/shell.md` の `mktemp` 項と対)。
   実例: `dependabot-bulk` skill は 2026-07-14 から 7 週間、この形で step 2 が
-  実行不能なまま気付かれずにいた (issue #330 の対応中に判明)
+  実行不能なまま気付かれずにいた (issue #330 の対応中に判明)。
+  **ただし `$TMPDIR` はセッションを分けない**。uid スコープの固定パス (実測:
+  `/tmp/claude-501`) で、セッション ID も repo 名も含まないため、並走する別
+  セッションの同じ手順が同じパスへ書く。**後の step で読み直して破壊的操作に
+  渡す**一時ファイルは、`$TMPDIR` ではなく system prompt が示す scratchpad
+  ディレクトリへ置き、**リテラルのパスで書く** (変数に入れると上のリダイレクト
+  判定に掛かる)。閉じているのは権限ではなく非衝突で、write allow は `/tmp` 系を
+  丸ごと許可しているので別セッションの scratchpad へも実際に書ける
+  (2026-09-11 実測)。実例: `/next` が step 1 で控えて step 3 で
+  `git branch -d` へ渡す `merged-branch.txt` (`claude/skills/next/SKILL.md`)
 - **ロードは適用の必要条件であって十分条件ではない。** この項の適用漏れは
   `*.sh` 側でも起きている (issue #284 は 3 周連続)。この rule が context に
   入っていることを「検査した」の代わりにしない
