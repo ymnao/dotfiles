@@ -30,19 +30,14 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      いるこの時点が最後の機会。**置き場は system prompt が示すセッションの
      scratchpad ディレクトリ**で、以下 `<scratchpad>` と書く:
      `git branch --show-current > <scratchpad>/merged-branch.txt`
-     - **`$TMPDIR` を使わない**。あれは uid スコープの固定パス (実測:
-       `/tmp/claude-501`) で、セッション ID も repo 名も含まない。**並走する
-       別セッションの `/next` が同じパスへ書く**ので、`cat` と
-       `git branch -D` の間に中身が入れ替わりうる。読んだ時点で `headRefName`
-       と突き合わせても**その後の書き換えは塞げない** (TOCTOU) —
-       検査を足すのではなく、**衝突しないパスを選ぶ**方で閉じる。
+     - **`$TMPDIR` を使わない**。**並走する別セッションの `/next` が同じパスへ
+       書く**ので、`cat` と `git branch -D` の間に中身が入れ替わりうる。読んだ
+       時点で `headRefName` と突き合わせても**その後の書き換えは塞げない**
+       (TOCTOU) — 検査を足すのではなく、**衝突しないパスを選ぶ**方で閉じる。
        `<scratchpad>` はセッション ID を含むので、**他セッションの `/next` は
-       同じパスを踏まない**
-       - 閉じているのは権限ではない。sandbox の write allow は `/tmp` 系を
-         丸ごと許可していて、**別セッションの scratchpad へも実際に書けた**
-         (2026-09-11 実測: 別 UUID のパスへ `mkdir` + 書き込み + 読み出しが
-         成功)。効いているのは非衝突だけなので、「他セッションは書けない」を
-         根拠に足さないこと
+       同じパスを踏まない**。なぜ `$TMPDIR` が分離にならないか、閉じているのが
+       権限ではなく非衝突であることの根拠は
+       `claude/rules/acceptance-patterns.md` の一時ファイル置き場の項 (正本)
      - **名前を検証するのではなく、agent がタイプし直さない形にする**。step 3
        では `"$(cat <scratchpad>/merged-branch.txt)"` として渡す。コマンド置換の
        *出力* は shell に再スキャンされないので、`$(...)` や `;` を含む ref 名
