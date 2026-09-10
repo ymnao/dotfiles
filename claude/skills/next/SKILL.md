@@ -27,10 +27,24 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
    - **step 3 のブランチ削除だけは名前が要る** (`git branch -d` に `HEAD` は
      渡せない)。そこで**ここで名前をファイルに控える**。step 2 で main へ移ると
      `git branch --show-current` は main を返してしまうので、作業ブランチ上に
-     いるこの時点が最後の機会:
-     `git branch --show-current > "$TMPDIR/merged-branch.txt"`
+     いるこの時点が最後の機会。**置き場は system prompt が示すセッションの
+     scratchpad ディレクトリ**で、以下 `<scratchpad>` と書く:
+     `git branch --show-current > <scratchpad>/merged-branch.txt`
+     - **`$TMPDIR` を使わない**。あれは uid スコープの固定パス (実測:
+       `/tmp/claude-501`) で、セッション ID も repo 名も含まない。**並走する
+       別セッションの `/next` が同じパスへ書く**ので、`cat` と
+       `git branch -D` の間に中身が入れ替わりうる。読んだ時点で `headRefName`
+       と突き合わせても**その後の書き換えは塞げない** (TOCTOU) —
+       検査を足すのではなく、**衝突しないパスを選ぶ**方で閉じる。
+       `<scratchpad>` はセッション ID を含むので、**他セッションの `/next` は
+       同じパスを踏まない**
+       - 閉じているのは権限ではない。sandbox の write allow は `/tmp` 系を
+         丸ごと許可していて、**別セッションの scratchpad へも実際に書けた**
+         (2026-09-11 実測: 別 UUID のパスへ `mkdir` + 書き込み + 読み出しが
+         成功)。効いているのは非衝突だけなので、「他セッションは書けない」を
+         根拠に足さないこと
      - **名前を検証するのではなく、agent がタイプし直さない形にする**。step 3
-       では `"$(cat "$TMPDIR/merged-branch.txt")"` として渡す。コマンド置換の
+       では `"$(cat <scratchpad>/merged-branch.txt)"` として渡す。コマンド置換の
        *出力* は shell に再スキャンされないので、`$(...)` や `;` を含む ref 名
        でもリテラルな 1 引数として git に届く。**書いたのは git、読むのも
        shell で、名前が LLM の出力を経由しない** — 文字集合の検証と違って
@@ -39,19 +53,20 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
        redirect と `$(cat ...)` を同居させると `block-dangerous-commands.sh` が
        「動的展開を含む書き込み系リダイレクト」としてブロックする。分けて打てば
        どちらも通る (2026-08-23 に両方向とも実測)。step 1 と step 3 は元々
-       別の呼び出しなので、通常の手順どおりに進めれば問題にならない
-     - **このファイルは stale でありうる**。`$TMPDIR` は uid スコープの固定パス
-       で (実測: `/tmp/claude-501`)、セッション ID も repo 名も含まないため、
-       **前回の `/next` が別 repo・別ブランチで書いたものがそのまま残る**。
-       「無ければ step 1 を飛ばした異常」という判定は成立しない — 飛ばしても
-       ファイルは在るからで、そのまま step 3 に進むと**別のブランチを消す**
-       (squash merge repo では `-D` へ escalate するので、push 前のローカル
-       commit が失われうる)。したがって step 3 では**消す前に中身を step 1 の
-       `headRefName` と突き合わせ**、一致しなければ削除せず報告する。
-       `headRefName` は GitHub が返す当該 PR の head ブランチ名なので、
-       stale なファイルとは一致しない
-     - step 3 は削除後にこのファイルを消す。残さなければ次回の stale 化も
-       起きない
+       別の呼び出しなので、通常の手順どおりに進めれば問題にならない。
+       **`<scratchpad>` はリテラルのパスとして書く** — 変数に入れると redirect
+       側が「動的展開」と判定されて同じ hook に掛かる (`> "$SCRATCHPAD/..."`
+       は exit=2 を実測)。**`$TMPDIR` だけは例外で掛からない** (hook が判定前に
+       `$TMPDIR` / `$HOME` / `$XDG_*` を residual から除去する。正本は
+       `claude/rules/acceptance-patterns.md` の一時ファイル置き場の項)。
+       それでも使わないのは、hook ではなく上の非衝突が理由
+     - **残る stale は同一セッション内の再実行だけ**。1 セッションで `/next` を
+       2 回回すと前の PR のブランチ名が残っている。step 3 では**消す前に中身を
+       step 1 の `headRefName` と突き合わせ**、一致しなければ削除せず報告する
+       (一致しないまま `-D` へ進むと、squash merge repo では escalate するので
+       push 前のローカル commit が失われうる)
+     - step 3 は削除後にこのファイルを消す。残さなければ同一セッション内の
+       stale 化も起きない
 2. **main 更新**: `git checkout main` → `git pull origin main --ff-only`。
    sandbox denyWithinAllow に含まれるパス (settings 系 / skills 系 /
    hooks 系 / agents・rules・commands・workflows・mcp 等の Claude 設定
@@ -102,18 +117,18 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      使い、`git diff` 空 → ref 前進 → clean を確認した
 3. **ブランチ削除**: merge 済みの作業ブランチを `git branch -d` で削除する。
    これも config lock の警告を出しながら削除には成功するので、
-   `git branch -d -- "$(cat "$TMPDIR/merged-branch.txt")"` と `git branch` を
+   `git branch -d -- "$(cat <scratchpad>/merged-branch.txt)"` と `git branch` を
    **`;` で continue** させて 1 コマンドで打ち (`&&` にしない)、
    **警告文ではなく後者の出力**で消えたことを確認する
    - **ブランチ名をタイプして埋め込まない**。step 1 で控えたファイルから
      `"$(cat ...)"` で渡す (根拠は step 1 に書いた)
-   - **打つ前に stale チェック**: `cat "$TMPDIR/merged-branch.txt"` を打って
+   - **打つ前に stale チェック**: `cat <scratchpad>/merged-branch.txt` を打って
      中身を出し、step 1 の `headRefName` と一致することを確かめる。
-     **一致しなければ削除しない** — ファイルは前回の `/next` が別 repo・
-     別ブランチで残したものなので、消すと無関係なブランチが消える。
+     **一致しなければ削除しない** — 同一セッションで `/next` を 2 回回したときの
+     前の PR のブランチ名が残っているので、消すと無関係なブランチが消える。
      状況を報告して次の step へ進む
-   - 削除できたら `rm -f "$TMPDIR/merged-branch.txt"` でファイルを消す
-     (残すと次回の stale 化の種になる)
+   - 削除できたら `rm -f <scratchpad>/merged-branch.txt` でファイルを消す
+     (残すと同一セッション内の stale 化の種になる)
    - `--` を置くのは、`-` で始まる ref 名が `git branch` のオプションとして
      読まれるのを防ぐため
    - **`-d` が拒否されたら** (squash merge の repo では元コミットが main の
@@ -122,7 +137,7 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      欠けたら `-D` は使わず**報告して停止する** (step 1 を通過している時点で
      PR が MERGED であることは確定しているので、ここでは確認しない)。
      `-D` も名前の渡し方は `-d` と同じ
-     (`git branch -D -- "$(cat "$TMPDIR/merged-branch.txt")"`):
+     (`git branch -D -- "$(cat <scratchpad>/merged-branch.txt)"`):
      1. step 1 の `headRefOid` と、同じく step 1 で控えた作業ブランチの
         SHA が一致すること。**`-D` で実際に失われうるのは push していない
         ローカル commit だけ**なので、ここが安全判定の本体
