@@ -19,7 +19,7 @@ open な Dependabot PR を 1 branch に統合し、push を 1 回にして CI �
 2. **列挙 + 分類**
    - 作業用 tmp dir を作る: `mkdir -p "$TMPDIR/dependabot-bulk"` (skill flow の全 tmp ファイルはこの下に置く)
      - **`WORK=$(mktemp -d ...)` は使わない**。Bash tool 呼び出し間で shell 変数が persist しないことに加え、`> "$WORK/..."` は `block-dangerous-commands.sh` の「動的展開を含む書き込み系リダイレクト」でブロックされる。**リダイレクト先に書ける変数は `$TMPDIR` / `$HOME` / `$XDG_*` (と同名の `${...}` 形) だけ**で、既定値つきの `${TMPDIR:-/tmp}` は落ちる (2026-09-02 実測。`claude/rules/acceptance-patterns.md` も参照)
-     - `$TMPDIR` は uid スコープの固定パス (実測: `/tmp/claude-501`) で、前回の別 repo / 別 run のファイルが残りうる (stale 性は `/next` step 1 の `merged-branch.txt` と同型)。step 2 が毎回 `prs.json` / `classified.json` を上書きするので通常は問題にならないが、**step 2 を飛ばして step 7 以降だけを再開しない**
+     - `$TMPDIR` は uid スコープの固定パス (実測: `/tmp/claude-501`) で、前回の別 repo / 別 run のファイルが残りうる。step 2 が毎回 `prs.json` / `classified.json` を上書きするので通常は問題にならないが、**step 2 を飛ばして step 7 以降だけを再開しない**
      - **`gh` の出力先には `$TMPDIR` を書かず、実パスをリテラルで書く**。`gh` は sandbox 外で走るので `$TMPDIR` が sandbox 内とは別のディレクトリに展開され、`no such file or directory` で必ず落ちる (2026-09-04 実測。機構は `docs/ai-operations.md`「sandbox の excludedCommands が『一次防御』を丸ごと外す経路」)。実パスは直前に `echo "$TMPDIR"` を打って得る (uid は環境ごとに違うのでこの手順書に固定値を書かない)。`bash scripts/…` 側は sandbox 内で走るので `$TMPDIR` のままでよい
    - `echo "$TMPDIR"` を打ち、表示された実パスを次の行の `<TMPDIR 実パス>` に literal で貼る
    - `gh pr list --author app/dependabot --state open --json number,title,headRefName,url,body,labels > <TMPDIR 実パス>/dependabot-bulk/prs.json`

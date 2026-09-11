@@ -138,7 +138,7 @@ ok_ctrl=$(printf 'fix/safe-name\n' | LC_ALL=C tr -d '[:print:]\n' | LC_ALL=C wc 
 check '正当な名前は非表示文字ゲートを通る' 0 "$ok_ctrl"
 
 # ゲートのコマンドが SKILL.md に書かれているものと同じであること。
-CTRL_GATE="LC_ALL=C tr -d '[:print:]\\n' < \"\$TMPDIR/branch-name.txt\" | LC_ALL=C wc -c"
+CTRL_GATE="LC_ALL=C tr -d '[:print:]\\n' < \"<scratchpad>/branch-name.txt\" | LC_ALL=C wc -c"
 
 # --- SKILL.md との同一性 ---
 # 現在バリデータを持つのは /issue だけ (codex 側は symlink で同じ実体)。
