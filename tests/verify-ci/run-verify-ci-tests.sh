@@ -194,7 +194,7 @@ check "commit-missing"   2 "$(run_hook_in "$GH_REPO" missing 'gh pr create --tit
 # 5xx body は push 未了 (MISSING, exit 2) ではなく skip (exit 0) に倒れ、
 # 案内文も「push しろ」ではなく障害の可能性を示す (issue #353)
 check "api-unavailable-skip" 0 "$(run_hook_in "$GH_REPO" unavailable 'gh pr create --title t --body b')"
-check_stderr "stderr-api-unavailable" "レスポンス異常" unavailable 'gh pr create --title t --body b'
+check_stderr "stderr-api-unavailable" "CI 状態を返しませんでした" unavailable 'gh pr create --title t --body b'
 
 # --draft=false は bypass しない (draft 判定の退行検出。CI 失敗なら block)
 check "draft-false-no-bypass" 2 "$(run_hook_in "$GH_REPO" failure 'gh pr create --draft=false --title t')"
