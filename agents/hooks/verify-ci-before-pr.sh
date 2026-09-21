@@ -213,8 +213,9 @@ failed=${rest#*$'\t'}
 
 case "$state" in
   UNAVAILABLE)
-    # 「障害」と断定しない: この分岐には repo NOT_FOUND / 権限不足 / 401 も
-    # 入るので、原因は併記する API の message 側で読む
+    # 「障害」と断定しない: repository NOT_FOUND (`{"data":{"repository":null},
+    # "errors":[...]}`、2026-09-22 実測) もここに入り、権限不足 / 401 も同じ形に
+    # なりうるので、原因は併記する API の message 側で読む
     echo "[verify-ci-before-pr] GitHub API が CI 状態を返しませんでした (障害 / 権限 / repo 解決失敗): CI 検証をスキップします${pending:+ ($pending)}" >&2
     exit 0
     ;;

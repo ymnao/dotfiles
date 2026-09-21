@@ -192,7 +192,7 @@ check "ci-failure"       2 "$(run_hook_in "$GH_REPO" failure 'gh pr create --tit
 check "ci-pending"       2 "$(run_hook_in "$GH_REPO" pending 'gh pr create --title t --body b')"
 check "commit-missing"   2 "$(run_hook_in "$GH_REPO" missing 'gh pr create --title t --body b')"
 # 5xx body は push 未了 (MISSING, exit 2) ではなく skip (exit 0) に倒れ、
-# 案内文も「push しろ」ではなく障害の可能性を示す (issue #353)
+# 案内文も「push しろ」ではなく「API が状態を返さない」側を示す (issue #353)
 check "api-unavailable-skip" 0 "$(run_hook_in "$GH_REPO" unavailable 'gh pr create --title t --body b')"
 check_stderr "stderr-api-unavailable" "CI 状態を返しませんでした" unavailable 'gh pr create --title t --body b'
 
