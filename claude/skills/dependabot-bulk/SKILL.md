@@ -66,14 +66,12 @@ open な Dependabot PR を 1 branch に統合し、push を 1 回にして CI �
      - `build-system` の `requires` に入る依存 (hatchling 等) は `uv.lock` に現れないので、`uv lock` の diff が空でも失敗ではない。その場合の commit は `pyproject.toml` のみになる
      - `git add pyproject.toml uv.lock && git commit -m "$(jq -r --argjson n <N> 'first(.[]|select(.number==$n)|"\(.title)\n\n統合元: #\(.number)")' "$TMPDIR/dependabot-bulk/classified.json")"`
    - commit message body に `統合元: #<N>` を書けば統合 PR body から原本 PR に辿れる。release notes 全文転記は不要
-8. **ローカル検証**: `make test && make lint`
+8. **ローカル検証**: CI の workflow が打っているコマンドを手元で打つ。この repo では `make test && make lint`。Makefile が無い repo は `.github/workflows/*.yml` の `run:` をそのまま打つ (例: uv の repo なら `uv run --locked ruff check` / `uv run --locked ruff format --check` / `uv run --locked python -m unittest discover`)
 9. **push は 1 回だけ**: `git push origin <step 6 で決めた branch 名>` (collision で `-2`/`-3` を付けた場合はその名前で push する。literal `deps/bulk-<YYYY-MM-DD>` を貼らない。`-u` を付けない理由は `/pr` skill の step 7 参照)
-10. **CI 完走待ち**
-    - push 直後は GitHub 側で run が作成されるまで数秒〜十数秒のラグがある。まず `git rev-parse HEAD` を単独で打って SHA を読む (**変数に代入しない** — Bash tool 呼び出し間で shell 変数は persist しない。理由は step 2 と同じ)
-    - `gh run list --branch <branch名> --limit 5 --json databaseId,status,headSha` で、上で読んだ SHA と `headSha` が一致する run を探す
-    - 一致する run が無ければ数秒スリープして再問い合わせ (最大 30 秒程度)。出現したらその `databaseId` を取り出す
-    - `gh run watch <run-id> --exit-status` で完走待ち
-    - verify-ci-before-pr hook が最終ゲート。`--draft` bypass は使わない
+10. **CI 完走待ち** — 待ち方は CI のトリガーで決まるので、先に `grep -n "^on:" -A3 .github/workflows/*.yml` で確かめる
+    - **`on: push` がある repo** (この repo を含む): push 直後は GitHub 側で run が作成されるまで数秒〜十数秒のラグがある。まず `git rev-parse HEAD` を単独で打って SHA を読む (**変数に代入しない** — Bash tool 呼び出し間で shell 変数は persist しない。理由は step 2 と同じ) → `gh run list --branch <branch名> --limit 5 --json databaseId,status,headSha` で、上で読んだ SHA と `headSha` が一致する run を探す → 無ければ数秒スリープして再問い合わせ (最大 30 秒程度) → 出現したら `gh run watch <databaseId> --exit-status` で完走待ち
+    - **`on: pull_request` のみの repo**: push では run が立たないので step 11 (PR 作成) を先に行い、`gh pr checks <PR番号> --watch --fail-fast` で完走を待つ。evidence に書く run-id は `gh pr checks <PR番号> --json link` の `link` (`.../actions/runs/<run-id>/job/<job-id>`) から読む。verify-ci-before-pr hook は「HEAD に紐づく check が無い」状態をこのケースとして許可する (`claude/hooks/verify-ci-before-pr.sh` の最終 `*)` 分岐) ので PR 作成は止まらない
+    - どちらでも verify-ci-before-pr hook が最終ゲート。`--draft` bypass は使わない
 11. **統合 PR 作成**: `gh pr create --title <title> --body-file "$TMPDIR/dependabot-bulk/pr-body.md"` (本文は Claude Code なら Write tool、codex なら `apply_patch` で書く)
     - PR body テンプレは下記 「PR body」 節を参照
     - block-dangerous-commands hook 対策のため `--body-file` (heredoc / インライン文字列は使わない)
@@ -91,7 +89,7 @@ open な Dependabot PR を 1 branch に統合し、push を 1 回にして CI �
 
 ### verify-ci-before-pr hook の扱い
 
-skill の flow (push → `gh run watch` で完走待ち → PR 作成) は既存 hook の要件 (HEAD の CI green) と一致するため回避せず活用する。`--draft` bypass は使わない。
+skill の flow (push → `gh run watch` で完走待ち → PR 作成) は既存 hook の要件 (HEAD の CI green) と一致するため回避せず活用する。`on: pull_request` のみの repo で PR 作成が先になる場合も、hook は「HEAD に check 無し」を許可するので同じく回避不要。`--draft` bypass は使わない。
 
 ### 失敗時 (CI 赤)
 
@@ -133,7 +131,7 @@ step 7 の cherry-pick / lockfile 更新 / `make test` などが失敗した状�
 
 ## 検証エビデンス
 
-- ローカル: `make test` PASS / `make lint` clean
+- ローカル: step 8 で実際に打ったコマンドを列挙する (この repo では `make test` PASS / `make lint` clean)
 - CI: <run-id> success (verify-ci-before-pr hook 経由で確認済み)
 
 ## 原本 PR
