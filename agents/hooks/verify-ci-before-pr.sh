@@ -175,11 +175,18 @@ result=$(curl -sS --max-time 15 \
 
 # 1 回の jq で state / pending check 名 / failed check 名 を TSV 抽出。
 # commit が origin に未到達なら "MISSING" marker を返す。
+# MISSING は .data.repository がオブジェクトとして返った上で object が null の
+# ときに限る: `.data.repository.object == null` 単独だと 5xx の
+# `{"message":...}` (.data 無し) や repository NOT_FOUND でも null に潰れ、
+# API 障害を「push 未了」と案内してしまう (issue #353)。それらは
+# "UNAVAILABLE" marker (第 2 フィールドに応答の message) で skip に倒す。
 parsed=$(printf '%s' "$result" | jq -r '
-  .data.repository.object as $o
-  | if $o == null then "MISSING\t\t"
-    else
-      ($o.statusCheckRollup.state // "NONE") as $state
+  if (.data | type) != "object" or (.data.repository | type) != "object"
+    then "UNAVAILABLE\t\(.message // .errors[0].message // "")\t"
+  elif .data.repository.object == null then "MISSING\t\t"
+  else
+    .data.repository.object as $o
+      | ($o.statusCheckRollup.state // "NONE") as $state
       | [$o.checkSuites.nodes[].checkRuns.nodes[]] as $runs
       | ($runs | map(select(.status != "COMPLETED").name) | unique | join(", ")) as $pending
       | ($runs
@@ -205,6 +212,10 @@ pending=${rest%%$'\t'*}
 failed=${rest#*$'\t'}
 
 case "$state" in
+  UNAVAILABLE)
+    echo "[verify-ci-before-pr] GitHub API のレスポンス異常 (障害の可能性): CI 検証をスキップします${pending:+ ($pending)}" >&2
+    exit 0
+    ;;
   MISSING)
     cat >&2 <<EOF
 [verify-ci-before-pr] HEAD ($head_sha) が origin/$owner/$repo に見つかりません。
