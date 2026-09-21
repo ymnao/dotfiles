@@ -99,6 +99,11 @@ EOF
 cat >"$BASE/fixtures/missing.json" <<'EOF'
 {"data":{"repository":{"object":null}}}
 EOF
+# GitHub 障害時の GraphQL 5xx body (2026-08-18 に実際に返された形、issue #353)。
+# curl は成功扱いで body を返すので「呼び出し失敗」経路には入らない
+cat >"$BASE/fixtures/unavailable.json" <<'EOF'
+{"message": "No server is currently available to service your request. Sorry about that. Please try resubmitting your request and check back shortly."}
+EOF
 
 # --- テスト用リポジトリ ---------------------------------------------------
 # $1=名前, $2=remote URL ("" なら remote なし), $3=workflows を作るか (yes/no)
@@ -186,6 +191,10 @@ check "ci-success"       0 "$(run_hook_in "$GH_REPO" success 'gh pr create --tit
 check "ci-failure"       2 "$(run_hook_in "$GH_REPO" failure 'gh pr create --title t --body b')"
 check "ci-pending"       2 "$(run_hook_in "$GH_REPO" pending 'gh pr create --title t --body b')"
 check "commit-missing"   2 "$(run_hook_in "$GH_REPO" missing 'gh pr create --title t --body b')"
+# 5xx body は push 未了 (MISSING, exit 2) ではなく skip (exit 0) に倒れ、
+# 案内文も「push しろ」ではなく「API が状態を返さない」側を示す (issue #353)
+check "api-unavailable-skip" 0 "$(run_hook_in "$GH_REPO" unavailable 'gh pr create --title t --body b')"
+check_stderr "stderr-api-unavailable" "CI 状態を返しませんでした" unavailable 'gh pr create --title t --body b'
 
 # --draft=false は bypass しない (draft 判定の退行検出。CI 失敗なら block)
 check "draft-false-no-bypass" 2 "$(run_hook_in "$GH_REPO" failure 'gh pr create --draft=false --title t')"
