@@ -23,6 +23,7 @@ skill / hook / テスト / CI は、この目的を安全に達成するため�
 - harness 共通の hook 実装は `agents/hooks/` に正本を置き、`claude/hooks/` と `codex/hooks/` からは相対 symlink で参照する（drift を構造的に防止）。codex 固有 hook（redact-secrets / notify-stop）は `codex/hooks/` に実体のまま置く。同じ理由で **Claude 固有 hook は `claude/hooks/` に実体のまま置く**（guard-sandbox-exclusions は Claude Code の `sandbox.excludedCommands` 専用で、codex には相当機構が無い）
 - `claude/agents/` → `~/.claude/agents/` にシンボリックリンク（Claude Code サブエージェント定義）
 - `claude/rules/` → `~/.claude/rules/` にシンボリックリンク（path-scoped rules、frontmatter の `paths` glob にマッチしたときだけ lazy load）
+- `claude/plugins/` は **symlink しない**（第三者 Claude Code プラグインの vendoring 置き場。`~/.claude/plugins/` は Claude Code 自身が管理するため配線せず、`claude plugin marketplace add <repo 内パス>` で local marketplace として登録する。手順は各プラグインの README）
 - `claude/statusline.sh` → `~/.claude/statusline.sh` にシンボリックリンク（Claude Code の statusline スクリプト）
 - `starship/starship.toml` → `~/.config/starship.toml` にシンボリックリンク（Starship プロンプト設定、fish から init される）
 - `herdr/config.toml` → `~/.config/herdr/config.toml` にシンボリックリンク（herdr = エージェント用ターミナル multiplexer。**ディレクトリごと symlink しない** — socket が config と同じディレクトリに作られるため）
