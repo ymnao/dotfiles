@@ -35,14 +35,21 @@ symlink なので、rename が symlink 自体を置き換えて dotfiles から�
 
 `hooks/idle-compactor.ts` の `readConfig` の fallback と `tests/idle-compactor.test.ts` 冒頭の
 コメントは 30000 のまま残している。manifest の default が options に入るので fallback は
-通らず、upstream との差分を 1 箇所に保つ方を取った。
+通らず (2.1.280 で実測)、upstream との差分を 1 箇所に保つ方を取った。効いているかは
+`/idle-compactor` の出力が `needs 50,000+ tokens` になっていることで確かめられる。
 
 upstream を追従するときはこの 1 箇所だけ手で戻す。
 
 ## 有効化
 
 `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` が要る (function hooks は early access で
-既定は off)。`claude/settings.json` の `env` に入れてある。
+既定は off)。`claude/settings.json` の `env` に入れてある。このスイッチはこのプラグイン
+専用ではなく、**install 済みの全プラグインの hooks module をプロセス内で読み込む**
+(2.1.280 の本体の文言: "hooks modules are not turned on for installed plugins in this
+process")。以後プラグインを足すときは `hooks/hooks.json` の `modules` の有無も審査に含める。
+
+`claude plugin install` は `enabledPlugins` を `~/.claude/settings.json` (= repo の
+`claude/settings.json`) に書くので、その entry は先に repo に入れてある。
 
 ```fish
 claude plugin marketplace add ~/development/important/dotfiles/claude/plugins/idle-compactor --scope user
@@ -53,7 +60,7 @@ claude plugin install idle-compactor@claude-idle-compactor --scope user
 
 ## 前提の脆さ
 
-function hooks は未リリースの API で、declaration 自体が
-"this surface may change between releases without notice" と書いている。
+function hooks は early access の API で、2.1.280 の本体も "early access: it may change
+between releases" と書いている。
 Claude Code を上げたあとプラグインが読まれなくなること (`Hooks (0)`) がありうる。
 その場合は upstream に修正が来ていないか見る。

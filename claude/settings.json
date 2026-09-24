@@ -218,7 +218,8 @@
     "command": "bash \"$HOME/.claude/statusline.sh\""
   },
   "enabledPlugins": {
-    "ruby-lsp@claude-plugins-official": true
+    "ruby-lsp@claude-plugins-official": true,
+    "idle-compactor@claude-idle-compactor": true
   },
   "alwaysThinkingEnabled": true,
   "effortLevel": "high",
