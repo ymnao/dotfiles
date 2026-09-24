@@ -120,6 +120,13 @@ H="$BASE/home-toml"; make_good_home "$H"
   >"$H/.codex/config.toml"
 check "toml-base-tampered" 1 "$(run_checker "$H")"
 
+# 6b. codex が config を書き戻してキーの並びが変わっただけ → OK
+H="$BASE/home-toml-reordered"; make_good_home "$H"
+{ printf 'notify = ["/x/SkyComputerUseClient", "turn-ended"]\n'
+  cat "$DF/codex/config.toml"
+  printf '\n[projects."/x"]\ntrust_level = "trusted"\n'; } >"$H/.codex/config.toml"
+check "toml-reordered" 0 "$(run_checker "$H")"
+
 # 7. codex config.toml が symlink 化されている → FAIL
 H="$BASE/home-toml-link"; make_good_home "$H"
 rm "$H/.codex/config.toml"
