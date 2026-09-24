@@ -11,8 +11,9 @@ set -uo pipefail
 #
 # 検査:
 #   1. ~/.claude 配下の管理対象が期待どおりの symlink か
-#   2. ~/.codex 配下も同様。config.toml はマージ方式なので
-#      「先頭が dotfiles の base と一致する実体ファイル」であること
+#   2. ~/.codex 配下も同様。config.toml はマージ方式の実体ファイルで、
+#      dotfiles の base の全キーを同じ値で持ち、base に無いトップレベルの
+#      非テーブルキーは許可リスト (codex-config-subset.py) の値に限ること
 #   3. ~/.claude.json の MCP 定義 (グローバル + プロジェクト単位) が
 #      許可リスト (allowed-mcp.txt) に収まっているか
 #
@@ -82,9 +83,13 @@ if [ -d "$H/.codex" ]; then
     echo "NG: $cfg が symlink (マージ方式の実体ファイルのはず)"
     fail=1
   elif [ -f "$cfg" ] && [ -f "$base" ]; then
-    base_size=$(wc -c <"$base" | tr -d ' ')
-    if ! head -c "$base_size" "$cfg" | cmp -s - "$base"; then
-      echo "NG: $cfg の base 部分が dotfiles の codex/config.toml と一致しない"
+    # バイト列のプレフィックス比較にしないのは、codex 自身が config を書き戻して
+    # キーの並び順を変えるため (Computer Use の有効化で notify が最初のテーブルの直前に入る等)。
+    # tomllib が無い環境でプレフィックス比較に落とさないのは、落とし先が上の書き戻しで
+    # 必ず NG になり、原因の違う NG を同じ文言で出すだけになるため。
+    if ! subset_diff=$(python3 "$SCRIPT_DIR/codex-config-subset.py" "$base" "$cfg" "$H" 2>&1); then
+      echo "NG: $cfg に dotfiles の codex/config.toml の設定が残っていない"
+      printf '%s\n' "$subset_diff" | sed 's/^/      /'
       fail=1
     fi
   fi
