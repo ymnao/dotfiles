@@ -84,19 +84,12 @@ if [ -d "$H/.codex" ]; then
   elif [ -f "$cfg" ] && [ -f "$base" ]; then
     # バイト列のプレフィックス比較にしないのは、codex 自身が config を書き戻して
     # キーの並び順を変えるため (Computer Use の有効化で notify が最初のテーブルの直前に入る等)。
-    # tomllib が無い環境向けに、旧来のプレフィックス比較を fallback に残す。
-    if command -v python3 >/dev/null 2>&1 && python3 -c 'import tomllib' 2>/dev/null; then
-      if ! subset_diff=$(python3 "$SCRIPT_DIR/codex-config-subset.py" "$base" "$cfg"); then
-        echo "NG: $cfg に dotfiles の codex/config.toml の設定が残っていない"
-        printf '%s\n' "$subset_diff" | sed 's/^/      /'
-        fail=1
-      fi
-    else
-      base_size=$(wc -c <"$base" | tr -d ' ')
-      if ! head -c "$base_size" "$cfg" | cmp -s - "$base"; then
-        echo "NG: $cfg の base 部分が dotfiles の codex/config.toml と一致しない"
-        fail=1
-      fi
+    # tomllib が無い環境でプレフィックス比較に落とさないのは、落とし先が上の書き戻しで
+    # 必ず NG になり、原因の違う NG を同じ文言で出すだけになるため。
+    if ! subset_diff=$(python3 "$SCRIPT_DIR/codex-config-subset.py" "$base" "$cfg" 2>&1); then
+      echo "NG: $cfg に dotfiles の codex/config.toml の設定が残っていない"
+      printf '%s\n' "$subset_diff" | sed 's/^/      /'
+      fail=1
     fi
   fi
 fi

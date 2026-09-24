@@ -8,7 +8,12 @@ base の全キーが live に同じ値で存在すれば exit 0。欠落・値�
 """
 
 import sys
-import tomllib
+
+try:
+    import tomllib
+except ImportError:
+    print(f"tomllib が無い (Python 3.11+ が要る。実行したのは {sys.version.split()[0]})")
+    sys.exit(1)
 
 
 def walk(base, live, path, out):
