@@ -49,10 +49,15 @@ upstream を追従するときはこの 1 箇所だけ手で戻す。
 process")。以後プラグインを足すときは `hooks/hooks.json` の `modules` の有無も審査に含める。
 
 下の 2 コマンドはどちらも `~/.claude/settings.json` (= repo の `claude/settings.json`) に
-書き込む。`plugin install` が書く `enabledPlugins` の entry は先に repo に入れてあるが、
-`marketplace add` は `extraKnownMarketplaces` にこの marketplace の宣言 (マシン固有の
-絶対パスの可能性がある) を書くので、実行後に `git diff claude/settings.json` を見て、
-commit するか戻すかを決める。
+書き込む (2.1.280 で実測)。書かれる `enabledPlugins` と `extraKnownMarketplaces` の entry は
+repo に入れてあるので中身の差分は出ないが、**ファイル全体を書き直すのでキー順と整形が
+崩れる**。実行後は `git diff claude/settings.json` を見て、整形だけの差分なら
+`git restore claude/settings.json` で戻す。symlink は切れない (`readlink` で確認済み)。
+`extraKnownMarketplaces` の path は `marketplace add` が書いた絶対パスのままで、
+home のレイアウトが違うマシンでは書き換えが要る。
+
+install すると plugin は `~/.claude/plugins/cache/claude-idle-compactor/idle-compactor/unknown/`
+に**コピーされる** (repo を直接読むのではない)。repo 側を変えたら install し直す。
 
 ```fish
 claude plugin marketplace add ~/development/important/dotfiles/claude/plugins/idle-compactor --scope user

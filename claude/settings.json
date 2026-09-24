@@ -221,6 +221,14 @@
     "ruby-lsp@claude-plugins-official": true,
     "idle-compactor@claude-idle-compactor": true
   },
+  "extraKnownMarketplaces": {
+    "claude-idle-compactor": {
+      "source": {
+        "source": "directory",
+        "path": "/Users/nakiym/development/important/dotfiles/claude/plugins/idle-compactor"
+      }
+    }
+  },
   "alwaysThinkingEnabled": true,
   "effortLevel": "high",
   "skipAutoPermissionPrompt": true,
