@@ -66,6 +66,11 @@ claude plugin install idle-compactor@claude-idle-compactor --scope user
 
 セッション内で `/idle-compactor` を叩くと状態と直近の結果が出る。
 
+desktop アプリの Code tab (SDK セッション) では `/compact` を turn として実行するが、
+その turn では Stop hook が発火しない (2026-09-25 に手打ちの `/compact` で確認。
+Stop hook の通知が出なかった)。放置中に `stop-verify-gate.sh` の `make gate` が
+無人で走ることはない。
+
 ## 前提の脆さ
 
 function hooks は early access の API で、hooks module が import する plugin API
