@@ -225,5 +225,8 @@
   "skipAutoPermissionPrompt": true,
   "skipWorkflowUsageWarning": true,
   "tui": "fullscreen",
-  "agentPushNotifEnabled": true
+  "agentPushNotifEnabled": true,
+  "env": {
+    "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1"
+  }
 }
