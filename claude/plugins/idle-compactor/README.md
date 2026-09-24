@@ -66,10 +66,11 @@ claude plugin install idle-compactor@claude-idle-compactor --scope user
 
 セッション内で `/idle-compactor` を叩くと状態と直近の結果が出る。
 
-desktop アプリの Code tab (SDK セッション) では `/compact` を turn として実行するが、
-その turn では Stop hook が発火しない (2026-09-25 に手打ちの `/compact` で確認。
-Stop hook の通知が出なかった)。放置中に `stop-verify-gate.sh` の `make gate` が
-無人で走ることはない。
+desktop アプリの Code tab (SDK セッション) では `/compact` を turn として実行する。
+手打ちの `/compact` では Stop hook が発火しなかった (2026-09-25、Stop hook の通知が
+出ないことで確認)。プラグインが `$.command.run` で走らせる `/compact` は同じ経路の
+はずだが未測定。発火すると `stop-gate.conf` を置いた repo で `make gate` が無人で
+走りうるので、放置後に「タスクが完了しました」通知が出ていたらこの前提を疑う。
 
 ## 前提の脆さ
 
