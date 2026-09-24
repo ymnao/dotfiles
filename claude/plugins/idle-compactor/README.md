@@ -33,7 +33,7 @@ symlink なので、rename が symlink 自体を置き換えて dotfiles から�
   30000 → **50000**。idle compaction は「そのセッションに戻ってきた場合だけ」得で、
   戻らなければ要約生成ぶんが丸損になる。小さいセッションは見送る側に倒した。
 
-`hooks/idle-compactor.ts` の `readConfig` の fallback と `tests/idle-compactor.test.ts` 冒頭の
+`plugin/hooks/idle-compactor.ts` の `readConfig` の fallback と `plugin/tests/idle-compactor.test.ts` 冒頭の
 コメントは 30000 のまま残している。manifest の default が options に入るので fallback は
 通らず (2.1.280 で実測)、upstream との差分を 1 箇所に保つ方を取った。効いているかは
 `/idle-compactor` の出力が `needs 50,000+ tokens` になっていることで確かめられる。
@@ -48,8 +48,11 @@ upstream を追従するときはこの 1 箇所だけ手で戻す。
 (2.1.280 の本体の文言: "hooks modules are not turned on for installed plugins in this
 process")。以後プラグインを足すときは `hooks/hooks.json` の `modules` の有無も審査に含める。
 
-`claude plugin install` は `enabledPlugins` を `~/.claude/settings.json` (= repo の
-`claude/settings.json`) に書くので、その entry は先に repo に入れてある。
+下の 2 コマンドはどちらも `~/.claude/settings.json` (= repo の `claude/settings.json`) に
+書き込む。`plugin install` が書く `enabledPlugins` の entry は先に repo に入れてあるが、
+`marketplace add` は `extraKnownMarketplaces` にこの marketplace の宣言 (マシン固有の
+絶対パスの可能性がある) を書くので、実行後に `git diff claude/settings.json` を見て、
+commit するか戻すかを決める。
 
 ```fish
 claude plugin marketplace add ~/development/important/dotfiles/claude/plugins/idle-compactor --scope user
@@ -60,7 +63,8 @@ claude plugin install idle-compactor@claude-idle-compactor --scope user
 
 ## 前提の脆さ
 
-function hooks は early access の API で、2.1.280 の本体も "early access: it may change
-between releases" と書いている。
+function hooks は early access の API で、hooks module が import する plugin API
+(module `claude-code`) について 2.1.280 の本体も "early access: it may change between
+releases" と書いている。
 Claude Code を上げたあとプラグインが読まれなくなること (`Hooks (0)`) がありうる。
 その場合は upstream に修正が来ていないか見る。
