@@ -11,11 +11,11 @@
 #   - notify は turn 終了ごとに host 側でコマンドを起動する実行ベクタで、
 #     共有ベース設定で恒常化するのは防御層の設計意図に逆行する
 #     (脅威モデルは docs/ai-operations.md §10。ここには複製しない)
-# なお **現状の機構では手元での復元も成立しない** (2026-08-08 実測)。
-# トップレベルキーは最初のテーブル見出しより前にしか書けないので、置ける場所は
-# base の prefix 内部だけ。そこへ入れると tests/integrity/run-integrity-check.sh
-# の base 一致検査 (先頭 base_size バイトの cmp) が落ち、`make gate` が
-# 毎ターン失敗し続ける。ファイル末尾に足すと TOML 仕様上
+# なお **手元で任意の notify を足すことも成立しない**。
+# tests/integrity/run-integrity-check.sh は base に無いトップレベルの非テーブルキーを
+# 許可リスト (tests/integrity/codex-config-subset.py の ALLOWED_EXTRA) の値に限る。
+# 通るのは codex の Computer Use が自分で書き込む notify だけで、それ以外は
+# `make gate` が毎ターン失敗し続ける。ファイル末尾に足すと TOML 仕様上
 # [shell_environment_policy] 配下のキーになり (tomllib で実測: トップレベルの
 # notify は未定義のまま)、トップレベル設定である notify としては解釈されない。
 # パースエラーにはならないので気付きにくい。
