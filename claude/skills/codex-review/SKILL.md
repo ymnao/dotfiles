@@ -96,7 +96,7 @@ Then per-perspective details, one line per finding:
 - **Do not commit** fixes from this skill — ただし confirm run (step 4) の直前だけは commit する。run-review.sh が渡すのは `<base>...HEAD` の commit 済み diff なので、commit しないと confirm が古い状態を見る。
 - **Cost**: max 2 codex calls per perspective (detect + confirm), so max 6 calls for a full run. Confirm with the user before running on very large diffs.
 - **Design: split file layout**: this skill's scripts live in `claude/skills/codex-review/scripts/`; the perspective prompts live in `codex/review-prompts/` (codex-facing content). The split is intentional — to tweak a perspective, edit the `.md` under `codex/review-prompts/`.
-- **Running under a shell sandbox** (Claude Code の Bash sandbox 等): 失敗モードは 3 つある。(A) (B) は run-review.sh が exit 3 (SKIP) にし (ERROR ではなく明示的 skip)、(C) は run-review.sh が起動前に塞ぐ。
+- **Running under a shell sandbox** (Claude Code の Bash sandbox 等): 失敗モードは 3 つある。(A) (B) は run-review.sh が exit 3 (SKIP) にし (ERROR ではなく明示的 skip)、(C) は run-review.sh が起動前に CA バンドルを渡して塞ぐ。
 
   **(A) ハング — watchdog で打ち切る。**2026-09-02 に codex-cli 0.152.1 は、`HTTPS_PROXY` が資格情報つき proxy を指すこの sandbox で HTTP リクエストが**すべて** `error sending request` で失敗し、`responses_retry` の 60s バックオフに入って**終了しなくなった** (issue #335)。(B) の stderr シグネチャ検出は codex が終了しないと走らないので捕まえられない。run-review.sh は codex を background で起動し、`CODEX_REVIEW_TIMEOUT` (既定 300s) を超えたら kill して exit 3 を返す。
 
@@ -104,7 +104,7 @@ Then per-perspective details, one line per finding:
 
   **(B) filesystem 起因 — 起動後の stderr シグネチャで検出する。**外側シェルが `$HOME/.codex/` 配下の SQLite (`state_*.sqlite` / `goals_*.sqlite` / `memories_*.sqlite`) の write を allow していない場合、`codex` CLI 内部の in-process app-server client が state DB を open できず `failed to initialize in-process app-server client: Operation not permitted (os error 1)` で exit する。run-review.sh はこのシグネチャを検出して exit 3 を返す。
 
-  **(C) TLS 検証 — CA バンドルをファイルで渡して塞ぐ。**codex は既定でシステムの証明書ストアで TLS を検証するが、この sandbox 内ではその検証が通らず、`auth.openai.com` / `chatgpt.com` への接続がすべて `error sending request` で落ちて exit 1 (ERROR) になる (2026-09-25 実測、codex-cli 0.156.1 / 0.157.0)。ドメインは allowlist 済みで、proxy への接続自体は成功している。`CODEX_CA_CERTIFICATE=/etc/ssl/cert.pem` を与えると rustls + そのファイルで検証して完走するので、run-review.sh は `CODEX_CA_CERTIFICATE` / `SSL_CERT_FILE` が未設定で `/etc/ssl/cert.pem` (`CODEX_REVIEW_CA_BUNDLE` で変更可) が読めるときにこれを渡す (回帰テスト: `tests/codex-review-skip/` の ca-* ケース)。2026-09-07 には渡さずに完走していた。どちらの側が変わったか (codex の検証方式か sandbox か) は未確定。
+  **(C) TLS 検証 — CA バンドルをファイルで渡して塞ぐ。**codex は既定でシステムの証明書ストアで TLS を検証するが、この sandbox 内ではその検証が通らず、`auth.openai.com` / `chatgpt.com` への接続がすべて `error sending request` で落ちて exit 1 (ERROR) になる (2026-09-25 実測、codex-cli 0.156.1 / 0.157.0)。ドメインは allowlist 済みで、proxy への接続自体は成功している。`CODEX_CA_CERTIFICATE` に CA バンドルを与えると codex は rustls backend に切り替わって完走するので、run-review.sh は `CODEX_CA_CERTIFICATE` / `SSL_CERT_FILE` が未設定のとき Homebrew の `ca-certificates` バンドル (`CODEX_REVIEW_CA_BUNDLE` で変更可) を渡す (回帰テスト: `tests/codex-review-skip/` の ca-* ケース)。codex は渡したバンドルを組み込みのルートに**足す** (無関係なルート 1 本だけのバンドルでも完走した) ので、信頼を外されたルートを含む `/etc/ssl/cert.pem` は使わない。バンドルが見つからない環境では (C) は塞がらず、SKIP 経路も無いので exit 1 (ERROR) になる。2026-09-07 には渡さずに完走していた。どちらの側が変わったか (codex の検証方式か sandbox か) は未確定。
 
   回避策は 2 通り:
 

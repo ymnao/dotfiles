@@ -227,6 +227,7 @@ FAKE_BUNDLE="$WORKDIR/ca.pem"
 : >"$FAKE_BUNDLE"
 run_ca_case ca-default        ''             ''             "$FAKE_BUNDLE"         "$FAKE_BUNDLE"
 run_ca_case ca-bundle-missing ''             ''             "$WORKDIR/missing.pem" ''
+run_ca_case ca-bundle-dir     ''             ''             "$WORKDIR"             ''
 run_ca_case ca-user-override  /custom/ca.pem ''             "$FAKE_BUNDLE"         /custom/ca.pem
 run_ca_case ca-ssl-cert-file  ''             /custom/ca.pem "$FAKE_BUNDLE"         ''
 

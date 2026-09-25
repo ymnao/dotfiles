@@ -15,8 +15,8 @@ set -euo pipefail
 #                      returns exit 3 (default: 300).
 #   CODEX_REVIEW_CA_BUNDLE
 #                      CA bundle passed to codex as CODEX_CA_CERTIFICATE when
-#                      neither it nor SSL_CERT_FILE is set (default:
-#                      /etc/ssl/cert.pem; skipped if unreadable).
+#                      neither it nor SSL_CERT_FILE is set (default: Homebrew's
+#                      ca-certificates bundle; skipped if not a readable file).
 #
 # Output: validated review JSON on stdout (single line, schema-checked by
 # parse-review-output.sh).
@@ -246,12 +246,28 @@ trap 'trap - EXIT; cleanup; exit 143' TERM
 # ストアを使う (`using system root certificates` がログに出る) が、Claude Code
 # の Bash sandbox 内ではその検証が通らず、auth.openai.com / chatgpt.com への
 # 接続がすべて `error sending request` で落ちて exit 1 になる。CA バンドルを
-# ファイルで渡すと codex は rustls + そのファイルで検証し、同じ sandbox で
-# 完走する (2026-09-25 実測、codex-cli 0.156.1 で失敗 / 0.157.0 で失敗と完走)。SSL_CERT_FILE ではなく codex 専用の変数にするのは、
-# 他のツールへの影響を避けるため。user が CA を自分で指定していればそちらを使う。
-CODEX_REVIEW_CA_BUNDLE="${CODEX_REVIEW_CA_BUNDLE:-/etc/ssl/cert.pem}"
+# 渡すと codex は rustls backend に切り替わり (`building HTTP client with
+# rustls backend for custom CA bundle`)、同じ sandbox で完走する (2026-09-25
+# 実測。渡さないと 0.156.1 / 0.157.0 とも失敗、渡すと 0.157.0 で完走)。
+#
+# codex は渡したバンドルを組み込みのルートに足す (無関係なルート 1 本だけの
+# バンドルでも完走した) ので、中身は検証を緩めないものにする。Why not /etc/ssl/cert.pem: 2021 年の OpenBSD 版リストで、Apple /
+# Mozilla が信頼を外した TrustCor / Camerfirma を含む (grep 13 件)。Homebrew の
+# ca-certificates は Mozilla 追従で 0 件 (openssl@3 の依存として入る)。
+#
+# SSL_CERT_FILE ではなく codex 専用の変数にするのは、他のツールへの影響を
+# 避けるため。user が CA を自分で指定していればそちらを使う。
+if [ -z "${CODEX_REVIEW_CA_BUNDLE:-}" ]; then
+  for candidate in /opt/homebrew/etc/ca-certificates/cert.pem \
+    /usr/local/etc/ca-certificates/cert.pem; do
+    if [ -f "$candidate" ]; then
+      CODEX_REVIEW_CA_BUNDLE="$candidate"
+      break
+    fi
+  done
+fi
 if [ -z "${CODEX_CA_CERTIFICATE:-}" ] && [ -z "${SSL_CERT_FILE:-}" ] \
-  && [ -r "$CODEX_REVIEW_CA_BUNDLE" ]; then
+  && [ -f "${CODEX_REVIEW_CA_BUNDLE:-}" ] && [ -r "$CODEX_REVIEW_CA_BUNDLE" ]; then
   export CODEX_CA_CERTIFICATE="$CODEX_REVIEW_CA_BUNDLE"
 fi
 
