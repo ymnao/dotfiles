@@ -250,10 +250,13 @@ trap 'trap - EXIT; cleanup; exit 143' TERM
 # rustls backend for custom CA bundle`)、同じ sandbox で完走する (2026-09-25
 # 実測。渡さないと 0.156.1 / 0.157.0 とも失敗、渡すと 0.157.0 で完走)。
 #
-# codex は渡したバンドルを組み込みのルートに足す (無関係なルート 1 本だけの
-# バンドルでも完走した) ので、中身は検証を緩めないものにする。Why not /etc/ssl/cert.pem: 2021 年の OpenBSD 版リストで、Apple /
-# Mozilla が信頼を外した TrustCor / Camerfirma を含む (grep 13 件)。Homebrew の
-# ca-certificates は Mozilla 追従で 0 件 (openssl@3 の依存として入る)。
+# codex は渡したバンドルを組み込みのルートに足す (自己署名 CA 1 本だけの
+# バンドルでも完走した) ので、中身は検証を緩めないものにする。
+# Why not /etc/ssl/cert.pem: 2021 年の OpenBSD 版リストで、Apple / Mozilla が
+# 信頼を外した TrustCor / Camerfirma を含む
+# (`grep -ciE 'TrustCor|Chambersign|Chambers of Commerce'` で 13 行)。
+# Homebrew の ca-certificates は Mozilla 追従で同じ grep が 0 行
+# (openssl@3 の依存として入る)。
 #
 # SSL_CERT_FILE ではなく codex 専用の変数にするのは、他のツールへの影響を
 # 避けるため。user が CA を自分で指定していればそちらを使う。

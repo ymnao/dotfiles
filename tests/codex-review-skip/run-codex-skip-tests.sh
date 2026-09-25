@@ -197,7 +197,7 @@ run_marker_case proxy-authed-still-runs 1 yes '' "http://$FAKE_USERINFO@localhos
 # user が CA を自分で指定しているときは上書きしないこと。
 #
 # バンドルの置き場は CODEX_REVIEW_CA_BUNDLE で差し替え、host の
-# /etc/ssl/cert.pem の有無に結果を左右させない。
+# Homebrew バンドルの有無に結果を左右させない。
 #
 # $1=名前, $2=環境に与える CODEX_CA_CERTIFICATE (空なら未設定),
 # $3=SSL_CERT_FILE (空なら未設定), $4=CODEX_REVIEW_CA_BUNDLE,
