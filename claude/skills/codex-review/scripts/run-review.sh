@@ -238,6 +238,18 @@ trap 'trap - EXIT; cleanup; exit 143' TERM
     "$BASE_BRANCH" "$CWD" "$DIFF_CONTENT"
 } > "$PROMPT_TMP"
 
+# Why not codex 既定の証明書検証に任せる: codex は既定でシステムの証明書
+# ストアを使う (`using system root certificates` がログに出る) が、Claude Code
+# の Bash sandbox 内ではその検証が通らず、auth.openai.com / chatgpt.com への
+# 接続がすべて `error sending request` で落ちて exit 1 になる。CA バンドルを
+# ファイルで渡すと codex は rustls + そのファイルで検証し、同じ sandbox で
+# 完走する (2026-09-25 実測、codex-cli 0.156.1 で失敗 / 0.157.0 で失敗と完走)。SSL_CERT_FILE ではなく codex 専用の変数にするのは、
+# 他のツールへの影響を避けるため。user が CA を自分で指定していればそちらを使う。
+if [ -z "${CODEX_CA_CERTIFICATE:-}" ] && [ -z "${SSL_CERT_FILE:-}" ] \
+  && [ -r /etc/ssl/cert.pem ]; then
+  export CODEX_CA_CERTIFICATE=/etc/ssl/cert.pem
+fi
+
 # codex を background + poll + kill で包む。pipeline のまま前景で走らせない
 # 理由は、2026-09-02 に codex 0.152.1 が資格情報つき proxy 下で
 # `responses_retry` の 60s バックオフに入り **終了しなくなった**のを実測した

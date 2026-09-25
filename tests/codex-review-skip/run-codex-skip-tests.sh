@@ -9,6 +9,7 @@ set -euo pipefail
 #   - 裸の数値 429 のみ / "rate limiter" 部分一致 / 汎用エラー → exit 1
 #     (SKIP 誤判定で ERROR が隠蔽されない)
 #   - 終了しない codex を watchdog が打ち切る → exit 3 (issue #335)
+#   - codex に CA バンドルをファイルで渡す / user 指定の CA は上書きしない
 #
 # isolation: codex を PATH 先頭の stub に差し替え、CODEX_STDERR の内容を
 # stderr に出して exit 1 する。git 前提条件 (base 超のコミット) は fake repo
@@ -40,6 +41,7 @@ mkdir -p "$WORKDIR/bin"
 cat >"$WORKDIR/bin/codex" <<'EOF'
 #!/bin/sh
 [ -n "${CODEX_CALLED_MARKER:-}" ] && : >"$CODEX_CALLED_MARKER"
+[ -n "${CODEX_CA_RECORD:-}" ] && printf '%s' "${CODEX_CA_CERTIFICATE:-}" >"$CODEX_CA_RECORD"
 if [ -n "${CODEX_SLEEP:-}" ]; then
   sleep "$CODEX_SLEEP" &
   [ -n "${CODEX_GRANDCHILD_FILE:-}" ] && printf '%s\n' "$!" >"$CODEX_GRANDCHILD_FILE"
@@ -189,6 +191,36 @@ run_marker_case bad-timeout-zero       1 no 0   ''
 # 検出し `make lint` が落ちるため (2026-09-02 実測)。
 FAKE_USERINFO='user:pass'
 run_marker_case proxy-authed-still-runs 1 yes '' "http://$FAKE_USERINFO@localhost:54619"
+
+# codex に CA バンドルをファイルで渡すこと。既定のシステム証明書ストアでの
+# 検証は sandbox 内で通らず、codex-review が exit 1 になっていた (2026-09-25)。
+# user が CA を自分で指定しているときは上書きしないこと。
+#
+# $1=名前, $2=環境に与える CODEX_CA_CERTIFICATE (空なら未設定),
+# $3=codex が受け取るべき値
+run_ca_case() {
+  local name="$1" given="$2" want="$3" record="$WORKDIR/codex-ca" got
+  rm -f "$record"
+  (cd "$FAKE_REPO" \
+    && HTTPS_PROXY='' https_proxy='' \
+       PATH="$WORKDIR/bin:$PATH" CODEX_CA_RECORD="$record" \
+       env -u SSL_CERT_FILE -u CODEX_CA_CERTIFICATE \
+         ${given:+"CODEX_CA_CERTIFICATE=$given"} \
+         bash "$TARGET" security >/dev/null 2>&1) || true
+  got="$(cat "$record" 2>/dev/null || printf '<not called>')"
+  if [ "$got" = "$want" ]; then
+    pass=$((pass + 1))
+  else
+    echo "FAIL $name: expected CODEX_CA_CERTIFICATE='$want' got='$got'"
+    fail=$((fail + 1))
+  fi
+}
+
+# /etc/ssl/cert.pem が無い host (CI の Linux 等) では何も渡さない
+default_ca=''
+[ -r /etc/ssl/cert.pem ] && default_ca=/etc/ssl/cert.pem
+run_ca_case ca-default       ''              "$default_ca"
+run_ca_case ca-user-override /custom/ca.pem  /custom/ca.pem
 
 echo "codex-review-skip tests: $pass passed, $fail failed"
 [ "$fail" = 0 ] || exit 1
