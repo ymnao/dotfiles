@@ -38,15 +38,12 @@ fail-loud になる場所の版数固定はこの規約の対象外**(eval 実�
 `model` 未指定)も Opus 5.5 に解決された(2026-09-02 / 2.1.252 の測定では
 どちらも Opus 5 / `claude-opus-5`)。根拠はどちらもセッションの
 システムプロンプトが報告するモデル名で、**alias の解決先を実行基盤の外から検証した
-ものではない**。同日、`model: "fable"` を渡した `code-reviewer` は **Fable 5.1
-(`claude-fable-5-1`)** と自己申告した(2026-09-02 から変わらず。2026-08-04 時点は
-Fable 5。手段は下の「なぜ frontmatter ではなく呼び出し側か」と同じ)。
-`opus` の指す先が Opus 5.5 になったのは 2.1.280(公式 CHANGELOG の
-"Added Claude Opus 5.5 (`claude-opus-5-5`), now the default Opus model" より。
-それ以前に Opus 5 になったのは 2.1.219。バイナリからは観測できないので出所は
-CHANGELOG)。どちらも世代内の変化で、この repo は alias 運用を採っているため
-上の表も frontmatter も skill の `model: "fable"` 指定も**設定の変更は不要だった**
-(下記のとおり alias 運用は意図)。この表は強制力を持たない — `claude/settings.json` にモデルを指定する
+ものではない**。同日の `model: "fable"` 指定の再測結果は下の「なぜ frontmatter
+ではなく呼び出し側か」に記す。`opus` の指す先が Opus 5.5 になったのは 2.1.280
+(公式 CHANGELOG の "Added Claude Opus 5.5 (`claude-opus-5-5`), now the default
+Opus model" より。バイナリからは観測できないので出所は CHANGELOG)。世代内の
+変化で、この repo は alias 運用を採っているため上の表も skill の `model: "fable"`
+指定も**設定の変更は不要だった**(下記のとおり alias 運用は意図)。この表は強制力を持たない — `claude/settings.json` にモデルを指定する
 フィールドは無く(`effortLevel` のみ)、切り替えは `/model` か CLI 既定に依存する。
 したがって表と実挙動の一致は、この実測でしか確かめられない。
 
@@ -65,8 +62,9 @@ ID 直書きにはしない — alias は上流の世代交代に追随するの
 
 - **Agent tool の `model` パラメータは効く** — `subagent_type: "code-reviewer"`
   + `model: "fable"` で起動した subagent は `Fable 5 / claude-fable-5` と自己申告した
-  (2026-09-02 / 2.1.252 の再測では `Fable 5.1 / claude-fable-5-1`。alias の
-  指す先だけが動き、パラメータが効くという結論は変わらない)
+  (2026-09-02 / 2.1.252 と 2026-09-26 / 2.1.282 の再測ではどちらも
+  `Fable 5.1 / claude-fable-5-1`。alias の指す先だけが動き、パラメータが効く
+  という結論は変わらない)
 - **frontmatter の `model:` はセッション内では検証できない** — `model: fable` に
   書き換えて起動しても `Opus 5`、対照として確実に有効な alias である
   `model: sonnet` に変えても `Opus 5` のまま。つまり**agent 定義はセッション開始時に
