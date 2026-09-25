@@ -24,7 +24,7 @@ open な Dependabot PR を 1 branch に統合し、push を 1 回にして CI �
      - 以下の `gh` の手順は Claude Code 向け。codex には `run_in_background` が無く、codex での `gh` の挙動は測っていない
    - `gh pr list --author app/dependabot --state open --json number,title,headRefName,url,body,labels` を **`run_in_background: true` で**起動する (リダイレクトは付けない)。結果の `Output is being written to: <path>` の `<path>` を控える
    - **完了通知で exit code 0 を確認してから**次へ進む。非 0 なら `<path>` を読んで原因を報告して停止する。出力ファイルは stdout と stderr が混ざり、末尾に harness が `[exited with code N]` を追記するので、ファイルの中身で成否を判定しない
-   - `jq -n 'input' <path> | bash "$HOME/.claude/skills/dependabot-bulk/scripts/list-dependabot-prs.sh" > "$TMPDIR/dependabot-bulk/classified.json"` (`<path>` は控えた実パスを貼る)。`jq -n 'input'` は先頭の JSON 値だけを読むので末尾の追記を無視する。出力ファイルは残る保証が無いので通知を受けたらすぐ取り込み、既に無ければ `gh` の行から打ち直す
+   - `jq -n 'input' <path> | bash "$HOME/.claude/skills/dependabot-bulk/scripts/list-dependabot-prs.sh" > "$TMPDIR/dependabot-bulk/classified.json"` (`<path>` は控えた実パスを貼る)。`jq -n 'input'` は先頭の JSON 値だけを読むので末尾の追記を無視する。出力ファイルは残る保証が無いので通知を受けたらすぐ取り込み、既に無ければ `gh` の行から打ち直す。jq が parse error で落ちたら (stderr の行が JSON より前に出た等) `<path>` を読んで報告して停止する
    - 出力 JSON の各要素: `{number, title, headRefName, url, package, toVersion, ecosystem, semver, security}`
    - semver は grouped PR (dependabot.yml `groups` 由来の複合 title)・v prefix (`v4.1.1`)・commit-message prefix (`Chore(deps): Bump ...` のような dependabot.yml `commit-message` 由来の接頭辞) を吸収して判定する。判別不能は `unknown`
    - semver / package / toVersion は title のみ、ecosystem は headRefName、security は body と labels から判定する。`-` 始まりの package 名は `pnpm up` にオプションとして解釈されうるので `semver=unknown` に倒れる (個別維持行き)。title は誰でも書ける文字列で、**Dependabot 生成物であることの保証は上の `--author app/dependabot` フィルタが担う**ので、このスクリプトを別経路の PR 一覧に流用しない

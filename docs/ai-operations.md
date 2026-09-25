@@ -715,7 +715,7 @@ sandbox 外では macOS 本来の `/var/folders/…/T/` に展開される(2026-
   sandbox 内の `cat` / `jq` から読める(tasks ディレクトリは denyWrite 対象で、
   sandbox 内から書き換えはできない)
 - ファイルには stdout と stderr が混ざり、末尾に harness が
-  `\n\n[exited with code N]\n` を追記する。`jq length <file>` は追記部分で
+  `\n[exited with code N]\n` を追記する(出力が改行で終わっていれば空行を挟んで見える)。`jq length <file>` は追記部分で
   parse error(exit 5)、`jq -n 'input' <file>` は先頭の JSON 値だけを読んで exit 0
 - `gh` が失敗すると(`gh api …/pulls/999999` で 404)、先頭は API のエラー JSON
   オブジェクトになり `jq -n 'input'` は exit 0 で通る。成否は**完了通知の
@@ -1646,7 +1646,9 @@ host 側の実ファイル `~/.codex/config.toml`(これが git 追跡外。repo
   block 側の写し漏れと違い、live に痛みが出ないまま前提だけが false になる。
   同じ節の「リダイレクト付きの単独行」の表は `> <file>` の行と `2>&1` の行の 2 つを
   測り直す(2.1.281 までに一度挙動が変わっており、「残る経路 2」の範囲がこの 2 行に
-  依存している)
+  依存している)。あわせて同節の「`gh` の出力をファイルへ渡すには」の background
+  出力ファイルの挙動(パスが tool 結果に返る / 末尾の追記 / 完了通知の exit code)を
+  1 回通す — `dependabot-bulk` step 2 がこれに依存している
 
 **codex 側の記述**(1 / 2 / 3)はすべて **2026-07-31 に upstream の tag
 `rust-v0.146.0`(host の codex-cli 0.146.0)のソースを読んで確認**した
