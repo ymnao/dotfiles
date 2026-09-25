@@ -92,11 +92,12 @@ frontmatter は `model: opus` のまま据え置く。呼び出し側が指定�
 第二意見という緩和が消えるため。`/pr` は codex 不能時に Fable 系サブエージェントで
 代替する設計なので、そのフォールバックが常態化していたらこれに当たる。
 
-**現状 (2026-09-07 実測 / codex-cli 0.153.4): agent の Bash sandbox 内で
-`codex-review` は 3 観点とも完走する**。2026-09-02 に 0.152.1 で観測された
-ハング (資格情報つき proxy を codex の HTTP クライアントが通れず、60s
-バックオフに入って終了しない) は再現しない。**実測の詳細と特定できていない
-範囲は `claude/skills/codex-review/SKILL.md` の「Running under a shell
+**現状 (2026-09-25 実測 / codex-cli 0.157.0): agent の Bash sandbox 内で
+`codex-review` が回るのは、run-review.sh が CA バンドルをファイルで渡している
+から**。渡さないと、システムの証明書ストアでの TLS 検証が sandbox 内で通らず
+exit 1 になる (2026-09-07 / 0.153.4 では渡さずに完走していた)。2026-09-02 に
+0.152.1 で観測されたハングは watchdog で打ち切る。**実測の詳細と特定できて
+いない範囲は `claude/skills/codex-review/SKILL.md` の「Running under a shell
 sandbox」節が正本**、経緯は issue #335。
 
 **上流の不調への対処を「環境の判定」として埋めない**。0.152.1 のハングに

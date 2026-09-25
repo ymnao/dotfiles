@@ -13,6 +13,10 @@ set -euo pipefail
 #   CODEX_REVIEW_TIMEOUT
 #                      Seconds before the watchdog kills a hung codex and
 #                      returns exit 3 (default: 300).
+#   CODEX_REVIEW_CA_BUNDLE
+#                      CA bundle passed to codex as CODEX_CA_CERTIFICATE when
+#                      neither it nor SSL_CERT_FILE is set (default: Homebrew's
+#                      ca-certificates bundle; skipped if not a readable file).
 #
 # Output: validated review JSON on stdout (single line, schema-checked by
 # parse-review-output.sh).
@@ -237,6 +241,38 @@ trap 'trap - EXIT; cleanup; exit 143' TERM
   printf '\n\n## Target\n\nReview the diff below (produced by "git diff %s...HEAD" in %s). Do NOT modify any files. Output only the fenced JSON block per the Output contract above.\n\n```diff\n%s\n```\n' \
     "$BASE_BRANCH" "$CWD" "$DIFF_CONTENT"
 } > "$PROMPT_TMP"
+
+# Why not codex 既定の証明書検証に任せる: codex は既定でシステムの証明書
+# ストアを使う (`using system root certificates` がログに出る) が、Claude Code
+# の Bash sandbox 内ではその検証が通らず、auth.openai.com / chatgpt.com への
+# 接続がすべて `error sending request` で落ちて exit 1 になる。CA バンドルを
+# 渡すと codex は rustls backend に切り替わり (`building HTTP client with
+# rustls backend for custom CA bundle`)、同じ sandbox で完走する (2026-09-25
+# 実測。渡さないと 0.156.1 / 0.157.0 とも失敗、渡すと 0.157.0 で完走)。
+#
+# codex は渡したバンドルを組み込みのルートに足す (自己署名 CA 1 本だけの
+# バンドルでも完走した) ので、中身は検証を緩めないものにする。
+# Why not /etc/ssl/cert.pem: 2021 年の OpenBSD 版リストで、Apple / Mozilla が
+# 信頼を外した TrustCor / Camerfirma を含む
+# (`grep -ciE 'TrustCor|Chambersign|Chambers of Commerce'` で 13 行)。
+# Homebrew の ca-certificates は Mozilla 追従で同じ grep が 0 行
+# (openssl@3 の依存として入る)。
+#
+# SSL_CERT_FILE ではなく codex 専用の変数にするのは、他のツールへの影響を
+# 避けるため。user が CA を自分で指定していればそちらを使う。
+if [ -z "${CODEX_REVIEW_CA_BUNDLE:-}" ]; then
+  for candidate in /opt/homebrew/etc/ca-certificates/cert.pem \
+    /usr/local/etc/ca-certificates/cert.pem; do
+    if [ -f "$candidate" ]; then
+      CODEX_REVIEW_CA_BUNDLE="$candidate"
+      break
+    fi
+  done
+fi
+if [ -z "${CODEX_CA_CERTIFICATE:-}" ] && [ -z "${SSL_CERT_FILE:-}" ] \
+  && [ -f "${CODEX_REVIEW_CA_BUNDLE:-}" ] && [ -r "$CODEX_REVIEW_CA_BUNDLE" ]; then
+  export CODEX_CA_CERTIFICATE="$CODEX_REVIEW_CA_BUNDLE"
+fi
 
 # codex を background + poll + kill で包む。pipeline のまま前景で走らせない
 # 理由は、2026-09-02 に codex 0.152.1 が資格情報つき proxy 下で
