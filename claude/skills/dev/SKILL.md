@@ -21,15 +21,18 @@ simplify / codex-review / pr の個別指示と code-reviewer サブエージェ
   `/issue` が plan を提案した時点で step 2 の判定に合流する。
   issue 本文だけでは要件が揃わないことがある — 前のセッションが追加要件を
   HANDOFF や後続 issue にだけ書き足していることがあるため (ymnao/portfolio#23
-  で取りこぼした)。次の 2 つも読み、step 2a-1 の入力に加える:
-  - プロジェクトルートに `HANDOFF.md` があれば、その issue 番号 (`#<N>`) を
-    含む記述
-  - その issue を参照している open な issue の本文。`gh repo view --json nameWithOwner --jq .nameWithOwner`
-    で得た値をリテラルで埋めて
-    `gh api repos/<owner>/<repo>/issues/<N>/timeline --paginate --jq '.[] | select(.event == "cross-referenced" and .source.issue.state == "open" and .source.issue.pull_request == null) | .source.issue | {number, title, body}'`
-    で本文まで取る (`gh issue view` は timeline を出さない)。`gh api` 組み込みの `{owner}/{repo}` プレースホルダは
-    使わない — その形だけ `tls: failed to verify certificate` で落ちる
-    (リテラル形は通る。sandbox 内で gh を走らせたときと同じエラー。2026-09-26 実測)
+  で取りこぼした)。**`/issue` が plan を提案する前に**次の 2 つも読み、
+  plan (自明タスクの 1-3 行 plan を含む) の要件に加える:
+  - プロジェクトルートに `HANDOFF.md` があれば全体を読み、その issue に
+    関わる記述
+  - その issue を参照している open な issue の本文。
+    `gh repo view --json nameWithOwner --jq .nameWithOwner` で得た値を
+    リテラルで埋めて次を実行する (`gh issue view` は timeline を出さない)。
+    別 repo からの参照も混ざるので `url` で見分ける:
+    `gh api repos/<owner>/<repo>/issues/<N>/timeline --paginate --jq '.[] | select(.event == "cross-referenced" and .source.issue.state == "open" and .source.issue.pull_request == null) | .source.issue | {url: .html_url, title, body}'`
+    `gh api` 組み込みの `{owner}/{repo}` プレースホルダは使わない — その形
+    だけ `tls: failed to verify certificate` で落ちる (リテラル形は通る。
+    sandbox 内で gh を走らせたときと同じエラー。2026-09-26 実測)
 - **引数なし**: プロジェクトルートの `HANDOFF.md` を読み、「未完了・次に
   やること」の最優先タスクを対象にする。HANDOFF.md が無い・残タスクが
   曖昧な場合はタスク内容を user に確認して停止する
