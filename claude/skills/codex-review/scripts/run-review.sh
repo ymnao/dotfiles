@@ -13,6 +13,10 @@ set -euo pipefail
 #   CODEX_REVIEW_TIMEOUT
 #                      Seconds before the watchdog kills a hung codex and
 #                      returns exit 3 (default: 300).
+#   CODEX_REVIEW_CA_BUNDLE
+#                      CA bundle passed to codex as CODEX_CA_CERTIFICATE when
+#                      neither it nor SSL_CERT_FILE is set (default:
+#                      /etc/ssl/cert.pem; skipped if unreadable).
 #
 # Output: validated review JSON on stdout (single line, schema-checked by
 # parse-review-output.sh).
@@ -245,9 +249,10 @@ trap 'trap - EXIT; cleanup; exit 143' TERM
 # ファイルで渡すと codex は rustls + そのファイルで検証し、同じ sandbox で
 # 完走する (2026-09-25 実測、codex-cli 0.156.1 で失敗 / 0.157.0 で失敗と完走)。SSL_CERT_FILE ではなく codex 専用の変数にするのは、
 # 他のツールへの影響を避けるため。user が CA を自分で指定していればそちらを使う。
+CODEX_REVIEW_CA_BUNDLE="${CODEX_REVIEW_CA_BUNDLE:-/etc/ssl/cert.pem}"
 if [ -z "${CODEX_CA_CERTIFICATE:-}" ] && [ -z "${SSL_CERT_FILE:-}" ] \
-  && [ -r /etc/ssl/cert.pem ]; then
-  export CODEX_CA_CERTIFICATE=/etc/ssl/cert.pem
+  && [ -r "$CODEX_REVIEW_CA_BUNDLE" ]; then
+  export CODEX_CA_CERTIFICATE="$CODEX_REVIEW_CA_BUNDLE"
 fi
 
 # codex を background + poll + kill で包む。pipeline のまま前景で走らせない

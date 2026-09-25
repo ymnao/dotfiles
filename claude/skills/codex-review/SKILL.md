@@ -104,7 +104,7 @@ Then per-perspective details, one line per finding:
 
   **(B) filesystem 起因 — 起動後の stderr シグネチャで検出する。**外側シェルが `$HOME/.codex/` 配下の SQLite (`state_*.sqlite` / `goals_*.sqlite` / `memories_*.sqlite`) の write を allow していない場合、`codex` CLI 内部の in-process app-server client が state DB を open できず `failed to initialize in-process app-server client: Operation not permitted (os error 1)` で exit する。run-review.sh はこのシグネチャを検出して exit 3 を返す。
 
-  **(C) TLS 検証 — CA バンドルをファイルで渡して塞ぐ。**codex は既定でシステムの証明書ストアで TLS を検証するが、この sandbox 内ではその検証が通らず、`auth.openai.com` / `chatgpt.com` への接続がすべて `error sending request` で落ちて exit 1 (ERROR) になる (2026-09-25 実測、codex-cli 0.156.1 / 0.157.0)。ドメインは allowlist 済みで、proxy への接続自体は成功している。`CODEX_CA_CERTIFICATE=/etc/ssl/cert.pem` を与えると rustls + そのファイルで検証して完走するので、run-review.sh は `CODEX_CA_CERTIFICATE` / `SSL_CERT_FILE` が未設定で `/etc/ssl/cert.pem` が読めるときにこれを渡す (回帰テスト: `tests/codex-review-skip/` の ca-default ケース)。2026-09-07 には渡さずに完走していた。どちらの側が変わったか (codex の検証方式か sandbox か) は未確定。
+  **(C) TLS 検証 — CA バンドルをファイルで渡して塞ぐ。**codex は既定でシステムの証明書ストアで TLS を検証するが、この sandbox 内ではその検証が通らず、`auth.openai.com` / `chatgpt.com` への接続がすべて `error sending request` で落ちて exit 1 (ERROR) になる (2026-09-25 実測、codex-cli 0.156.1 / 0.157.0)。ドメインは allowlist 済みで、proxy への接続自体は成功している。`CODEX_CA_CERTIFICATE=/etc/ssl/cert.pem` を与えると rustls + そのファイルで検証して完走するので、run-review.sh は `CODEX_CA_CERTIFICATE` / `SSL_CERT_FILE` が未設定で `/etc/ssl/cert.pem` (`CODEX_REVIEW_CA_BUNDLE` で変更可) が読めるときにこれを渡す (回帰テスト: `tests/codex-review-skip/` の ca-* ケース)。2026-09-07 には渡さずに完走していた。どちらの側が変わったか (codex の検証方式か sandbox か) は未確定。
 
   回避策は 2 通り:
 

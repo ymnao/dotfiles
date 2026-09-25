@@ -196,16 +196,23 @@ run_marker_case proxy-authed-still-runs 1 yes '' "http://$FAKE_USERINFO@localhos
 # 検証は sandbox 内で通らず、codex-review が exit 1 になっていた (2026-09-25)。
 # user が CA を自分で指定しているときは上書きしないこと。
 #
+# バンドルの置き場は CODEX_REVIEW_CA_BUNDLE で差し替え、host の
+# /etc/ssl/cert.pem の有無に結果を左右させない。
+#
 # $1=名前, $2=環境に与える CODEX_CA_CERTIFICATE (空なら未設定),
-# $3=codex が受け取るべき値
+# $3=SSL_CERT_FILE (空なら未設定), $4=CODEX_REVIEW_CA_BUNDLE,
+# $5=codex が受け取るべき値
 run_ca_case() {
-  local name="$1" given="$2" want="$3" record="$WORKDIR/codex-ca" got
+  local name="$1" given="$2" ssl="$3" bundle="$4" want="$5"
+  local record="$WORKDIR/codex-ca" got
   rm -f "$record"
   (cd "$FAKE_REPO" \
     && HTTPS_PROXY='' https_proxy='' \
        PATH="$WORKDIR/bin:$PATH" CODEX_CA_RECORD="$record" \
        env -u SSL_CERT_FILE -u CODEX_CA_CERTIFICATE \
          ${given:+"CODEX_CA_CERTIFICATE=$given"} \
+         ${ssl:+"SSL_CERT_FILE=$ssl"} \
+         CODEX_REVIEW_CA_BUNDLE="$bundle" \
          bash "$TARGET" security >/dev/null 2>&1) || true
   got="$(cat "$record" 2>/dev/null || printf '<not called>')"
   if [ "$got" = "$want" ]; then
@@ -216,11 +223,12 @@ run_ca_case() {
   fi
 }
 
-# /etc/ssl/cert.pem が無い host (CI の Linux 等) では何も渡さない
-default_ca=''
-[ -r /etc/ssl/cert.pem ] && default_ca=/etc/ssl/cert.pem
-run_ca_case ca-default       ''              "$default_ca"
-run_ca_case ca-user-override /custom/ca.pem  /custom/ca.pem
+FAKE_BUNDLE="$WORKDIR/ca.pem"
+: >"$FAKE_BUNDLE"
+run_ca_case ca-default        ''             ''             "$FAKE_BUNDLE"         "$FAKE_BUNDLE"
+run_ca_case ca-bundle-missing ''             ''             "$WORKDIR/missing.pem" ''
+run_ca_case ca-user-override  /custom/ca.pem ''             "$FAKE_BUNDLE"         /custom/ca.pem
+run_ca_case ca-ssl-cert-file  ''             /custom/ca.pem "$FAKE_BUNDLE"         ''
 
 echo "codex-review-skip tests: $pass passed, $fail failed"
 [ "$fail" = 0 ] || exit 1
