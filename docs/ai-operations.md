@@ -459,9 +459,14 @@ issue #289 の「保護をコマンド文字列の静的解析で担い続ける
 1. **home の外のプロジェクト** (`/Volumes/…` 等) — `~/*/` は home 直下を起点に
    するので届かない
 2. **excludedCommands にマッチする行** — sandbox ごと外れる(次節)。
-   compound 行は `guard-sandbox-exclusions.sh` が止めるが、**単独の除外コマンドに
-   リダイレクトを付けた行**は unsandboxed で走るので hook だけが残る。
-   このとき **cwd 配下**の `.codex/` は `block-dangerous-commands.sh` と
+   compound 行は `guard-sandbox-exclusions.sh` が止めるが、**単独の除外コマンド**
+   (リダイレクト無し、または `2>&1` のような fd 複製だけが付いた行)は
+   unsandboxed で走るので hook だけが残る。**ファイルへのリダイレクト
+   (`>` / `<`)が付いた単独行は sandbox 内で走る**ので、リダイレクト先の書き込みは
+   sandbox が止める(2026-09-25 / 2.1.281 実測。次節の 2 つ目の表)。除外コマンドが
+   **自分の引数で**ファイルを読み書きする形(`gh repo clone <repo> <dir>` など)は
+   測っていない。
+   hook だけが残る行では、**cwd 配下**の `.codex/` は `block-dangerous-commands.sh` と
    `guard-codex-dir.sh` の 2 つが見る(後者も Bash matcher に配線され、
    command 文字列から token を抽出して cwd 内の `.codex/` を止める)。
    **cwd の外**については `block-dangerous-commands.sh` が唯一の防御になる
@@ -659,6 +664,27 @@ sandbox 内か外のどちらかで実行する all-or-nothing 設計で、マ�
 `~/.ssh` `~/.aws` を使う行は `denyRead` で測っている(sandbox 内なら `ls` が非 0)。
 `x=$(brew ...)` の行以外は #267 のレビュー中に code-reviewer が同日 live 実測した。
 
+**リダイレクト付きの単独行**(2026-09-25 / Claude Code 2.1.281 (desktop 2.9939.2 の
+pin) / gh 2.101.0。issue #360)。sandbox 内の `gh` は TLS 検証で
+`x509: OSStatus -26276` になる(下記)ので、その成否で内外を判定した。
+`~/` への書き込みの行だけは sandbox が掛かったことの直接証拠:
+
+| 行 | 結果 |
+|---|---|
+| `gh api user --jq .login`(リダイレクト無し) | 成功(sandbox **外**) |
+| `gh api user --jq .login 2>&1` | 成功(sandbox **外**。fd 複製だけなら外れる) |
+| `gh api user --jq .login` に `> <scratchpad 実パス>/…` / `> /tmp/claude-501/…` / `> /dev/null` / `< /dev/null` のいずれか | TLS 失敗(sandbox **内**。入力リダイレクトでも入る) |
+| `gh api user --jq .login 2> /dev/null` | exit 1・出力なし(stderr を捨てたので失敗とだけ書く) |
+| `gh --version > ~/.sbxprobe-redir-360` | `operation not permitted`(`~/` は allowWrite 外) |
+| `gh pr list --state open --limit 1 --json number > <scratchpad 実パス>/prs.json` | TLS 失敗(`dependabot-bulk` step 2 と同形。#364) |
+
+**ファイルへのリダイレクトが付くと、除外コマンドの単独行でも sandbox 内で走る。**
+上流がなぜそう判定するかは確認していない(`strings` は採っていない)。
+2026-09-04 / 09-06 には同じ形が sandbox 外で走っていた(下の `$TMPDIR` の段落)が、
+その時点の版は記録していないので、どの版で変わったかは分からない。
+compound 行が sandbox 外に落ちる挙動(上表)は今回測り直していない
+(`guard-sandbox-exclusions.sh` がブロックするので Bash tool から直接は打てない)。
+
 外れるのは filesystem の `denyRead` / `denyWrite` / `allowWrite` だけでなく、
 `network.allowedDomains` と `credentials.files` / `credentials.envVars` の deny も
 まとめて(sandbox 化されないコマンドにはどの層も適用されないため。ただし直接
@@ -672,13 +698,12 @@ schema は `array(string)` のままで、粒度を指定するフィールド�
 除外コマンドは sandbox 外で走るため、**環境変数の値そのものも sandbox 内と
 一致しない**。`$TMPDIR` は sandbox 内では uid スコープの `/tmp/claude-<uid>`、
 sandbox 外では macOS 本来の `/var/folders/…/T/` に展開される(2026-09-04 実測)。
-したがって除外コマンドの出力先に `$TMPDIR` を書くと、sandbox 内で `mkdir` した
-ディレクトリとは別の場所を指して `no such file or directory` で落ちる。対処は
-**出力先だけ sandbox 内の実パスをリテラルで書く**。実パスは `echo "$TMPDIR"` を
-sandbox 内で 1 回打って得る(uid は環境ごとに違うので値を文書に固定しない)。
-読む側が sandbox 内なら `$TMPDIR` のままでよく、この往復は成立する
-(2026-09-06 実測: sandbox 外の `gh … > /tmp/claude-501/…` で書き、sandbox 内の
-`cat "$TMPDIR/…"` で読めた)。なお `gh … | bash <script>` のような pipe 形は
+当時は除外コマンドの出力先に `$TMPDIR` を書くと `no such file or directory` で
+落ち、出力先を sandbox 内の実パスのリテラルにすれば往復が成立した
+(2026-09-06 実測。版は未記録)。**2.1.281 ではこの対処は成立しない** —
+リダイレクトを付けた時点で行が sandbox 内に入り、`gh` 自体が TLS で落ちる
+(上の 2 つ目の表)。`gh` の出力を sandbox の外のままファイルへ渡す手段は
+現状無い(#364)。なお `gh … | bash <script>` のような pipe 形は
 行全体が sandbox 外に落ちるため `guard-sandbox-exclusions.sh` がブロックする
 (2026-09-06 実測)。
 
@@ -773,16 +798,17 @@ hook が入ったことで、`gh` を使う手順は次の形が書けなくな�
 みなされるので、**ブロック単位**で見る):
 
 - `gh ... | jq ...` / `gh ... && other` / 他のコマンドと同じブロックに並べる —
-  混在なのでブロックされる。`gh` 内蔵の `--jq` を使うか、出力をファイルに落として
-  次の呼び出しで処理する
+  混在なのでブロックされる。`gh` 内蔵の `--jq` を使って単独行に収める。
+  `gh ... > <file>` でファイルに落とす形は 2.1.281 では sandbox 内に入って失敗する
+  (上の「リダイレクト付きの単独行」の表。代替は #364)
 - `cat body.md | gh ...` — 標準入力を pipe で渡す形。`--body-file` / `-F <file>`
   のような中間ファイル経由のオプションに書き換える
 - `x=$(gh ...)` — ブロックはされないが、コマンド置換には上流が降下しないので
   **sandbox 内で走り `gh` 自体が失敗する**(実測: `tls: failed to verify
   certificate: x509: OSStatus -26276`)。単独で実行して結果を読み、値はリテラルで
   渡す。**変数は Bash 呼び出しをまたいで保持されない**ので、そもそも
-  `before_head=$(...)` 型の記録は次の呼び出しから参照できない — ファイルに
-  落とすか、値をリテラルで控える
+  `before_head=$(...)` 型の記録は次の呼び出しから参照できない — 値をリテラルで
+  控える(`gh` の出力はリダイレクトでファイルに落とす形も上記のとおり失敗する)
 
 コード中の文字列としての言及(`echo "gh ..."`)も止まる。**日常の調査コマンドが
 これを踏む** — `grep -n 'gh ' <file> | head` のように除外コマンド名を検索語として
@@ -1598,7 +1624,10 @@ host 側の実ファイル `~/.codex/config.toml`(これが git 追跡外。repo
   とくに **allow 側の 2 行**(`x=$(brew --version); ls ~/.ssh` と subshell / if の行)
   を測り直すこと — この 2 つは `guard-sandbox-exclusions.sh` が「単独扱いでよい」と
   判断する根拠で、上流が降下するようになると**黙って escape 経路に変わる**。
-  block 側の写し漏れと違い、live に痛みが出ないまま前提だけが false になる
+  block 側の写し漏れと違い、live に痛みが出ないまま前提だけが false になる。
+  同じ節の「リダイレクト付きの単独行」の表は `> <file>` の行と `2>&1` の行の 2 つを
+  測り直す(2.1.281 までに一度挙動が変わっており、「残る経路 2」の範囲がこの 2 行に
+  依存している)
 
 **codex 側の記述**(1 / 2 / 3)はすべて **2026-07-31 に upstream の tag
 `rust-v0.146.0`(host の codex-cli 0.146.0)のソースを読んで確認**した
