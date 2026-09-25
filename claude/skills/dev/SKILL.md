@@ -238,7 +238,9 @@ alias / plugin / 設定で user 側が増やせる) を丸ごと追う羽目に�
     **agent がそのまま実行するもの (SKILL.md の中のコマンド形、
     `scripts/` 配下の判定器・分類器) を変える変更**は例外側に入れる
     (理由は `claude/rules/acceptance-patterns.md` 冒頭。同じ前提で
-    `**/SKILL.md` と `**/*.sh` を paths に含めている)。
+    `**/SKILL.md` と `**/*.sh` を paths に含めている)。実例 (PR #337):
+    `claude/skills/` のみの変更で厚くした code-reviewer が空文字の fail-open を
+    出した (`dependabot-bulk/SKILL.md` step 7)。
     **ここで足すのは 4-1 の隊列側だけ** — `/pr` 側は `classify-risk.sh` の
     medium 床 (issue #255) が tier 上は最低 1 観点を要求する。ただし
     **要求されるのは tier であって実行ではない** (sandbox では
