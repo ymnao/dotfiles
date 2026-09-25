@@ -673,9 +673,7 @@ pin) / gh 2.101.0。issue #360)。sandbox 内の `gh` は TLS 検証で
 |---|---|
 | `gh api user --jq .login`(リダイレクト無し) | 成功(sandbox **外**) |
 | `gh api user --jq .login 2>&1` | 成功(sandbox **外**。fd 複製だけなら外れる) |
-| `gh api user --jq .login > <scratchpad 実パス>/…` / `> /tmp/claude-501/…` | TLS 失敗(sandbox **内**) |
-| `gh api user --jq .login > /dev/null` | TLS 失敗(sandbox **内**) |
-| `gh api user --jq .login < /dev/null` | TLS 失敗(sandbox **内**。入力リダイレクトでも入る) |
+| `gh api user --jq .login` に `> <scratchpad 実パス>/…` / `> /tmp/claude-501/…` / `> /dev/null` / `< /dev/null` のいずれか | TLS 失敗(sandbox **内**。入力リダイレクトでも入る) |
 | `gh api user --jq .login 2> /dev/null` | exit 1・出力なし(stderr を捨てたので失敗とだけ書く) |
 | `gh --version > ~/.sbxprobe-redir-360` | `operation not permitted`(`~/` は allowWrite 外) |
 | `gh pr list --state open --limit 1 --json number > <scratchpad 実パス>/prs.json` | TLS 失敗(`dependabot-bulk` step 2 と同形。#364) |
@@ -715,8 +713,6 @@ sandbox 外では macOS 本来の `/var/folders/…/T/` に展開される(2026-
 `timeout`。`-p` / `--` などのオプション形も含む)と環境変数代入(クォート付きの
 値・`+=`・配列添字を含む)を剥がし、コマンド語のクォートとバックスラッシュを
 外してから prefix 一致を取る(2.1.212 バイナリの `strings` より)。
-2.1.281 でファイルリダイレクト付きの行が sandbox 内に入る(上の 2 つ目の表)ことが
-この判定のどこに由来するかは未確認。
 **コマンド置換 `$(...)` / subshell `(...)` / `if ... fi` には降下しない**
 (上表の `x=$(brew --version); ls ~/.ssh` の行と `(gh --version)` / `if` の行が実測)。
 
@@ -811,8 +807,8 @@ hook が入ったことで、`gh` を使う手順は次の形が書けなくな�
   **sandbox 内で走り `gh` 自体が失敗する**(実測: `tls: failed to verify
   certificate: x509: OSStatus -26276`)。単独で実行して結果を読み、値はリテラルで
   渡す。**変数は Bash 呼び出しをまたいで保持されない**ので、そもそも
-  `before_head=$(...)` 型の記録は次の呼び出しから参照できない — ファイルに
-  落とすか、値をリテラルで控える
+  `before_head=$(...)` 型の記録は次の呼び出しから参照できない — 値をリテラルで
+  控える(`gh` の出力はリダイレクトでファイルに落とす形も上記のとおり失敗する)
 
 コード中の文字列としての言及(`echo "gh ..."`)も止まる。**日常の調査コマンドが
 これを踏む** — `grep -n 'gh ' <file> | head` のように除外コマンド名を検索語として
@@ -1629,8 +1625,9 @@ host 側の実ファイル `~/.codex/config.toml`(これが git 追跡外。repo
   を測り直すこと — この 2 つは `guard-sandbox-exclusions.sh` が「単独扱いでよい」と
   判断する根拠で、上流が降下するようになると**黙って escape 経路に変わる**。
   block 側の写し漏れと違い、live に痛みが出ないまま前提だけが false になる。
-  同じ節の「リダイレクト付きの単独行」の表も測り直す(2.1.281 までに一度
-  挙動が変わっており、「残る経路 2」の範囲がこの表に依存している)
+  同じ節の「リダイレクト付きの単独行」の表は `> <file>` の行と `2>&1` の行の 2 つを
+  測り直す(2.1.281 までに一度挙動が変わっており、「残る経路 2」の範囲がこの 2 行に
+  依存している)
 
 **codex 側の記述**(1 / 2 / 3)はすべて **2026-07-31 に upstream の tag
 `rust-v0.146.0`(host の codex-cli 0.146.0)のソースを読んで確認**した
