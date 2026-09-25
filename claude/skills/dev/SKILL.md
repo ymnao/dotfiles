@@ -26,9 +26,8 @@ simplify / codex-review / pr の個別指示と code-reviewer サブエージェ
     含む記述
   - その issue を参照している open な issue の本文。`gh repo view --json nameWithOwner --jq .nameWithOwner`
     で得た値をリテラルで埋めて
-    `gh api repos/<owner>/<repo>/issues/<N>/timeline --paginate --jq '.[] | select(.event == "cross-referenced" and .source.issue.state == "open" and .source.issue.pull_request == null) | .source.issue.number'`
-    で一覧を取り、各番号を `gh issue view <番号>` で読む (`gh issue view` 単体は
-    timeline を出さない)。`gh api` 組み込みの `{owner}/{repo}` プレースホルダは
+    `gh api repos/<owner>/<repo>/issues/<N>/timeline --paginate --jq '.[] | select(.event == "cross-referenced" and .source.issue.state == "open" and .source.issue.pull_request == null) | .source.issue | {number, title, body}'`
+    で本文まで取る (`gh issue view` は timeline を出さない)。`gh api` 組み込みの `{owner}/{repo}` プレースホルダは
     使わない — その形だけ `tls: failed to verify certificate` で落ちる
     (リテラル形は通る。sandbox 内で gh を走らせたときと同じエラー。2026-09-26 実測)
 - **引数なし**: プロジェクトルートの `HANDOFF.md` を読み、「未完了・次に
@@ -78,8 +77,8 @@ fresh context なので、渡す事実が不足すると hallucination で埋ま
 利益 (self-preference bias 回避・推論深度) は事前調査が土台。
 
 1. **タスク面の把握**: issue 本文 / HANDOFF 記述 / 自由文の要件を書き出す
-   (受け入れ条件・スコープ外を明示)。issue 番号起動では step 1 で読んだ
-   HANDOFF の該当記述と参照元 issue の要件も含める
+   (受け入れ条件・スコープ外を明示)。issue 番号起動では step 1 で追加で
+   読んだものも含める
 2. **影響範囲の特定**: 変更対象ファイル候補を Grep で列挙 (規模の当たり
    をつける)
 3. **既存実装の確認**: 対象ファイルの該当箇所を Read。似た機能が既に
