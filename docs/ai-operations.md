@@ -676,7 +676,7 @@ pin) / gh 2.101.0。issue #360)。sandbox 内の `gh` は TLS 検証で
 | `gh api user --jq .login` に `> <scratchpad 実パス>/…` / `> /tmp/claude-501/…` / `> /dev/null` / `< /dev/null` のいずれか | TLS 失敗(sandbox **内**。入力リダイレクトでも入る) |
 | `gh api user --jq .login 2> /dev/null` | exit 1・出力なし(stderr を捨てたので失敗とだけ書く) |
 | `gh --version > ~/.sbxprobe-redir-360` | `operation not permitted`(`~/` は allowWrite 外) |
-| `gh pr list --state open --limit 1 --json number > <scratchpad 実パス>/prs.json` | TLS 失敗(`dependabot-bulk` step 2 と同形。#364) |
+| `gh pr list --state open --limit 1 --json number > <scratchpad 実パス>/prs.json` | TLS 失敗(`dependabot-bulk` の旧 step 2 と同形。#364) |
 
 **ファイルへのリダイレクトが付くと、除外コマンドの単独行でも sandbox 内で走る。**
 上流がなぜそう判定するかは確認していない(`strings` は採っていない)。
@@ -702,10 +702,28 @@ sandbox 外では macOS 本来の `/var/folders/…/T/` に展開される(2026-
 落ち、出力先を sandbox 内の実パスのリテラルにすれば往復が成立した
 (2026-09-06 実測。版は未記録)。**2.1.281 ではこの対処は成立しない** —
 リダイレクトを付けた時点で行が sandbox 内に入り、`gh` 自体が TLS で落ちる
-(上の 2 つ目の表)。`gh` の出力を sandbox の外のままファイルへ渡す手段は
-現状無い(#364)。なお `gh … | bash <script>` のような pipe 形は
+(上の 2 つ目の表)。なお `gh … | bash <script>` のような pipe 形は
 行全体が sandbox 外に落ちるため `guard-sandbox-exclusions.sh` がブロックする
 (2026-09-06 実測)。
+
+**`gh` の出力をファイルへ渡すには、Bash tool の `run_in_background: true` を使う**
+(2026-09-25 / Claude Code 2.1.281 実測。#364)。リダイレクトを付けずに background で
+起動すると `gh` は sandbox 外で走り、harness が出力を
+`<scratchpad の親>/tasks/<id>.output` に書いて、そのパスを tool 結果に返す。
+
+- `gh pr list --state all --limit 2 --json number,title` で成功した。出力ファイルは
+  sandbox 内の `cat` / `jq` から読める(tasks ディレクトリは denyWrite 対象で、
+  sandbox 内から書き換えはできない)
+- ファイルには stdout と stderr が混ざり、末尾に harness が
+  `\n\n[exited with code N]\n` を追記する。`jq length <file>` は追記部分で
+  parse error(exit 5)、`jq -n 'input' <file>` は先頭の JSON 値だけを読んで exit 0
+- `gh` が失敗すると(`gh api …/pulls/999999` で 404)、先頭は API のエラー JSON
+  オブジェクトになり `jq -n 'input'` は exit 0 で通る。成否は**完了通知の
+  exit code** で判定し、ファイルの中身では判定しない
+- 出力ファイルは残る保証が無い(同じ tasks ディレクトリの別ファイルが直後に
+  消えていた観測が 1 件)。完了通知を受けたらすぐ `$TMPDIR` 等へ取り込む
+
+手順の実例は `claude/skills/dependabot-bulk/SKILL.md` step 2。
 
 上流の判定は tree-sitter の `program` / `list` / `pipeline` /
 `redirected_statement` を降下して sub-command に割り、wrapper コマンド
@@ -800,7 +818,8 @@ hook が入ったことで、`gh` を使う手順は次の形が書けなくな�
 - `gh ... | jq ...` / `gh ... && other` / 他のコマンドと同じブロックに並べる —
   混在なのでブロックされる。`gh` 内蔵の `--jq` を使って単独行に収める。
   `gh ... > <file>` でファイルに落とす形は 2.1.281 では sandbox 内に入って失敗する
-  (上の「リダイレクト付きの単独行」の表。代替は #364)
+  (上の「リダイレクト付きの単独行」の表)。ファイルが要るなら `run_in_background: true`
+  の出力ファイルを経由する(同節の「`gh` の出力をファイルへ渡すには」)
 - `cat body.md | gh ...` — 標準入力を pipe で渡す形。`--body-file` / `-F <file>`
   のような中間ファイル経由のオプションに書き換える
 - `x=$(gh ...)` — ブロックはされないが、コマンド置換には上流が降下しないので
@@ -808,7 +827,7 @@ hook が入ったことで、`gh` を使う手順は次の形が書けなくな�
   certificate: x509: OSStatus -26276`)。単独で実行して結果を読み、値はリテラルで
   渡す。**変数は Bash 呼び出しをまたいで保持されない**ので、そもそも
   `before_head=$(...)` 型の記録は次の呼び出しから参照できない — 値をリテラルで
-  控える(`gh` の出力はリダイレクトでファイルに落とす形も上記のとおり失敗する)
+  控える(値が大きく転記に向かないなら、上の `run_in_background: true` の出力ファイルを経由する)
 
 コード中の文字列としての言及(`echo "gh ..."`)も止まる。**日常の調査コマンドが
 これを踏む** — `grep -n 'gh ' <file> | head` のように除外コマンド名を検索語として
