@@ -33,19 +33,17 @@ fail-loud になる場所の版数固定はこの規約の対象外**(eval 実�
 | 独立第二意見(別モデル系統) | Fable 世代など | - | fresh context のレビュー、難しい設計判断、cascade でメインが疑わしいと判定したときのエスカレーション先 |
 | 探索・情報収集 | Haiku 世代 | - | 軽い調査・ファイル探索 |
 
-**実測 (2026-09-02 / `claude` 2.1.252)**: メインは Opus 5 (`claude-opus-5`)、
-`code-reviewer` サブエージェント(frontmatter は `model: opus`)も Opus 5 に
-解決された(2026-08-04 の測定から変わらず)。根拠はどちらもセッションの
+**実測 (2026-09-26 / `claude` 2.1.282)**: メインは Opus 5.5 (`claude-opus-5-5`)、
+`code-reviewer` サブエージェント(frontmatter は `model: opus`、呼び出し側で
+`model` 未指定)も Opus 5.5 に解決された(2026-09-02 / 2.1.252 の測定では
+どちらも Opus 5 / `claude-opus-5`)。根拠はどちらもセッションの
 システムプロンプトが報告するモデル名で、**alias の解決先を実行基盤の外から検証した
-ものではない**。同日の再測で `fable` alias は **Fable 5.1
-(`claude-fable-5-1`)** を指した(2026-08-04 時点は Fable 5。根拠は起動した
-subagent 自身の自己申告で、下の「なぜ frontmatter ではなく呼び出し側か」と
-同じ手段)。世代内の変化なので、上の表も skill の `model: "fable"` 指定も
-無変更で済んだ。なお `opus` の指す先が Opus 5 になったのは 2.1.219(公式
-CHANGELOG の "Added Claude Opus 5 (`claude-opus-5`), now the default Opus
-model" より。バイナリからは観測できないので出所は CHANGELOG)。この repo は
-alias 運用を採っているため**設定の変更は不要だった**(下記のとおり alias 運用は
-意図)。この表は強制力を持たない — `claude/settings.json` にモデルを指定する
+ものではない**。同日の `model: "fable"` 指定の再測結果は下の「なぜ frontmatter
+ではなく呼び出し側か」に記す。`opus` の指す先が Opus 5.5 になったのは 2.1.280
+(公式 CHANGELOG の "Added Claude Opus 5.5 (`claude-opus-5-5`), now the default
+Opus model" より。バイナリからは観測できないので出所は CHANGELOG)。世代内の
+変化で、この repo は alias 運用を採っているため上の表も skill の `model: "fable"`
+指定も**設定の変更は不要だった**(下記のとおり alias 運用は意図)。この表は強制力を持たない — `claude/settings.json` にモデルを指定する
 フィールドは無く(`effortLevel` のみ)、切り替えは `/model` か CLI 既定に依存する。
 したがって表と実挙動の一致は、この実測でしか確かめられない。
 
@@ -56,7 +54,7 @@ ID 直書きにはしない — alias は上流の世代交代に追随するの
 
 **「生成者とレビュアーは同一モデル系統にしない」への対応 — 呼び出し側で寄せる**。
 下の「根拠」節と `agents/AGENTS.md` が掲げるこの規約に対し、frontmatter の
-`model: opus` のままだとレビュアーがメイン(Opus 5)と同一系統になる。そこで
+`model: opus` のままだとレビュアーがメイン(Opus 世代)と同一系統になる。そこで
 `/dev` step 4-1 の `code-reviewer` 起動は **Agent tool の `model: "fable"`
 パラメータで明示的に別系統へ寄せる**。
 
@@ -64,8 +62,9 @@ ID 直書きにはしない — alias は上流の世代交代に追随するの
 
 - **Agent tool の `model` パラメータは効く** — `subagent_type: "code-reviewer"`
   + `model: "fable"` で起動した subagent は `Fable 5 / claude-fable-5` と自己申告した
-  (2026-09-02 / 2.1.252 の再測では `Fable 5.1 / claude-fable-5-1`。alias の
-  指す先だけが動き、パラメータが効くという結論は変わらない)
+  (2026-09-02 / 2.1.252 と 2026-09-26 / 2.1.282 の再測ではどちらも
+  `Fable 5.1 / claude-fable-5-1`。alias の指す先だけが動き、パラメータが効く
+  という結論は変わらない)
 - **frontmatter の `model:` はセッション内では検証できない** — `model: fable` に
   書き換えて起動しても `Opus 5`、対照として確実に有効な alias である
   `model: sonnet` に変えても `Opus 5` のまま。つまり**agent 定義はセッション開始時に
