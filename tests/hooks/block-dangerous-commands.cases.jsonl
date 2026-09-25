@@ -424,3 +424,4 @@
 {"name":"tmpdir-bare-redirect","expect":"allow","command":"jq -r .x in.json > \"$TMPDIR/dependabot-bulk/classified.json\"","reason":"$TMPDIR は residual から除去される (issue #330)"}
 {"name":"tmpdir-default-redirect","expect":"block","command":"jq -r .x in.json > \"${TMPDIR:-/tmp}/classified.json\"","reason":"既定値つきは除去されずブロック — mktemp テンプレート形が skill 手順で使えない理由 (issue #330)"}
 {"name":"mktemp-var-redirect","expect":"block","command":"gh pr list --json number > \"$WORK/prs.json\"","reason":"mktemp -d の受け皿変数は除去対象外 (issue #330)"}
+{"name":"dependabot-bulk-step2-import","expect":"allow","command":"jq -n 'input' /private/tmp/claude-501/p/s/tasks/b1.output | bash \"$HOME/.claude/skills/dependabot-bulk/scripts/list-dependabot-prs.sh\" > \"$TMPDIR/dependabot-bulk/classified.json\"","reason":"dependabot-bulk step 2 の取り込み行。pipe 右辺の $HOME / $TMPDIR は再パース規則の対象外 (issue #364。同 step が hook に止まっていた issue #330 の再発防止)"}

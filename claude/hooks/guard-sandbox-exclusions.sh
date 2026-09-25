@@ -317,7 +317,12 @@ sandbox 外で走ります (順序は問わない。issue #267)。
 - 標準入力を pipe で渡す形 (cat body.md | $matched ...) — 中間ファイルを使う
   オプション (--body-file / -F <file> 等) に書き換えてください
 - 出力を pipe で渡す形 ($matched ... | other) — $matched 内蔵の --jq を使うか、
-  いったんファイルに落として次の呼び出しで処理してください
+  $matched を単独で run_in_background: true で起動し、結果に表示される
+  出力ファイルを次の呼び出しで読んでください。成否は完了通知の exit code で
+  判定し、ファイルの中身では判定しないこと (stderr が混ざり、末尾に
+  "[exited with code N]" が付く。JSON なら jq -n 'input' <file> で先頭だけ読む)。
+  "$matched ... > <file>" のようにリダイレクトを付けると行が sandbox 内で走ります
+  (gh は TLS 検証で失敗する)
 - 出力を変数に受ける形 (x=\$($matched ...)) — コマンド置換は sandbox 内で走るため
   $matched 自体が失敗します。単独で実行して結果を読み、値はリテラルで渡してください
 - コード中の文字列として "$matched" に言及しているだけの場合 (grep のパターン等) —

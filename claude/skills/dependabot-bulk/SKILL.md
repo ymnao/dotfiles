@@ -19,11 +19,12 @@ open な Dependabot PR を 1 branch に統合し、push を 1 回にして CI �
 2. **列挙 + 分類**
    - 作業用 tmp dir を作る: `mkdir -p "$TMPDIR/dependabot-bulk"` (skill flow の全 tmp ファイルはこの下に置く)
      - **`WORK=$(mktemp -d ...)` は使わない**。Bash tool 呼び出し間で shell 変数が persist しないことに加え、`> "$WORK/..."` は `block-dangerous-commands.sh` の「動的展開を含む書き込み系リダイレクト」でブロックされる。**リダイレクト先に書ける変数は `$TMPDIR` / `$HOME` / `$XDG_*` (と同名の `${...}` 形) だけ**で、既定値つきの `${TMPDIR:-/tmp}` は落ちる (2026-09-02 実測。`claude/rules/acceptance-patterns.md` も参照)
-     - `$TMPDIR` は uid スコープの固定パス (実測: `/tmp/claude-501`) で、前回の別 repo / 別 run のファイルが残りうる。step 2 が毎回 `prs.json` / `classified.json` を上書きするので通常は問題にならないが、**step 2 を飛ばして step 7 以降だけを再開しない**
-     - **`gh` の出力先には `$TMPDIR` を書かず、実パスをリテラルで書く**。`gh` は sandbox 外で走るので `$TMPDIR` が sandbox 内とは別のディレクトリに展開され、`no such file or directory` で必ず落ちる (2026-09-04 実測。機構は `docs/ai-operations.md`「sandbox の excludedCommands が『一次防御』を丸ごと外す経路」)。実パスは直前に `echo "$TMPDIR"` を打って得る (uid は環境ごとに違うのでこの手順書に固定値を書かない)。`bash scripts/…` 側は sandbox 内で走るので `$TMPDIR` のままでよい
-   - `echo "$TMPDIR"` を打ち、表示された実パスを次の行の `<TMPDIR 実パス>` に literal で貼る
-   - `gh pr list --author app/dependabot --state open --json number,title,headRefName,url,body,labels > <TMPDIR 実パス>/dependabot-bulk/prs.json`
-   - `bash "$HOME/.claude/skills/dependabot-bulk/scripts/list-dependabot-prs.sh" < "$TMPDIR/dependabot-bulk/prs.json" > "$TMPDIR/dependabot-bulk/classified.json"`
+     - `$TMPDIR` は uid スコープの固定パス (実測: `/tmp/claude-501`) で、前回の別 repo / 別 run のファイルが残りうる。step 2 が毎回 `classified.json` を上書きするので通常は問題にならないが、**step 2 を飛ばして step 7 以降だけを再開しない**
+     - **`gh` の行にリダイレクトを付けない**。ファイルへのリダイレクト (`>` / `<`) が付くと除外コマンドの単独行でも sandbox 内で走り、`gh` が TLS 検証で落ちる (Claude Code 2.1.281 で実測。`docs/ai-operations.md` §10「リダイレクト付きの単独行」)。代わりに Bash tool の `run_in_background: true` が書く出力ファイルを経由する
+     - 以下の `gh` の手順は Claude Code 向け。codex には `run_in_background` が無く、codex での `gh` の挙動は測っていない
+   - `gh pr list --author app/dependabot --state open --json number,title,headRefName,url,body,labels` を **`run_in_background: true` で**起動する (リダイレクトは付けない)。結果の `Output is being written to: <path>` の `<path>` を控える
+   - **完了通知で exit code 0 を確認してから**次へ進む。非 0 なら `<path>` を読んで原因を報告して停止する。出力ファイルは stdout と stderr が混ざり、末尾に harness が `[exited with code N]` を追記するので、ファイルの中身で成否を判定しない
+   - `jq -n 'input' "<path>" | bash "$HOME/.claude/skills/dependabot-bulk/scripts/list-dependabot-prs.sh" > "$TMPDIR/dependabot-bulk/classified.json"` (`<path>` は控えた実パスを貼る)。`jq -n 'input'` は先頭の JSON 値だけを読むので末尾の追記を無視する。出力ファイルは残る保証が無いので通知を受けたらすぐ取り込み、既に無ければ `gh` の行から打ち直す。jq が parse error で落ちたら (stderr の行が JSON より前に出た等) `<path>` を読んで報告して停止する
    - 出力 JSON の各要素: `{number, title, headRefName, url, package, toVersion, ecosystem, semver, security}`
    - semver は grouped PR (dependabot.yml `groups` 由来の複合 title)・v prefix (`v4.1.1`)・commit-message prefix (`Chore(deps): Bump ...` のような dependabot.yml `commit-message` 由来の接頭辞) を吸収して判定する。判別不能は `unknown`
    - semver / package / toVersion は title のみ、ecosystem は headRefName、security は body と labels から判定する。`-` 始まりの package 名は `pnpm up` にオプションとして解釈されうるので `semver=unknown` に倒れる (個別維持行き)。title は誰でも書ける文字列で、**Dependabot 生成物であることの保証は上の `--author app/dependabot` フィルタが担う**ので、このスクリプトを別経路の PR 一覧に流用しない
