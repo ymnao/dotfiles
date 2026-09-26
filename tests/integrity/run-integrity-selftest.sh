@@ -178,7 +178,8 @@ make_good_settings() {
       network: { allowedDomains: ["chatgpt.com", "auth.openai.com", "example.com"] },
       filesystem: {
         allowWrite: ["~/.codex", "/tmp"],
-        denyWrite: ["~/.zshrc", "~/.codex/config.toml", "~/*/**/.codex/**"]
+        denyWrite: ["~/.zshrc", "~/.codex/config.toml", "~/*/**/.codex/**",
+                    "~/*/**/.mcp.json", "~/*/**/.mcp/**", "~/*/**/.env"]
       }
     }
   }' >"$1"
@@ -228,6 +229,13 @@ SF="$BASE/settings-project-codex-non-absolute.json"; make_good_settings "$SF"
 jq '.sandbox.filesystem.denyWrite |= map(if . == "~/*/**/.codex/**" then "**/.codex/**" else . end)' \
   "$SF" >"$SF.tmp" && mv "$SF.tmp" "$SF"
 check "settings-project-codex-non-absolute" 1 "$(run_settings_verifier "$SF")"
+
+# fixture 5d: MCP 起動ファイルの deny を 1 つずつ除外 → FAIL (issue #372)
+for mcp_deny_suffix in '/*/**/.mcp.json' '/*/**/.mcp/**' '/*/**/.env'; do
+  SF="$BASE/settings-no-mcp-deny.json"; make_good_settings "$SF"
+  jq --arg v "$mcp_deny_suffix" '.sandbox.filesystem.denyWrite -= ["~" + $v]' "$SF" >"$SF.tmp" && mv "$SF.tmp" "$SF"
+  check "settings-missing-mcp-deny:~${mcp_deny_suffix}" 1 "$(run_settings_verifier "$SF")"
+done
 
 # fixture 6: denyWrite キー自体を消す → FAIL
 # (`-=` による要素除去とは別経路。denyWrite ブロックごと削除された drift で

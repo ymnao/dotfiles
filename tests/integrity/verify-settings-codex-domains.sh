@@ -99,6 +99,14 @@ check_contains '.sandbox.filesystem.denyWrite' "${codex_literal}/config.toml" \
 project_codex_glob=$(tilde_literal '/*/**/.codex/**')
 check_contains '.sandbox.filesystem.denyWrite' "$project_codex_glob" \
   "claude/settings.json: .sandbox.filesystem.denyWrite に ${project_codex_glob} が無い (プロジェクト配下の .codex/ が sandbox 層で無防備)"
+# MCP の起動に使うファイル (issue #372)。次回のクライアント起動時に sandbox の外で
+# 実行される / source されるので .codex/ と同じ範囲で deny する。全文一致で pin する
+# 理由は上の .codex/** と同じ。.mcp.json は Claude Code 組み込みの protected path にも
+# あるが、そちらは「作業ディレクトリとその上位」だけで home 配下の別プロジェクトを覆わない。
+for mcp_glob in '/*/**/.mcp.json' '/*/**/.mcp/**' '/*/**/.env'; do
+  check_contains '.sandbox.filesystem.denyWrite' "$(tilde_literal "$mcp_glob")" \
+    "claude/settings.json: .sandbox.filesystem.denyWrite に ~${mcp_glob} が無い (MCP 起動ファイルが sandbox 層で無防備)"
+done
 
 echo "settings codex domains: $pass passed, $fail failed"
 [ "$fail" = 0 ] || exit 1

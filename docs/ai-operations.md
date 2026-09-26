@@ -1842,6 +1842,51 @@ matcher が現在の配線)。
 リテラル代入では出てこない(`Prn("Claude Code needs your input", <種別>)` 経由で
 発火する)ため、**リテラル代入だけを grep すると 2 種取りこぼす**。
 
+### MCP の起動に使うファイル — `.codex/` と同じ層で守る(#372)
+
+別の repo で、`.mcp.json`(Claude Code)と `.codex/config.toml`(codex)の両方から
+repo 内の共通起動スクリプトを呼び、そのスクリプトが repo 直下の `.env` を source
+して MCP サーバーを起動する構成を作った。issue #372 の実測では、MCP サーバーは
+Bash の sandbox の外で起動しており(sandbox 内からは `.env` の stat すら拒否
+されるのに、起動スクリプトは読めた)、起動スクリプトは Edit tool で確認なしに
+編集できた。したがって `.codex/config.toml` を守っても、**呼び出し先の
+スクリプトと `.env` が書き換えられれば次回起動時に sandbox の外で任意コマンドが
+動く** — `.codex/` のガードが迂回される。
+
+Claude Code 組み込みの保護(2026-09-26 に公式 docs の sandboxing / permission-modes
+で確認)は `.mcp.json` だけを覆い、起動スクリプトと `.env` はどちらのリストにも無い:
+
+- sandbox の protected paths: 「作業ディレクトリとその上位」の `.mcp.json` への
+  書き込みを常に拒否(`allowWrite` でも解除不可)。**docs の記述は
+  「作業ディレクトリとその上位」までで、配下のサブディレクトリと home 配下の
+  別プロジェクトは記述の範囲外**
+- permission の protected files: `.mcp.json` を含む(`.env` は含まず `.envrc` は含む)。
+  auto mode では**分類器に回すだけで hard block ではない**
+- codex 経路(apply_patch / codex の Bash)には組み込みの保護が無い
+
+**規約: 起動スクリプトは repo の `.mcp/` 配下に置く。** ガードは参照先を
+`.mcp.json` / `config.toml` から解析せず、この固定ディレクトリで持つ(参照先の
+解析は `command` の相対パス・ラッパー経由の起動などを追う羽目になり、被覆に
+上限が無い)。**`.mcp/` の外に置いたスクリプトは守られない。**
+
+| 層 | 実装 | 効くもの | 効かないもの |
+|---|---|---|---|
+| 一次: sandbox | `denyWrite` に `~/*/**/.mcp.json` / `~/*/**/.mcp/**` / `~/*/**/.env` | Claude Code の Bash 経路。2026-09-26 に repo 配下の probe で、`.mcp.json`(直下 / 2 段ネスト)・`.env`(直下 / 1 段ネスト)の作成と `.mcp` の `mkdir` が拒否され、対照(`ctl.txt` / `.env.example` / `mcp.json`)は書けた | codex の Bash 経路(codex は別の sandbox)。file 編集 tool |
+| 二次: hook | `agents/hooks/guard-codex-dir.sh` の保護対象を `protected_names`(`.codex` `.mcp` `.mcp.json` `.env`)に一般化。範囲は `.codex/` と同じ(cwd 配下 + home 配下の別プロジェクト) | Claude Code / codex 両方の file 編集 tool(Edit / Write / apply_patch 等)。Bash は cwd 配下の token 判定 | codex の Bash から home 配下の別プロジェクトへ書く経路、home の外(`.codex/` と同じ残余) |
+
+- **判定はファイル名の完全一致**: `.env.local` / `.env.example` / `mcp.json` /
+  `.mcp.json.bak` は対象外(denyRead と同じ粒度)。`~/.env`(home 直下)も
+  プロジェクトではないので対象外
+- **`.env` は agent から完全に触れなくなる**(denyRead と合わせて読み書きとも拒否)。
+  作成・更新は user が手で行う
+- **guard の Bash 判定は読み取りも止める**(`.codex/` と同じ)。`.mcp/` 配下と
+  `.mcp.json` は Read tool で読む
+- **hook のファイル名と codex の statusMessage は `.codex` のまま**。変えると
+  `codex/hooks.json` の entry が変わり、trusted_hash の再承認が要る(本体の中身は
+  hash に含まれない。上記「codex の hook 承認 (`trusted_hash`) の適用範囲」節)
+- regression は `tests/hooks/guard-codex-dir.cases.jsonl` の issue #372 節と
+  `tests/integrity/verify-settings-codex-domains.sh`(+ selftest の fixture 5d)が pin する
+
 ### scope 外(別 issue)
 
 - codex CLI 側で notify を禁止する設定の有無は未調査

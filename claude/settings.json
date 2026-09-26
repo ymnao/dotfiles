@@ -70,7 +70,10 @@
         "~/.zprofile",
         "~/.bashrc",
         "~/.codex/config.toml",
-        "~/*/**/.codex/**"
+        "~/*/**/.codex/**",
+        "~/*/**/.mcp.json",
+        "~/*/**/.mcp/**",
+        "~/*/**/.env"
       ]
     },
     "network": {
