@@ -1878,11 +1878,13 @@ Claude Code 組み込みの保護(2026-09-26 に公式 docs の sandboxing / per
   `.mcp.json.bak` は対象外(起動スクリプトが source するのは `.env` なので。
   denyRead は `.env.local` も拒否しており、読み側より狭い)。`~/.env`(home 直下)も
   プロジェクトではないので対象外
-- **`.env` は agent から読み書きとも拒否される**(Read tool は `permissions.deny`、
+- **Claude Code からは `.env` の読み書きとも拒否される**(Read tool は `permissions.deny`、
   Bash の読みは denyRead、Bash の書きは denyWrite、file 編集 tool は hook)。
-  作成・更新は user が手で行う。**`.env` という名前のディレクトリ(venv の慣習)も
-  巻き込む** — hook は `.codex` と同じく配下まで止め、sandbox も `mkdir .env` を
-  拒否した(2026-09-26 実測、対照の `mkdir` は通った)
+  codex は file 編集 tool と cwd 配下の Bash token だけが hook に掛かる(残余は上表)。
+  作成・更新は user が手で行う。**`.env` という名前のディレクトリ(venv を `.env/` に
+  作る repo がある)も巻き込む** — hook は `.codex` と同じく配下まで止め、sandbox も
+  `mkdir .env` を拒否した(2026-09-26、hook を経由しないスクリプト起動で sandbox 層
+  だけを実測。対照の `mkdir` は通った)
 - **guard の Bash 判定は読み取りも止め、token の役割も見ない**(`.codex/` と同じ)。
   `grep -n .env`、`echo .env >> .gitignore`、`--env-file .env` のように**パスとして
   使っていない裸の token でも cwd 配下を指せば止まる**。`.mcp/` 配下と `.mcp.json` は
