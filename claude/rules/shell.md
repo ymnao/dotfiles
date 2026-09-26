@@ -190,6 +190,14 @@ paths:
   codex 固有の危険として明記していた穴と同型。同じ前提は
   `tests/integrity/verify-guard-codex-wiring.sh` にも残っており、そちらは
   遮断層 (`guard-codex-dir`) の配線検査だった (issue #245 step 1 のレビューで発覚)
+- **WebFetch の出力は一次情報ではなく要約として扱う**。WebFetch は取得したページを
+  小さなモデルで要約して返すので、公式 docs を指定して「逐語で引用して」と頼んでも、
+  フィールド名や版番号が書き換わって返ることがある。hook の入力 schema や、
+  版ごとの挙動を実装の根拠にするときは、**実装の前に**インストール済みの本体
+  (`strings` / 固定文字列の grep) か実際の payload で確かめる。
+  実例 (PR #371): WebFetch が返した docs の要約を信じて StopFailure の種別を
+  `.error_type` から読んだ。2.1.282 本体が渡すフィールドは `.error` で、通知は常に
+  `unknown` になっていた (code-reviewer がバイナリを読んで検出した)
 - **codex に配線する hook の stdout は `{` / `[` で始めない**。codex は hook の
   stdout がその 2 文字で始まると JSON 出力とみなし、パースに失敗した時点で run を
   `Failed` にして**本文を model の context に入れない**(実測根拠は
