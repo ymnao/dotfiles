@@ -26,6 +26,10 @@
 model = "gpt-5.6-sol"
 model_reasoning_effort = "medium"
 allow_login_shell = false
+# sandbox_mode ではなく permission profile で書くのは、workspace root 配下の特定名だけを
+# 書き込み禁止にする手段が profile にしか無いため (issue #375)。docs は sandbox_mode /
+# [sandbox_workspace_write] との併用を禁じている。
+default_permissions = "guarded"
 
 [shell_environment_policy]
 inherit = "all"
@@ -37,3 +41,22 @@ include_only = [
     "SHELL",
     "TERM",
 ]
+
+# MCP の起動に使うファイル (issue #372) を codex の Bash / sandbox 経路から守る。
+# hook はコマンド文字列しか見ないので `p=.env; printf x > "$p"` を止められない。
+# read ではなく deny (読み込みも拒否) なのは、glob は deny しか受け付けないため
+# (codex-cli 0.157.1 で実測: "glob path only supports deny access")。完全一致の read は
+# 直下にしか効かず sub/.env を素通りさせた。
+[permissions.guarded]
+extends = ":workspace"
+
+[permissions.guarded.filesystem]
+# workspace 外は :workspace が既に書き込みを拒否するが、$HOME で起動すると
+# home 全体が workspace root になるため、user スコープの MCP 定義を明示的に read にする。
+"~/.claude.json" = "read"
+
+[permissions.guarded.filesystem.":workspace_roots"]
+"." = "write"
+"**/.env" = "deny"
+"**/.mcp.json" = "deny"
+"**/.mcp" = "deny"
