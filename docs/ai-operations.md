@@ -1872,7 +1872,8 @@ Claude Code 組み込みの保護(2026-09-26 に公式 docs の sandboxing / per
 | 層 | 実装 | 効くもの | 効かないもの |
 |---|---|---|---|
 | 一次: sandbox | `denyWrite` に `~/*/**/.mcp.json` / `~/*/**/.mcp/**` / `~/*/**/.env` | Claude Code の Bash 経路。2026-09-26 に repo 配下の probe で、`.mcp.json`(直下 / 2 段ネスト)・`.env`(直下 / 1 段ネスト)の作成と `.mcp` の `mkdir` が拒否され、対照(`ctl.txt` / `.env.example` / `mcp.json`)は書けた | codex の Bash 経路(codex は別の sandbox)。file 編集 tool |
-| 二次: hook | `agents/hooks/guard-codex-dir.sh` の保護対象を `protected_names`(`.codex` `.mcp` `.mcp.json` `.env`)に一般化。範囲は `.codex/` と同じ(cwd 配下 + home 配下の別プロジェクト) | Claude Code / codex 両方の file 編集 tool(Edit / Write / apply_patch 等)。Bash は cwd 配下を**字面で**指す token だけ | **codex の Bash 経路の大半**: 変数経由の書き込み先(`p=<保護対象>; printf x > "$p"`)と home 配下の別プロジェクトへの書き込みは、この hook も `block-dangerous-commands.sh` も素通りする(2026-09-26 に payload を両 hook へ流して実測、どちらも exit 0)。Claude Code では一次の sandbox が止めるが、codex には後ろ盾が無い(`.codex/` は `block-dangerous-commands.sh` の動的展開判定が補うが、こちらは広げていない)。home の外は `.codex/` と同じ残余 |
+| 一次: codex sandbox(#375) | `codex/config.toml` の `default_permissions = "guarded"`(`extends = ":workspace"`)で、workspace root 配下の `**/.env` `**/.mcp.json` `**/.mcp` を `deny`、`~/.claude.json` を `read` | codex の Bash 経路。2026-09-27 に user のターミナルで、merge 済みの `~/.codex/config.toml` に対して `codex sandbox -P guarded`(codex-cli 0.157.1)を実行し、変数経由の `.env`・`.mcp.json`・`mkdir .mcp`・`sub/.env` への追記が拒否され、対照の通常ファイルは書けた。workspace 外(`$HOME` 直下)への書き込みは profile 無しの `:workspace` でも拒否された — issue #375 の「home 配下の別プロジェクトへ書ける」は hook 単体の測定で、sandbox は既に止めていた | codex の agent が `.env` / `.mcp.json` / `.mcp/` を**読むこともできない**(glob は `deny` しか受け付けず、完全一致の `read` は直下にしか効かなかった。同日に実測)。Claude Code 側は `.mcp` 系を書き込みだけ拒否するので、ここは codex の方が厳しい |
+| 二次: hook | `agents/hooks/guard-codex-dir.sh` の保護対象を `protected_names`(`.codex` `.mcp` `.mcp.json` `.env`)に一般化。範囲は `.codex/` と同じ(cwd 配下 + home 配下の別プロジェクト)。`~/.claude.json`(user スコープの mcpServers)は `~/.codex/config.toml` と同じ完全一致判定で止める(#375) | Claude Code / codex 両方の file 編集 tool(Edit / Write / apply_patch 等)。Bash は cwd 配下を**字面で**指す token だけ | 変数経由の書き込み先(`p=<保護対象>; printf x > "$p"`)は、この hook も `block-dangerous-commands.sh` も素通りする(2026-09-26 に payload を両 hook へ流して実測、どちらも exit 0)。止めるのは各 harness の一次(sandbox)。home の外は `.codex/` と同じ残余 |
 
 - **判定は名前の完全一致**: `.env.local` / `.env.example` / `mcp.json` /
   `.mcp.json.bak` は対象外(起動スクリプトが source するのは `.env` なので。
@@ -1880,7 +1881,7 @@ Claude Code 組み込みの保護(2026-09-26 に公式 docs の sandboxing / per
   プロジェクトではないので対象外
 - **Claude Code からは `.env` の読み書きとも拒否される**(Read tool は `permissions.deny`、
   Bash の読みは denyRead、Bash の書きは denyWrite、file 編集 tool は hook)。
-  codex は file 編集 tool と cwd 配下の Bash token だけが hook に掛かる(残余は上表)。
+  codex も Bash の読み書きは permission profile が拒否し、file 編集 tool は hook が止める。
   作成・更新は user が手で行う。**`.env` という名前のディレクトリ(venv を `.env/` に
   作る repo がある)も巻き込む** — hook は `.codex` と同じく配下まで止め、sandbox も
   `mkdir .env` を拒否した(2026-09-26、hook を経由しないスクリプト起動で sandbox 層

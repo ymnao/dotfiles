@@ -223,6 +223,9 @@ is_protected_project_path() {
 # ディレクトリ全体ではなく config.toml 1 ファイルのみを対象にする — codex CLI は
 # sessions/ / history.jsonl / auth.json / *.sqlite 等に正当に書き込む必要があり、
 # 攻撃価値が集中しているのは notify / mcp_servers / hooks を持つ config.toml だけ。
+# $HOME/.claude.json (Claude Code の user スコープ mcpServers) も同じ理由で 1 ファイルだけ
+# 対象にする (issue #375)。home 直下なので is_protected_home_project_codex_path の
+# `$home/*/<name>` には当たらない。
 is_protected_home_codex_config() {
   # HOME 不明の環境では判定しない (誤爆を避ける。cwd 判定は引き続き効く)
   [[ -n "$home_lower" ]] || return 1
@@ -230,7 +233,7 @@ is_protected_home_codex_config() {
   local home
   for home in "${home_forms[@]}"; do
     case "$1" in
-      "$home/$protected_name/config.toml") return 0 ;;
+      "$home/$protected_name/config.toml"|"$home/.claude.json") return 0 ;;
     esac
   done
 
@@ -439,7 +442,7 @@ while IFS= read -r -d '' rec; do
   [[ -n "$p" ]] || continue
   p_lower=$(normalize_path "$p" always)
   if is_protected_home_codex_config "$p_lower"; then
-    edit_reason="~/.codex/config.toml への書き込みは禁止されています（notify / mcp_servers / hooks 経由の host 側コマンド実行対策、issue #190）"
+    edit_reason="~/.codex/config.toml / ~/.claude.json への書き込みは禁止されています（notify / mcp_servers / hooks 経由の host 側コマンド実行対策、issue #190 / #375）"
     break
   fi
   if is_protected_home_project_codex_path "$p_lower"; then
