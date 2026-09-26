@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 #
-# PreToolUse hook (Claude Code / Codex CLI 共通): .codex/ ディレクトリへのファイル書き込みをブロックする
+# PreToolUse hook (Claude Code / Codex CLI 共通): .codex/ ディレクトリと MCP の起動に使うファイル
+# (.mcp/ .mcp.json .env、issue #372) へのファイル書き込みをブロックする
+# ファイル名が .codex 由来のままなのは、rename すると codex 側の hooks.json entry が変わり
+# TUI での再承認 (trusted_hash) が要るため。
 # 正本: agents/hooks/guard-codex-dir.sh (claude/hooks/ と codex/hooks/ からは相対 symlink)
 #
 # 検査対象:
 #   - apply_patch: patch 本文中のファイル操作ヘッダー (Add / Update / Delete / Move to) の path
 #   - Edit / Write / MultiEdit: path / file_path / filename
 #   - NotebookEdit: notebook_path
-#   - Bash: command 文字列からトークン抽出し、cwd 内の .codex/ を指す token をブロック
+#   - Bash: command 文字列からトークン抽出し、cwd 内の保護対象 (protected_names) を指す token をブロック
 #
-# patch 本文中の説明テキストに .codex が含まれるだけなら許可する。
+# patch 本文中の説明テキストに保護対象の名前が含まれるだけなら許可する。
 #
 # 加えて $HOME/.codex/config.toml (ホーム配下の codex 設定本体) への書き込みも
 # ブロックする (issue #190)。sandbox の denyWrite は Bash 経由の書き込みには効くが
@@ -46,6 +49,12 @@ if ! command -v jq &>/dev/null; then
 fi
 
 protected_name='.codex'
+# 次回のクライアント起動時に sandbox の外で実行される / source される名前 (issue #372)。
+# .codex と同じ「その名前の component か、その配下」で判定する。
+# .mcp は起動スクリプトの置き場所の規約 (.mcp.json / .codex/config.toml の command は
+# repo の .mcp/ 配下を指す)。.env は起動スクリプトが source するので実行面になる。
+# ファイル名の完全一致なので .env.local / .env.example / mcp.json は対象外。
+protected_names=("$protected_name" '.mcp' '.mcp.json' '.env')
 # cwd 関連の正規化はパス毎ではなく 1 度だけ行う（macOS APFS 想定の case-insensitive 比較）
 cwd_real=$(pwd -P)
 cwd_lower=$(printf '%s' "$cwd_real" | tr '[:upper:]' '[:lower:]')
@@ -191,19 +200,21 @@ normalize_path() {
 # (呼び出し側のループが 1 候補につき 1 回だけ正規化する)。normalize_path は
 # sed / tr / pwd -P の subshell を伴うので、判定の本数だけ再正規化しない。
 
-# 「cwd 配下の .codex/」を指しているかを判定する。
-# 判定基準: 相対パス / 絶対パスとも「cwd 基準に正規化した結果」が cwd/.codex/ prefix と
-# 一致するかで判定する。cwd 外の .codex/ (例: 別プロジェクトの ../other/.codex/) は
+# 「cwd 配下の保護対象 (protected_names の component か、その配下)」を指しているかを判定する。
+# 判定基準: 相対パス / 絶対パスとも「cwd 基準に正規化した結果」が cwd/<name>/ prefix と
+# 一致するかで判定する。cwd 外 (例: 別プロジェクトの ../other/.codex/) は
 # この判定の対象外 (home 配下は is_protected_home_project_codex_path が見る)。
 is_protected_project_path() {
   local path_lower="$1"
+  local name
 
-  # cwd 配下の .codex/ prefix と一致するか
-  case "$path_lower" in
-    "$cwd_lower/$protected_name"|"$cwd_lower/$protected_name"/*|"$cwd_lower"/*"/$protected_name"|"$cwd_lower"/*"/$protected_name"/*)
-      return 0
-      ;;
-  esac
+  for name in "${protected_names[@]}"; do
+    case "$path_lower" in
+      "$cwd_lower/$name"|"$cwd_lower/$name"/*|"$cwd_lower"/*"/$name"|"$cwd_lower"/*"/$name"/*)
+        return 0
+        ;;
+    esac
+  done
 
   return 1
 }
@@ -226,7 +237,7 @@ is_protected_home_codex_config() {
   return 1
 }
 
-# 「$HOME 配下の別プロジェクトの .codex/」を指しているかを判定する (issue #291)。
+# 「$HOME 配下の別プロジェクトの保護対象 (protected_names)」を指しているかを判定する (issue #291)。
 # sandbox の denyWrite は `~/*/**/.codex/**` で home 配下のプロジェクトを Bash 経路に
 # ついて包括的に止めているが、file 編集 tool には適用されないため、cwd 外の
 # プロジェクトが全層素通りしていた。この判定で file 編集 tool 側のスコープを
@@ -245,11 +256,13 @@ is_protected_home_project_codex_path() {
   # HOME 不明の環境では判定しない (誤爆を避ける。cwd 判定は引き続き効く)
   [[ -n "$home_lower" ]] || return 1
 
-  local home
+  local home name
   for home in "${home_forms[@]}"; do
-    case "$1" in
-      "$home"/*"/$protected_name"|"$home"/*"/$protected_name"/*) return 0 ;;
-    esac
+    for name in "${protected_names[@]}"; do
+      case "$1" in
+        "$home"/*"/$name"|"$home"/*"/$name"/*) return 0 ;;
+      esac
+    done
   done
 
   return 1
@@ -430,11 +443,11 @@ while IFS= read -r -d '' rec; do
     break
   fi
   if is_protected_home_project_codex_path "$p_lower"; then
-    edit_reason="ホーム配下のプロジェクトの Codex 設定ディレクトリへのファイル操作は禁止されています（次回 codex 起動時の host 側コマンド実行対策、issue #291）"
+    edit_reason="ホーム配下のプロジェクトの Codex 設定ディレクトリ / MCP 起動ファイル (.mcp/ .mcp.json .env) へのファイル操作は禁止されています（次回クライアント起動時の host 側コマンド実行対策、issue #291 / #372）"
     break
   fi
   if is_protected_project_path "$p_lower"; then
-    edit_reason="プロジェクト内の Codex 設定ディレクトリへのファイル操作は禁止されています（Cymulate notify エスケープ対策）"
+    edit_reason="プロジェクト内の Codex 設定ディレクトリ / MCP 起動ファイル (.mcp/ .mcp.json .env) へのファイル操作は禁止されています（Cymulate notify エスケープ対策 / issue #372）"
     break
   fi
 done < <(extract_edit_paths_nul)
@@ -465,7 +478,7 @@ while IFS= read -r p; do
 done <<<"$candidates"
 
 if [[ -n "$matched" ]]; then
-  echo "ブロック: プロジェクト内の Codex 設定ディレクトリへのファイル操作は禁止されています（Cymulate notify エスケープ対策）" >&2
+  echo "ブロック: プロジェクト内の Codex 設定ディレクトリ / MCP 起動ファイル (.mcp/ .mcp.json .env) へのファイル操作は禁止されています（Cymulate notify エスケープ対策 / issue #372）" >&2
   exit 2
 fi
 
