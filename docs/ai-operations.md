@@ -590,7 +590,8 @@ tool 経路については下記の Read ルールで `~/.env` / `~/.env.local` 
 
 **tool 経路は `permissions.deny` の `Read(~/*/**/.env)` /
 `Read(~/*/**/.env.local)` / `Read(~/.env)` / `Read(~/.env.local)` で塞いだ
-(2026-09-26)。** 当初は「塞ぐには Read / Grep /
+(2026-09-26)。** 実測で拒否を確かめたのは Read / Write tool で、**Grep / Glob tool は
+上流 docs 上は対象だが未実測**(下表)。当初は「塞ぐには Read / Grep /
 Glob 向けの hook を予防的に新設することになる」として残余扱いにしていたが、
 **前提が誤っていた** — 上流の Read deny ルールが native に built-in file tool を
 止める(code.claude.com/docs/en/permissions)ので hook は要らない。
@@ -612,6 +613,7 @@ scratchpad の `git worktree add`)で `.env` を tracked に持つ repo が壊�
 |---|---|
 | Read tool で `~/*/**` 配下のダミー `.env`(`//**` 起点のときは `/private/tmp` 配下の `.env` / `.env.local` / `sub/.env` も) | 拒否(`denied by your permission settings`) |
 | Read tool で `.env.example` | 読めた |
+| Read tool で `~/.env` / `~/.env.local`(どちらも実在しない) | 拒否。対照の `~/.env.example`(同じく実在しない)は `File does not exist` — 拒否は存在確認より先に名前で判定される |
 | Write tool で `~/*/**` 配下に `.env` を新規作成 | 拒否(`covered by a Read deny rule`)。Bash のリダイレクト(`printf … > .env`)では作れた |
 | Bash から `cat` / `ls <path>/.env` / python の `open()` / `grep -r` / `rm` / `cp` の書き込み先 | `Operation not permitted`(sandbox 層)。permissions 層が Bash 呼び出しごと拒否した形も一部にあった(`//**` 起点で `cat .env` 相対 / `ls` / `mv`、`~/*/**` 起点では `echo … && cat …; echo …` の 1 形のみ)が、**発火条件は未特定** — Bash 経路を止めている根拠は sandbox 層の方 |
 | `~/*/**` 起点に戻した後、`/private/tmp` 配下の `.env` を python で読む | 読めた(FS 全体への拡張が解消) |
