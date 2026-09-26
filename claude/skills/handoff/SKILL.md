@@ -35,3 +35,4 @@ description: セッション終了前に進捗を HANDOFF.md に書き出し、�
 
 - HANDOFF.md はグローバル gitignore（`~/.config/git/ignore`）で除外済み。dotfiles 未セットアップの環境では、プロジェクトの `.gitignore` に `HANDOFF.md` を追加すること
 - 次のセッション開始時は「HANDOFF.md を読んで続きをやって」と伝えるだけで引き継げる
+- user の確認待ちの項目は、書く前にこのセッションで user が答えていないかを確かめ、答えていれば確認済みとして書き換える（書き漏らすと、次のセッションが同じ確認や警告を繰り返す）
