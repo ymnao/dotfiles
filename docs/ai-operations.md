@@ -586,9 +586,11 @@ sandbox ごと外れる行 / tool 経路 / この設定自体の改ざん。内�
 この tool 経路は 2026-09-26 に Read deny ルールで塞いだ(下記)。
 形の上での非カバーがもう 1 つあり、**`~/*/` が home 直下 1 階層を必ず消費するので
 `~/.env` は覆われない**(`~/.codex` が同じ理由で `~/*/**/…` の外にあるのと同型)。
+tool 経路については下記の Read ルールで `~/.env` / `~/.env.local` も明示的に覆った。
 
 **tool 経路は `permissions.deny` の `Read(~/*/**/.env)` /
-`Read(~/*/**/.env.local)` で塞いだ(2026-09-26)。** 当初は「塞ぐには Read / Grep /
+`Read(~/*/**/.env.local)` / `Read(~/.env)` / `Read(~/.env.local)` で塞いだ
+(2026-09-26)。** 当初は「塞ぐには Read / Grep /
 Glob 向けの hook を予防的に新設することになる」として残余扱いにしていたが、
 **前提が誤っていた** — 上流の Read deny ルールが native に built-in file tool を
 止める(code.claude.com/docs/en/permissions)ので hook は要らない。
