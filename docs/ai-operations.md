@@ -273,7 +273,7 @@ MEMORY.md 先頭 200 行が自動ロードされる。
 | Context7 MCP(ライブラリドキュメント取得) | (2026-08-09 / #286)公式ドキュメントを直接 fetch すれば大半足りる。§5 の順序(CLI / skill で代替できるなら MCP を入れない)に該当 | 公式 doc の直接取得で調査が破綻するケースが 3 回起きたとき(そのときは §5 の導入審査 — 出所確認・全文監査・最小権限・lethal trifecta — を通す) |
 | リポジトリ内 `.agents/memory/`(教訓のマシン間共有) | (2026-08-09 / #286)HANDOFF.md 運用と重複する。auto memory と §7 の昇格運用で足りる | HANDOFF 経由の引き継ぎ漏れが 2 回起きたとき |
 | `sandbox.network.allowManagedDomainsOnly` / `sandbox.filesystem.allowManagedReadPathsOnly`(Claude Code の managed 設定) | (2026-08-10 / #299)**一次情報で仕様を確認し、配置せずに見送った** — 有効にすると allowlist が managed tier だけになるが、いま効いている許可ホストには project 設定由来・gitignore 済み local 設定由来・**セッション承認由来**が混ざっており、移設対象を事前に列挙できない(= 移設完了を検証できない)。塞ぎたい `gh` / `brew` は `excludedCommands` で sandbox 外を走るので lock の対象外。user と管理者が同一人物のこの環境で得られるのは「agent が user 設定の allowlist を広げる経路」1 本だけで、対価はドメイン追加のたびの `sudo` 手順。`allowManagedReadPathsOnly` は `allowRead` 未使用のため効果が無い。詳細は §10「[allowManagedDomainsOnly — 配置せずに見送った](#allowmanageddomainsonly--配置せずに見送った299)」 | user と管理者が別人になる環境(共有マシン / 組織配布)で使い始めたとき、または `excludedCommands` を撤廃して sandbox 内が唯一の egress になったとき。ただし着手の可否は §10「[managed 設定は原則触らない](#managed-設定は原則触らない--判断基準は復旧に-sudo-が要るか)」の基準を先に通す |
-| `sandbox.filesystem.denyRead` への `.env.production`(派生名を含む)追加 | (2026-09-07)**host を実測して見送った** — 決め手は件数ではなく中身で、唯一実在する `.env.production` はキーがすべて `VITE_` 接頭辞 = Vite がクライアントバンドルに埋め込む前提の公開値なので、**この 1 ファイルに関しては** deny しても止まる秘密が無い。一方 deny の残余(削除不可・`unable to unlink old`)は名前ごとに等しくかかる。**名前そのものが安全という主張ではない** — 一般には server-side の秘密置き場。実測値は §10「[denyRead の実測](#denyread-の実測--glob-は効くが削除リネームまで止まる)」 | **新しいマシンを `make install` でセットアップしたとき**、および `.env.production`(派生名を含む)を新規に作ったときに §10 の `find` を打ち直し、**公開値でない**中身が出たら足す。加えて、当該名の内容が Bash 経路で transcript に流れた事故、または `excludedCommands` 経路(`gh gist create` 等、transcript には出ない)でファイル引数として外部送信された事故に気付いたときも再評価する。そのときも名前を機械的に増やさず、中身と削除不可コストを突き合わせて決める |
+| `sandbox.filesystem.denyRead` への `.env.production`(派生名を含む)追加(`permissions.deny` の Read ルールも同じ 2 名に揃えている) | (2026-09-07)**host を実測して見送った** — 決め手は件数ではなく中身で、唯一実在する `.env.production` はキーがすべて `VITE_` 接頭辞 = Vite がクライアントバンドルに埋め込む前提の公開値なので、**この 1 ファイルに関しては** deny しても止まる秘密が無い。一方 deny の残余(削除不可・`unable to unlink old`)は名前ごとに等しくかかる。**名前そのものが安全という主張ではない** — 一般には server-side の秘密置き場。実測値は §10「[denyRead の実測](#denyread-の実測--glob-は効くが削除リネームまで止まる)」 | **新しいマシンを `make install` でセットアップしたとき**、および `.env.production`(派生名を含む)を新規に作ったときに §10 の `find` を打ち直し、**公開値でない**中身が出たら足す。加えて、当該名の内容が Bash 経路で transcript に流れた事故、または `excludedCommands` 経路(`gh gist create` 等、transcript には出ない)でファイル引数として外部送信された事故に気付いたときも再評価する。そのときも名前を機械的に増やさず、中身と削除不可コストを突き合わせて決める |
 | Workflow tool(skill の手順を決定的スクリプトに移す) | (2026-08-09 / #286)**harness 組み込みなので導入は済んでおり、見送っているのは運用への採用**(2026-08-09 に tool 一覧で存在を確認)。現行の skill 内 fan-out で足りており、採用すると同じ手順が SKILL.md と workflow スクリプトに二重管理になる | /adversarial-review や /simplify で見逃しが起き、その原因が並列数・検証回数のブレだと特定できたとき |
 
 ## 10. codex / Claude Code の host 実行面の防御層
@@ -579,24 +579,45 @@ sandbox ごと外れる行 / tool 経路 / この設定自体の改ざん。内�
 形の上での非カバーがもう 1 つあり、**`~/*/` が home 直下 1 階層を必ず消費するので
 `~/.env` は覆われない**(`~/.codex` が同じ理由で `~/*/**/…` の外にあるのと同型)。
 
-**この tool 経路のギャップは、`.codex/` のように二次 hook で揃えず残余として
-受容する。理由は「他に経路があるから」ではなく、対策のコストと目的が
-釣り合わないこと。** `.codex/` に二次 hook を置いたのは、**sandbox が効かない
-file 編集 tool 経路をそのままにすると片方だけでは穴が残る**からで(上記層別表)、
-しかも issue #190 / #291 という**実際の事故**が根拠になっている。今回の
-`denyRead` にはその事故がなく、塞ぐには Read / Grep / Glob を対象にした
-**新しい hook 機構を予防的に新設する**ことになる — CLAUDE.md の
-「事故が起きた挙動を pin するときだけ」に反する。**踏んだら作る**、が
-このギャップの扱い。
+**この tool 経路は `permissions.deny` の `Read(//**/.env)` /
+`Read(//**/.env.local)` で塞いだ(2026-09-26)。** 当初は「塞ぐには Read / Grep /
+Glob 向けの hook を予防的に新設することになる」として残余扱いにしていたが、
+**前提が誤っていた** — 上流の Read deny ルールが native に built-in file tool を
+止める(code.claude.com/docs/en/permissions)ので hook は要らない。`//` 起点に
+したのは、`~/` 起点では `/tmp` や外部ボリューム上の clone を覆えないため。
+
+実測(2026-09-26 / Claude Code 2.1.282 / macOS。probe は scratchpad
+(`/private/tmp` 配下)に置いたダミー):
+
+| 測ったこと | 結果 |
+|---|---|
+| Read tool で `.env` / `.env.local` / `sub/.env` | 拒否(`denied by your permission settings`) |
+| Read tool で `.env.example` | 読めた |
+| Bash `cat .env`(相対パス) | permissions 層が **Bash 呼び出しごと**拒否。判定は `cd` 前の cwd 基準で解決した絶対パスで行われた |
+| Bash から python の `open()` / `grep -r` | `Operation not permitted`(sandbox 層。`.env.example` だけ grep にヒット) |
+| Bash `rm` で `.env` を削除 | `Operation not permitted` |
+| Bash で `.env.local` を上書き | 通る(従来どおり) |
+| Grep / Glob tool | **未実測**(このセッションに tool が無かった) |
+
+**Read deny ルールは sandbox の `denyRead` にも `/**/.env` / `/**/.env.local` として
+取り込まれる**(セッションの sandbox 設定表示で確認)。したがって上の
+「削除・リネームが止まる」残余は `~/*/**` から**ファイルシステム全体の同名ファイル**
+へ広がる。実害が出うるのは home の外(`/tmp` 等)に `.env` を置く作業だけで、
+repo の置き場所(`~/*/**`)では従来と同じ。`sandbox.filesystem.denyRead` の
+`~/*/**/.env` 系 2 本はこれで冗長になったが、Read ルールを外したときに Bash 経路が
+開かないよう残している。
 
 **excludedCommands 経路は「transcript に出ない外部送信」まで開く。** `gh *` は
 sandbox ごと外れるので、`gh gist create .env` や `gh issue comment --body-file .env`
 のようにファイル引数で秘密を読ませる形は deny を通らずに**そのまま GitHub へ出る**
 (transcript には内容が現れない)。上の 4 経路の 2 番目はこの具体形を含む。
 
-その帰結として、**`denyRead` は防御境界ではなく「Bash 経路で秘密が transcript に
-流れるのを止める」もの**であり、**秘密が agent の context に入らないことの
-根拠にはならない**。**外部送信を止めるものでもない**。
+その帰結として、**`denyRead` と Read deny ルールは防御境界ではなく「普段の作業で
+秘密が transcript に流れるのを止める」もの**であり、**秘密が agent の context に
+入らないことの根拠にはならない**。**外部送信を止めるものでもない**。残る経路は
+上の excludedCommands 行のほか、sandbox の外で動く hook / MCP server、覆っていない
+名前(`.env.production` 等)、起動後のプロセスが環境変数として持つ値。
+**Codex CLI にはどちらの設定も効かない**。
 
 **出荷形は `~/*/**/.env` と `~/*/**/.env.local` の 2 本。** 当初案の
 `~/*/**/.env.*` は `.env.production` のような別 suffix まで覆えるが、
