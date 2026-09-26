@@ -14,8 +14,8 @@
 #
 # patch 本文中の説明テキストに保護対象の名前が含まれるだけなら許可する。
 #
-# 加えて $HOME/.codex/config.toml (ホーム配下の codex 設定本体) への書き込みも
-# ブロックする (issue #190)。sandbox の denyWrite は Bash 経由の書き込みには効くが
+# 加えて $HOME/.codex/config.toml (ホーム配下の codex 設定本体) と $HOME/.claude.json
+# (issue #375) への書き込みもブロックする (issue #190)。sandbox の denyWrite は Bash 経由の書き込みには効くが
 # Edit / Write / apply_patch の file 編集 tool には適用されないため、そのままだと
 # notify / mcp_servers / hooks フィールド差し替えによる host 側任意コマンド実行が
 # 成立する。cwd 判定 (is_protected_project_path) は cwd 配下しか見ないので別判定。
@@ -224,8 +224,8 @@ is_protected_project_path() {
 # sessions/ / history.jsonl / auth.json / *.sqlite 等に正当に書き込む必要があり、
 # 攻撃価値が集中しているのは notify / mcp_servers / hooks を持つ config.toml だけ。
 # $HOME/.claude.json (Claude Code の user スコープ mcpServers) も同じ理由で 1 ファイルだけ
-# 対象にする (issue #375)。home 直下なので is_protected_home_project_codex_path の
-# `$home/*/<name>` には当たらない。
+# 対象にする (issue #375)。protected_names に足さないのは、プロジェクト配下の
+# .claude.json まで巻き込むため。
 is_protected_home_codex_config() {
   # HOME 不明の環境では判定しない (誤爆を避ける。cwd 判定は引き続き効く)
   [[ -n "$home_lower" ]] || return 1
