@@ -1872,7 +1872,7 @@ Claude Code 組み込みの保護(2026-09-26 に公式 docs の sandboxing / per
 | 層 | 実装 | 効くもの | 効かないもの |
 |---|---|---|---|
 | 一次: sandbox | `denyWrite` に `~/*/**/.mcp.json` / `~/*/**/.mcp/**` / `~/*/**/.env` | Claude Code の Bash 経路。2026-09-26 に repo 配下の probe で、`.mcp.json`(直下 / 2 段ネスト)・`.env`(直下 / 1 段ネスト)の作成と `.mcp` の `mkdir` が拒否され、対照(`ctl.txt` / `.env.example` / `mcp.json`)は書けた | codex の Bash 経路(codex は別の sandbox)。file 編集 tool |
-| 二次: hook | `agents/hooks/guard-codex-dir.sh` の保護対象を `protected_names`(`.codex` `.mcp` `.mcp.json` `.env`)に一般化。範囲は `.codex/` と同じ(cwd 配下 + home 配下の別プロジェクト) | Claude Code / codex 両方の file 編集 tool(Edit / Write / apply_patch 等)。Bash は cwd 配下の token 判定 | codex の Bash から home 配下の別プロジェクトへ書く経路、home の外(`.codex/` と同じ残余) |
+| 二次: hook | `agents/hooks/guard-codex-dir.sh` の保護対象を `protected_names`(`.codex` `.mcp` `.mcp.json` `.env`)に一般化。範囲は `.codex/` と同じ(cwd 配下 + home 配下の別プロジェクト) | Claude Code / codex 両方の file 編集 tool(Edit / Write / apply_patch 等)。Bash は cwd 配下を**字面で**指す token だけ | **codex の Bash 経路の大半**: 変数経由の書き込み先(`p=<保護対象>; printf x > "$p"`)と home 配下の別プロジェクトへの書き込みは、この hook も `block-dangerous-commands.sh` も素通りする(2026-09-26 に payload を両 hook へ流して実測、どちらも exit 0)。Claude Code では一次の sandbox が止めるが、codex には後ろ盾が無い(`.codex/` は `block-dangerous-commands.sh` の動的展開判定が補うが、こちらは広げていない)。home の外は `.codex/` と同じ残余 |
 
 - **判定は名前の完全一致**: `.env.local` / `.env.example` / `mcp.json` /
   `.mcp.json.bak` は対象外(起動スクリプトが source するのは `.env` なので。
