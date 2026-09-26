@@ -37,8 +37,8 @@
       "Bash(chmod -R 777 *)",
       "Bash(gh repo delete:*)",
       "Bash(gh release delete:*)",
-      "Read(//**/.env)",
-      "Read(//**/.env.local)"
+      "Read(~/*/**/.env)",
+      "Read(~/*/**/.env.local)"
     ],
     "defaultMode": "auto"
   },

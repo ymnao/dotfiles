@@ -538,7 +538,7 @@ exit code で行った。
 | `.sbxprobe-envother` / 無関係なファイル(負の対照) | 読めた |
 | `~/*/**/.env.*` を設定した状態の実名 `.env.example` / `.env.sample` | 拒否 |
 | 出荷形 `~/*/**/.env` + `~/*/**/.env.local`(実名で確認) | `.env` / `.env.local` / `tests/.env.local` を拒否、`.env.example` は読めた |
-| deny 配下への `rm` / `mv` / `ls <name>` | 拒否。書き込み(作成・上書き)だけは通る |
+| deny 配下への `rm` / `mv` / `ls <name>` | 拒否。書き込み(作成・上書き)だけは通る — ただしシェルのリダイレクトに限る(`cp` の書き込み先にすると EPERM。2026-09-26 追記) |
 | deny 配下を含むディレクトリの `ls -la` / `git status` | 正常 |
 | **Read tool** で deny 配下を読む | **中身が返った(素通り)** |
 | deny 配下への symlink 経由の読み(相対 / 絶対とも)・`cp` の読み取り元 | 拒否 = **symlink での回避は成立しない** |
@@ -553,16 +553,21 @@ exit code で行った。
   `~/*/**/.sbxprobe-env` を設定しても `.sbxprobe-envother` は読めた。
   したがって `.env` 1 本では `.env.local` を覆えず、名前ごとにエントリが要る
 - **deny 配下は読み取りだけでなく削除・リネーム・名前指定の `ls` も止まる。**
-  **書き込みだけは通る**ので、**agent が deny 配下にファイルを作ると自分では
+  **リダイレクトでの書き込みだけは通る**ので、**agent が deny 配下にファイルを作ると自分では
   消せなくなる**(この測定でも片付けのたびに設定からエントリを外す必要があった)。
-  **未測定だが同じ機構から導かれる懸念**として、`.env` を tracked で持つ repo での
-  `git checkout` / `git merge` が `unable to unlink old` で止まる形がある
-  (CLAUDE.md「変更時の注意」に `claude/skills/` での同型の中断が記録済み)
+  `.env` を tracked で持つ repo では git がそのファイルを stat できず、
+  `git checkout` は unlink より手前で「local changes would be overwritten」として
+  止まり、`git clone` は `Clone succeeded, but checkout failed` になる(2026-09-26 に
+  code-reviewer が home 外で、deny を FS 全体に広げた一時設定の下で実測。
+  `~/*/**` 配下では未測定だが機構は同じ)
 - **`denyRead` だけでは完全性は守れない。** 同じ 2 名を `denyWrite` には入れて
   いないので、**読めないまま `> .env` で上書き・破壊することは通る**(実測)。
   agent は中身を読めないぶん**壊したことに気付けず、バックアップも取れない**。
   `denyWrite` にも入れる案は、`cp .env.example .env` のような正当な初期設定まで
-  止めるため採らず、**受容する残余**とした(2026-09-06 / user 判断)
+  止めるため採らず、**受容する残余**とした(2026-09-06 / user 判断)。
+  **この理由は誤っていた** — `cp .env.example .env` は denyRead だけで既に EPERM で
+  失敗し、0 byte の `.env` が残る(2026-09-26 に `~/*/**` 配下で実測)。denyWrite を
+  足して新たに止まるのはリダイレクトでの書き込みだけ。見送りの再判断はしていない
 - **この性質のため、denyRead には
   `tests/integrity/verify-sandbox-codex-enforcement.sh` 型の enforcement probe を
   置けない。** probe の fixture は `~/*/**` 配下に実名 `.env` で置くしかないが、
@@ -576,36 +581,37 @@ sandbox ごと外れる行 / tool 経路 / この設定自体の改ざん。内�
 「denyWrite のパス表記」節の末尾)。ただし **3 番目の中身が denyWrite とは違う** —
 あちらで測ったのは Edit tool が denyWrite を素通りすることで、こちらで測ったのは
 **Read tool が denyRead を素通りする**こと(上表)。**Grep / Glob tool は未測定**。
+この tool 経路は 2026-09-26 に Read deny ルールで塞いだ(下記)。
 形の上での非カバーがもう 1 つあり、**`~/*/` が home 直下 1 階層を必ず消費するので
 `~/.env` は覆われない**(`~/.codex` が同じ理由で `~/*/**/…` の外にあるのと同型)。
 
-**この tool 経路は `permissions.deny` の `Read(//**/.env)` /
-`Read(//**/.env.local)` で塞いだ(2026-09-26)。** 当初は「塞ぐには Read / Grep /
+**tool 経路は `permissions.deny` の `Read(~/*/**/.env)` /
+`Read(~/*/**/.env.local)` で塞いだ(2026-09-26)。** 当初は「塞ぐには Read / Grep /
 Glob 向けの hook を予防的に新設することになる」として残余扱いにしていたが、
 **前提が誤っていた** — 上流の Read deny ルールが native に built-in file tool を
-止める(code.claude.com/docs/en/permissions)ので hook は要らない。`//` 起点に
-したのは、`~/` 起点では `/tmp` や外部ボリューム上の clone を覆えないため。
+止める(code.claude.com/docs/en/permissions)ので hook は要らない。
 
-実測(2026-09-26 / Claude Code 2.1.282 / macOS。probe は scratchpad
-(`/private/tmp` 配下)に置いたダミー):
+**起点を `//**` にしなかったのは、Read deny ルールが sandbox の `denyRead` にも
+取り込まれるため。** `//**/.env` を設定するとセッションの sandbox 設定表示に
+`/**/.env` が現れ、`~/*/**/.env` に変えると `~/*/**/.env` に置き換わった(変更前後の
+比較。上流 docs での裏付けは取っていない)。`//**` のままだと上の「削除・stat が
+止まる」残余がファイルシステム全体へ広がり、home の外(`/tmp` への clone、
+scratchpad の `git worktree add`)で `.env` を tracked に持つ repo が壊れた
+(code-reviewer が実測)。**sandbox 側の表示は `~` が未展開のまま**なので、Bash 経路は
+従来の `sandbox.filesystem.denyRead` の 2 本(展開済みで表示される)が担っている —
+**この 2 本は冗長ではないので消さない**。
+
+実測(2026-09-26 / Claude Code 2.1.282 / macOS):
 
 | 測ったこと | 結果 |
 |---|---|
-| Read tool で `.env` / `.env.local` / `sub/.env` | 拒否(`denied by your permission settings`) |
+| Read tool で `~/*/**` 配下のダミー `.env`(`//**` 起点のときは `/private/tmp` 配下の `.env` / `.env.local` / `sub/.env` も) | 拒否(`denied by your permission settings`) |
 | Read tool で `.env.example` | 読めた |
-| Bash `cat .env`(相対パス) | permissions 層が **Bash 呼び出しごと**拒否。判定は `cd` 前の cwd 基準で解決した絶対パスで行われた |
-| Bash から python の `open()` / `grep -r` | `Operation not permitted`(sandbox 層。`.env.example` だけ grep にヒット) |
-| Bash `rm` で `.env` を削除 | `Operation not permitted` |
-| Bash で `.env.local` を上書き | 通る(従来どおり) |
+| Write tool で `~/*/**` 配下に `.env` を新規作成 | 拒否(`covered by a Read deny rule`)。Bash のリダイレクトでは作れる |
+| Bash `cat .env` / `ls <path>/.env` / `mv <path>/.env.local …` | permissions 層が **Bash 呼び出しごと**拒否(複合行は全体が走らない)。`cat` の相対パスは `cd` 前の cwd 基準で解決された |
+| Bash から python の `open()` / `grep -r` / `rm` / `cp` の書き込み先 | `Operation not permitted`(sandbox 層) |
+| `~/*/**` 起点に戻した後、`/private/tmp` 配下の `.env` を python で読む | 読めた(FS 全体への拡張が解消) |
 | Grep / Glob tool | **未実測**(このセッションに tool が無かった) |
-
-**Read deny ルールは sandbox の `denyRead` にも `/**/.env` / `/**/.env.local` として
-取り込まれる**(セッションの sandbox 設定表示で確認)。したがって上の
-「削除・リネームが止まる」残余は `~/*/**` から**ファイルシステム全体の同名ファイル**
-へ広がる。実害が出うるのは home の外(`/tmp` 等)に `.env` を置く作業だけで、
-repo の置き場所(`~/*/**`)では従来と同じ。`sandbox.filesystem.denyRead` の
-`~/*/**/.env` 系 2 本はこれで冗長になったが、Read ルールを外したときに Bash 経路が
-開かないよう残している。
 
 **excludedCommands 経路は「transcript に出ない外部送信」まで開く。** `gh *` は
 sandbox ごと外れるので、`gh gist create .env` や `gh issue comment --body-file .env`
@@ -1003,7 +1009,7 @@ herdr(エージェント用ターミナル multiplexer)の socket API は**認�
 | **対照**: `$TMPDIR` 配下に自分で AF_UNIX socket を bind | `[Errno 1] Operation not permitted`(**herdr 固有の遮断ではなく sandbox の一般制限**) |
 | `agents/hooks/block-dangerous-commands.sh` に `herdr pane run 1 "rm -rf ~"` を stdin で与える | **exit=2(ブロック)**「rm -rf で危険なパスが指定されています」 |
 | **既知陽性の対照**: 同 hook に `rm -rf ~` を与える | exit=2(ブロック)。検出器が生きていることを確認した上で上の行を測っている |
-| `permissions.deny` の 11 パターン | いずれも先頭一致なので `herdr pane run 1 "..."` には**当たらない**(内側は hook が拾う) |
+| `permissions.deny` の Bash 11 パターン | いずれも先頭一致なので `herdr pane run 1 "..."` には**当たらない**(内側は hook が拾う) |
 | `sandbox.excludedCommands` | [上節](#sandbox-の-excludedcommands-が一次防御を丸ごと外す経路)の一覧に **herdr は入っていない** → 一次防御が効いている。逆にここへ足すと同節の経路で外れる |
 
 読み取れること:
