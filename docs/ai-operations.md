@@ -273,7 +273,7 @@ MEMORY.md 先頭 200 行が自動ロードされる。
 | Context7 MCP(ライブラリドキュメント取得) | (2026-08-09 / #286)公式ドキュメントを直接 fetch すれば大半足りる。§5 の順序(CLI / skill で代替できるなら MCP を入れない)に該当 | 公式 doc の直接取得で調査が破綻するケースが 3 回起きたとき(そのときは §5 の導入審査 — 出所確認・全文監査・最小権限・lethal trifecta — を通す) |
 | リポジトリ内 `.agents/memory/`(教訓のマシン間共有) | (2026-08-09 / #286)HANDOFF.md 運用と重複する。auto memory と §7 の昇格運用で足りる | HANDOFF 経由の引き継ぎ漏れが 2 回起きたとき |
 | `sandbox.network.allowManagedDomainsOnly` / `sandbox.filesystem.allowManagedReadPathsOnly`(Claude Code の managed 設定) | (2026-08-10 / #299)**一次情報で仕様を確認し、配置せずに見送った** — 有効にすると allowlist が managed tier だけになるが、いま効いている許可ホストには project 設定由来・gitignore 済み local 設定由来・**セッション承認由来**が混ざっており、移設対象を事前に列挙できない(= 移設完了を検証できない)。塞ぎたい `gh` / `brew` は `excludedCommands` で sandbox 外を走るので lock の対象外。user と管理者が同一人物のこの環境で得られるのは「agent が user 設定の allowlist を広げる経路」1 本だけで、対価はドメイン追加のたびの `sudo` 手順。`allowManagedReadPathsOnly` は `allowRead` 未使用のため効果が無い。詳細は §10「[allowManagedDomainsOnly — 配置せずに見送った](#allowmanageddomainsonly--配置せずに見送った299)」 | user と管理者が別人になる環境(共有マシン / 組織配布)で使い始めたとき、または `excludedCommands` を撤廃して sandbox 内が唯一の egress になったとき。ただし着手の可否は §10「[managed 設定は原則触らない](#managed-設定は原則触らない--判断基準は復旧に-sudo-が要るか)」の基準を先に通す |
-| `sandbox.filesystem.denyRead` への `.env.production`(派生名を含む)追加(`permissions.deny` の Read ルールも同じ 2 名に揃えている) | (2026-09-07)**host を実測して見送った** — 決め手は件数ではなく中身で、唯一実在する `.env.production` はキーがすべて `VITE_` 接頭辞 = Vite がクライアントバンドルに埋め込む前提の公開値なので、**この 1 ファイルに関しては** deny しても止まる秘密が無い。一方 deny の残余(削除不可・`unable to unlink old`)は名前ごとに等しくかかる。**名前そのものが安全という主張ではない** — 一般には server-side の秘密置き場。実測値は §10「[denyRead の実測](#denyread-の実測--glob-は効くが削除リネームまで止まる)」 | **新しいマシンを `make install` でセットアップしたとき**、および `.env.production`(派生名を含む)を新規に作ったときに §10 の `find` を打ち直し、**公開値でない**中身が出たら足す。加えて、当該名の内容が Bash 経路で transcript に流れた事故、または `excludedCommands` 経路(`gh gist create` 等、transcript には出ない)でファイル引数として外部送信された事故に気付いたときも再評価する。そのときも名前を機械的に増やさず、中身と削除不可コストを突き合わせて決める |
+| `sandbox.filesystem.denyRead` への `.env.production`(派生名を含む)追加(`permissions.deny` の Read ルールも同じ 2 名に揃えている) | (2026-09-07)**host を実測して見送った** — 決め手は件数ではなく中身で、唯一実在する `.env.production` はキーがすべて `VITE_` 接頭辞 = Vite がクライアントバンドルに埋め込む前提の公開値なので、**この 1 ファイルに関しては** deny しても止まる秘密が無い。一方 deny の残余(削除不可・git checkout の失敗)は名前ごとに等しくかかる。**名前そのものが安全という主張ではない** — 一般には server-side の秘密置き場。実測値は §10「[denyRead の実測](#denyread-の実測--glob-は効くが削除リネームまで止まる)」 | **新しいマシンを `make install` でセットアップしたとき**、および `.env.production`(派生名を含む)を新規に作ったときに §10 の `find` を打ち直し、**公開値でない**中身が出たら足す。加えて、当該名の内容が Bash 経路で transcript に流れた事故、または `excludedCommands` 経路(`gh gist create` 等、transcript には出ない)でファイル引数として外部送信された事故に気付いたときも再評価する。そのときも名前を機械的に増やさず、中身と削除不可コストを突き合わせて決める |
 | Workflow tool(skill の手順を決定的スクリプトに移す) | (2026-08-09 / #286)**harness 組み込みなので導入は済んでおり、見送っているのは運用への採用**(2026-08-09 に tool 一覧で存在を確認)。現行の skill 内 fan-out で足りており、採用すると同じ手順が SKILL.md と workflow スクリプトに二重管理になる | /adversarial-review や /simplify で見逃しが起き、その原因が並列数・検証回数のブレだと特定できたとき |
 
 ## 10. codex / Claude Code の host 実行面の防御層
@@ -538,7 +538,7 @@ exit code で行った。
 | `.sbxprobe-envother` / 無関係なファイル(負の対照) | 読めた |
 | `~/*/**/.env.*` を設定した状態の実名 `.env.example` / `.env.sample` | 拒否 |
 | 出荷形 `~/*/**/.env` + `~/*/**/.env.local`(実名で確認) | `.env` / `.env.local` / `tests/.env.local` を拒否、`.env.example` は読めた |
-| deny 配下への `rm` / `mv` / `ls <name>` | 拒否。書き込み(作成・上書き)だけは通る — ただしシェルのリダイレクトに限る(`cp` の書き込み先にすると EPERM。2026-09-26 追記) |
+| deny 配下への `rm` / `mv` / `ls <name>` | 拒否。書き込み(作成・上書き)だけは通る(2026-09-26 追記: 書き込み open は通るが stat は拒否されるので、`cp` の書き込み先にすると EPERM) |
 | deny 配下を含むディレクトリの `ls -la` / `git status` | 正常 |
 | **Read tool** で deny 配下を読む | **中身が返った(素通り)** |
 | deny 配下への symlink 経由の読み(相対 / 絶対とも)・`cp` の読み取り元 | 拒否 = **symlink での回避は成立しない** |
@@ -553,7 +553,7 @@ exit code で行った。
   `~/*/**/.sbxprobe-env` を設定しても `.sbxprobe-envother` は読めた。
   したがって `.env` 1 本では `.env.local` を覆えず、名前ごとにエントリが要る
 - **deny 配下は読み取りだけでなく削除・リネーム・名前指定の `ls` も止まる。**
-  **リダイレクトでの書き込みだけは通る**ので、**agent が deny 配下にファイルを作ると自分では
+  **書き込み open だけは通る**ので、**agent が deny 配下にファイルを作ると自分では
   消せなくなる**(この測定でも片付けのたびに設定からエントリを外す必要があった)。
   `.env` を tracked で持つ repo では git がそのファイルを stat できず、
   `git checkout` は unlink より手前で「local changes would be overwritten」として
@@ -566,14 +566,16 @@ exit code で行った。
   `denyWrite` にも入れる案は、`cp .env.example .env` のような正当な初期設定まで
   止めるため採らず、**受容する残余**とした(2026-09-06 / user 判断)。
   **この理由は誤っていた** — `cp .env.example .env` は denyRead だけで既に EPERM で
-  失敗し、0 byte の `.env` が残る(2026-09-26 に `~/*/**` 配下で実測)。denyWrite を
-  足して新たに止まるのはリダイレクトでの書き込みだけ。見送りの再判断はしていない
+  失敗する(書き込み先の stat が拒否される。書き込み先が不在だった `.env.local` では
+  0 byte のファイルが残った。2026-09-26 に `~/*/**` 配下で実測)。denyWrite を足して
+  新たに止まるのは書き込み open 全般(リダイレクト / python / エディタ / git の
+  書き出し)。見送りの再判断はしていない
 - **この性質のため、denyRead には
   `tests/integrity/verify-sandbox-codex-enforcement.sh` 型の enforcement probe を
   置けない。** probe の fixture は `~/*/**` 配下に実名 `.env` で置くしかないが、
   **agent 自身が消せないので trap での後始末が効かず repo が汚れる**。tracked
   fixture にする案も、その fixture を持たないブランチへ移るときに上の
-  `unable to unlink old` を再生産する。**enforcement の根拠はこの節の測定記録の側**
+  git の失敗を再生産する。**enforcement の根拠はこの節の測定記録の側**
   (denyWrite 側と同じ構造)
 
 **非カバーの経路は denyWrite と同じ 4 つ**(home の外 / excludedCommands で
@@ -597,9 +599,10 @@ Glob 向けの hook を予防的に新設することになる」として残余
 比較。上流 docs での裏付けは取っていない)。`//**` のままだと上の「削除・stat が
 止まる」残余がファイルシステム全体へ広がり、home の外(`/tmp` への clone、
 scratchpad の `git worktree add`)で `.env` を tracked に持つ repo が壊れた
-(code-reviewer が実測)。**sandbox 側の表示は `~` が未展開のまま**なので、Bash 経路は
-従来の `sandbox.filesystem.denyRead` の 2 本(展開済みで表示される)が担っている —
-**この 2 本は冗長ではないので消さない**。
+(code-reviewer が実測)。sandbox 側の表示は `~` が未展開のままで、従来の
+`sandbox.filesystem.denyRead` の 2 本(展開済みで表示される)と並ぶ。**未展開の
+エントリが runtime で効いているかは未検証**(2 本を外さないと区別できない)ので、
+どちらでも安全側になるよう **2 本は消さない**。
 
 実測(2026-09-26 / Claude Code 2.1.282 / macOS):
 
@@ -607,9 +610,8 @@ scratchpad の `git worktree add`)で `.env` を tracked に持つ repo が壊�
 |---|---|
 | Read tool で `~/*/**` 配下のダミー `.env`(`//**` 起点のときは `/private/tmp` 配下の `.env` / `.env.local` / `sub/.env` も) | 拒否(`denied by your permission settings`) |
 | Read tool で `.env.example` | 読めた |
-| Write tool で `~/*/**` 配下に `.env` を新規作成 | 拒否(`covered by a Read deny rule`)。Bash のリダイレクトでは作れる |
-| Bash `cat .env` / `ls <path>/.env` / `mv <path>/.env.local …` | permissions 層が **Bash 呼び出しごと**拒否(複合行は全体が走らない)。`cat` の相対パスは `cd` 前の cwd 基準で解決された |
-| Bash から python の `open()` / `grep -r` / `rm` / `cp` の書き込み先 | `Operation not permitted`(sandbox 層) |
+| Write tool で `~/*/**` 配下に `.env` を新規作成 | 拒否(`covered by a Read deny rule`)。Bash のリダイレクト(`printf … > .env`)では作れた |
+| Bash から `cat` / `ls <path>/.env` / python の `open()` / `grep -r` / `rm` / `cp` の書き込み先 | `Operation not permitted`(sandbox 層)。permissions 層が Bash 呼び出しごと拒否した形も一部にあった(`//**` 起点で `cat .env` 相対 / `ls` / `mv`、`~/*/**` 起点では `echo … && cat …; echo …` の 1 形のみ)が、**発火条件は未特定** — Bash 経路を止めている根拠は sandbox 層の方 |
 | `~/*/**` 起点に戻した後、`/private/tmp` 配下の `.env` を python で読む | 読めた(FS 全体への拡張が解消) |
 | Grep / Glob tool | **未実測**(このセッションに tool が無かった) |
 
@@ -628,8 +630,9 @@ sandbox ごと外れるので、`gh gist create .env` や `gh issue comment --bo
 **出荷形は `~/*/**/.env` と `~/*/**/.env.local` の 2 本。** 当初案の
 `~/*/**/.env.*` は `.env.production` のような別 suffix まで覆えるが、
 **`.env.example` / `.env.sample` のような「コミット済みで秘密でないテンプレート」
-まで巻き込む**(上表)。`cp .env.example .env` のような正当な初期設定が Bash
-経路で止まるため、実際に秘密が入る 2 名に絞った。
+まで巻き込む**(上表)。テンプレートを読めなくなるのを避けて、実際に秘密が入る
+2 名に絞った(当初は「`cp .env.example .env` が止まるから」と書いていたが、`cp` は
+2 名の設定でも書き込み先の stat で失敗するので根拠にならない。2026-09-26 訂正)。
 
 **`.env.production` を 3 本目に足さなかったのは「テンプレートを巻き込むから」
 ではない** — マッチは完全一致なので `~/*/**/.env.production` を足しても
@@ -643,7 +646,7 @@ sandbox ごと外れるので、`gh gist create .env` や `gh issue comment --bo
 (client ID / API base URL / VAPID public key の類。値は読んでいない)。**`VITE_*` は
 Vite がクライアントバンドルに埋め込む前提の変数なので、構造上「公開される値」**
 であり、この 1 ファイルに関しては deny しても止まる秘密が無い。一方で
-**削除不可・`unable to unlink old` の残余は名前ぶん増える**(このコストは
+**削除不可・git checkout 失敗の残余は名前ぶん増える**(このコストは
 全エントリに等しくかかる)。
 
 **この根拠は「`.env.production` という名前が安全」ではない。** 一般には
