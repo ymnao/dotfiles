@@ -10,9 +10,9 @@
 #   - apply_patch: patch 本文中のファイル操作ヘッダー (Add / Update / Delete / Move to) の path
 #   - Edit / Write / MultiEdit: path / file_path / filename
 #   - NotebookEdit: notebook_path
-#   - Bash: command 文字列からトークン抽出し、cwd 内の .codex/ を指す token をブロック
+#   - Bash: command 文字列からトークン抽出し、cwd 内の保護対象 (protected_names) を指す token をブロック
 #
-# patch 本文中の説明テキストに .codex が含まれるだけなら許可する。
+# patch 本文中の説明テキストに保護対象の名前が含まれるだけなら許可する。
 #
 # 加えて $HOME/.codex/config.toml (ホーム配下の codex 設定本体) への書き込みも
 # ブロックする (issue #190)。sandbox の denyWrite は Bash 経由の書き込みには効くが

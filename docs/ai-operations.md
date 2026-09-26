@@ -1874,18 +1874,25 @@ Claude Code 組み込みの保護(2026-09-26 に公式 docs の sandboxing / per
 | 一次: sandbox | `denyWrite` に `~/*/**/.mcp.json` / `~/*/**/.mcp/**` / `~/*/**/.env` | Claude Code の Bash 経路。2026-09-26 に repo 配下の probe で、`.mcp.json`(直下 / 2 段ネスト)・`.env`(直下 / 1 段ネスト)の作成と `.mcp` の `mkdir` が拒否され、対照(`ctl.txt` / `.env.example` / `mcp.json`)は書けた | codex の Bash 経路(codex は別の sandbox)。file 編集 tool |
 | 二次: hook | `agents/hooks/guard-codex-dir.sh` の保護対象を `protected_names`(`.codex` `.mcp` `.mcp.json` `.env`)に一般化。範囲は `.codex/` と同じ(cwd 配下 + home 配下の別プロジェクト) | Claude Code / codex 両方の file 編集 tool(Edit / Write / apply_patch 等)。Bash は cwd 配下の token 判定 | codex の Bash から home 配下の別プロジェクトへ書く経路、home の外(`.codex/` と同じ残余) |
 
-- **判定はファイル名の完全一致**: `.env.local` / `.env.example` / `mcp.json` /
-  `.mcp.json.bak` は対象外(denyRead と同じ粒度)。`~/.env`(home 直下)も
+- **判定は名前の完全一致**: `.env.local` / `.env.example` / `mcp.json` /
+  `.mcp.json.bak` は対象外(起動スクリプトが source するのは `.env` なので。
+  denyRead は `.env.local` も拒否しており、読み側より狭い)。`~/.env`(home 直下)も
   プロジェクトではないので対象外
-- **`.env` は agent から完全に触れなくなる**(denyRead と合わせて読み書きとも拒否)。
-  作成・更新は user が手で行う
-- **guard の Bash 判定は読み取りも止める**(`.codex/` と同じ)。`.mcp/` 配下と
-  `.mcp.json` は Read tool で読む
+- **`.env` は agent から読み書きとも拒否される**(Read tool は `permissions.deny`、
+  Bash の読みは denyRead、Bash の書きは denyWrite、file 編集 tool は hook)。
+  作成・更新は user が手で行う。**`.env` という名前のディレクトリ(venv の慣習)も
+  巻き込む** — hook は `.codex` と同じく配下まで止め、sandbox も `mkdir .env` を
+  拒否した(2026-09-26 実測、対照の `mkdir` は通った)
+- **guard の Bash 判定は読み取りも止め、token の役割も見ない**(`.codex/` と同じ)。
+  `grep -n .env`、`echo .env >> .gitignore`、`--env-file .env` のように**パスとして
+  使っていない裸の token でも cwd 配下を指せば止まる**。`.mcp/` 配下と `.mcp.json` は
+  Read tool、検索は Grep tool、`.gitignore` の編集は Edit tool で行う
 - **hook のファイル名と codex の statusMessage は `.codex` のまま**。変えると
   `codex/hooks.json` の entry が変わり、trusted_hash の再承認が要る(本体の中身は
   hash に含まれない。上記「codex の hook 承認 (`trusted_hash`) の適用範囲」節)
 - regression は `tests/hooks/guard-codex-dir.cases.jsonl` の issue #372 節と
-  `tests/integrity/verify-settings-codex-domains.sh`(+ selftest の fixture 5d)が pin する
+  `tests/integrity/verify-settings-codex-domains.sh`(+ selftest の fixture 5d)が pin する。
+  後者は**エントリの存在**だけで、sandbox での実効は上表の手動 probe が根拠
 
 ### scope 外(別 issue)
 

@@ -2,7 +2,7 @@
 # tool_input を直接指定する形式 / command 形式 (Bash) / raw モードを混在。
 # {{CWD}} は runner が hook 実行時の一時 cwd 実パスに置換する (cwd 内絶対パス検証用)。
 #
-# ブロック条件: cwd 配下の Codex 設定ディレクトリ (.codex/) への操作 (Edit/Write/MultiEdit/NotebookEdit/Bash/apply_patch)
+# ブロック条件: cwd 配下の Codex 設定ディレクトリ (.codex/) と MCP 起動ファイル (.mcp/ .mcp.json .env) への操作 (Edit/Write/MultiEdit/NotebookEdit/Bash/apply_patch)
 # 許可条件: cwd 外の絶対 / 相対パス、ドット無しの codex/ 相対パス、path 系フィールドなし
 
 # --- Edit/Write/MultiEdit/apply_patch ブロックケース ---
@@ -208,7 +208,7 @@
 {"name":"block: Bash 追記 >> .mcp/start.sh","expect":"block","command":"echo x >> .mcp/start.sh"}
 {"name":"block: Bash 上書き > .env","expect":"block","command":"printf 'A=1' > .env"}
 {"name":"block: Bash cp で .mcp.json を置換","expect":"block","command":"cp /tmp/x.json .mcp.json"}
-# 過剰 block のラチェット: 名前の完全一致だけを保護する (.env.local 等は denyRead と同じ粒度で別扱い)
+# 過剰 block のラチェット: 名前の完全一致だけを保護する (起動スクリプトが source するのは .env なので .env.local 等は対象外)
 {"name":"allow: .env.example","expect":"allow","tool_input":{"file_path":".env.example"}}
 {"name":"allow: .env.local (名前が違う)","expect":"allow","tool_input":{"file_path":".env.local"}}
 {"name":"allow: ドット無し mcp.json","expect":"allow","tool_input":{"file_path":"mcp.json"}}
