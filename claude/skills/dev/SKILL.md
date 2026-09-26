@@ -230,10 +230,8 @@ alias / plugin / 設定で user 側が増やせる) を丸ごと追う羽目に�
 **撤退を出すときは、代替の深さが同じ脅威を塞ぐことを先に示す** — 示せない
 なら、それは撤退ではなく防御を外す提案。実装の抜けが残っているだけの
 横ばいと区別が付かないときも、代替を示せるかどうかで切り分かる。
-実例 (issue #329): ブランチ名 hook で bash の word 分割と git の `parse-options` を
-再実装し、Critical が 0 → 2 → 9 件と増えた (repo の gitconfig alias `co` まで追う
-羽目になった)。`/issue` 側の機械的受け渡しへ撤退した。判断の詳細は
-`claude/skills/issue/SKILL.md` step 9。
+実例 (issue #329): ブランチ名 hook で bash / git の引数解析を再実装して Critical が
+増え続け、`/issue` 側の機械的受け渡しへ撤退した (`claude/skills/issue/SKILL.md` step 9)。
 
 #### 4-1. レビュー隊列 (変更の性質で厚みを変える)
 
