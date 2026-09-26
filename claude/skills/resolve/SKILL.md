@@ -34,7 +34,7 @@ Fetch unresolved review threads for the current PR and address each one.
 4. For each thread:
    - Read the relevant file and line to understand the current state
    - Evaluate whether the suggestion is valid
-   - If valid, fix the code (apply best practices regardless of effort)
+   - If valid, fix the code following the project's existing conventions
    - If unnecessary or inappropriate, prepare a clear reason
 5. If any fixes were made, run all applicable verification steps for the project:
    - Lint / static analysis

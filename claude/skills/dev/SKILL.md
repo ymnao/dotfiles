@@ -202,16 +202,11 @@ user に報告して指示を待つ。
 
 - **live 環境への副作用** — `claude/hooks/` `claude/settings.json`
   `claude/skills/` 等は `~/.claude/` への symlink 経由で **commit も merge も
-  待たずに有効になる** (memory `project_dotfiles_env_quirks`)。issue #267 では
-  2 周目に「開発中の hook が無限ループする」finding が出た。三択へ流すと
-  Bash tool が止まったまま PR に進むところだった (user 承認を得て 6 周まで延長)
-- **diff の中に書いた誤った記述** — issue #245 では 2 周目に
-  「`requiredMinimumVersion` は user 設定では enforce されない」という Critical
-  が出た。その PR は**まさにその設定を防御層として説明する節を新設していた**
-  ので、三択へ流すと「効いていない防御を効くと書いた正本ドキュメント」が
-  merge されるところだった。user 環境は壊れていないが、壊れ方は
-  **「誤りが正本として定着する」**形で、気付く機会が merge 後に無い分むしろ
-  回復しにくい
+  待たずに有効になる** (memory `project_dotfiles_env_quirks`)。
+  実例: issue #267 (開発中の hook の無限ループ)
+- **diff の中に書いた誤った記述** — 誤りが正本ドキュメントとして定着し、
+  merge 後に気付く機会が無い。実例: issue #245 (効いていない設定を防御層と
+  説明する節)
 
 Tier3 を記録しないのは情報を捨てているのではない。同じ指摘は次のレビューで
 また出るので、実際に問題化したときに改めて拾える。逆に記録すると、消化
@@ -235,10 +230,8 @@ alias / plugin / 設定で user 側が増やせる) を丸ごと追う羽目に�
 **撤退を出すときは、代替の深さが同じ脅威を塞ぐことを先に示す** — 示せない
 なら、それは撤退ではなく防御を外す提案。実装の抜けが残っているだけの
 横ばいと区別が付かないときも、代替を示せるかどうかで切り分かる。
-実例 (issue #329): ブランチ名 hook で bash の word 分割と git の `parse-options` を
-再実装し、Critical が 0 → 2 → 9 件と増えた (repo の gitconfig alias `co` まで追う
-羽目になった)。`/issue` 側の機械的受け渡しへ撤退した。判断の詳細は
-`claude/skills/issue/SKILL.md` step 9。
+実例 (issue #329): ブランチ名 hook で bash / git の引数解析を再実装して Critical が
+増え続け、`/issue` 側の機械的受け渡しへ撤退した (`claude/skills/issue/SKILL.md` step 9)。
 
 #### 4-1. レビュー隊列 (変更の性質で厚みを変える)
 
@@ -376,12 +369,8 @@ codex-review は step 5 の /pr が risk tier に応じて実行するため
 
 この節を置いた実例:
 
-- **issue #265** — `prefix = "ctrl+alt+b"` を設定した。値は妥当で
-  `herdr config check` も `make test` も CI も green だったが、**実機では
-  prefix モードに一度も入れなかった**。user が「動作確認を先にやりたい」と
-  明示的に止めたから判明したもので、止まらなければ壊れた設定のまま merge
-  されていた。同じサイクルで `default_shell` の指定方法も、構文検証器の
-  pass を根拠にしかけて空振りしている
+- **issue #265** — 構文検証・`make test`・CI が green でも、実機では prefix
+  モードに一度も入れなかった。user が実機確認で止めたから判明した
 
 #### 5b. 学びの昇格チェック (事故があったサイクルのみ)
 
