@@ -45,7 +45,8 @@ automatic_backups/
 !.claude/stop-gate.conf
 !.claude/backlog.conf
 
-# Claude Code が claude.ai の skill を同期する先 (~/.claude/skills/synced/ 固定。~/.claude/skills が claude/skills への symlink なので repo 内に書かれる)
+# Claude Code が claude.ai の skill を同期する先 (~/.claude/skills/synced/)。同期先を変える設定は無く
+# (2026-09-27 公式 docs で確認)、同期した skill を使うので syncClaudeAiSkills:false で止めもしない
 claude/skills/synced/
 
 # Serena
