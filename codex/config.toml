@@ -27,7 +27,8 @@ model_reasoning_effort = "medium"
 allow_login_shell = false
 # sandbox_mode ではなく permission profile で書くのは、workspace root 配下の特定名だけを
 # 書き込み禁止にする手段が profile にしか無いため (issue #375)。公式 docs の config
-# reference (2026-09-27 確認) は sandbox_mode / [sandbox_workspace_write] との併用を禁じている。
+# reference は sandbox_mode / [sandbox_workspace_write] との併用を禁じている (2026-09-26 に
+# WebFetch の要約で確認。codex 本体が併用を弾くかは未確認)。
 default_permissions = "guarded"
 
 [shell_environment_policy]

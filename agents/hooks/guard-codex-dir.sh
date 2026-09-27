@@ -20,9 +20,11 @@
 # notify / mcp_servers / hooks フィールド差し替えによる host 側任意コマンド実行が
 # 成立する。cwd 判定 (is_protected_project_path) は cwd 配下しか見ないので別判定。
 # この追加判定は **file 編集 tool の path のみ** に適用し、Bash token には適用しない
-# — Bash 側は block-dangerous-commands.sh が「書き込み文脈」だけを precise に
-# ブロックしており、`cat ~/.codex/config.toml` のような読み取りは意図的に許可
-# されている (guard 側で token 一致だけで塞ぐとその緩和を壊す)。
+# — config.toml の Bash 側は block-dangerous-commands.sh が「書き込み文脈」だけを
+# precise にブロックしており、`cat ~/.codex/config.toml` のような読み取りは意図的に
+# 許可されている (guard 側で token 一致だけで塞ぐとその緩和を壊す)。.claude.json の
+# Bash 側は block-dangerous-commands.sh の対象外で、Claude Code は組み込みの保護、
+# codex は permission profile (codex/config.toml) が担当する。
 #
 # さらに $HOME 配下の別プロジェクトの .codex/ への書き込みもブロックする
 # (issue #291)。sandbox の denyWrite は `~/*/**/.codex/**` で home 配下の
