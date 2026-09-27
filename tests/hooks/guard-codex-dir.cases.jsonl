@@ -81,6 +81,26 @@
 {"name":"allow: home .claude.json.backup (別名)","expect":"allow","tool_input":{"file_path":"{{HOME}}/.claude.json.backup"}}
 {"name":"allow: home .claude/ 配下の .claude.json (直下でない)","expect":"allow","tool_input":{"file_path":"{{HOME}}/.claude/backups/.claude.json"}}
 {"name":"allow: Bash で home .claude.json を読む","expect":"allow","command":"cat ~/.claude.json"}
+# --- issue #381: codex の実 payload (tool_name=apply_patch, 本文は tool_input.command) ---
+# 本文を .patch / .input からしか読んでおらず、home 系の判定が codex では一度も走っていなかった。
+{"name":"block: codex 形 apply_patch で home .codex/config.toml","expect":"block","tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n*** Update File: {{HOME}}/.codex/config.toml\n@@\n-a\n+b\n*** End Patch\n"}}
+{"name":"block: codex 形 apply_patch で home .claude.json","expect":"block","tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n*** Update File: {{HOME}}/.claude.json\n@@\n-a\n+b\n*** End Patch\n"}}
+{"name":"block: codex 形 apply_patch で home 配下の別プロジェクト .codex","expect":"block","tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n*** Add File: {{HOME}}/other-project/.codex/config.toml\n+a\n*** End Patch\n"}}
+{"name":"block: codex 形 apply_patch で cwd の .env","expect":"block","tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n*** Add File: .env\n+A=1\n*** End Patch\n"}}
+{"name":"allow: codex 形 apply_patch の本文に .env の文字列があるだけ","expect":"allow","tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n*** Update File: README.md\n@@\n-a\n+see .env and .codex/config.toml\n*** End Patch\n"}}
+{"name":"block: tool_name 付き Bash は従来どおり token 判定","expect":"block","tool_name":"Bash","tool_input":{"command":"echo x > .env"}}
+# Claude Code の settings (hooks) は codex の apply_patch からだけ止める。
+# {{SETTINGSREAL}} は隔離 HOME の .claude/settings.json が指す実体 (probe で codex が実際に取った経路)。
+{"name":"block: codex apply_patch で home .claude/settings.json","expect":"block","tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n*** Update File: {{HOME}}/.claude/settings.json\n@@\n-a\n+b\n*** End Patch\n"}}
+{"name":"block: codex apply_patch で tilde ~/.claude/settings.json","expect":"block","tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n*** Update File: ~/.claude/settings.json\n@@\n-a\n+b\n*** End Patch\n"}}
+{"name":"block: codex apply_patch で symlink の実体側","expect":"block","tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n*** Update File: {{SETTINGSREAL}}\n@@\n-a\n+b\n*** End Patch\n"}}
+{"name":"block: codex apply_patch で home .claude/settings.local.json を追加","expect":"block","tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n*** Add File: {{HOME}}/.claude/settings.local.json\n+{}\n*** End Patch\n"}}
+{"name":"block: codex apply_patch で cwd の .claude/settings.json","expect":"block","tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n*** Update File: .claude/settings.json\n@@\n-a\n+b\n*** End Patch\n"}}
+{"name":"block: codex apply_patch で別プロジェクトの .claude/settings.local.json","expect":"block","tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n*** Add File: {{HOME}}/other-project/.claude/settings.local.json\n+{}\n*** End Patch\n"}}
+{"name":"allow: codex apply_patch で home .claude/settings.json.bak (別名)","expect":"allow","tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n*** Add File: {{HOME}}/.claude/settings.json.bak\n+{}\n*** End Patch\n"}}
+{"name":"allow: Claude の Write で home .claude/settings.json","expect":"allow","tool_name":"Write","tool_input":{"file_path":"{{HOME}}/.claude/settings.json"}}
+{"name":"allow: Claude の Edit で symlink の実体側","expect":"allow","tool_name":"Edit","tool_input":{"file_path":"{{SETTINGSREAL}}"}}
+{"name":"allow: Bash で home .claude/settings.json を読む","expect":"allow","tool_name":"Bash","tool_input":{"command":"cat ~/.claude/settings.json"}}
 # symlink 経由の回避 ({{SYMHOME}} は runner が「~/.codex を指す symlink」の path に置換する)。
 # 名前に codex を含まない symlink では normalize_path の解決が発火せず block を
 # すり抜けていた (codex-review security 指摘、実測で bypass 確認済み)。

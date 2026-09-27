@@ -1864,6 +1864,19 @@ Claude Code 組み込みの保護(2026-09-26 に公式 docs の sandboxing / per
   auto mode では**分類器に回すだけで hard block ではない**
 - codex 経路(apply_patch / codex の Bash)には組み込みの保護が無い
 
+**codex の apply_patch からは Claude Code の settings も止める(#381)。** 対象は
+`~/.claude/settings.json` / `settings.local.json`(symlink なら実体側 = この repo の
+`claude/settings.json`)と、任意の場所の `.claude/settings.json` / `.claude/settings.local.json`。
+hooks は sandbox の外で実行され、公式 docs は settings の hooks の直接編集が
+file watcher で拾われると書いている(2026-09-27 取得)。2026-09-27 に cwd=別 repo の
+codex (0.157.1) へ `~/.claude/settings.json` の追記を依頼すると、symlink のパスへの
+apply_patch は失敗したが、codex は自分で symlink を辿って実体のパスへ書き直し、
+書き込みが成立した(毎回 user が昇格を承認した状態。承認なしで通るかは未測定)。
+Claude Code の Edit / Write は対象外(この repo の settings 変更は Claude が行うため。
+#212 の既知残余のまま)。codex の Bash 経路と、`apply_patch <<'PATCH'` を shell から
+打つ形(codex の hooks docs では Bash として matcher に掛かる。本体では未確認)も対象外で、cwd=この repo の codex は `claude/settings.json`
+も hook スクリプト本体(`agents/hooks/`)も書ける。
+
 **規約: 起動スクリプトは repo の `.mcp/` 配下に置く。** ガードは参照先を
 `.mcp.json` / `config.toml` から解析せず、この固定ディレクトリで持つ(参照先の
 解析は `command` の相対パス・ラッパー経由の起動などを追う羽目になり、被覆に
@@ -1873,7 +1886,7 @@ Claude Code 組み込みの保護(2026-09-26 に公式 docs の sandboxing / per
 |---|---|---|---|
 | 一次: sandbox | `denyWrite` に `~/*/**/.mcp.json` / `~/*/**/.mcp/**` / `~/*/**/.env` | Claude Code の Bash 経路。2026-09-26 に repo 配下の probe で、`.mcp.json`(直下 / 2 段ネスト)・`.env`(直下 / 1 段ネスト)の作成と `.mcp` の `mkdir` が拒否され、対照(`ctl.txt` / `.env.example` / `mcp.json`)は書けた | codex の Bash 経路(codex は別の sandbox)。file 編集 tool |
 | 一次: codex sandbox(#375) | `codex/config.toml` の `default_permissions = "guarded"`(`extends = ":workspace"`)で、workspace root 配下の `**/.env` `**/.mcp.json` `**/.mcp` `**/.mcp/**` を `deny`、`~/.claude.json` を `read` | codex の Bash 経路。2026-09-27 に user のターミナルで、merge 済みの `~/.codex/config.toml` に対して `codex sandbox -P guarded`(codex-cli 0.157.1)を実行し、変数経由の `.env`・`.mcp.json`・`mkdir .mcp`・`sub/.env` への追記、既存の `.mcp/launch.sh` と `sub/.mcp/x.sh` への追記、`.mcp/` 配下の新規作成、`.mcp.json` の読み取りが拒否され、対照の通常ファイルは書けた。**`**/.mcp` だけでは既存の `.mcp/` 配下への追記が通った**(`mkdir` は止まる)ので `/**` を併記している。cwd=`$HOME` で起動しても `~/.claude.json` への書き込み(`touch -c`)は拒否され、対照の `$HOME` 直下のファイルは作れた。`--sandbox` 指定なしの `codex exec` は workspace に書けた(read-only に落ちていない)。workspace 外(`$HOME` 直下)への書き込みは profile 無しの `:workspace` でも拒否された(2026-09-26 に同じく user のターミナルで実測)— issue #375 の「home 配下の別プロジェクトへ書ける」は hook 単体の測定で、sandbox は既に止めていた | codex の agent が `.env` / `.mcp.json` / `.mcp/` を**読むこともできなくなる**(glob は `deny` しか受け付けず、完全一致の `read` は直下にしか効かなかった。読み取りの拒否を測ったのは `sub/.env` の `cat` だけ。いずれも 2026-09-26 に実測)。Claude Code 側は `.mcp` 系を書き込みだけ拒否するので、ここは codex の方が厳しい |
-| 二次: hook | `agents/hooks/guard-codex-dir.sh` の保護対象を `protected_names`(`.codex` `.mcp` `.mcp.json` `.env`)に一般化。範囲は `.codex/` と同じ(cwd 配下 + home 配下の別プロジェクト)。`~/.claude.json`(user スコープの mcpServers)は `~/.codex/config.toml` と同じ完全一致判定で止める(#375) | Claude Code / codex 両方の file 編集 tool(Edit / Write / apply_patch 等)。Bash は cwd 配下を**字面で**指す token だけ | 変数経由の書き込み先(`p=<保護対象>; printf x > "$p"`)は、この hook も `block-dangerous-commands.sh` も素通りする(2026-09-26 に payload を両 hook へ流して実測、どちらも exit 0)。止めるのは各 harness の一次(sandbox)。ただし codex の permission profile は `.codex` を deny に含めておらず、`.codex/` は従来どおり `block-dangerous-commands.sh` の動的展開判定が補う。home の外は `.codex/` と同じ残余 |
+| 二次: hook | `agents/hooks/guard-codex-dir.sh` の保護対象を `protected_names`(`.codex` `.mcp` `.mcp.json` `.env`)に一般化。範囲は `.codex/` と同じ(cwd 配下 + home 配下の別プロジェクト)。`~/.claude.json`(user スコープの mcpServers)は `~/.codex/config.toml` と同じ完全一致判定で止める(#375) | Claude Code / codex 両方の file 編集 tool(Edit / Write / apply_patch 等)。Bash は cwd 配下を**字面で**指す token だけ。**#381 までは codex の apply_patch に home 側の判定が効いていなかった** — codex は patch 本文を `tool_input.command` で渡す(`codex-rs/core/src/tools/handlers/apply_patch.rs`)が、hook は `.patch` / `.input` しか読まず、本文を Bash token として cwd 配下の判定にだけ掛けていた(2026-09-28 に codex 形の payload を hook に流し、`~/.claude.json` と `~/.codex/config.toml` の Update がどちらも exit 0 だったことを実測) | 変数経由の書き込み先(`p=<保護対象>; printf x > "$p"`)は、この hook も `block-dangerous-commands.sh` も素通りする(2026-09-26 に payload を両 hook へ流して実測、どちらも exit 0)。止めるのは各 harness の一次(sandbox)。ただし codex の permission profile は `.codex` を deny に含めておらず、`.codex/` は従来どおり `block-dangerous-commands.sh` の動的展開判定が補う。home の外は `.codex/` と同じ残余 |
 
 - **判定は名前の完全一致**: `.env.local` / `.env.example` / `mcp.json` /
   `.mcp.json.bak` は対象外(起動スクリプトが source するのは `.env` なので。
