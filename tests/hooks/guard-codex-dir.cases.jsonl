@@ -71,6 +71,16 @@
 {"name":"allow: home .codex/subdir/config.toml (直下でない)","expect":"allow","tool_input":{"file_path":"{{HOME}}/.codex/skills/config.toml"}}
 {"name":"allow: Bash で home config.toml を読む (block-dangerous-commands の担当)","expect":"allow","command":"cat ~/.codex/config.toml"}
 {"name":"allow: Bash で home config.toml へ書き込み (guard は素通し、sandbox+block-dangerous が担当)","expect":"allow","command":"echo x > ~/.codex/config.toml"}
+# --- issue #375: $HOME/.claude.json (Claude Code の user スコープ mcpServers) ---
+# codex の apply_patch から書けていた。config.toml と同じく 1 ファイルだけを対象にする。
+{"name":"block: home 絶対 {{HOME}}/.claude.json (Write)","expect":"block","tool_input":{"file_path":"{{HOME}}/.claude.json"}}
+{"name":"block: home tilde ~/.claude.json (Edit)","expect":"block","tool_input":{"file_path":"~/.claude.json"}}
+{"name":"block: home $HOME 表記の .claude.json","expect":"block","tool_input":{"file_path":"$HOME/.claude.json"}}
+{"name":"block: home 大文字 .Claude.JSON","expect":"block","tool_input":{"file_path":"{{HOME}}/.Claude.JSON"}}
+{"name":"block: apply_patch で home .claude.json を更新","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Update File: {{HOME}}/.claude.json\n@@\n-{}\n+{\"mcpServers\":{\"x\":{\"command\":\"evil\"}}}\n*** End Patch\n"}}
+{"name":"allow: home .claude.json.backup (別名)","expect":"allow","tool_input":{"file_path":"{{HOME}}/.claude.json.backup"}}
+{"name":"allow: home .claude/ 配下の .claude.json (直下でない)","expect":"allow","tool_input":{"file_path":"{{HOME}}/.claude/backups/.claude.json"}}
+{"name":"allow: Bash で home .claude.json を読む","expect":"allow","command":"cat ~/.claude.json"}
 # symlink 経由の回避 ({{SYMHOME}} は runner が「~/.codex を指す symlink」の path に置換する)。
 # 名前に codex を含まない symlink では normalize_path の解決が発火せず block を
 # すり抜けていた (codex-review security 指摘、実測で bypass 確認済み)。

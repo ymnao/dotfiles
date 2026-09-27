@@ -14,15 +14,17 @@
 #
 # patch 本文中の説明テキストに保護対象の名前が含まれるだけなら許可する。
 #
-# 加えて $HOME/.codex/config.toml (ホーム配下の codex 設定本体) への書き込みも
-# ブロックする (issue #190)。sandbox の denyWrite は Bash 経由の書き込みには効くが
+# 加えて $HOME/.codex/config.toml (ホーム配下の codex 設定本体) と $HOME/.claude.json
+# (issue #375) への書き込みもブロックする (issue #190)。sandbox の denyWrite は Bash 経由の書き込みには効くが
 # Edit / Write / apply_patch の file 編集 tool には適用されないため、そのままだと
 # notify / mcp_servers / hooks フィールド差し替えによる host 側任意コマンド実行が
 # 成立する。cwd 判定 (is_protected_project_path) は cwd 配下しか見ないので別判定。
 # この追加判定は **file 編集 tool の path のみ** に適用し、Bash token には適用しない
-# — Bash 側は block-dangerous-commands.sh が「書き込み文脈」だけを precise に
-# ブロックしており、`cat ~/.codex/config.toml` のような読み取りは意図的に許可
-# されている (guard 側で token 一致だけで塞ぐとその緩和を壊す)。
+# — config.toml の Bash 側は block-dangerous-commands.sh が「書き込み文脈」だけを
+# precise にブロックしており、`cat ~/.codex/config.toml` のような読み取りは意図的に
+# 許可されている (guard 側で token 一致だけで塞ぐとその緩和を壊す)。.claude.json の
+# Bash 側は block-dangerous-commands.sh の対象外で、Claude Code は組み込みの保護、
+# codex は permission profile (codex/config.toml) が担当する。
 #
 # さらに $HOME 配下の別プロジェクトの .codex/ への書き込みもブロックする
 # (issue #291)。sandbox の denyWrite は `~/*/**/.codex/**` で home 配下の
@@ -223,6 +225,9 @@ is_protected_project_path() {
 # ディレクトリ全体ではなく config.toml 1 ファイルのみを対象にする — codex CLI は
 # sessions/ / history.jsonl / auth.json / *.sqlite 等に正当に書き込む必要があり、
 # 攻撃価値が集中しているのは notify / mcp_servers / hooks を持つ config.toml だけ。
+# $HOME/.claude.json (Claude Code の user スコープ mcpServers) も同じ理由で 1 ファイルだけ
+# 対象にする (issue #375)。protected_names に足さないのは、プロジェクト配下の
+# .claude.json まで巻き込むため。
 is_protected_home_codex_config() {
   # HOME 不明の環境では判定しない (誤爆を避ける。cwd 判定は引き続き効く)
   [[ -n "$home_lower" ]] || return 1
@@ -230,7 +235,7 @@ is_protected_home_codex_config() {
   local home
   for home in "${home_forms[@]}"; do
     case "$1" in
-      "$home/$protected_name/config.toml") return 0 ;;
+      "$home/$protected_name/config.toml"|"$home/.claude.json") return 0 ;;
     esac
   done
 
@@ -439,7 +444,7 @@ while IFS= read -r -d '' rec; do
   [[ -n "$p" ]] || continue
   p_lower=$(normalize_path "$p" always)
   if is_protected_home_codex_config "$p_lower"; then
-    edit_reason="~/.codex/config.toml への書き込みは禁止されています（notify / mcp_servers / hooks 経由の host 側コマンド実行対策、issue #190）"
+    edit_reason="~/.codex/config.toml / ~/.claude.json への書き込みは禁止されています（notify / mcp_servers / hooks 経由の host 側コマンド実行対策、issue #190 / #375）"
     break
   fi
   if is_protected_home_project_codex_path "$p_lower"; then
