@@ -60,3 +60,6 @@ extends = ":workspace"
 "**/.env" = "deny"
 "**/.mcp.json" = "deny"
 "**/.mcp" = "deny"
+# `**/.mcp` は名前そのもの (mkdir) にしか効かず、既存の .mcp/ 配下のファイルへの追記は
+# 通った (2026-09-27 実測)。
+"**/.mcp/**" = "deny"
