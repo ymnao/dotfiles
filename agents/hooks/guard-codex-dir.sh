@@ -65,6 +65,10 @@ if ! tool_name=$(printf '%s' "$input" | jq -r '.tool_name? // empty'); then
   echo "ブロック: tool_input の解析に失敗しました (.codex/ 保護を確認できません)" >&2
   exit 2
 fi
+is_apply_patch=""
+if [[ "$tool_name" == "apply_patch" ]]; then
+  is_apply_patch=1
+fi
 
 protected_name='.codex'
 # 次回のクライアント起動時に sandbox の外で実行される / source される名前 (issue #372)。
@@ -293,10 +297,23 @@ is_protected_home_project_codex_path() {
 # ~/.claude/settings.json は dotfiles repo の claude/settings.json への symlink なので、
 # 入力側と同じく末尾 symlink まで解決した形 (claude_settings_forms) とも比べる
 # — 解決後のパスには .claude/ が残らず、名前の一致だけでは外れる。
+# 解決は名前で決着しなかった最初の 1 回だけ行う (normalize_path は subshell を伴う)。
+claude_settings_forms=()
+claude_settings_forms_ready=""
 is_protected_claude_settings() {
   case "$1" in
     */.claude/settings.json|*/.claude/settings.local.json) return 0 ;;
   esac
+
+  if [[ -z "$claude_settings_forms_ready" ]]; then
+    claude_settings_forms_ready=1
+    if [[ -n "${HOME:-}" ]]; then
+      claude_settings_forms=(
+        "$(normalize_path "$HOME/.claude/settings.json" always)"
+        "$(normalize_path "$HOME/.claude/settings.local.json" always)"
+      )
+    fi
+  fi
 
   local form
   for form in ${claude_settings_forms[@]+"${claude_settings_forms[@]}"}; do
@@ -384,11 +401,11 @@ extract_bash_tokens() {
 # `cat ~/.codex/config.toml` のような読み取り許可を壊す。Bash 側の書き込み文脈判定は
 # block-dangerous-commands.sh が担当する。
 extract_patch_body() {
-  if [[ "$tool_name" == "apply_patch" ]]; then
-    printf '%s' "$input" | jq -r '.tool_input | (.command? // .patch? // .input? // empty)'
-  else
-    printf '%s' "$input" | jq -r '.tool_input | (.patch? // .input? // empty)'
+  local fields='.patch? // .input?'
+  if [[ -n "$is_apply_patch" ]]; then
+    fields=".command? // ${fields}"
   fi
+  printf '%s' "$input" | jq -r ".tool_input | (${fields} // empty)"
 }
 
 extract_paths() {
@@ -412,7 +429,7 @@ extract_paths() {
   # apply_patch の command は patch 本文なので Bash token として分割しない (本文中の
   # 説明テキストに保護対象の名前が出るだけで block されるため)。
   bash_cmd=""
-  if [[ "$tool_name" != "apply_patch" ]]; then
+  if [[ -z "$is_apply_patch" ]]; then
     bash_cmd=$(printf '%s' "$input" | jq -r '.tool_input | (.command? // empty)') || return 1
   fi
 
@@ -479,14 +496,6 @@ fi
 # 正規化は 1 候補につき 1 回だけ呼び、symlink 解決は `always` で無条件に行う
 # (gate 任せだと名前にトークンを含まない symlink + config.toml 以外の leaf が
 # 素通りする。上の normalize_path のコメント参照)。
-claude_settings_forms=()
-if [[ "$tool_name" == "apply_patch" && -n "${HOME:-}" ]]; then
-  claude_settings_forms=(
-    "$(normalize_path "$HOME/.claude/settings.json" always)"
-    "$(normalize_path "$HOME/.claude/settings.local.json" always)"
-  )
-fi
-
 edit_reason=""
 edit_scan_complete=""
 while IFS= read -r -d '' rec; do
@@ -497,7 +506,7 @@ while IFS= read -r -d '' rec; do
   p=${rec#P}
   [[ -n "$p" ]] || continue
   p_lower=$(normalize_path "$p" always)
-  if [[ "$tool_name" == "apply_patch" ]] && is_protected_claude_settings "$p_lower"; then
+  if [[ -n "$is_apply_patch" ]] && is_protected_claude_settings "$p_lower"; then
     edit_reason="codex から Claude Code の settings (.claude/settings.json / settings.local.json) への書き込みは禁止されています（hooks 経由の host 側コマンド実行対策、issue #381）"
     break
   fi
