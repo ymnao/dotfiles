@@ -410,7 +410,7 @@ extract_patch_body() {
 
 extract_paths() {
   local mode="${1:-all}"
-  # apply_patch: tool_input.patch / tool_input.input のファイル操作ヘッダー
+  # apply_patch: tool_input.command (codex) / .patch / .input のファイル操作ヘッダー
   # Edit/Write/MultiEdit: tool_input.path / file_path / filename
   # NotebookEdit: tool_input.notebook_path
   # Bash: tool_input.command を token 分割

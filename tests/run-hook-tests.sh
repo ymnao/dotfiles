@@ -21,6 +21,8 @@ set -euo pipefail
 #   ファイルを指す、末尾要素そのものの symlink」に置換する。
 #   `{{RELLEAFLINK}}` は同じ形で target が相対パスのもの、`{{CHAINLEAFLINK}}` は
 #   相対 → 絶対の 2 段 chain。
+#   `{{SETTINGSREAL}}` は「隔離 HOME の .claude/settings.json (symlink) が指す実体」に置換する。
+#   ケースに `tool_name` があれば payload にも載せる。
 #   tool_input / command 内の文字列に `{{CWD}}` が含まれる場合、hook 実行時の
 #   一時 cwd 実パスに置換される (cwd 内絶対パステスト用)。
 #

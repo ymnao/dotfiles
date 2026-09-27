@@ -1873,9 +1873,16 @@ codex (0.157.1) へ `~/.claude/settings.json` の追記を依頼すると、syml
 apply_patch は失敗したが、codex は自分で symlink を辿って実体のパスへ書き直し、
 書き込みが成立した(毎回 user が昇格を承認した状態。承認なしで通るかは未測定)。
 Claude Code の Edit / Write は対象外(この repo の settings 変更は Claude が行うため。
-#212 の既知残余のまま)。codex の Bash 経路と、`apply_patch <<'PATCH'` を shell から
-打つ形(codex の hooks docs では Bash として matcher に掛かる。本体では未確認)も対象外で、cwd=この repo の codex は `claude/settings.json`
-も hook スクリプト本体(`agents/hooks/`)も書ける。
+#212 の既知残余のまま)。残余は 3 つ:
+
+- codex の Bash 経路と、`apply_patch <<'PATCH'` を shell から打つ形(codex の hooks docs
+  では Bash として matcher に掛かる。本体では未確認)。cwd=この repo の codex はこの経路で
+  `claude/settings.json` を書ける
+- hook スクリプト本体(`agents/hooks/`)は判定対象外で、cwd=この repo の codex は
+  apply_patch でも書ける
+- `.claude/` ディレクトリ自体が symlink の project(`.claude -> cfg`)は、解決後のパスに
+  `.claude/` が残らず名前判定が外れる。ただし実体側(`cfg/settings.json`)は元々
+  名前で止められないので、hook では塞がない(symlink の作成には Bash 経路が要る)
 
 **規約: 起動スクリプトは repo の `.mcp/` 配下に置く。** ガードは参照先を
 `.mcp.json` / `config.toml` から解析せず、この固定ディレクトリで持つ(参照先の
