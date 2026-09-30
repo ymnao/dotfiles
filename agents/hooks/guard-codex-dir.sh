@@ -7,7 +7,10 @@
 # 正本: agents/hooks/guard-codex-dir.sh (claude/hooks/ と codex/hooks/ からは相対 symlink)
 #
 # 検査対象:
-#   - apply_patch: patch 本文中のファイル操作ヘッダー (Add / Update / Delete / Move to) の path
+#   - apply_patch: patch 本文中のファイル操作ヘッダー (Add / Update / Delete / Move to) の path。
+#     codex は本文を tool_input.command で渡す (tool_name は "apply_patch"。issue #381 で
+#     codex-rs/core/src/tools/handlers/apply_patch.rs の pre_tool_use_payload を確認)。
+#     tool_input.patch / .input も引き続き読む
 #   - Edit / Write / MultiEdit: path / file_path / filename
 #   - NotebookEdit: notebook_path
 #   - Bash: command 文字列からトークン抽出し、cwd 内の保護対象 (protected_names) を指す token をブロック
@@ -32,6 +35,14 @@
 # cwd 判定は cwd の外を見ないため、cwd 外のプロジェクトが全層素通りしていた。
 # これも file 編集 tool の path のみに適用する (理由は上と同じ)。
 #
+# codex の apply_patch に限り、Claude Code の settings (hooks を持ち、Claude Code の
+# 起動時・稼働中に sandbox の外で実行される) への書き込みもブロックする (issue #381)。
+# 対象は ~/.claude/settings.json / settings.local.json (symlink なら実体側) と、
+# 任意の場所の .claude/settings.json / .claude/settings.local.json。
+# Why not Claude Code の Edit / Write も対象にする: この hook は Claude 側にも配線されて
+# おり、repo の claude/settings.json を Claude が編集する通常の作業まで止まる
+# (Claude の Edit 経路は docs/ai-operations.md の #212 の既知残余のまま)。
+#
 # Cymulate notify エスケープ（未修正）対策。
 #
 # exit 0 = 許可, exit 2 = ブロック
@@ -48,6 +59,15 @@ if ! command -v jq &>/dev/null; then
   # jq 不在時はフェイルセーフでブロック
   echo "ブロック: jq 未インストールのため .codex/ 保護を確認できません" >&2
   exit 2
+fi
+
+if ! tool_name=$(printf '%s' "$input" | jq -r '.tool_name? // empty'); then
+  echo "ブロック: tool_input の解析に失敗しました (.codex/ 保護を確認できません)" >&2
+  exit 2
+fi
+is_apply_patch=""
+if [[ "$tool_name" == "apply_patch" ]]; then
+  is_apply_patch=1
 fi
 
 protected_name='.codex'
@@ -273,6 +293,36 @@ is_protected_home_project_codex_path() {
   return 1
 }
 
+# 「Claude Code の settings (issue #381)」を指しているかを判定する。
+# ~/.claude/settings.json は dotfiles repo の claude/settings.json への symlink なので、
+# 入力側と同じく末尾 symlink まで解決した形 (claude_settings_forms) とも比べる
+# — 解決後のパスには .claude/ が残らず、名前の一致だけでは外れる。
+# 解決は名前で決着しなかった最初の 1 回だけ行う (normalize_path は subshell を伴う)。
+claude_settings_forms=()
+claude_settings_forms_ready=""
+is_protected_claude_settings() {
+  case "$1" in
+    */.claude/settings.json|*/.claude/settings.local.json) return 0 ;;
+  esac
+
+  if [[ -z "$claude_settings_forms_ready" ]]; then
+    claude_settings_forms_ready=1
+    if [[ -n "${HOME:-}" ]]; then
+      claude_settings_forms=(
+        "$(normalize_path "$HOME/.claude/settings.json" always)"
+        "$(normalize_path "$HOME/.claude/settings.local.json" always)"
+      )
+    fi
+  fi
+
+  local form
+  for form in ${claude_settings_forms[@]+"${claude_settings_forms[@]}"}; do
+    [[ "$1" == "$form" ]] && return 0
+  done
+
+  return 1
+}
+
 # apply_patch の patch 本文 (stdin) からファイル操作ヘッダーの path を 1 行 1 件で吐く。
 # $1 は各レコードの先頭に付けるタグ (省略時は無タグ)。
 #
@@ -350,15 +400,23 @@ extract_bash_tokens() {
 # home config 判定は「書き込み文脈」を区別できないため、Bash token に適用すると
 # `cat ~/.codex/config.toml` のような読み取り許可を壊す。Bash 側の書き込み文脈判定は
 # block-dangerous-commands.sh が担当する。
+extract_patch_body() {
+  local fields='.patch? // .input?'
+  if [[ -n "$is_apply_patch" ]]; then
+    fields=".command? // ${fields}"
+  fi
+  printf '%s' "$input" | jq -r ".tool_input | (${fields} // empty)"
+}
+
 extract_paths() {
   local mode="${1:-all}"
-  # apply_patch: tool_input.patch / tool_input.input のファイル操作ヘッダー
+  # apply_patch: tool_input.command (codex) / .patch / .input のファイル操作ヘッダー
   # Edit/Write/MultiEdit: tool_input.path / file_path / filename
   # NotebookEdit: tool_input.notebook_path
   # Bash: tool_input.command を token 分割
   local patch_body direct_paths bash_cmd
   # `if ! caller` 経由で set -e が抑止されるため、jq 失敗は || return 1 で明示検出する。
-  patch_body=$(printf '%s' "$input" | jq -r '.tool_input | (.patch? // .input? // empty)') || return 1
+  patch_body=$(extract_patch_body) || return 1
   direct_paths=$(printf '%s' "$input" | jq -r '
     .tool_input
     | if type == "object" then
@@ -368,7 +426,12 @@ extract_paths() {
       end
     // empty
   ') || return 1
-  bash_cmd=$(printf '%s' "$input" | jq -r '.tool_input | (.command? // empty)') || return 1
+  # apply_patch の command は patch 本文なので Bash token として分割しない (本文中の
+  # 説明テキストに保護対象の名前が出るだけで block されるため)。
+  bash_cmd=""
+  if [[ -z "$is_apply_patch" ]]; then
+    bash_cmd=$(printf '%s' "$input" | jq -r '.tool_input | (.command? // empty)') || return 1
+  fi
 
   {
     printf '%s\n' "$patch_body" | extract_apply_patch_header_paths
@@ -406,7 +469,7 @@ extract_edit_paths_nul() {
   ' || return 1
 
   # apply_patch のヘッダーは行ベースの書式なので、path に改行は現れない。
-  printf '%s' "$input" | jq -r '.tool_input | (.patch? // .input? // empty)' \
+  extract_patch_body \
     | extract_apply_patch_header_paths P \
     | tr '\n' '\000' || return 1
 
@@ -443,6 +506,16 @@ while IFS= read -r -d '' rec; do
   p=${rec#P}
   [[ -n "$p" ]] || continue
   p_lower=$(normalize_path "$p" always)
+  # settings は解決前の字句形でも判定する: `.claude -> cfg` のように .claude/ 自体が
+  # symlink の project では、解決後のパスから .claude/ が消えて名前判定が外れる。
+  # Why not normalize_path の gated 形: パスに codex を含むと symlink を解決してしまう。
+  if [[ -n "$is_apply_patch" ]] && {
+    is_protected_claude_settings "$p_lower" \
+      || is_protected_claude_settings "$(printf '/%s' "$p" | sed -E -e 's#/\./#/#g' -e ':a' -e 's#/[^/]+/\.\.(/|$)#/#g' -e 'ta' -e 's#//+#/#g' | tr '[:upper:]' '[:lower:]')"
+  }; then
+    edit_reason="codex から Claude Code の settings (.claude/settings.json / settings.local.json) への書き込みは禁止されています（hooks 経由の host 側コマンド実行対策、issue #381）"
+    break
+  fi
   if is_protected_home_codex_config "$p_lower"; then
     edit_reason="~/.codex/config.toml / ~/.claude.json への書き込みは禁止されています（notify / mcp_servers / hooks 経由の host 側コマンド実行対策、issue #190 / #375）"
     break

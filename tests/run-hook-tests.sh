@@ -21,6 +21,8 @@ set -euo pipefail
 #   ファイルを指す、末尾要素そのものの symlink」に置換する。
 #   `{{RELLEAFLINK}}` は同じ形で target が相対パスのもの、`{{CHAINLEAFLINK}}` は
 #   相対 → 絶対の 2 段 chain。
+#   `{{SETTINGSREAL}}` は「隔離 HOME の .claude/settings.json (symlink) が指す実体」に置換する。
+#   ケースに `tool_name` があれば payload にも載せる。
 #   tool_input / command 内の文字列に `{{CWD}}` が含まれる場合、hook 実行時の
 #   一時 cwd 実パスに置換される (cwd 内絶対パステスト用)。
 #
@@ -198,6 +200,18 @@ run_hook() {
   printf '%s' "$rc"
 }
 
+# {{SETTINGSREAL}}: 隔離 HOME の .claude/settings.json が symlink で指す実体
+# (dotfiles の claude/settings.json と同じ配置。issue #381)。実体側のパスには
+# .claude/ が残らないので、名前ではなく symlink 解決の一致で止まることを測る。
+# Why not 実体を作る: guard-sandbox-exclusions は読める ~/.claude/settings.json を
+# 組み込み既定より優先するので、中身を置くとそちらのケースの前提が変わる。
+SETTINGS_REAL="$BASEDIR/dotrepo/claude/settings.json"
+mkdir -p "$BASEDIR/dotrepo/claude" "$FAKE_HOME/.claude"
+ln -sfn "$SETTINGS_REAL" "$FAKE_HOME/.claude/settings.json"
+# cwd 配下の project で .claude/ ディレクトリ自体が symlink (`.claude -> cfg`) の形。
+mkdir -p "$WORKDIR/linkproj/cfg"
+ln -sfn cfg "$WORKDIR/linkproj/.claude"
+
 # {{CWD}} を一時 cwd に、{{HOME}} を隔離 HOME に、{{SYMHOME}} / {{HOMEPROJLINK}} を
 # 上記 symlink に置換する。
 # {{HOME}} は guard-codex-dir.sh の ~/.codex/config.toml 判定 (issue #190) を
@@ -217,6 +231,7 @@ substitute_cwd() {
   s=${s//\{\{LEAFLINK\}\}/$LEAF_LINK}
   s=${s//\{\{RELLEAFLINK\}\}/$REL_LEAF_LINK}
   s=${s//\{\{CHAINLEAFLINK\}\}/$CHAIN_LEAF_LINK}
+  s=${s//\{\{SETTINGSREAL\}\}/$SETTINGS_REAL}
   printf '%s' "$s"
 }
 
@@ -270,7 +285,8 @@ for cf in "$@"; do
       # ケース形式: `tool_input` を JSON オブジェクトで直接指定 (Edit/Write/apply_patch 系)。
       # 後方互換で `command` 文字列も受け付け、tool_input.command に組み立てる (Bash 系)。
       # 両方指定された場合は tool_input 側を優先する。
-      input=$(printf '%s' "$line" | jq -c '{tool_input: (.tool_input // {command: .command})}')
+      # `tool_name` があれば payload にも載せる (guard-codex-dir の apply_patch 判定、issue #381)。
+      input=$(printf '%s' "$line" | jq -c '{tool_input: (.tool_input // {command: .command})} + (if has("tool_name") then {tool_name} else {} end)')
       input=$(substitute_cwd "$input")
     fi
 
