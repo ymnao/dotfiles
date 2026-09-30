@@ -1872,8 +1872,9 @@ file watcher で拾われると書いている(2026-09-27 取得)。2026-09-27 �
 codex (0.157.1) へ `~/.claude/settings.json` の追記を依頼すると、symlink のパスへの
 apply_patch は失敗したが、codex は自分で symlink を辿って実体のパスへ書き直し、
 書き込みが成立した(毎回 user が昇格を承認した状態。承認なしで通るかは未測定)。
-block の確認は hook 単体に codex 形の payload を流した測定(`tests/hooks/guard-codex-dir.cases.jsonl`)で、
-codex 本体での end-to-end は未確認。
+修正後の 2026-09-30 に同じ条件で実体のパス(`dotfiles/claude/settings.json`)への追記を
+依頼すると、codex (0.157.1) の apply_patch はこの hook の #381 のメッセージで拒否され、
+ファイルは変わらなかった(回帰は `tests/hooks/guard-codex-dir.cases.jsonl` が hook 単体で見る)。
 Claude Code の Edit / Write は対象外(この repo の settings 変更は Claude が行うため。
 #212 の既知残余のまま)。残余は 3 つ:
 
