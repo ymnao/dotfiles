@@ -63,15 +63,12 @@ extends = ":workspace"
 # `**/.mcp` は名前そのもの (mkdir) にしか効かず、既存の .mcp/ 配下のファイルへの追記は
 # 通った (2026-09-27 実測)。
 "**/.mcp/**" = "deny"
-# cwd=dotfiles の codex から、sandbox の外で実行される Claude / codex の hook 実行面と、
-# この profile 自身を守る (issue #385)。guard-codex-dir.sh の settings 判定は apply_patch
-# にしか掛からず、Bash の `printf >> claude/settings.json` を止められない。
-# deny ではなく read なのは、codex に hook や settings の diff を読ませるため。
-# ネストした完全一致 (`claude/settings.json`) もディレクトリ (`agents/hooks`) も、配下の
-# 追記・新規作成・削除・rename と symlink 越しの書き込みを拒否し、読み取りは通した
-# (2026-09-30 に codex-cli 0.159.2 で実測)。
+# sandbox の外で実行される hook 実行面と、この profile 自身 (issue #385。測定と残余は
+# docs/ai-operations.md)。deny ではなく read なのは、codex に hook や settings の diff を
+# 読ませるため。`claude` / `codex` ごと read にしないのは、skills 等の編集まで塞ぐため。
 "claude/settings.json" = "read"
 "claude/hooks" = "read"
+"claude/statusline.sh" = "read"
 "agents/hooks" = "read"
 "codex/hooks.json" = "read"
 "codex/hooks" = "read"

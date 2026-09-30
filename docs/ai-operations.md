@@ -1882,18 +1882,22 @@ Claude Code の Edit / Write は対象外(この repo の settings 変更は Cla
 この hook は apply_patch の名前しか見ないので、codex の Bash 経路(`printf >> claude/settings.json`
 や shell から打つ `apply_patch <<'PATCH'`)と hook スクリプト本体(`agents/hooks/`)を
 止められなかった。`codex/config.toml` の `guarded` profile で、sandbox の外で実行される
-`claude/settings.json` `claude/hooks` `agents/hooks` `codex/hooks.json` `codex/hooks` `.claude`
-と、profile 自身の `codex/config.toml` を `read` にしている。2026-10-01 に user のターミナルで、
+`claude/settings.json` `claude/hooks` `claude/statusline.sh` `agents/hooks` `codex/hooks.json`
+`codex/hooks` `.claude` と、profile 自身の `codex/config.toml` を `read` にしている。2026-10-01 に user のターミナルで、
 merge 済みの `~/.codex/config.toml` に対して `codex sandbox -P guarded`(codex-cli 0.159.2)を
 cwd=この repo で実行し、これらへの長さ 0 の追記(`claude/hooks/` の symlink 越しを含む)が拒否され、
 `claude/settings.json` の読み取りと `agents/hooks` の一覧、対照の通常ファイルの作成は通った。
 hook ディレクトリへの新規作成・`agents/hooks` と `claude/settings.json` の rename・
-`.claude/stop-gate.conf` の削除は、同じ構成のコピーを workspace にして拒否を確かめた。
-cwd がこの repo 以外なら、
-この repo は workspace の外なので `:workspace` が既に書き込みを拒否する。残余は 3 つ:
+`.claude/stop-gate.conf` の削除は、同じ構成のコピーを workspace にして拒否を確かめた
+(`claude/statusline.sh` の追記拒否と読み取りも、repo の `codex/config.toml` を差した
+`CODEX_HOME` とコピーで確かめた)。cwd がこの repo と祖先・子孫の関係に無いディレクトリ
+(`~/development/memo` で測定)なら、この repo は workspace の外なので `:workspace` が
+書き込みを拒否した。残余は 3 つ:
 
-- cwd=`$HOME` で起動した codex。home 全体が workspace root になり、相対キーが効かない
-  (`~/.claude/settings.json` のような symlink をキーにしたときの解決は未測定)
+- cwd がこの repo の祖先(`$HOME` を含む)か子孫の codex。workspace root がずれて相対キーが
+  当たらず、`claude/settings.json` への長さ 0 の追記が cwd=`claude/`・`important/`・
+  `development/`・`$HOME` のいずれでも通った(2026-10-01 に同じ方法で実測)。
+  `~/.claude/settings.json` のような symlink をキーにしたときの解決は未測定
 - Stop hook 経由の間接の実行面。`claude/hooks/stop-verify-gate.sh` が `.claude/stop-gate.conf`
   の `make gate` を sandbox の外で走らせるので、`Makefile` / `tests/` / `scripts/` の書き換えも
   いずれ実行される。ここまで `read` にすると codex がこの repo でほぼ何も書けなくなるので対象外
