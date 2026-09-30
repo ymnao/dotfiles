@@ -1876,13 +1876,27 @@ apply_patch は失敗したが、codex は自分で symlink を辿って実体�
 依頼すると、codex (0.157.1) の apply_patch はこの hook の #381 のメッセージで拒否され、
 ファイルは変わらなかった(回帰は `tests/hooks/guard-codex-dir.cases.jsonl` が hook 単体で見る)。
 Claude Code の Edit / Write は対象外(この repo の settings 変更は Claude が行うため。
-#212 の既知残余のまま)。残余は 3 つ:
+#212 の既知残余のまま)。
 
-- codex の Bash 経路と、`apply_patch <<'PATCH'` を shell から打つ形(codex の hooks docs
-  では Bash として matcher に掛かる。本体では未確認)。cwd=この repo の codex はこの経路で
-  `claude/settings.json` を書ける
-- hook スクリプト本体(`agents/hooks/`)は判定対象外で、cwd=この repo の codex は
-  apply_patch でも書ける
+**cwd=この repo の codex は、hook 実行面を permission profile で書けなくしている(#385)。**
+この hook は apply_patch の名前しか見ないので、codex の Bash 経路(`printf >> claude/settings.json`
+や shell から打つ `apply_patch <<'PATCH'`)と hook スクリプト本体(`agents/hooks/`)を
+止められなかった。`codex/config.toml` の `guarded` profile で、sandbox の外で実行される
+`claude/settings.json` `claude/hooks` `agents/hooks` `codex/hooks.json` `codex/hooks` `.claude`
+と、profile 自身の `codex/config.toml` を `read` にしている。2026-10-01 に user のターミナルで、
+merge 済みの `~/.codex/config.toml` に対して `codex sandbox -P guarded`(codex-cli 0.159.2)を
+cwd=この repo で実行し、これらへの長さ 0 の追記(`claude/hooks/` の symlink 越しを含む)が拒否され、
+`claude/settings.json` の読み取りと `agents/hooks` の一覧、対照の通常ファイルの作成は通った。
+hook ディレクトリへの新規作成・`agents/hooks` と `claude/settings.json` の rename・
+`.claude/stop-gate.conf` の削除は、同じ構成のコピーを workspace にして拒否を確かめた。
+cwd がこの repo 以外なら、
+この repo は workspace の外なので `:workspace` が既に書き込みを拒否する。残余は 3 つ:
+
+- cwd=`$HOME` で起動した codex。home 全体が workspace root になり、相対キーが効かない
+  (`~/.claude/settings.json` のような symlink をキーにしたときの解決は未測定)
+- Stop hook 経由の間接の実行面。`claude/hooks/stop-verify-gate.sh` が `.claude/stop-gate.conf`
+  の `make gate` を sandbox の外で走らせるので、`Makefile` / `tests/` / `scripts/` の書き換えも
+  いずれ実行される。ここまで `read` にすると codex がこの repo でほぼ何も書けなくなるので対象外
 - `.claude/` ディレクトリ自体が symlink の project(`.claude -> cfg`)で、実体側の
   パス(`cfg/settings.json`)を直接指す形。`.claude/settings.json` と書いた形は解決前の
   字句形でも判定するので止まるが、実体側の名前には `.claude/` が無いので止められない
@@ -1895,7 +1909,7 @@ Claude Code の Edit / Write は対象外(この repo の settings 変更は Cla
 | 層 | 実装 | 効くもの | 効かないもの |
 |---|---|---|---|
 | 一次: sandbox | `denyWrite` に `~/*/**/.mcp.json` / `~/*/**/.mcp/**` / `~/*/**/.env` | Claude Code の Bash 経路。2026-09-26 に repo 配下の probe で、`.mcp.json`(直下 / 2 段ネスト)・`.env`(直下 / 1 段ネスト)の作成と `.mcp` の `mkdir` が拒否され、対照(`ctl.txt` / `.env.example` / `mcp.json`)は書けた | codex の Bash 経路(codex は別の sandbox)。file 編集 tool |
-| 一次: codex sandbox(#375) | `codex/config.toml` の `default_permissions = "guarded"`(`extends = ":workspace"`)で、workspace root 配下の `**/.env` `**/.mcp.json` `**/.mcp` `**/.mcp/**` を `deny`、`~/.claude.json` を `read` | codex の Bash 経路。2026-09-27 に user のターミナルで、merge 済みの `~/.codex/config.toml` に対して `codex sandbox -P guarded`(codex-cli 0.157.1)を実行し、変数経由の `.env`・`.mcp.json`・`mkdir .mcp`・`sub/.env` への追記、既存の `.mcp/launch.sh` と `sub/.mcp/x.sh` への追記、`.mcp/` 配下の新規作成、`.mcp.json` の読み取りが拒否され、対照の通常ファイルは書けた。**`**/.mcp` だけでは既存の `.mcp/` 配下への追記が通った**(`mkdir` は止まる)ので `/**` を併記している。cwd=`$HOME` で起動しても `~/.claude.json` への書き込み(`touch -c`)は拒否され、対照の `$HOME` 直下のファイルは作れた。`--sandbox` 指定なしの `codex exec` は workspace に書けた(read-only に落ちていない)。workspace 外(`$HOME` 直下)への書き込みは profile 無しの `:workspace` でも拒否された(2026-09-26 に同じく user のターミナルで実測)— issue #375 の「home 配下の別プロジェクトへ書ける」は hook 単体の測定で、sandbox は既に止めていた | codex の agent が `.env` / `.mcp.json` / `.mcp/` を**読むこともできなくなる**(glob は `deny` しか受け付けず、完全一致の `read` は直下にしか効かなかった。読み取りの拒否を測ったのは `sub/.env` の `cat` だけ。いずれも 2026-09-26 に実測)。Claude Code 側は `.mcp` 系を書き込みだけ拒否するので、ここは codex の方が厳しい |
+| 一次: codex sandbox(#375) | `codex/config.toml` の `default_permissions = "guarded"`(`extends = ":workspace"`)で、workspace root 配下の `**/.env` `**/.mcp.json` `**/.mcp` `**/.mcp/**` を `deny`、`~/.claude.json` を `read`(hook 実行面の `read` は #385 で追加。上の段落) | codex の Bash 経路。2026-09-27 に user のターミナルで、merge 済みの `~/.codex/config.toml` に対して `codex sandbox -P guarded`(codex-cli 0.157.1)を実行し、変数経由の `.env`・`.mcp.json`・`mkdir .mcp`・`sub/.env` への追記、既存の `.mcp/launch.sh` と `sub/.mcp/x.sh` への追記、`.mcp/` 配下の新規作成、`.mcp.json` の読み取りが拒否され、対照の通常ファイルは書けた。**`**/.mcp` だけでは既存の `.mcp/` 配下への追記が通った**(`mkdir` は止まる)ので `/**` を併記している。cwd=`$HOME` で起動しても `~/.claude.json` への書き込み(`touch -c`)は拒否され、対照の `$HOME` 直下のファイルは作れた。`--sandbox` 指定なしの `codex exec` は workspace に書けた(read-only に落ちていない)。workspace 外(`$HOME` 直下)への書き込みは profile 無しの `:workspace` でも拒否された(2026-09-26 に同じく user のターミナルで実測)— issue #375 の「home 配下の別プロジェクトへ書ける」は hook 単体の測定で、sandbox は既に止めていた | codex の agent が `.env` / `.mcp.json` / `.mcp/` を**読むこともできなくなる**(glob は `deny` しか受け付けず、完全一致の `read` は書いたパスにしか効かない — `.env` は `sub/.env` を素通りさせた。ネストしたパスやディレクトリを書けば配下まで効く(#385)。読み取りの拒否を測ったのは `sub/.env` の `cat` だけ。いずれも 2026-09-26 に実測)。Claude Code 側は `.mcp` 系を書き込みだけ拒否するので、ここは codex の方が厳しい |
 | 二次: hook | `agents/hooks/guard-codex-dir.sh` の保護対象を `protected_names`(`.codex` `.mcp` `.mcp.json` `.env`)に一般化。範囲は `.codex/` と同じ(cwd 配下 + home 配下の別プロジェクト)。`~/.claude.json`(user スコープの mcpServers)は `~/.codex/config.toml` と同じ完全一致判定で止める(#375) | Claude Code / codex 両方の file 編集 tool(Edit / Write / apply_patch 等)。Bash は cwd 配下を**字面で**指す token だけ。**#381 までは codex の apply_patch に home 側の判定が効いていなかった** — codex は patch 本文を `tool_input.command` で渡す(`codex-rs/core/src/tools/handlers/apply_patch.rs`)が、hook は `.patch` / `.input` しか読まず、本文を Bash token として cwd 配下の判定にだけ掛けていた(2026-09-28 に codex 形の payload を hook に流し、`~/.claude.json` と `~/.codex/config.toml` の Update がどちらも exit 0 だったことを実測) | 変数経由の書き込み先(`p=<保護対象>; printf x > "$p"`)は、この hook も `block-dangerous-commands.sh` も素通りする(2026-09-26 に payload を両 hook へ流して実測、どちらも exit 0)。止めるのは各 harness の一次(sandbox)。ただし codex の permission profile は `.codex` を deny に含めておらず、`.codex/` は従来どおり `block-dangerous-commands.sh` の動的展開判定が補う。home の外は `.codex/` と同じ残余 |
 
 - **判定は名前の完全一致**: `.env.local` / `.env.example` / `mcp.json` /
