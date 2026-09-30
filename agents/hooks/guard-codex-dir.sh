@@ -506,7 +506,13 @@ while IFS= read -r -d '' rec; do
   p=${rec#P}
   [[ -n "$p" ]] || continue
   p_lower=$(normalize_path "$p" always)
-  if [[ -n "$is_apply_patch" ]] && is_protected_claude_settings "$p_lower"; then
+  # settings は解決前の字句形でも判定する: `.claude -> cfg` のように .claude/ 自体が
+  # symlink の project では、解決後のパスから .claude/ が消えて名前判定が外れる。
+  # Why not normalize_path の gated 形: パスに codex を含むと symlink を解決してしまう。
+  if [[ -n "$is_apply_patch" ]] && {
+    is_protected_claude_settings "$p_lower" \
+      || is_protected_claude_settings "$(printf '/%s' "$p" | sed -E -e 's#/\./#/#g' -e ':a' -e 's#/[^/]+/\.\.(/|$)#/#g' -e 'ta' -e 's#//+#/#g' | tr '[:upper:]' '[:lower:]')"
+  }; then
     edit_reason="codex から Claude Code の settings (.claude/settings.json / settings.local.json) への書き込みは禁止されています（hooks 経由の host 側コマンド実行対策、issue #381）"
     break
   fi

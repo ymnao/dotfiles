@@ -208,6 +208,9 @@ run_hook() {
 SETTINGS_REAL="$BASEDIR/dotrepo/claude/settings.json"
 mkdir -p "$BASEDIR/dotrepo/claude" "$FAKE_HOME/.claude"
 ln -sfn "$SETTINGS_REAL" "$FAKE_HOME/.claude/settings.json"
+# cwd 配下の project で .claude/ ディレクトリ自体が symlink (`.claude -> cfg`) の形。
+mkdir -p "$WORKDIR/linkproj/cfg"
+ln -sfn cfg "$WORKDIR/linkproj/.claude"
 
 # {{CWD}} を一時 cwd に、{{HOME}} を隔離 HOME に、{{SYMHOME}} / {{HOMEPROJLINK}} を
 # 上記 symlink に置換する。

@@ -97,6 +97,8 @@
 {"name":"block: codex apply_patch で home .claude/settings.local.json を追加","expect":"block","tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n*** Add File: {{HOME}}/.claude/settings.local.json\n+{}\n*** End Patch\n"}}
 {"name":"block: codex apply_patch で cwd の .claude/settings.json","expect":"block","tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n*** Update File: .claude/settings.json\n@@\n-a\n+b\n*** End Patch\n"}}
 {"name":"block: codex apply_patch で別プロジェクトの .claude/settings.local.json","expect":"block","tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n*** Add File: {{HOME}}/other-project/.claude/settings.local.json\n+{}\n*** End Patch\n"}}
+{"name":"block: codex apply_patch で .claude/ 自体が symlink の project","expect":"block","tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n*** Update File: linkproj/.claude/settings.json\n@@\n-a\n+b\n*** End Patch\n"}}
+{"name":"block: 同 project を .. 経由で指す","expect":"block","tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n*** Update File: linkproj/.claude/x/../settings.json\n@@\n-a\n+b\n*** End Patch\n"}}
 {"name":"allow: codex apply_patch で home .claude/settings.json.bak (別名)","expect":"allow","tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n*** Add File: {{HOME}}/.claude/settings.json.bak\n+{}\n*** End Patch\n"}}
 {"name":"allow: Claude の Write で home .claude/settings.json","expect":"allow","tool_name":"Write","tool_input":{"file_path":"{{HOME}}/.claude/settings.json"}}
 {"name":"allow: Claude の Edit で symlink の実体側","expect":"allow","tool_name":"Edit","tool_input":{"file_path":"{{SETTINGSREAL}}"}}
