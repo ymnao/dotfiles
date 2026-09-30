@@ -1890,13 +1890,14 @@ cwd=この repo で実行し、これらへの長さ 0 の追記(`claude/hooks/`
 hook ディレクトリへの新規作成・`agents/hooks` と `claude/settings.json` の rename・
 `.claude/stop-gate.conf` の削除は、同じ構成のコピーを workspace にして拒否を確かめた
 (`claude/statusline.sh` の追記拒否と読み取りも、repo の `codex/config.toml` を差した
-`CODEX_HOME` とコピーで確かめた)。cwd がこの repo と祖先・子孫の関係に無いディレクトリ
-(`~/development/memo` で測定)なら、この repo は workspace の外なので `:workspace` が
-書き込みを拒否した。残余は 3 つ:
+`CODEX_HOME` とコピーで確かめた)。repo の `codex/config.toml` を差した `CODEX_HOME` で、
+本物の repo の `claude/settings.json` への長さ 0 の追記を cwd を変えて試すと、この repo と
+祖先・子孫の関係に無い `~/development/memo` からは拒否された(この repo は workspace の外)。
+残余は 3 つ:
 
-- cwd がこの repo の祖先(`$HOME` を含む)か子孫の codex。workspace root がずれて相対キーが
-  当たらず、`claude/settings.json` への長さ 0 の追記が cwd=`claude/`・`important/`・
-  `development/`・`$HOME` のいずれでも通った(2026-10-01 に同じ方法で実測)。
+- cwd がこの repo の祖先(`$HOME` を含む)か、実行面を含む子孫の codex。workspace root が
+  ずれて相対キーが当たらず、上と同じ追記が cwd=`$HOME`・`~/development`・
+  `~/development/important`・`claude/` のいずれでも通った(2026-10-01 実測)。
   `~/.claude/settings.json` のような symlink をキーにしたときの解決は未測定
 - Stop hook 経由の間接の実行面。`claude/hooks/stop-verify-gate.sh` が `.claude/stop-gate.conf`
   の `make gate` を sandbox の外で走らせるので、`Makefile` / `tests/` / `scripts/` の書き換えも
