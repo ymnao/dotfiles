@@ -81,6 +81,13 @@ paths:
   読み違えていた。prefix 一致で判定していた層は `/*` が CR を吸うため無傷で、
   露出したのは完全一致の 1 経路だけ — **同じ入力でも判定の形によって
   当たり外れが変わる**ので、ズレの影響範囲は判定ごとに見る
+- **`agents/hooks/` (と `claude/hooks/` `codex/hooks/` の実体) は編集中の状態がそのまま
+  live に効く** (`~/.claude/hooks/` 等からの symlink 経由)。途中で hook が壊れると
+  Bash / Edit / Write がすべて block され、agent 自身では戻せない。編集は scratchpad に
+  コピーして行い、`HOOK_DIR=<コピー先の絶対パス> bash tests/run-hook-tests.sh …` と
+  通常の payload の smoke test を通してから、`cp` で 1 回で正本に置き換える。壊れたときの
+  復旧は Terminal パネル (`run_in_terminal`) か user の手で `git restore <hook>`。
+  実例: issue #381 (未定義の関数を呼ぶ行を先に入れ、全ツールが止まった)
 - **hook 自身を調べるとき、guard に阻まれても回避形を組み立てない**。この repo の
   hook は**自分が打つ Bash コマンド**も検査するので、hook をレビュー・調査すると
   テストに使いたい入力がそのまま自分の guard に引っ掛かる。ここで文字列を分割・
