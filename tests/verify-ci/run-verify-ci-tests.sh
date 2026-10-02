@@ -279,6 +279,18 @@ check_stderr "stderr-failed-check-names" "ci (FAILURE)" failure 'gh pr create --
 # PENDING ブロック時の stderr に進行中 check 名が含まれる
 check_stderr "stderr-pending-check-names" "進行中: ci" pending 'gh pr create --title t --body b'
 
+# --- -R / --head は cwd の HEAD と別の ref を指すので CI を確認できず block (#382)
+# success fixture を渡すので、検知が退行して cwd の HEAD 判定に落ちると exit 0 で FAIL する
+check "repo-and-head-flags" 2 "$(run_hook_in "$GH_REPO" success 'gh pr create -R testowner/testrepo --head fix/x --title t --body b')"
+check "head-eq-flag"        2 "$(run_hook_in "$GH_REPO" success 'gh pr create --head=fix/x --title t --body b')"
+check "head-short-flag"     2 "$(run_hook_in "$GH_REPO" success 'gh pr create -H fix/x --title t --body b')"
+check "repo-short-flag"     2 "$(run_hook_in "$GH_REPO" success 'gh pr create -R testowner/testrepo --title t --body b')"
+check "repo-long-flag"      2 "$(run_hook_in "$GH_REPO" success 'gh pr create --repo testowner/testrepo --title t --body b')"
+# cwd に workflow が無い別 repo からの -R も止まる (従来は workflow 不在で素通り)
+check "repo-flag-no-workflows" 2 "$(run_hook_in "$NO_WF_REPO" success 'gh pr create -R testowner/testrepo --title t --body b')"
+check "repo-head-draft-bypass" 0 "$(run_hook_in "$GH_REPO" failure 'gh pr create --draft -R testowner/testrepo --head fix/x --title t')"
+check_stderr "stderr-repo-head-flags" "gh pr ready" success 'gh pr create -R testowner/testrepo --head fix/x --title t --body b'
+
 echo "----"
 echo "verify-ci tests: $pass passed, $fail failed"
 [ "$fail" = 0 ] || exit 1
