@@ -117,15 +117,12 @@ EOF
   exit 2
 fi
 
-# -R / --head は値を読まず存在だけで止める。値から ref を解決すると
-# [HOST/]OWNER/REPO・user:branch・フラグ重複 (gh は後勝ち) など gh と解釈が
-# ずれた形が緑の別 ref を見る false pass になり、gh の引数文法を追い続けることになる
-# (issue #382、/dev step 4-0)。ここで止めないと下の cwd 基準の判定に落ち、
-# worktree や別 repo からの PR を無言で通す
+# 値から ref を解決しないのは、user:branch・フラグ重複 (gh は後勝ち) など gh と
+# 解釈がずれた形が緑の別 ref を見る false pass になるため。存在だけで止める (#382)
 if printf '%s\n' "$gh_segment" | grep -qE '[[:space:]](-R|--repo|-H|--head)(=|[[:space:]]|$)'; then
   cat >&2 <<'EOF'
-[verify-ci-before-pr] -R/--repo または -H/--head 付きの gh pr create は cwd の HEAD と別の ref から PR を作るため、この hook では CI を確認できません。
-1. `gh run list -R <owner/repo> --branch <branch> --limit 1` で success を確認する (進行中なら `gh run watch <id>`)
+[verify-ci-before-pr] -R/--repo または -H/--head 付きの gh pr create は cwd の HEAD と別の ref を指しうるため、この hook では CI を確認しません。
+1. `gh run list -R <owner/repo> --commit <push した SHA>` で success を確認する (進行中なら `gh run watch <id>`)
 2. --draft を付けて gh pr create を実行する
 3. `gh pr ready <番号>` で draft を外す
 --title 等の値の中に該当文字列があるだけの場合も --draft で回避できます。
