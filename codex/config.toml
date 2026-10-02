@@ -45,8 +45,8 @@ include_only = [
 # MCP の起動に使うファイル (issue #372) を codex の Bash / sandbox 経路から守る。
 # hook はコマンド文字列しか見ないので `p=.env; printf x > "$p"` を止められない。
 # read ではなく deny (読み込みも拒否) なのは、glob は deny しか受け付けないため
-# (codex-cli 0.157.1 で実測: "glob path only supports deny access")。完全一致の read は
-# 直下にしか効かず sub/.env を素通りさせた。
+# (codex-cli 0.157.1 で実測: "glob path only supports deny access")。完全一致キーは
+# 書いたパスにしか効かず (`.env` は sub/.env を素通りさせた)、名前での照合にはならない。
 [permissions.guarded]
 extends = ":workspace"
 
@@ -63,3 +63,14 @@ extends = ":workspace"
 # `**/.mcp` は名前そのもの (mkdir) にしか効かず、既存の .mcp/ 配下のファイルへの追記は
 # 通った (2026-09-27 実測)。
 "**/.mcp/**" = "deny"
+# sandbox の外で実行される hook 実行面と、この profile 自身 (issue #385。測定と残余は
+# docs/ai-operations.md)。deny ではなく read なのは、codex に hook や settings の diff を
+# 読ませるため。`claude` / `codex` ごと read にしないのは、skills 等の編集まで塞ぐため。
+"claude/settings.json" = "read"
+"claude/hooks" = "read"
+"claude/statusline.sh" = "read"
+"agents/hooks" = "read"
+"codex/hooks.json" = "read"
+"codex/hooks" = "read"
+"codex/config.toml" = "read"
+".claude" = "read"
