@@ -297,6 +297,7 @@ check "repo-head-draft-bypass" 0 "$(run_hook_in "$GH_REPO" failure 'gh pr create
 check_stderr "stderr-repo-head-flags" "gh pr ready" success 'gh pr create -R testowner/testrepo --head fix/x --title t --body b'
 
 # --- gh pr new は gh pr create の alias なので同じ検査を通る (#388) -------
+check "new-alias-ci-success"   0 "$(run_hook_in "$GH_REPO" success 'gh pr new --title t --body b')"
 check "new-alias-ci-failure"   2 "$(run_hook_in "$GH_REPO" failure 'gh pr new --title t --body b')"
 check "new-alias-draft-bypass" 0 "$(run_hook_in "$GH_REPO" failure 'gh pr new --draft --title t --body b')"
 check "new-alias-defer-body"   2 "$(run_hook_in "$GH_REPO" success 'gh pr new --title t --body "追跡: defer(未起票)"')"
