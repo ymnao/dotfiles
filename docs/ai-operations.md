@@ -1898,7 +1898,12 @@ hook ディレクトリへの新規作成・`agents/hooks` と `claude/settings.
 - cwd がこの repo の祖先(`$HOME` を含む)か、実行面を含む子孫の codex。workspace root が
   ずれて相対キーが当たらず、上と同じ追記が cwd=`$HOME`・`~/development`・
   `~/development/important`・`claude/` のいずれでも通った(2026-10-01 実測)。
-  `~/.claude/settings.json` のような symlink をキーにしたときの解決は未測定
+  cwd に依存しない `~` 起点の symlink キー(`~/.claude/settings.json` `~/.claude/hooks`
+  `~/.claude/statusline.sh` `~/.codex/hooks` `~/.codex/hooks.json` を `[permissions.guarded.filesystem]`
+  に `read`)を足しても塞がらない(2026-10-01 実測): cwd=`$HOME` では settings.json・
+  statusline.sh・hooks.json の実体への追記が拒否されたが、hook 本体(`agents/hooks/`。
+  `claude/hooks/` の symlink 越しも)は書けた。cwd=`~/development`・`claude/` では
+  settings.json の実体にも書けた。repo の絶対パスをキーにする形はマシン固有になるので取らない
 - Stop hook 経由の間接の実行面。`claude/hooks/stop-verify-gate.sh` が `.claude/stop-gate.conf`
   の `make gate` を sandbox の外で走らせるので、`Makefile` / `tests/` / `scripts/` の書き換えも
   いずれ実行される。ここまで `read` にすると codex がこの repo でほぼ何も書けなくなるので対象外
