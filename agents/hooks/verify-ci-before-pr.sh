@@ -122,7 +122,7 @@ fi
 if printf '%s\n' "$gh_segment" | grep -qE '[[:space:]](-R|--repo|-H|--head)(=|[[:space:]]|$)'; then
   cat >&2 <<'EOF'
 [verify-ci-before-pr] -R/--repo または -H/--head 付きの gh pr create は cwd の HEAD と別の ref を指しうるため、この hook では CI を確認しません。
-1. `gh run list -R <owner/repo> --commit <push した SHA>` で success を確認する (進行中なら `gh run watch <id>`)
+1. `gh run list -R <owner/repo> --commit <SHA>` で success を確認する。SHA は `git rev-parse <branch>` の 40 桁 (短縮形は一致せず空出力になる)。空出力は push 前か run 作成待ちなので待って再実行し、進行中なら `gh run watch <id>`
 2. --draft を付けて gh pr create を実行する
 3. `gh pr ready <番号>` で draft を外す
 --title 等の値の中に該当文字列があるだけの場合も --draft で回避できます。
