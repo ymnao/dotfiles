@@ -296,6 +296,12 @@ check "repo-flag-no-workflows" 2 "$(run_hook_in "$NO_WF_REPO" success 'gh pr cre
 check "repo-head-draft-bypass" 0 "$(run_hook_in "$GH_REPO" failure 'gh pr create --draft -R testowner/testrepo --head fix/x --title t')"
 check_stderr "stderr-repo-head-flags" "gh pr ready" success 'gh pr create -R testowner/testrepo --head fix/x --title t --body b'
 
+# --- gh pr new は gh pr create の alias なので同じ検査を通る (#388) -------
+check "new-alias-ci-failure"   2 "$(run_hook_in "$GH_REPO" failure 'gh pr new --title t --body b')"
+check "new-alias-draft-bypass" 0 "$(run_hook_in "$GH_REPO" failure 'gh pr new --draft --title t --body b')"
+check "new-alias-defer-body"   2 "$(run_hook_in "$GH_REPO" success 'gh pr new --title t --body "追跡: defer(未起票)"')"
+check "new-alias-repo-flag"    2 "$(run_hook_in "$GH_REPO" success 'gh pr new -R testowner/testrepo --title t --body b')"
+
 echo "----"
 echo "verify-ci tests: $pass passed, $fail failed"
 [ "$fail" = 0 ] || exit 1
