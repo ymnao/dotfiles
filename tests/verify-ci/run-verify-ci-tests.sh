@@ -285,7 +285,12 @@ check "repo-and-head-flags" 2 "$(run_hook_in "$GH_REPO" success 'gh pr create -R
 check "head-eq-flag"        2 "$(run_hook_in "$GH_REPO" success 'gh pr create --head=fix/x --title t --body b')"
 check "head-short-flag"     2 "$(run_hook_in "$GH_REPO" success 'gh pr create -H fix/x --title t --body b')"
 check "repo-short-flag"     2 "$(run_hook_in "$GH_REPO" success 'gh pr create -R testowner/testrepo --title t --body b')"
-check "repo-long-flag"      2 "$(run_hook_in "$GH_REPO" success 'gh pr create --repo testowner/testrepo --title t --body b')"
+# 値を詰めた短縮形 (gh は -Rowner/repo / -Hbranch も受け付ける)
+check "repo-short-attached" 2 "$(run_hook_in "$GH_REPO" success 'gh pr create -Rtestowner/testrepo --title t --body b')"
+check "head-short-attached" 2 "$(run_hook_in "$GH_REPO" success 'gh pr create -Hfix/x --title t --body b')"
+# 似た名前の別フラグでは止めない
+check "reviewer-flag-not-target" 0 "$(run_hook_in "$GH_REPO" success 'gh pr create --reviewer someone --title t --body b')"
+check "repo-long-flag"     2 "$(run_hook_in "$GH_REPO" success 'gh pr create --repo testowner/testrepo --title t --body b')"
 # cwd に workflow が無い別 repo からの -R も止まる (従来は workflow 不在で素通り)
 check "repo-flag-no-workflows" 2 "$(run_hook_in "$NO_WF_REPO" success 'gh pr create -R testowner/testrepo --title t --body b')"
 check "repo-head-draft-bypass" 0 "$(run_hook_in "$GH_REPO" failure 'gh pr create --draft -R testowner/testrepo --head fix/x --title t')"
