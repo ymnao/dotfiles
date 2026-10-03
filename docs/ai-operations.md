@@ -582,16 +582,21 @@ exit code で行った。
 sandbox ごと外れる行 / tool 経路 / この設定自体の改ざん。内訳は上記
 「denyWrite のパス表記」節の末尾)。ただし **3 番目の中身が denyWrite とは違う** —
 あちらで測ったのは Edit tool が denyWrite を素通りすることで、こちらで測ったのは
-**Read tool が denyRead を素通りする**こと(上表)。**Grep / Glob tool は未測定**。
-この tool 経路は 2026-09-26 に Read deny ルールで塞いだ(下記)。
+**Read tool が denyRead を素通りする**こと(上表)。Grep / Glob tool は macOS では既定で
+tool 自体が無い(下記)。この tool 経路は 2026-09-26 に Read deny ルールで塞いだ(下記)。
 形の上での非カバーがもう 1 つあり、**`~/*/` が home 直下 1 階層を必ず消費するので
 `~/.env` は覆われない**(`~/.codex` が同じ理由で `~/*/**/…` の外にあるのと同型)。
 tool 経路については下記の Read ルールで `~/.env` / `~/.env.local` も明示的に覆った。
 
 **tool 経路は `permissions.deny` の `Read(~/*/**/.env)` /
 `Read(~/*/**/.env.local)` / `Read(~/.env)` / `Read(~/.env.local)` で塞いだ
-(2026-09-26)。** 実測で拒否を確かめたのは Read / Write tool で、**Grep / Glob tool は
-上流 docs 上は対象だが未実測**(下表)。当初は「塞ぐには Read / Grep /
+(2026-09-26)。** 実測で拒否を確かめたのは Read / Write / Grep / Glob tool(下表。
+Grep / Glob は 2026-10-04 に追加)。**Grep / Glob tool は macOS では既定の tool set に
+無く**、検索は Bash の `find` / `grep`(組み込みの bfs / ugrep)で行われるので Bash 行の
+sandbox 層で止まる(code.claude.com/docs/en/tools-reference「Glob tool behavior」)。
+tool が戻るのは `--tools` / `--allowedTools` で名指ししたときと、`tools` に Grep / Glob を
+並べて Bash を外したサブエージェントだけで、この repo の定義(code-reviewer は Bash も
+持つ)と settings はどちらにも当たらない。当初は「塞ぐには Read / Grep /
 Glob 向けの hook を予防的に新設することになる」として残余扱いにしていたが、
 **前提が誤っていた** — 上流の Read deny ルールが native に built-in file tool を
 止める(code.claude.com/docs/en/permissions)ので hook は要らない。
@@ -617,7 +622,7 @@ scratchpad の `git worktree add`)で `.env` を tracked に持つ repo が壊�
 | Write tool で `~/*/**` 配下に `.env` を新規作成 | 拒否(`covered by a Read deny rule`)。Bash のリダイレクト(`printf … > .env`)では作れた |
 | Bash から `cat` / `ls <path>/.env` / python の `open()` / `grep -r` / `rm` / `cp` の書き込み先 | `Operation not permitted`(sandbox 層)。permissions 層が Bash 呼び出しごと拒否した形も一部にあった(`//**` 起点で `cat .env` 相対 / `ls` / `mv`、`~/*/**` 起点では `echo … && cat …; echo …` の 1 形のみ)が、**発火条件は未特定** — Bash 経路を止めている根拠は sandbox 層の方 |
 | `~/*/**` 起点に戻した後、`/private/tmp` 配下の `.env` を python で読む | 読めた(FS 全体への拡張が解消) |
-| Grep / Glob tool | **未実測**(このセッションに tool が無かった) |
+| Grep / Glob tool(2026-10-04 / 2.1.287。`claude -p --tools Glob,Grep` を sandbox の外で実行し、stream-json の tool_result で判定) | Grep で `.env` / `.env.local` を path に直接指定すると拒否(`Permission to read … has been denied.`)。ディレクトリを Glob / Grep(`glob: ".env*"`)すると deny 対象だけが**エラー無しで結果から消え**、対照の `.env.example` は出た。ディレクトリを検索する Grep は `glob` 無しだと gitignore 済みのファイルを飛ばす(対照も出なかった)ので、`.env` が出ないことだけでは deny の根拠にならない(対照も ignore 対象にして比べた) |
 
 **excludedCommands 経路は「transcript に出ない外部送信」まで開く。** `gh *` は
 sandbox ごと外れるので、`gh gist create .env` や `gh issue comment --body-file .env`
