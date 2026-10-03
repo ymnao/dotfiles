@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# PreToolUse hook (Claude Code / Codex CLI 共通): `gh pr create` の実行前に
+# PreToolUse hook (Claude Code / Codex CLI 共通): `gh pr create` (alias `gh pr new` 含む) の実行前に
 # (1) HEAD コミットの CI が green か、(2) PR body に fix-or-issue-or-dismiss ポリシー違反
 # (「defer(未起票)」marker) が残っていないか、の 2 点を検証する
 # 正本: agents/hooks/verify-ci-before-pr.sh
@@ -23,10 +23,10 @@ shopt -s nullglob
 
 input=$(cat)
 
-# 早期 short-circuit: 入力に gh/pr/create が揃わなければ即終了。
+# 早期 short-circuit: 入力に gh/pr/create (または alias の new) が揃わなければ即終了。
 # 99% の Bash 呼び出しはここで落ちて jq fork を回避する。
 case "$input" in
-  *gh*pr*create*) ;;
+  *gh*pr*create*|*gh*pr*new*) ;;
   *) exit 0 ;;
 esac
 
@@ -38,9 +38,9 @@ command=$(printf '%s\n' "$input" | jq -r '.tool_input.command // empty')
 [[ -z "$command" ]] && exit 0
 
 # command 位置 (start, または `;`/`&&`/`||`/`|`/`(`/`{`/backtick/space/`/`(パス区切り)/`\` の直後)
-# にある `gh pr create` のみマッチ。`[^;&|]*` で sub-command 境界を超えない。
+# にある `gh pr create` / `gh pr new` のみマッチ。`[^;&|]*` で sub-command 境界を超えない。
 gh_segment=$(printf '%s\n' "$command" \
-  | grep -oE '(^|[;&|({`[:space:]/\])([A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*[[:space:]]+)*gh[[:space:]]+pr[[:space:]]+create[^;&|]*' \
+  | grep -oE '(^|[;&|({`[:space:]/\])([A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*[[:space:]]+)*gh[[:space:]]+pr[[:space:]]+(create|new)[^;&|]*' \
   | head -1 || true)
 [[ -z "$gh_segment" ]] && exit 0
 
