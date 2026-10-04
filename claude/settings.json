@@ -87,7 +87,9 @@
         "pypi.org",
         "files.pythonhosted.org",
         "chatgpt.com",
-        "auth.openai.com"
+        "auth.openai.com",
+        "formulae.brew.sh",
+        "ghcr.io"
       ],
       "strictAllowlist": true
     },

@@ -1428,8 +1428,8 @@ Code merges entries from every scope」)。したがって user 設定側の既�
    | 由来 | 中身 | 移設後 |
    |---|---|---|
    | user `claude/settings.json` | `allowedDomains` 10 件 | 移せる |
-   | project `.claude/settings.json` | `allowedDomains` 7 件(`formulae.brew.sh` / `ghcr.io` は**ここにしかない**) | 無効化 |
-   | `.claude/settings.local.json`(gitignore 済み) | `permissions.allow` の `WebFetch(domain:www.anthropic.com)` | 無効化 |
+   | project `.claude/settings.json` | `allowedDomains` 7 件(`formulae.brew.sh` / `ghcr.io` は**ここにしかない**) | 無効化(v2.1.285 以降は strictAllowlist で既に無効。#393 で 2 件を user 側へ移した) |
+   | `.claude/settings.local.json`(gitignore 済み) | `permissions.allow` の `WebFetch(domain:www.anthropic.com)` | 無効化(sandbox に対しては v2.1.285 以降 strictAllowlist で既に無効) |
    | セッション中に user が承認したホスト | **設定ファイルに現れないので列挙できない** | 無効化 |
 
    前 3 つは書き下せるが 4 つ目は書き下せない(下の
@@ -1482,17 +1482,17 @@ Code merges entries from every scope」)。したがって user 設定側の既�
 |---|---|
 | どの設定 scope から効くか | **user / managed(policy)/ CLI (`--settings`) のみ**。project の `.claude/settings.json` `.claude/settings.local.json` からは**無視される**(schema の describe に明記。設定 scope の列挙関数も managed + flag + userSettings の 3 つを返す) |
 | symlink 越しでも user scope か | **効く(根拠は実装の読み取り)**。`~/.claude/settings.json` は repo への symlink だが、scope は「どの source slot から読んだか」で決まり実体パスは見ないため。live probe(許可外の `gitlab.com` が `CONNECT tunnel failed, response 403` で即落ち)は**この仮説と整合するが判別力は無い** — 非対話セッションでは strictAllowlist が無くても確認プロンプトが自動 deny されて同じ結果になる。判別まで取るなら対話セッションでプロンプトが出ないことを見る |
-| `allowedDomains` 自体の scope | strictAllowlist と違い **project 設定からもマージされる**。この repo の `.claude/settings.json` が足している `formulae.brew.sh` / `ghcr.io` は有効なまま。さらに **`permissions.allow` の `WebFetch(domain:X)` ルールも同じ allowlist にマージされる**(実測: allowlist 構築関数が `permissions.allow` を走査して `domain:` 接頭辞を剥がし `allowedDomains` に push する)。この repo で `www.anthropic.com` に到達できるのはこの経路 — gitignore 済みの `.claude/settings.local.json` の `WebFetch(domain:www.anthropic.com)` が由来で、settings に無い組み込みホストがあるわけではない。**「WebFetch を許可すると sandbox 化された Bash の egress も開く」** という非自明な結合なので、`WebFetch(domain:...)` を足すときは egress を開けてよい相手かで判断する。加えてセッション中に承認したホストも合流するため、許可ホストの集合を設定ファイルの列挙だけで書き下すことはできない |
+| `allowedDomains` 自体の scope | 2.1.220 時点では strictAllowlist と違い **project 設定からもマージされた**(v2.1.285 以降の変化はこのセルの末尾)。さらに **`permissions.allow` の `WebFetch(domain:X)` ルールも同じ allowlist にマージされる**(実測: allowlist 構築関数が `permissions.allow` を走査して `domain:` 接頭辞を剥がし `allowedDomains` に push する)。この repo で `www.anthropic.com` に到達できるのはこの経路 — gitignore 済みの `.claude/settings.local.json` の `WebFetch(domain:www.anthropic.com)` が由来で、settings に無い組み込みホストがあるわけではない。**「WebFetch を許可すると sandbox 化された Bash の egress も開く」** という非自明な結合なので、`WebFetch(domain:...)` を足すときは egress を開けてよい相手かで判断する。加えてセッション中に承認したホストも合流するため、許可ホストの集合を設定ファイルの列挙だけで書き下すことはできない。**v2.1.285 で変わった**: user 設定の strictAllowlist は、repo の settings の `allowedDomains` と `WebFetch(domain:...)` allow ルールを sandbox に対して無視させる(上流 docs「Locks that apply without an admin-required sandbox」、2026-10-04 確認。WebFetch tool 自体は repo のルールに従い続ける)。したがって上の「project 設定からもマージされる」と `settings.local.json` 経由の `www.anthropic.com` は、今は sandbox 化された Bash には効かない。`formulae.brew.sh` / `ghcr.io` は #393 で user 側に移した |
 | WebFetch は締まるか | **締まらない**。schema に "in-process tools such as WebFetch are not gated by this setting" と明記。効くのは **sandbox 化された Bash コマンドだけ** |
 | `excludedCommands` は締まるか | **締まらない**。上の「excludedCommands が『一次防御』を丸ごと外す経路」節のとおり、除外コマンド(`gh` / `brew` / `docker` / `pnpm test:e2e`)を含む行は sandbox 外で走るので `allowedDomains` ごと素通りする。**`gh` は任意ホストへ通る** — 「許可外は決定的に拒否」と要約して読むとここが盲点になる |
 
 **運用上の注意**: 拒否は確認ダイアログを出さないので、症状は
 「なぜか通信できない」という形でしか現れない。見分けるには
 `No matching config rule, denying` の debug ログを見る。これは全プロジェクト
-共通のユーザ設定なので、`allowedDomains` を持たない別 repo で作業すると
-user 設定の 10 ドメイン外はこの形で落ちる。正当なドメインが必要に
-なったら、repo 側の `.claude/settings.json` に足すか user 側に足すかを選ぶ
-(前者のほうが影響範囲が狭い)。
+共通のユーザ設定なので、どの repo で作業しても user 設定の 12 ドメイン外は
+この形で落ちる(v2.1.285 以降は repo 側の `allowedDomains` も無視されるため、
+repo が足していても同じ)。正当なドメインが必要になったら user 側
+(`claude/settings.json`)に足す。repo 側に足しても効かない。
 
 **導入直後は能動的に観察する**(issue #245 step 5)。拒否が無言である以上、
 「足りないドメインがあること」は待っていても報告されない。有効化から数
