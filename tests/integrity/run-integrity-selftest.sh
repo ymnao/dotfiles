@@ -162,7 +162,7 @@ printf '{"projects":{"/x":{"allowedTools":[]}}}\n' >"$H/.claude.json"
 check "no-mcp-ok" 0 "$(run_checker "$H")"
 
 # ---- verify-settings-codex-domains.sh の selftest (issue #189) ----
-# 検知器が壊れて常に PASS を返す退行を防ぐ。base fixture は 5 項目を全て
+# 検知器が壊れて常に PASS を返す退行を防ぐ。base fixture は全項目を
 # 含み、tamper 版はそれぞれ 1 項目を欠落/破壊して FAIL 期待。
 run_settings_verifier() {
   # $1=settings.json パス。exit code を echo
@@ -172,10 +172,11 @@ run_settings_verifier() {
 }
 
 make_good_settings() {
-  # $1=出力パス。verify-settings-codex-domains.sh の 5 項目を全て満たす最小 JSON
+  # $1=出力パス。verify-settings-codex-domains.sh の全項目を満たす最小 JSON
   jq -n '{
     sandbox: {
-      network: { allowedDomains: ["chatgpt.com", "auth.openai.com", "example.com"] },
+      network: { allowedDomains: ["chatgpt.com", "auth.openai.com", "example.com",
+                                  "formulae.brew.sh", "ghcr.io", "pkg-containers.githubusercontent.com"] },
       filesystem: {
         allowWrite: ["~/.codex", "/tmp"],
         denyWrite: ["~/.zshrc", "~/.codex/config.toml", "~/*/**/.codex/**",
@@ -197,6 +198,13 @@ check "settings-missing-chatgpt" 1 "$(run_settings_verifier "$SF")"
 SF="$BASE/settings-no-authopenai.json"; make_good_settings "$SF"
 jq '.sandbox.network.allowedDomains -= ["auth.openai.com"]' "$SF" >"$SF.tmp" && mv "$SF.tmp" "$SF"
 check "settings-missing-auth-openai" 1 "$(run_settings_verifier "$SF")"
+
+# fixture: allowedDomains から brew 用ホストを 1 つずつ除外 → FAIL (#393)
+for brew_host in formulae.brew.sh ghcr.io pkg-containers.githubusercontent.com; do
+  SF="$BASE/settings-no-brew-host.json"; make_good_settings "$SF"
+  jq --arg v "$brew_host" '.sandbox.network.allowedDomains -= [$v]' "$SF" >"$SF.tmp" && mv "$SF.tmp" "$SF"
+  check "settings-missing-brew-host:${brew_host}" 1 "$(run_settings_verifier "$SF")"
+done
 
 # fixture 3: allowWrite から ~/.codex を除外 → FAIL
 SF="$BASE/settings-no-codex-write.json"; make_good_settings "$SF"

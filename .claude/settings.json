@@ -36,17 +36,6 @@
         "~/Library/Caches/Homebrew",
         "~/Library/Logs/Homebrew"
       ]
-    },
-    "network": {
-      "allowedDomains": [
-        "formulae.brew.sh",
-        "ghcr.io",
-        "raw.githubusercontent.com",
-        "github.com",
-        "api.github.com",
-        "codeload.github.com",
-        "objects.githubusercontent.com"
-      ]
     }
   }
 }

@@ -272,7 +272,7 @@ MEMORY.md 先頭 200 行が自動ロードされる。
 | `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`(sandbox の外まで及ぶ認証情報の剥がし) | (2026-08-10 / #298)**実測して見送った** — 剥がすのは固定 22 変数で、issue が名指しした `GITHUB_TOKEN` / `GH_TOKEN` / `NPM_TOKEN` は対象外。22 変数はこの host の環境に 1 つも無い一方、設定すると permission mode が `default` に強制され `permissions.defaultMode: auto` が失われる。実測は §10「[sandbox の外側の credential 保護](#sandbox-の外側の-credential-保護--scrub-は入れない298)」 | 剥がす対象に `GITHUB_TOKEN` 系が入るか、permission mode 強制が外れるか、この host が AWS / GCP / Azure の認証情報を環境変数で持つようになったとき(いずれも上流バージョン依存なので、再評価時は §10 の実測をやり直す) |
 | Context7 MCP(ライブラリドキュメント取得) | (2026-08-09 / #286)公式ドキュメントを直接 fetch すれば大半足りる。§5 の順序(CLI / skill で代替できるなら MCP を入れない)に該当 | 公式 doc の直接取得で調査が破綻するケースが 3 回起きたとき(そのときは §5 の導入審査 — 出所確認・全文監査・最小権限・lethal trifecta — を通す) |
 | リポジトリ内 `.agents/memory/`(教訓のマシン間共有) | (2026-08-09 / #286)HANDOFF.md 運用と重複する。auto memory と §7 の昇格運用で足りる | HANDOFF 経由の引き継ぎ漏れが 2 回起きたとき |
-| `sandbox.network.allowManagedDomainsOnly` / `sandbox.filesystem.allowManagedReadPathsOnly`(Claude Code の managed 設定) | (2026-08-10 / #299)**一次情報で仕様を確認し、配置せずに見送った** — 有効にすると allowlist が managed tier だけになるが、いま効いている許可ホストには project 設定由来・gitignore 済み local 設定由来・**セッション承認由来**が混ざっており、移設対象を事前に列挙できない(= 移設完了を検証できない)。塞ぎたい `gh` / `brew` は `excludedCommands` で sandbox 外を走るので lock の対象外。user と管理者が同一人物のこの環境で得られるのは「agent が user 設定の allowlist を広げる経路」1 本だけで、対価はドメイン追加のたびの `sudo` 手順。`allowManagedReadPathsOnly` は `allowRead` 未使用のため効果が無い。詳細は §10「[allowManagedDomainsOnly — 配置せずに見送った](#allowmanageddomainsonly--配置せずに見送った299)」 | user と管理者が別人になる環境(共有マシン / 組織配布)で使い始めたとき、または `excludedCommands` を撤廃して sandbox 内が唯一の egress になったとき。ただし着手の可否は §10「[managed 設定は原則触らない](#managed-設定は原則触らない--判断基準は復旧に-sudo-が要るか)」の基準を先に通す |
+| `sandbox.network.allowManagedDomainsOnly` / `sandbox.filesystem.allowManagedReadPathsOnly`(Claude Code の managed 設定) | (2026-08-10 / #299)**一次情報で仕様を確認し、配置せずに見送った** — 有効にすると allowlist が managed tier だけになるが、見送り時点で効いていた許可ホストには project 設定由来・gitignore 済み local 設定由来・**セッション承認由来**が混ざっており、移設対象を事前に列挙できない(= 移設完了を検証できない)。塞ぎたい `gh` / `brew` は `excludedCommands` で sandbox 外を走るので lock の対象外。user と管理者が同一人物のこの環境で得られるのは「agent が user 設定の allowlist を広げる経路」1 本だけで、対価はドメイン追加のたびの `sudo` 手順。`allowManagedReadPathsOnly` は `allowRead` 未使用のため効果が無い。詳細は §10「[allowManagedDomainsOnly — 配置せずに見送った](#allowmanageddomainsonly--配置せずに見送った299)」 | user と管理者が別人になる環境(共有マシン / 組織配布)で使い始めたとき、または `excludedCommands` を撤廃して sandbox 内が唯一の egress になったとき。ただし着手の可否は §10「[managed 設定は原則触らない](#managed-設定は原則触らない--判断基準は復旧に-sudo-が要るか)」の基準を先に通す |
 | `sandbox.filesystem.denyRead` への `.env.production`(派生名を含む)追加(`permissions.deny` の Read ルールも同じ 2 名に揃えている) | (2026-09-07)**host を実測して見送った** — 決め手は件数ではなく中身で、唯一実在する `.env.production` はキーがすべて `VITE_` 接頭辞 = Vite がクライアントバンドルに埋め込む前提の公開値なので、**この 1 ファイルに関しては** deny しても止まる秘密が無い。一方 deny の残余(削除不可・git checkout の失敗)は名前ごとに等しくかかる。**名前そのものが安全という主張ではない** — 一般には server-side の秘密置き場。実測値は §10「[denyRead の実測](#denyread-の実測--glob-は効くが削除リネームまで止まる)」 | **新しいマシンを `make install` でセットアップしたとき**、および `.env.production`(派生名を含む)を新規に作ったときに §10 の `find` を打ち直し、**公開値でない**中身が出たら足す。加えて、当該名の内容が Bash 経路で transcript に流れた事故、または `excludedCommands` 経路(`gh gist create` 等、transcript には出ない)でファイル引数として外部送信された事故に気付いたときも再評価する。そのときも名前を機械的に増やさず、中身と削除不可コストを突き合わせて決める |
 | Workflow tool(skill の手順を決定的スクリプトに移す) | (2026-08-09 / #286)**harness 組み込みなので導入は済んでおり、見送っているのは運用への採用**(2026-08-09 に tool 一覧で存在を確認)。現行の skill 内 fan-out で足りており、採用すると同じ手順が SKILL.md と workflow スクリプトに二重管理になる | /adversarial-review や /simplify で見逃しが起き、その原因が並列数・検証回数のブレだと特定できたとき |
 
@@ -886,15 +886,16 @@ hook が入ったことで、`gh` を使う手順は次の形が書けなくな�
 **除外コマンドを間接的に呼ぶ形は、hook も上流も素通りする**。`make install`
 (内部で `brew` を呼ぶ)、`bash seed-sandbox.sh`(中身が `gh`)のように
 **コマンド行に除外コマンド名が現れない**起動は、hook がブロックしない代わりに
-上流の excludedCommands にもマッチせず、**sandbox 内で走って中の `brew` / `gh` が
-失敗する**。手順を書くときは「その script / target が sandbox 内で動くか」を
+上流の excludedCommands にもマッチせず、**sandbox 内で走る**。中の `gh` は失敗する。
+`brew` は formula の取得までは通る(#393 で `make update` と、除外パターンに当たらないフルパスの `/opt/homebrew/bin/brew fetch` を sandbox 内で実測)が、
+cask と `brew install` は未実測。手順を書くときは「その script / target が sandbox 内で動くか」を
 別途確かめること。動かないものは user が sandbox 外で手動実行する前提にする。
 
 **除外リストを縮める方向は採っていない**。`gh *` は sandbox 内から macOS
 Keychain が届かず(実測: `gh auth status` が `The token in keyring is invalid`)、
 TLS 検証も通らない(実測: 上記 OSStatus -26276)ため外せない。外すと `/pr`
-`/dev` `/next` `dependabot-bulk` が全滅する。`brew *` は sandbox 内でも動く見込みがあるが
-`brew install` は未実測。`docker *` / `pnpm test:e2e *` はこの repo では未使用だが、
+`/dev` `/next` `dependabot-bulk` が全滅する。`brew *` は sandbox 内で formula の取得までは通った(#393)が、
+`brew install` と cask は未実測。`docker *` / `pnpm test:e2e *` はこの repo では未使用だが、
 `claude/settings.json` は**全プロジェクト共通のユーザ設定**なので、この repo での
 未使用は削除根拠にならない。
 
@@ -1423,13 +1424,13 @@ Code merges entries from every scope」)。したがって user 設定側の既�
 **見送った理由**:
 
 1. **移設すべき集合を事前に完全列挙できない**。issue #299 は「user 設定の 10 件を
-   managed へ移す」と書いていたが、いま効いている allowlist はそれより広い:
+   managed へ移す」と書いていたが、見送り時点で効いていた allowlist はそれより広かった(project / local 由来は v2.1.285 以降 sandbox に対して無効):
 
    | 由来 | 中身 | 移設後 |
    |---|---|---|
    | user `claude/settings.json` | `allowedDomains` 10 件 | 移せる |
-   | project `.claude/settings.json` | `allowedDomains` 7 件(`formulae.brew.sh` / `ghcr.io` は**ここにしかない**) | 無効化 |
-   | `.claude/settings.local.json`(gitignore 済み) | `permissions.allow` の `WebFetch(domain:www.anthropic.com)` | 無効化 |
+   | project `.claude/settings.json` | `allowedDomains` 7 件(`formulae.brew.sh` / `ghcr.io` は**ここにしかない**) | 無効化(v2.1.285 以降は strictAllowlist で既に無効。#393 で 2 件を user 側へ移した。詳細は下の「適用範囲」表の `allowedDomains` 自体の scope 行) |
+   | `.claude/settings.local.json`(gitignore 済み) | `permissions.allow` の `WebFetch(domain:www.anthropic.com)` | 無効化(sandbox に対しては v2.1.285 以降 strictAllowlist で既に無効) |
    | セッション中に user が承認したホスト | **設定ファイルに現れないので列挙できない** | 無効化 |
 
    前 3 つは書き下せるが 4 つ目は書き下せない(下の
@@ -1482,17 +1483,17 @@ Code merges entries from every scope」)。したがって user 設定側の既�
 |---|---|
 | どの設定 scope から効くか | **user / managed(policy)/ CLI (`--settings`) のみ**。project の `.claude/settings.json` `.claude/settings.local.json` からは**無視される**(schema の describe に明記。設定 scope の列挙関数も managed + flag + userSettings の 3 つを返す) |
 | symlink 越しでも user scope か | **効く(根拠は実装の読み取り)**。`~/.claude/settings.json` は repo への symlink だが、scope は「どの source slot から読んだか」で決まり実体パスは見ないため。live probe(許可外の `gitlab.com` が `CONNECT tunnel failed, response 403` で即落ち)は**この仮説と整合するが判別力は無い** — 非対話セッションでは strictAllowlist が無くても確認プロンプトが自動 deny されて同じ結果になる。判別まで取るなら対話セッションでプロンプトが出ないことを見る |
-| `allowedDomains` 自体の scope | strictAllowlist と違い **project 設定からもマージされる**。この repo の `.claude/settings.json` が足している `formulae.brew.sh` / `ghcr.io` は有効なまま。さらに **`permissions.allow` の `WebFetch(domain:X)` ルールも同じ allowlist にマージされる**(実測: allowlist 構築関数が `permissions.allow` を走査して `domain:` 接頭辞を剥がし `allowedDomains` に push する)。この repo で `www.anthropic.com` に到達できるのはこの経路 — gitignore 済みの `.claude/settings.local.json` の `WebFetch(domain:www.anthropic.com)` が由来で、settings に無い組み込みホストがあるわけではない。**「WebFetch を許可すると sandbox 化された Bash の egress も開く」** という非自明な結合なので、`WebFetch(domain:...)` を足すときは egress を開けてよい相手かで判断する。加えてセッション中に承認したホストも合流するため、許可ホストの集合を設定ファイルの列挙だけで書き下すことはできない |
+| `allowedDomains` 自体の scope | 2.1.220 時点では strictAllowlist と違い **project 設定からもマージされた**(v2.1.285 以降の変化はこのセルの末尾)。さらに **`permissions.allow` の `WebFetch(domain:X)` ルールも同じ allowlist にマージされる**(実測: allowlist 構築関数が `permissions.allow` を走査して `domain:` 接頭辞を剥がし `allowedDomains` に push する)。この repo で `www.anthropic.com` に到達できるのはこの経路 — gitignore 済みの `.claude/settings.local.json` の `WebFetch(domain:www.anthropic.com)` が由来で、settings に無い組み込みホストがあるわけではない。**「WebFetch を許可すると sandbox 化された Bash の egress も開く」** という非自明な結合なので、`WebFetch(domain:...)` を足すときは egress を開けてよい相手かで判断する。加えてセッション中に承認したホストも合流するため、許可ホストの集合を設定ファイルの列挙だけで書き下すことはできない。**v2.1.285 で変わった**: user 設定の strictAllowlist は、repo の settings の `allowedDomains` と `WebFetch(domain:...)` allow ルールを sandbox に対して無視させる(上流 docs「Locks that apply without an admin-required sandbox」、2026-10-04 確認。WebFetch tool 自体は repo のルールに従い続ける)。したがって上の「project 設定からもマージされる」と `settings.local.json` 経由の `www.anthropic.com` は、今は sandbox 化された Bash には効かない。`formulae.brew.sh` / `ghcr.io` は #393 で user 側に移した。brew の bottle は `ghcr.io` から `pkg-containers.githubusercontent.com` へ redirect されるので、このホストも #393 で user 側に足した(sandbox 内の `brew fetch` で実測。足す前は 403 で bottle の取得に失敗した) |
 | WebFetch は締まるか | **締まらない**。schema に "in-process tools such as WebFetch are not gated by this setting" と明記。効くのは **sandbox 化された Bash コマンドだけ** |
 | `excludedCommands` は締まるか | **締まらない**。上の「excludedCommands が『一次防御』を丸ごと外す経路」節のとおり、除外コマンド(`gh` / `brew` / `docker` / `pnpm test:e2e`)を含む行は sandbox 外で走るので `allowedDomains` ごと素通りする。**`gh` は任意ホストへ通る** — 「許可外は決定的に拒否」と要約して読むとここが盲点になる |
 
 **運用上の注意**: 拒否は確認ダイアログを出さないので、症状は
 「なぜか通信できない」という形でしか現れない。見分けるには
 `No matching config rule, denying` の debug ログを見る。これは全プロジェクト
-共通のユーザ設定なので、`allowedDomains` を持たない別 repo で作業すると
-user 設定の 10 ドメイン外はこの形で落ちる。正当なドメインが必要に
-なったら、repo 側の `.claude/settings.json` に足すか user 側に足すかを選ぶ
-(前者のほうが影響範囲が狭い)。
+共通のユーザ設定なので、どの repo で作業しても user 設定の `allowedDomains` 外は
+この形で落ちる(v2.1.285 以降は repo 側の `allowedDomains` も無視されるため、
+repo が足していても同じ)。正当なドメインが必要になったら user 側
+(`claude/settings.json`)に足す。repo 側に足しても効かない。
 
 **導入直後は能動的に観察する**(issue #245 step 5)。拒否が無言である以上、
 「足りないドメインがあること」は待っていても報告されない。有効化から数
