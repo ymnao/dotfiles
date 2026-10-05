@@ -32,7 +32,7 @@ update: ## Update Homebrew packages
 	@echo "==> Brewfile 記載パッケージのインストール状態チェック"
 	@brew bundle check --no-upgrade --file=Brewfile --verbose || { \
 	    echo ""; \
-	    echo "HINT: 未インストールのパッケージがある。brew bundle install で導入するか、Brewfile から該当行を削除する (make brewfile は使わない)"; \
+	    echo "HINT: 上の → 行が Brewfile と食い違う項目。未インストールなら brew bundle install で導入するか Brewfile から該当行を削除する (make brewfile は使わない)。needs to be unlinked なら brew unlink <formula>"; \
 	    exit 1; \
 	}
 	@brew update && brew upgrade && brew cleanup
