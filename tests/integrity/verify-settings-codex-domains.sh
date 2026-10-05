@@ -15,6 +15,9 @@
 #       繋がる。deny-within-allow で config.toml だけ単点 deny する設計)
 #   5. .sandbox.filesystem.denyWrite に ~/*/**/.codex/** が含まれる
 #      (issue #289: プロジェクト配下の .codex/ を Bash 経路で止める一次防御)
+#   brew 用: .sandbox.network.allowedDomains に formulae.brew.sh / ghcr.io /
+#      pkg-containers.githubusercontent.com が含まれる (issue #393: codex とは
+#      無関係だが、user 側 allowedDomains の pin として同じ check_contains に載せる)
 #
 # make test の JSON 構文チェック (jq empty) では内容の drift を検出できないため
 # 本テストで assert する。issue #184 の failure scenario 参照。

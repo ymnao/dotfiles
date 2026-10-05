@@ -887,7 +887,7 @@ hook が入ったことで、`gh` を使う手順は次の形が書けなくな�
 (内部で `brew` を呼ぶ)、`bash seed-sandbox.sh`(中身が `gh`)のように
 **コマンド行に除外コマンド名が現れない**起動は、hook がブロックしない代わりに
 上流の excludedCommands にもマッチせず、**sandbox 内で走る**。中の `gh` は失敗する。
-`brew` は formula の取得までは通る(#393 で `make update` と `brew fetch` を sandbox 内で実測)が、
+`brew` は formula の取得までは通る(#393 で `make update` と、除外パターンに当たらないフルパスの `/opt/homebrew/bin/brew fetch` を sandbox 内で実測)が、
 cask と `brew install` は未実測。手順を書くときは「その script / target が sandbox 内で動くか」を
 別途確かめること。動かないものは user が sandbox 外で手動実行する前提にする。
 
@@ -1429,7 +1429,7 @@ Code merges entries from every scope」)。したがって user 設定側の既�
    | 由来 | 中身 | 移設後 |
    |---|---|---|
    | user `claude/settings.json` | `allowedDomains` 10 件 | 移せる |
-   | project `.claude/settings.json` | `allowedDomains` 7 件(`formulae.brew.sh` / `ghcr.io` は**ここにしかない**) | 無効化(v2.1.285 以降は strictAllowlist で既に無効。#393 で 2 件を user 側へ移した。詳細は下の scope 表) |
+   | project `.claude/settings.json` | `allowedDomains` 7 件(`formulae.brew.sh` / `ghcr.io` は**ここにしかない**) | 無効化(v2.1.285 以降は strictAllowlist で既に無効。#393 で 2 件を user 側へ移した。詳細は下の「適用範囲」表の `allowedDomains` 自体の scope 行) |
    | `.claude/settings.local.json`(gitignore 済み) | `permissions.allow` の `WebFetch(domain:www.anthropic.com)` | 無効化(sandbox に対しては v2.1.285 以降 strictAllowlist で既に無効) |
    | セッション中に user が承認したホスト | **設定ファイルに現れないので列挙できない** | 無効化 |
 

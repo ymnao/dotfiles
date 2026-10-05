@@ -162,7 +162,7 @@ printf '{"projects":{"/x":{"allowedTools":[]}}}\n' >"$H/.claude.json"
 check "no-mcp-ok" 0 "$(run_checker "$H")"
 
 # ---- verify-settings-codex-domains.sh の selftest (issue #189) ----
-# 検知器が壊れて常に PASS を返す退行を防ぐ。base fixture は 5 項目を全て
+# 検知器が壊れて常に PASS を返す退行を防ぐ。base fixture は全項目を
 # 含み、tamper 版はそれぞれ 1 項目を欠落/破壊して FAIL 期待。
 run_settings_verifier() {
   # $1=settings.json パス。exit code を echo
