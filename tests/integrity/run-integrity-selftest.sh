@@ -172,10 +172,11 @@ run_settings_verifier() {
 }
 
 make_good_settings() {
-  # $1=出力パス。verify-settings-codex-domains.sh の 5 項目を全て満たす最小 JSON
+  # $1=出力パス。verify-settings-codex-domains.sh の全項目を満たす最小 JSON
   jq -n '{
     sandbox: {
-      network: { allowedDomains: ["chatgpt.com", "auth.openai.com", "example.com"] },
+      network: { allowedDomains: ["chatgpt.com", "auth.openai.com", "example.com",
+                                  "formulae.brew.sh", "ghcr.io", "pkg-containers.githubusercontent.com"] },
       filesystem: {
         allowWrite: ["~/.codex", "/tmp"],
         denyWrite: ["~/.zshrc", "~/.codex/config.toml", "~/*/**/.codex/**",
@@ -197,6 +198,11 @@ check "settings-missing-chatgpt" 1 "$(run_settings_verifier "$SF")"
 SF="$BASE/settings-no-authopenai.json"; make_good_settings "$SF"
 jq '.sandbox.network.allowedDomains -= ["auth.openai.com"]' "$SF" >"$SF.tmp" && mv "$SF.tmp" "$SF"
 check "settings-missing-auth-openai" 1 "$(run_settings_verifier "$SF")"
+
+# fixture: allowedDomains から bottle の redirect 先を除外 → FAIL (#393)
+SF="$BASE/settings-no-pkg-containers.json"; make_good_settings "$SF"
+jq '.sandbox.network.allowedDomains -= ["pkg-containers.githubusercontent.com"]' "$SF" >"$SF.tmp" && mv "$SF.tmp" "$SF"
+check "settings-missing-pkg-containers" 1 "$(run_settings_verifier "$SF")"
 
 # fixture 3: allowWrite から ~/.codex を除外 → FAIL
 SF="$BASE/settings-no-codex-write.json"; make_good_settings "$SF"

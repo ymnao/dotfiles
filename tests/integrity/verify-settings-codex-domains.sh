@@ -52,6 +52,11 @@ check_contains '.sandbox.network.allowedDomains' 'chatgpt.com' \
   "claude/settings.json: .sandbox.network.allowedDomains に chatgpt.com が無い"
 check_contains '.sandbox.network.allowedDomains' 'auth.openai.com' \
   "claude/settings.json: .sandbox.network.allowedDomains に auth.openai.com が無い (token refresh で 401)"
+# strictAllowlist 下では repo 側の allowedDomains が無視されるため、brew 用ホストは user 側に要る (#393)
+for brew_host in formulae.brew.sh ghcr.io pkg-containers.githubusercontent.com; do
+  check_contains '.sandbox.network.allowedDomains' "$brew_host" \
+    "claude/settings.json: .sandbox.network.allowedDomains に $brew_host が無い (sandbox 内の brew が届かない)"
+done
 # tilde を quote 内に直書きすると shellcheck SC2088 を踏むので、先頭の `~` だけを
 # 変数展開経由にして literal を組み立てる。single-quote (`'~/.codex'`) だけでなく
 # double-quote (`"~/.codex"`) でも同じ SC2088 が発火するため、素朴な「簡略化」で
