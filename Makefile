@@ -25,10 +25,14 @@ update: ## Update Homebrew packages
 	@# --greedy は auto_updates cask の版遅延を拾うが、常時採用はせず check のみ。
 	@#   claude-code@latest は auto_updates 未設定なので素の upgrade で上がる
 	@#   (実測日と経緯は docs/ai-operations.md §10)。
+	@# --no-upgrade: 素の check は outdated も未充足に数えるため、直すべき
+	@#   upgrade があるときほど upgrade の前で止まっていた。tap が untrusted
+	@#   扱いの formula も outdated 判定できず同じく止まる (issue #394)。
+	@#   付けても未インストールは exit 1 で検出される (2026-10-06 に brew 7.0.8 で実測)。
 	@echo "==> Brewfile 記載パッケージのインストール状態チェック"
-	@brew bundle check --file=Brewfile --verbose || { \
+	@brew bundle check --no-upgrade --file=Brewfile --verbose || { \
 	    echo ""; \
-	    echo "HINT: 未インストールのパッケージがある。brew bundle install で導入するか、Brewfile から該当行を削除する (make brewfile は使わない)"; \
+	    echo "HINT: 上の → 行が Brewfile と食い違う項目。未インストールなら brew bundle install で導入するか Brewfile から該当行を削除する (make brewfile は使わない)。needs to be unlinked なら brew unlink <formula>"; \
 	    exit 1; \
 	}
 	@brew update && brew upgrade && brew cleanup
