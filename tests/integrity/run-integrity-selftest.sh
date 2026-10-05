@@ -199,10 +199,12 @@ SF="$BASE/settings-no-authopenai.json"; make_good_settings "$SF"
 jq '.sandbox.network.allowedDomains -= ["auth.openai.com"]' "$SF" >"$SF.tmp" && mv "$SF.tmp" "$SF"
 check "settings-missing-auth-openai" 1 "$(run_settings_verifier "$SF")"
 
-# fixture: allowedDomains から bottle の redirect 先を除外 → FAIL (#393)
-SF="$BASE/settings-no-pkg-containers.json"; make_good_settings "$SF"
-jq '.sandbox.network.allowedDomains -= ["pkg-containers.githubusercontent.com"]' "$SF" >"$SF.tmp" && mv "$SF.tmp" "$SF"
-check "settings-missing-pkg-containers" 1 "$(run_settings_verifier "$SF")"
+# fixture: allowedDomains から brew 用ホストを 1 つずつ除外 → FAIL (#393)
+for brew_host in formulae.brew.sh ghcr.io pkg-containers.githubusercontent.com; do
+  SF="$BASE/settings-no-brew-host.json"; make_good_settings "$SF"
+  jq --arg v "$brew_host" '.sandbox.network.allowedDomains -= [$v]' "$SF" >"$SF.tmp" && mv "$SF.tmp" "$SF"
+  check "settings-missing-brew-host:${brew_host}" 1 "$(run_settings_verifier "$SF")"
+done
 
 # fixture 3: allowWrite から ~/.codex を除外 → FAIL
 SF="$BASE/settings-no-codex-write.json"; make_good_settings "$SF"
