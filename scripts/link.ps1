@@ -403,7 +403,8 @@ if (Test-Path $codexSource) {
         } elseif (Test-Path $legacySkillsDest) {
             Get-ChildItem -Path $legacySkillsDest -Force | Where-Object { $_.LinkType } | ForEach-Object {
                 $target = @($_.Target)[0]
-                if ($target -and $target.StartsWith($resolvedSkillsSource)) {
+                # 区切り文字まで含めないと skills-old など sibling への link も repo 向けと誤認する
+                if ($target -and $target.StartsWith($resolvedSkillsSource + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
                     [System.IO.Directory]::Delete($_.FullName, $false)
                 }
             }
