@@ -385,19 +385,38 @@ if (Test-Path $codexSource) {
         New-DirectoryLink -Source $codexHooksSource -Destination $codexHooksDest
     }
 
-    # skills は per-skill 個別 symlink にする（Codex CLI が管理する .system/ と共存させるため）
+    # skills は公式の user scope ($HOME/.agents/skills) に per-skill 個別 symlink で置く。
+    # 旧配置 ~/.codex/skills も codex は読み続けるので、そこに残る repo 向け link を外さないと同名 skill が二重に載る
     $codexSkillsSource = Join-Path $codexSource "skills"
-    $codexSkillsDest = Join-Path $codexDir "skills"
+    $legacySkillsDest = Join-Path $codexDir "skills"
+    $agentsDir = Join-Path $env:USERPROFILE ".agents"
+    $codexSkillsDest = Join-Path $agentsDir "skills"
     if (Test-Path $codexSkillsSource) {
-        # 既存の skills ディレクトリ自体が symlink （旧 link.ps1 の挙動）なら通常ディレクトリに戻す
-        if ((Test-Path $codexSkillsDest) -and ((Get-Item $codexSkillsDest -Force).LinkType)) {
-            Remove-Item $codexSkillsDest -Force
+        $resolvedSkillsSource = (Resolve-Path $codexSkillsSource).Path
+        if ((Test-Path $legacySkillsDest) -and ((Get-Item $legacySkillsDest -Force).LinkType)) {
+            Remove-Item $legacySkillsDest -Force
+        }
+        if (Test-Path $legacySkillsDest) {
+            Get-ChildItem -Path $legacySkillsDest -Force | Where-Object { $_.LinkType } | ForEach-Object {
+                $target = @($_.Target)[0]
+                if ($target -and $target.StartsWith($resolvedSkillsSource)) {
+                    [System.IO.Directory]::Delete($_.FullName, $false)
+                }
+            }
         }
         if (-not (Test-Path $codexSkillsDest)) {
             New-Item -ItemType Directory -Path $codexSkillsDest -Force | Out-Null
         }
         Get-ChildItem -Path $codexSkillsSource -Directory | ForEach-Object {
             $skillDest = Join-Path $codexSkillsDest $_.Name
+            # New-DirectoryLink の退避先 (同じ階層) は codex が skill として読んでしまうため、探索範囲外へ退避する
+            if ((Test-Path $skillDest) -and -not ((Get-Item $skillDest -Force).LinkType)) {
+                $backupDir = Join-Path $agentsDir "skills-backup"
+                New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
+                $skillBackup = Join-Path $backupDir "$($_.Name).backup.$(Get-Date -Format 'yyyyMMddHHmmss')"
+                Write-Warn "Backing up existing skill: $skillDest -> $skillBackup"
+                Move-Item -Path $skillDest -Destination $skillBackup
+            }
             New-DirectoryLink -Source $_.FullName -Destination $skillDest
         }
     }

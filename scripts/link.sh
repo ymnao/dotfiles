@@ -183,17 +183,32 @@ if [[ -d "$DOTFILES_DIR/codex" ]]; then
         link_file "$DOTFILES_DIR/codex/hooks" "$HOME/.codex/hooks"
     fi
 
-    # skills は per-skill 個別 symlink にする（Codex CLI が管理する .system/ と共存させるため）
+    # skills は公式の user scope ($HOME/.agents/skills) に per-skill 個別 symlink で置く。
+    # 旧配置 ~/.codex/skills も codex は読み続ける (0.160.1 のセッションログで確認) ので、
+    # そこに残る repo 向け symlink を外さないと同名 skill が二重に載る
     if [[ -d "$DOTFILES_DIR/codex/skills" ]]; then
-        # 既存の skills ディレクトリ自体が symlink（旧 link.sh の挙動）なら削除して実体ディレクトリに置き換える
         if [[ -L "$HOME/.codex/skills" ]]; then
             rm "$HOME/.codex/skills"
         fi
-        mkdir -p "$HOME/.codex/skills"
+        for legacy in "$HOME/.codex/skills"/*; do
+            [[ -L "$legacy" ]] || continue
+            case "$(readlink "$legacy")" in
+                "$DOTFILES_DIR/codex/skills/"*) rm "$legacy" ;;
+            esac
+        done
+        mkdir -p "$HOME/.agents/skills"
         for skill_path in "$DOTFILES_DIR/codex/skills"/*/; do
             [[ -d "$skill_path" ]] || continue
             skill_name=$(basename "$skill_path")
-            link_file "${skill_path%/}" "$HOME/.codex/skills/$skill_name"
+            skill_dest="$HOME/.agents/skills/$skill_name"
+            # link_file の退避先 (同じ階層の .backup) は codex が skill として読んでしまうため、探索範囲外へ退避する
+            if [[ -e "$skill_dest" ]] && [[ ! -L "$skill_dest" ]]; then
+                mkdir -p "$HOME/.agents/skills-backup"
+                skill_backup=$(unique_backup_path "$HOME/.agents/skills-backup/$skill_name")
+                warn "Backing up existing skill: $skill_dest -> $skill_backup"
+                mv "$skill_dest" "$skill_backup"
+            fi
+            link_file "${skill_path%/}" "$skill_dest"
         done
     fi
 fi

@@ -19,6 +19,7 @@ skill / hook / テスト / CI は、この目的を安全に達成するため�
 - `claude/settings.json` → `~/.claude/settings.json` にシンボリックリンク
 - `claude/managed-settings.json` は **symlink しない**（managed/policy 設定の正本。user が `sudo cp` で `/Library/Application Support/ClaudeCode/` へ配置する。repo へ symlink すると agent の Edit tool から policy を書き換えられるため意図的に配線しない。手順は [docs/ai-operations.md](docs/ai-operations.md) §10）
 - `claude/skills/` → `~/.claude/skills/` にシンボリックリンク
+- `codex/skills/<name>` → `~/.agents/skills/<name>` に skill ごとのシンボリックリンク（Codex 公式の user scope。codex は旧配置 `~/.codex/skills` も読むため、そこに残る repo 向けリンクは `scripts/link.sh` が外す）
 - harness 間で内容が同一のスキルの SKILL.md は `codex/skills/` → `claude/skills/` の repo 内シンボリックリンクで drift を防止（pr / resolve は独立ファイルのまま）
 - harness 共通の hook 実装は `agents/hooks/` に正本を置き、`claude/hooks/` と `codex/hooks/` からは相対 symlink で参照する（drift を構造的に防止）。codex 固有 hook（redact-secrets / notify-stop）は `codex/hooks/` に実体のまま置く。同じ理由で **Claude 固有 hook は `claude/hooks/` に実体のまま置く**（guard-sandbox-exclusions は Claude Code の `sandbox.excludedCommands` 専用で、codex には相当機構が無い）
 - `claude/agents/` → `~/.claude/agents/` にシンボリックリンク（Claude Code サブエージェント定義）

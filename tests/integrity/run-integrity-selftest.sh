@@ -54,7 +54,7 @@ printf 'model = "x"\n' >"$DF/codex/config.toml"
 # 正常な偽 HOME を作る。$1=HOME パス
 make_good_home() {
   local h="$1"
-  mkdir -p "$h/.claude" "$h/.codex/skills"
+  mkdir -p "$h/.claude" "$h/.codex" "$h/.agents/skills"
   ln -s "$DF/agents/AGENTS.md"      "$h/.claude/CLAUDE.md"
   ln -s "$DF/claude/settings.json"  "$h/.claude/settings.json"
   ln -s "$DF/claude/skills"         "$h/.claude/skills"
@@ -65,7 +65,7 @@ make_good_home() {
   ln -s "$DF/codex/AGENTS.md"       "$h/.codex/AGENTS.md"
   ln -s "$DF/codex/hooks.json"      "$h/.codex/hooks.json"
   ln -s "$DF/codex/hooks"           "$h/.codex/hooks"
-  ln -s "$DF/codex/skills/pr"       "$h/.codex/skills/pr"
+  ln -s "$DF/codex/skills/pr"       "$h/.agents/skills/pr"
   # マージ方式の config.toml (base + 保護セクション)
   { cat "$DF/codex/config.toml"; printf '\n[projects."/x"]\ntrust_level = "trusted"\n'; } \
     >"$h/.codex/config.toml"
