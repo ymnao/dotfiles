@@ -28,11 +28,17 @@ mkdir -p "$HOME/.config"
 link_file() {
     local src="$1"
     local dest="$2"
+    local backup_dir="${3:-}"
 
     # If destination exists and is not a symlink, back it up
     if [[ -e "$dest" ]] && [[ ! -L "$dest" ]]; then
         local backup
-        backup=$(unique_backup_path "$dest")
+        if [[ -n "$backup_dir" ]]; then
+            mkdir -p "$backup_dir"
+            backup=$(unique_backup_path "$backup_dir/$(basename "$dest")")
+        else
+            backup=$(unique_backup_path "$dest")
+        fi
         warn "Backing up existing file: $dest -> $backup"
         mv "$dest" "$backup"
     fi
@@ -183,32 +189,21 @@ if [[ -d "$DOTFILES_DIR/codex" ]]; then
         link_file "$DOTFILES_DIR/codex/hooks" "$HOME/.codex/hooks"
     fi
 
-    # skills は公式の user scope ($HOME/.agents/skills) に per-skill 個別 symlink で置く。
-    # 旧配置 ~/.codex/skills も codex は読み続ける (0.160.1 のセッションログで確認) ので、
-    # そこに残る repo 向け symlink を外さないと同名 skill が二重に載る
+    # 旧配置 ~/.codex/skills も codex は読み続けるため、そこに残る repo 向け link を外さないと同名 skill が二重に載る
     if [[ -d "$DOTFILES_DIR/codex/skills" ]]; then
         if [[ -L "$HOME/.codex/skills" ]]; then
             rm "$HOME/.codex/skills"
+        else
+            for legacy in "$HOME/.codex/skills"/*; do
+                if [[ -L "$legacy" && "$(readlink "$legacy")" == "$DOTFILES_DIR/codex/skills/"* ]]; then
+                    rm "$legacy"
+                fi
+            done
         fi
-        for legacy in "$HOME/.codex/skills"/*; do
-            [[ -L "$legacy" ]] || continue
-            case "$(readlink "$legacy")" in
-                "$DOTFILES_DIR/codex/skills/"*) rm "$legacy" ;;
-            esac
-        done
-        mkdir -p "$HOME/.agents/skills"
         for skill_path in "$DOTFILES_DIR/codex/skills"/*/; do
             [[ -d "$skill_path" ]] || continue
-            skill_name=$(basename "$skill_path")
-            skill_dest="$HOME/.agents/skills/$skill_name"
-            # link_file の退避先 (同じ階層の .backup) は codex が skill として読んでしまうため、探索範囲外へ退避する
-            if [[ -e "$skill_dest" ]] && [[ ! -L "$skill_dest" ]]; then
-                mkdir -p "$HOME/.agents/skills-backup"
-                skill_backup=$(unique_backup_path "$HOME/.agents/skills-backup/$skill_name")
-                warn "Backing up existing skill: $skill_dest -> $skill_backup"
-                mv "$skill_dest" "$skill_backup"
-            fi
-            link_file "${skill_path%/}" "$skill_dest"
+            # link_file 既定の退避先 (同じ階層の .backup) は codex が skill として読んでしまう
+            link_file "${skill_path%/}" "$HOME/.agents/skills/$(basename "$skill_path")" "$HOME/.agents/skills-backup"
         done
     fi
 fi
