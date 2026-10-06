@@ -1,8 +1,7 @@
 # sandbox 内の git
 
 Claude Code の sandbox 内で git の ref 操作 (checkout / merge / fetch / push /
-branch -d / worktree) をするときの罠と回避手順。CLAUDE.md「変更時の注意」から
-要点だけ残して、詳細をここに移した (issue #398)。
+branch -d / worktree) をするときの罠と回避手順。
 
 ## エラーを出しながら本体は成功する 2 種類
 
@@ -19,8 +18,7 @@ sandbox 内の git は、次の 2 種類のエラーを出しながら**本体�
 
 `fatal:` を失敗と読んで中断しない。成否はエラー出力ではなく**結果の状態**で確かめる
 (push / fetch は `git ls-remote` の remote SHA と手元の SHA の一致、削除は
-`git branch` の出力)。エラー文言の有無を判定に使うのは同じ誤りの繰り返し —
-測るのは文字列ではなく ref の値。
+`git branch` の出力)。
 
 ## remote 追跡ブランチへ移る: config を書かない 2 段階
 
@@ -33,9 +31,7 @@ remote 追跡ブランチに移るときは `git branch --no-track <branch> orig
 `git checkout <branch>` の 2 段階で行う。復旧は
 `git restore --source=HEAD --staged --worktree .` (`reset --hard` は禁止のまま)。
 
-## 古い commit のツリーへ checkout しない
-
-上の復旧後も、`claude/skills/` など sandbox が削除を拒否するパスの実体ファイルが
+復旧後も、`claude/skills/` など sandbox が削除を拒否するパスの実体ファイルが
 untracked として残り、以後の `git checkout` / `git merge` が「上書きされる untracked
 がある」と言って中断することがある。**古い commit のツリーへ checkout する作業自体を
 避ける** (新しいブランチを main から切って変更を載せ直す方が速い)。
@@ -64,7 +60,7 @@ HEAD 不動で、`checkout -b` のような半端な状態は残らない)。
 
 別作業のブランチを切り替えずに並行で進めたいときは、scratchpad に
 `git worktree add` できる (「削除を拒否するパス」も worktree 側では掛からない)。
-ただし代償が 2 つある (2026-09-25 実測)。
+ただし代償がある (2026-09-25 実測)。
 
 1. `make test` の `verify-sandbox-codex-enforcement.sh` と html-brief の outside-tmp
    ケースは repo の置き場所に依存して必ず落ちる (前者は `SANDBOX_RUNTIME=0` で skip
@@ -72,8 +68,7 @@ HEAD 不動で、`checkout -b` のような半端な状態は残らない)。
 2. 片付けの `git worktree remove` / `prune` は `.git/worktrees/<名前>` の削除を sandbox に
    拒否され、そのブランチも「worktree で使用中」として消せない。`git worktree prune` と
    `git branch -D` は user の Terminal に依頼する
-
-また Bash の cwd が本体に戻るので PR は `gh pr create -R … --head <branch>` の形になり、
-verify-ci-before-pr hook が止める (cwd の HEAD の CI しか見られないため。#382)。
-CI の確かめ方と draft 経由の作り方は hook の stderr に従う。`--head` には自分で切った
-ブランチ名だけを渡す (理由は `/pr` skill step 2)。
+3. Bash の cwd が本体に戻るので PR は `gh pr create -R … --head <branch>` の形になり、
+   verify-ci-before-pr hook が止める (cwd の HEAD の CI しか見られないため。#382)。
+   回避は hook の stderr に従う。`--head` には自分で切ったブランチ名だけを渡す
+   (理由は `/pr` skill step 2)
