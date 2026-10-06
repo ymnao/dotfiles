@@ -22,7 +22,7 @@
 # セクションだけでトップレベルキーは対象外) を merge スクリプト側で扱うか
 # どうかを別途決める。
 
-model = "gpt-5.6-sol"
+model = "gpt-6.1-sol"
 model_reasoning_effort = "medium"
 allow_login_shell = false
 # sandbox_mode ではなく permission profile で書くのは、workspace root 配下の特定名だけを
