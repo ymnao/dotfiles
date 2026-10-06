@@ -60,7 +60,7 @@ HEAD 不動で、`checkout -b` のような半端な状態は残らない)。
 
 別作業のブランチを切り替えずに並行で進めたいときは、scratchpad に
 `git worktree add` できる (「削除を拒否するパス」も worktree 側では掛からない)。
-ただし代償がある (2026-09-25 実測)。
+ただし代償がある (1・2 は 2026-09-25 実測)。
 
 1. `make test` の `verify-sandbox-codex-enforcement.sh` と html-brief の outside-tmp
    ケースは repo の置き場所に依存して必ず落ちる (前者は `SANDBOX_RUNTIME=0` で skip
