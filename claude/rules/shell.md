@@ -17,8 +17,8 @@ paths:
   GNU 拡張を避ける
 - 変数展開は常に quote する(`"$var"`)。word splitting に依存しない
   (SC2086 は info なので `make test` の shellcheck `-S warning` では止まらない)
-- exit code を自分で扱うスクリプトは `set -e` を外して `set -uo pipefail` にし、
-  理由をコメントに書く
+- `set -euo pipefail` から始める。exit code を自分で扱うスクリプトだけ `set -uo pipefail`
+  にし、理由をコメントに書く
 - **日本語などの多バイト文字が直後に続く変数展開は必ず `${VAR}` とブレースで
   囲む**。bash 3.2 + UTF-8 ロケールでは多バイト文字の一部バイトが変数名に
   取り込まれ、未定義変数として誤パースされる(`set -u` だと即死)
