@@ -40,7 +40,8 @@ if ($useDeveloperMode) {
 function New-DirectoryLink {
     param(
         [string]$Source,
-        [string]$Destination
+        [string]$Destination,
+        [string]$BackupDir
     )
 
     # Resolve full paths
@@ -84,13 +85,18 @@ function New-DirectoryLink {
             Write-Info "Removed existing link: $Destination"
         } elseif ($Force) {
             # Backup regular file/directory (avoid overwriting an existing backup)
-            $backup = "$Destination.backup"
+            $backupBase = $Destination
+            if ($BackupDir) {
+                New-Item -ItemType Directory -Path $BackupDir -Force | Out-Null
+                $backupBase = Join-Path $BackupDir (Split-Path -Leaf $Destination)
+            }
+            $backup = "$backupBase.backup"
             if (Test-Path -LiteralPath $backup) {
                 $ts = Get-Date -Format "yyyyMMddHHmmss"
-                $backup = "$Destination.backup.$ts"
+                $backup = "$backupBase.backup.$ts"
                 $i = 1
                 while (Test-Path -LiteralPath $backup) {
-                    $backup = "$Destination.backup.$ts.$i"
+                    $backup = "$backupBase.backup.$ts.$i"
                     $i++
                 }
             }
@@ -385,20 +391,27 @@ if (Test-Path $codexSource) {
         New-DirectoryLink -Source $codexHooksSource -Destination $codexHooksDest
     }
 
-    # skills は per-skill 個別 symlink にする（Codex CLI が管理する .system/ と共存させるため）
+    # 旧配置 ~/.codex/skills も codex は読み続けるため、そこに残る repo 向け link を外さないと同名 skill が二重に載る
     $codexSkillsSource = Join-Path $codexSource "skills"
-    $codexSkillsDest = Join-Path $codexDir "skills"
+    $legacySkillsDest = Join-Path $codexDir "skills"
+    $agentsDir = Join-Path $env:USERPROFILE ".agents"
+    $codexSkillsDest = Join-Path $agentsDir "skills"
     if (Test-Path $codexSkillsSource) {
-        # 既存の skills ディレクトリ自体が symlink （旧 link.ps1 の挙動）なら通常ディレクトリに戻す
-        if ((Test-Path $codexSkillsDest) -and ((Get-Item $codexSkillsDest -Force).LinkType)) {
-            Remove-Item $codexSkillsDest -Force
-        }
-        if (-not (Test-Path $codexSkillsDest)) {
-            New-Item -ItemType Directory -Path $codexSkillsDest -Force | Out-Null
+        $resolvedSkillsSource = (Resolve-Path $codexSkillsSource).Path
+        if ((Test-Path $legacySkillsDest) -and ((Get-Item $legacySkillsDest -Force).LinkType)) {
+            Remove-Item $legacySkillsDest -Force
+        } elseif (Test-Path $legacySkillsDest) {
+            Get-ChildItem -Path $legacySkillsDest -Force | Where-Object { $_.LinkType } | ForEach-Object {
+                $target = @($_.Target)[0]
+                # 区切り文字まで含めないと skills-old など sibling への link も repo 向けと誤認する
+                if ($target -and $target.StartsWith($resolvedSkillsSource + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    [System.IO.Directory]::Delete($_.FullName, $false)
+                }
+            }
         }
         Get-ChildItem -Path $codexSkillsSource -Directory | ForEach-Object {
-            $skillDest = Join-Path $codexSkillsDest $_.Name
-            New-DirectoryLink -Source $_.FullName -Destination $skillDest
+            # New-DirectoryLink 既定の退避先 (同じ階層) は codex が skill として読んでしまう
+            New-DirectoryLink -Source $_.FullName -Destination (Join-Path $codexSkillsDest $_.Name) -BackupDir (Join-Path $agentsDir "skills-backup")
         }
     }
 }

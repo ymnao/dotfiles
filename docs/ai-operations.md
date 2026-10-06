@@ -1598,7 +1598,7 @@ MISMATCH が出たら(件数を問わず)、その entry の `hooks.json` を変
 
 ### hooks 系ファイルの防御層
 
-`~/.codex/hooks.json` / `~/.codex/hooks/` / `~/.codex/skills/` は
+`~/.codex/hooks.json` / `~/.codex/hooks/` / `~/.agents/skills/` の各 skill は
 `scripts/link.sh` が張る **repo への symlink** で、実体は git 追跡下にある。
 host 側の実ファイル `~/.codex/config.toml`(これが git 追跡外。repo 側の
 `codex/config.toml` は追跡下で、merge 経由で host に反映される)との
@@ -1962,6 +1962,6 @@ hook ディレクトリへの新規作成・`agents/hooks` と `claude/settings.
 
 - codex CLI 側で notify を禁止する設定の有無は未調査
 - `~/.codex/AGENTS.md` 経由の prompt injection は本層の対象外
-- `~/.codex/skills/` は検知層の監視対象に含めていない。skill は model への
+- `~/.agents/skills/` は検知層の監視対象に含めていない。skill は model への
   指示テキストであって host が直接実行するものではなく、脅威モデルが異なる
   (prompt injection 側の問題として扱う)

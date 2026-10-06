@@ -74,7 +74,7 @@ if [ -d "$H/.codex" ]; then
   expect_link "$H/.codex/hooks"      "$DOTFILES/codex/hooks"
   for d in "$DOTFILES/codex/skills"/*/; do
     [ -d "$d" ] || continue
-    expect_link "$H/.codex/skills/$(basename "$d")" "${d%/}"
+    expect_link "$H/.agents/skills/$(basename "$d")" "${d%/}"
   done
 
   cfg="$H/.codex/config.toml"

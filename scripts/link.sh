@@ -28,11 +28,17 @@ mkdir -p "$HOME/.config"
 link_file() {
     local src="$1"
     local dest="$2"
+    local backup_dir="${3:-}"
 
     # If destination exists and is not a symlink, back it up
     if [[ -e "$dest" ]] && [[ ! -L "$dest" ]]; then
         local backup
-        backup=$(unique_backup_path "$dest")
+        if [[ -n "$backup_dir" ]]; then
+            mkdir -p "$backup_dir"
+            backup=$(unique_backup_path "$backup_dir/$(basename "$dest")")
+        else
+            backup=$(unique_backup_path "$dest")
+        fi
         warn "Backing up existing file: $dest -> $backup"
         mv "$dest" "$backup"
     fi
@@ -183,17 +189,21 @@ if [[ -d "$DOTFILES_DIR/codex" ]]; then
         link_file "$DOTFILES_DIR/codex/hooks" "$HOME/.codex/hooks"
     fi
 
-    # skills は per-skill 個別 symlink にする（Codex CLI が管理する .system/ と共存させるため）
+    # 旧配置 ~/.codex/skills も codex は読み続けるため、そこに残る repo 向け link を外さないと同名 skill が二重に載る
     if [[ -d "$DOTFILES_DIR/codex/skills" ]]; then
-        # 既存の skills ディレクトリ自体が symlink（旧 link.sh の挙動）なら削除して実体ディレクトリに置き換える
         if [[ -L "$HOME/.codex/skills" ]]; then
             rm "$HOME/.codex/skills"
+        else
+            for legacy in "$HOME/.codex/skills"/*; do
+                if [[ -L "$legacy" && "$(readlink "$legacy")" == "$DOTFILES_DIR/codex/skills/"* ]]; then
+                    rm "$legacy"
+                fi
+            done
         fi
-        mkdir -p "$HOME/.codex/skills"
         for skill_path in "$DOTFILES_DIR/codex/skills"/*/; do
             [[ -d "$skill_path" ]] || continue
-            skill_name=$(basename "$skill_path")
-            link_file "${skill_path%/}" "$HOME/.codex/skills/$skill_name"
+            # link_file 既定の退避先 (同じ階層の .backup) は codex が skill として読んでしまう
+            link_file "${skill_path%/}" "$HOME/.agents/skills/$(basename "$skill_path")" "$HOME/.agents/skills-backup"
         done
     fi
 fi

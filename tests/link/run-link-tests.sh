@@ -8,9 +8,11 @@ set -euo pipefail
 #   2. 既存 regular file → .backup にリネームされ symlink が新規作成される
 #   3. 既存 symlink (別 target) → backup せず削除・置換される
 #   4. source 側 dotfile dir が無ければ HOME 側にも symlink を作らない
-#   5. codex/skills は per-skill 個別 symlink (skills 親ディレクトリを一括 symlink しない)
-#   6. HOME/.codex/skills が既存 symlink (旧挙動) → 実ディレクトリ + per-skill symlink に置換
+#   5. codex/skills は HOME/.agents/skills に per-skill 個別 symlink (skills 親ディレクトリを一括 symlink しない)
+#   6. HOME/.codex/skills が既存 symlink (旧挙動) → 削除され、HOME/.agents/skills に per-skill symlink
 #   7. codex/config.toml は symlink されず merge (regular file として出力)
+#   8. 旧配置 HOME/.codex/skills の repo 向け symlink は外し、それ以外は残す。
+#      HOME/.agents/skills の同名実体は探索範囲外の skills-backup/ へ退避
 #
 # isolation: fake dotfiles root を mktemp で作り、link.sh 本体と lib/*.sh /
 # codex-merge-config.sh を symlink する。link.sh 内の cd は pwd (no -P) なので
@@ -167,14 +169,14 @@ rc=$(run_link "$c5_root" "$c5_home" "$c5_home/out" "$c5_home/err")
 ok=1
 [ "$rc" = 0 ] || { echo "FAIL c5: rc=$rc"; ok=0; }
 # 親 skills は実ディレクトリ (symlink ではない)
-[ -d "$c5_home/.codex/skills" ] && [ ! -L "$c5_home/.codex/skills" ] \
+[ -d "$c5_home/.agents/skills" ] && [ ! -L "$c5_home/.agents/skills" ] \
   || { echo "FAIL c5: skills should be real dir"; ok=0; }
 # 各 skill は symlink で source を指す
-assert_symlink "$c5_home/.codex/skills/skillA" "$c5_root/codex/skills/skillA" "c5: skillA symlink"
-assert_symlink "$c5_home/.codex/skills/skillB" "$c5_root/codex/skills/skillB" "c5: skillB symlink"
+assert_symlink "$c5_home/.agents/skills/skillA" "$c5_root/codex/skills/skillA" "c5: skillA symlink"
+assert_symlink "$c5_home/.agents/skills/skillB" "$c5_root/codex/skills/skillB" "c5: skillB symlink"
 if [ "$ok" = 1 ]; then pass=$((pass+1)); else fail=$((fail+1)); sed 's/^/  /' "$c5_home/err"; fi
 
-# ---- case 6: HOME/.codex/skills が既存 symlink → 実 dir + per-skill symlink に置換
+# ---- case 6: HOME/.codex/skills が既存 symlink → 削除され、HOME/.agents/skills に per-skill symlink
 c6_root="$WORKDIR/c6_root"
 c6_home="$WORKDIR/c6_home"
 make_fake_root "$c6_root"
@@ -185,9 +187,9 @@ ln -s "$c6_home/legacy-skills" "$c6_home/.codex/skills"  # 旧挙動: skills 自
 rc=$(run_link "$c6_root" "$c6_home" "$c6_home/out" "$c6_home/err")
 ok=1
 [ "$rc" = 0 ] || { echo "FAIL c6: rc=$rc"; ok=0; }
-[ -d "$c6_home/.codex/skills" ] && [ ! -L "$c6_home/.codex/skills" ] \
-  || { echo "FAIL c6: legacy symlink not replaced with real dir"; ok=0; }
-assert_symlink "$c6_home/.codex/skills/skillA" "$c6_root/codex/skills/skillA" "c6: skillA per-skill symlink"
+[ ! -L "$c6_home/.codex/skills" ] || { echo "FAIL c6: legacy skills symlink not removed"; ok=0; }
+[ -d "$c6_home/legacy-skills" ] || { echo "FAIL c6: legacy symlink target should be kept"; ok=0; }
+assert_symlink "$c6_home/.agents/skills/skillA" "$c6_root/codex/skills/skillA" "c6: skillA per-skill symlink"
 if [ "$ok" = 1 ]; then pass=$((pass+1)); else fail=$((fail+1)); sed 's/^/  /' "$c6_home/err"; fi
 
 # ---- case 7: codex/config.toml は symlink されず merge (regular file)
@@ -206,6 +208,32 @@ if ! grep -q '^model = "base"$' "$c7_home/.codex/config.toml"; then
   echo "FAIL c7: base content missing from merged config.toml"; ok=0
 fi
 if [ "$ok" = 1 ]; then pass=$((pass+1)); else fail=$((fail+1)); sed 's/^/  /' "$c7_home/err"; fi
+
+# ---- case 8: 旧配置の repo 向け symlink を外し、HOME/.agents/skills の同名実体を探索範囲外へ退避
+c8_root="$WORKDIR/c8_root"
+c8_home="$WORKDIR/c8_home"
+make_fake_root "$c8_root"
+make_fake_home "$c8_home"
+mkdir -p "$c8_root/codex/skills/skillA" "$c8_root/codex/skills/skillB"
+mkdir -p "$c8_home/.codex/skills/.system" "$c8_home/other-skill"
+ln -s "$c8_root/codex/skills/skillA" "$c8_home/.codex/skills/skillA"
+ln -s "$c8_home/other-skill" "$c8_home/.codex/skills/other"
+mkdir -p "$c8_home/.agents/skills/skillB"
+printf 'stale\n' > "$c8_home/.agents/skills/skillB/SKILL.md"
+rc=$(run_link "$c8_root" "$c8_home" "$c8_home/out" "$c8_home/err")
+ok=1
+[ "$rc" = 0 ] || { echo "FAIL c8: rc=$rc"; ok=0; }
+if [ -e "$c8_home/.codex/skills/skillA" ] || [ -L "$c8_home/.codex/skills/skillA" ]; then
+  echo "FAIL c8: legacy repo symlink should be removed"; ok=0
+fi
+[ -L "$c8_home/.codex/skills/other" ] || { echo "FAIL c8: non-repo symlink should be kept"; ok=0; }
+[ -d "$c8_home/.codex/skills/.system" ] || { echo "FAIL c8: .system should be kept"; ok=0; }
+assert_symlink "$c8_home/.agents/skills/skillB" "$c8_root/codex/skills/skillB" "c8: skillB symlink"
+grep -qx 'stale' "$c8_home/.agents/skills-backup/skillB.backup/SKILL.md" \
+  || { echo "FAIL c8: stale skill not backed up to skills-backup/"; ok=0; }
+c8_leftover=$(find "$c8_home/.agents/skills" -mindepth 1 -maxdepth 1 -name '*.backup*')
+[ -z "$c8_leftover" ] || { echo "FAIL c8: backup left inside skills/: $c8_leftover"; ok=0; }
+if [ "$ok" = 1 ]; then pass=$((pass+1)); else fail=$((fail+1)); sed 's/^/  /' "$c8_home/err"; fi
 
 echo "link tests: $pass passed, $fail failed"
 [ "$fail" = 0 ] || exit 1
