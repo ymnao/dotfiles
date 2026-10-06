@@ -17,6 +17,8 @@ paths:
   GNU 拡張を避ける
 - 変数展開は常に quote する(`"$var"`)。word splitting に依存しない
   (SC2086 は info なので `make test` の shellcheck `-S warning` では止まらない)
+- exit code を自分で扱うスクリプトは `set -e` を外して `set -uo pipefail` にし、
+  理由をコメントに書く
 - **日本語などの多バイト文字が直後に続く変数展開は必ず `${VAR}` とブレースで
   囲む**。bash 3.2 + UTF-8 ロケールでは多バイト文字の一部バイトが変数名に
   取り込まれ、未定義変数として誤パースされる(`set -u` だと即死)
@@ -26,8 +28,8 @@ paths:
   挙動」を回帰検査したい箇所は `LC_ALL=en_US.UTF-8` 等を pin する。粒度は
   (a) shebang 直下の `export LC_ALL=...`(スクリプト全体が依存する場合)か
   (b) `LC_ALL=... command args` の行スコープ(特定ケースだけの場合)。
-  CI の LC_ALL matrix (issue #181) が拾うのは結果差を assert するケースだけなので、
-  pin は依然必要
+  CI の LC_ALL matrix (issue #181) が拾うのは結果差を assert するケースだけで、
+  matrix 外のロケール (`ja_JP.SJIS` 等) 固有の依存も素通りするので、pin は依然必要
 - 変更後は shellcheck(`-S warning`)を通す
 - **テストの floor / guard は「守る対象」から導出しない**。「必須ケースが
   実行されたか」を検査する下限値やガードは、検査対象そのもの(ケース一覧の
@@ -48,7 +50,9 @@ paths:
   ラチェットも同時に置く**。ズレの影響範囲は判定の形 (完全一致 / prefix 一致) ごとに見る。
   実例: issue #308。`guard-codex-dir.sh` の apply_patch ヘッダー抽出は `$0` を
   そのまま使っていたが、codex のパーサは行末 CR を落とし Rust の `str::trim` で
-  前後を trim してから path を取るため、完全一致の経路で LF 以外の 11 形が素通りしていた
+  前後を trim してから path を取るため (2026-08-10 に
+  `codex-rs/apply-patch/src/streaming_parser.rs` で確認)、完全一致の経路で LF 以外の
+  11 形が素通りしていた
 - **`agents/hooks/` (と `claude/hooks/` `codex/hooks/` の実体) は編集中の状態がそのまま
   live に効く** (`~/.claude/hooks/` 等からの symlink 経由)。途中で hook が壊れると
   Bash / Edit / Write がすべて block され、agent 自身では戻せない。編集は scratchpad に
@@ -228,7 +232,8 @@ paths:
   harness が TMPDIR を /tmp 配下に差し替えていれば手元の macOS でも通る)。
   「/tmp 配下」を測りたいなら、/tmp 配下であることを自分で確かめた 0700 の probe
   ディレクトリを別に掘る。
-  実例: issue #316 (html-brief の outside-tmp ケース。macOS CI が週次なので検出が最大 7 日遅れた)
+  実例: issue #316 (html-brief の outside-tmp ケース。macOS CI が週次なので検出が最大
+  7 日遅れた。2026-08-10 に main の実行履歴で確認)
 - **テスト用の一時 git リポジトリを作ったら、`git init` の直後に
   `git config gc.auto 0` と `git config maintenance.auto false` を置く**。
   `git commit` は auto gc を detach して起動するため、これがテスト終了時の
@@ -249,5 +254,6 @@ paths:
   - **分岐を書いたら「出さない側」も pin する**(条件を `if true` に緩めた退行が
     全 pass で通り、誤誘導が常時発火するのを防ぐ)
   実例: issue #214 で `trusted_hash` 不一致を「承認後の書き換え」と診断して
-  codex TUI での再承認を勧めていたが、codex の payload 仕様変更でも同じ件数で外れ、
+  codex TUI での再承認を勧めていたが、codex の payload 仕様変更でも一部の entry
+  だけが外れる (`timeout` 既定値を変えた mutant は 8 entry 中 1 件) ため区別できず、
   再承認すると仕様変更の唯一の証拠が消える形だった

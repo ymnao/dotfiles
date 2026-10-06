@@ -802,7 +802,7 @@ assert_case15 "case15p-two-args-watched" \
   'bash "$HOME/.claude/hooks/post-format.sh" session extra_arg-1.2' expect-clean
 # 15m〜15o: 15l で広げた受理口が **危険な形まで飲み込まないこと**。
 #      「マッチしない入力を試すだけでは足りない — 受理パターンに
-#      マッチしてしまう危険な入力を自分で構成する」(claude/rules/shell.md)。
+#      マッチしてしまう危険な入力を自分で構成する」(claude/rules/acceptance-patterns.md)。
 # 15m: 引数の後ろに別の実行を連結 (15g の引数付き版)。
 assert_case15 "case15m-arg-extra-invocation" \
   'bash "$HOME/.claude/hooks/post-format.sh" session && bash /tmp/evil.sh' expect-violation \

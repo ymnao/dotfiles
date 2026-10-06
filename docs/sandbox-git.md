@@ -1,6 +1,6 @@
 # sandbox 内の git
 
-Claude Code の sandbox 内で git の ref 操作 (checkout / merge / fetch / push /
+agent の sandbox 内で git の ref 操作 (checkout / merge / fetch / push /
 branch -d / worktree) をするときの罠と回避手順。
 
 ## エラーを出しながら本体は成功する 2 種類
