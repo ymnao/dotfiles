@@ -44,7 +44,7 @@ paths:
   (1) **出力側で突き合わせる**: `--head <name>` のように絞り込まず、全件を取って出力の
   行を比べる。
   (2) **git やファイルに名前を出させて、コマンド置換で渡す**:
-  `"$(git branch --show-current)"` / `"$(cat <scratchpad>/x.txt)"`。コマンド置換の
+  `"$(git branch --show-current)"` / `"$(cat "<scratchpad>/x.txt")"`。コマンド置換の
   *出力*は shell に再スキャンされないので、`$(...)` や `;` を含む名前でもリテラルな
   1 引数として届く (`printf '%s\n' "$(printf '%s' 'foo$(id);x')"` は `foo$(id);x` を出す)。
   危険なのは名前を**タイプし直す**ことで、git に名前を尋ねること自体ではない。
