@@ -18,8 +18,8 @@ sandbox 内の git は、次の 2 種類のエラーを出しながら**本体�
 
 `fatal:` を失敗と読んで中断しない。成否はエラー出力ではなく**結果の状態**で確かめる
 (push / fetch は `git ls-remote` の remote SHA と手元の SHA の一致、削除は
-`git branch` の出力)。push に `-u` を付けないのは 1 の upstream 書き込みを起こさない
-ため。
+`git branch` の出力)。push に `-u` を付けないのは、`.git/config` への upstream 設定の
+書き込みだけが `error: unable to write upstream branch configuration` で失敗するため。
 
 `git ls-remote --heads` には `refs/heads/` を付けた完全な ref を渡す。短い名前は ref の
 末尾一致になり、別ブランチの行を拾う (`git ls-remote --heads origin bump-actions` は

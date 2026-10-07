@@ -15,7 +15,8 @@ Execute these steps faithfully in order. Do not skip steps or make independent j
    - Otherwise fall back: get the branch with `git branch --show-current`, then run `gh pr list --state open --limit 100 --json number,baseRefName,headRefName,headRepositoryOwner` as a bare invocation and read the output, keeping the rows whose `headRefName` equals that branch and whose `headRepositoryOwner.login` equals `<owner>`. **Do not substitute the branch name into the command** — match on the output side instead (why: the 「外部由来の名前」 item in `claude/rules/acceptance-patterns.md`). `--limit` is spelled out because `gh pr list` defaults to 30 rows, and a repo with more open PRs than that would silently report "No PR found".
      - 0 matches → report "No PR found for the current branch" and stop.
      - >1 matches → list `PR #<n> -> <baseRefName>` for each, ask the user which one, then proceed.
-2. Fetch unresolved review threads (この形が Claude 版の 1 行インライン形と違うのは意図的。Claude 版は、Claude Code の sandbox 内で `-F query=@file` と `--jq` を組み合わせると x509 で落ちる問題 (issue #359。`sandbox.excludedCommands` の `gh *` から外れると推測しているが原因は未特定) を避けている。codex に `excludedCommands` に当たる機構は無い。`block-dangerous-commands.sh` は実値を埋めたこの形を通す (2026-10-07 に hook へ直接入力して確認)。codex 上で `gh` を実際に走らせた確認はしていない):
+2. Fetch unresolved review threads:
+   - Claude 版の 1 行インライン形と違うのは意図的 (Claude 版は Claude Code の sandbox 固有の x509 失敗、issue #359 を避けている)。`block-dangerous-commands.sh` が実値を埋めたこの形を通すことは 2026-10-07 に hook へ直接入力して確かめた。codex 上で `gh` を走らせる確認はしていない
    ```bash
    gh api graphql \
      -F query=@"$HOME/.agents/skills/resolve/queries/unresolved-threads.graphql" \

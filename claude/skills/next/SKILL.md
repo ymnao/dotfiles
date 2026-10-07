@@ -34,7 +34,8 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
        衝突しないパスを選ぶ方で閉じる (正本は
        `claude/rules/acceptance-patterns.md` の一時ファイル置き場の項)
      - step 3 では `"$(cat <scratchpad>/merged-branch.txt)"` として渡し、
-       名前を agent がタイプし直さない (上と同じ「外部由来の名前」の項)
+       名前を agent がタイプし直さない (`claude/rules/acceptance-patterns.md`
+       の「外部由来の名前」の項)
      - **この 2 コマンドは別々の Bash 呼び出しで打つこと**。同じ呼び出しに
        redirect と `$(cat ...)` を同居させると `block-dangerous-commands.sh` が
        「動的展開を含む書き込み系リダイレクト」としてブロックする。分けて打てば
@@ -42,8 +43,7 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
        別の呼び出しなので、通常の手順どおりに進めれば問題にならない。
        **`<scratchpad>` はリテラルのパスとして書く** — 変数に入れると redirect
        側が「動的展開」と判定されて同じ hook に掛かる (`> "$SCRATCHPAD/..."`
-       は exit=2 を実測)。`$TMPDIR` はこの hook には掛からないが、上の非衝突の
-       理由で使わない
+       は exit=2 を実測)
      - **残る stale は同一セッション内の再実行だけ**。1 セッションで `/next` を
        2 回回すと前の PR のブランチ名が残っている。step 3 では**消す前に中身を
        step 1 の `headRefName` と突き合わせ**、一致しなければ削除せず報告する
@@ -52,8 +52,9 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      - step 3 は削除後にこのファイルを消す。残さなければ同一セッション内の
        stale 化も起きない
 2. **main 更新**: `git checkout main` → `git pull origin main --ff-only`。
-   sandbox が削除を拒否するパス (判定原則は `docs/sandbox-git.md` の
-   「削除を拒否するパス」節) に触る PR では unlink 制限で
+   sandbox が削除を拒否するパス (settings 系・skills 系・hooks 系など。
+   説明は `docs/sandbox-git.md` の「削除を拒否するパス」節) に触る PR
+   では unlink 制限で
    checkout / pull / reset --hard が失敗する。状況別 workaround:
    - **feature ブランチ checkout 中**:
      `git fetch origin main:main` (non-fast-forward は refspec が自動拒否

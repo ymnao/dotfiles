@@ -26,7 +26,7 @@ fail-loud になる場所の版数固定はこの規約の対象外**(eval 実�
 
 | 役割 | モデル | effort | 用途 |
 |---|---|---|---|
-| メイン(統括・意思決定・実装) | Opus 世代 | high(難所は xhigh) | 全体制御・decisions・並列調整・実装(`/dev` step 3)・軽 verify・PR 作成 |
+| メイン(統括・意思決定・実装) | Opus 世代 | high(難所は xhigh) | 全体制御・decisions・並列調整・実装・軽 verify・PR 作成 |
 | **plan 立案**(非自明タスク) | **Fable 世代** | - | `/dev` step 2 の変更ファイル・実装手順・考慮点の立案。self-preference bias 回避 + 推論深度確保のためメイン Opus からサブエージェント委譲 |
 | 並列 fan-out(中軽度並列) | Sonnet 世代 | high | /simplify の観点別 finder、多点調査 |
 | 独立第二意見(別モデル系統) | Fable 世代など | - | fresh context のレビュー、難しい設計判断、cascade でメインが疑わしいと判定したときのエスカレーション先 |
