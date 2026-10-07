@@ -26,11 +26,10 @@ fail-loud になる場所の版数固定はこの規約の対象外**(eval 実�
 
 | 役割 | モデル | effort | 用途 |
 |---|---|---|---|
-| メイン(統括・意思決定) | Opus 世代 | high(難所は xhigh) | 全体制御・decisions・並列調整・軽 verify・PR 作成 |
+| メイン(統括・意思決定・実装) | Opus 世代 | high(難所は xhigh) | 全体制御・decisions・並列調整・実装・PR 作成 |
 | **plan 立案**(非自明タスク) | **Fable 世代** | - | `/dev` step 2 の変更ファイル・実装手順・考慮点の立案。self-preference bias 回避 + 推論深度確保のためメイン Opus からサブエージェント委譲 |
-| 実装ループ(詳細 plan あり) | Sonnet 世代 | high(難所は xhigh) | ファイル/関数/追加行の意図まで指定された実装、機械的 refactor、テスト追加 |
 | 並列 fan-out(中軽度並列) | Sonnet 世代 | high | /simplify の観点別 finder、多点調査 |
-| 独立第二意見(別モデル系統) | Fable 世代など | - | fresh context のレビュー、難しい設計判断、cascade でメインが疑わしいと判定したときのエスカレーション先 |
+| 独立第二意見(別モデル系統) | Fable 世代など | - | fresh context のレビュー、難しい設計判断 |
 | 探索・情報収集 | Haiku 世代 | - | 軽い調査・ファイル探索 |
 
 **実測 (2026-09-26 / `claude` 2.1.282)**: メインは Opus 5.5 (`claude-opus-5-5`)、
@@ -91,21 +90,11 @@ frontmatter は `model: opus` のまま据え置く。呼び出し側が指定�
 第二意見という緩和が消えるため。`/pr` は codex 不能時に Fable 系サブエージェントで
 代替する設計なので、そのフォールバックが常態化していたらこれに当たる。
 
-**現状 (2026-09-25 実測 / codex-cli 0.157.0): agent の Bash sandbox 内で
-`codex-review` が回るのは、run-review.sh が CA バンドルをファイルで渡している
-から**。渡さないと、システムの証明書ストアでの TLS 検証が sandbox 内で通らず
-exit 1 になる (2026-09-07 / 0.153.4 では渡さずに完走していた)。2026-09-02 に
-0.152.1 で観測されたハングは watchdog で打ち切る。**実測の詳細と特定できて
-いない範囲は `claude/skills/codex-review/SKILL.md` の「Running under a shell
-sandbox」節が正本**、経緯は issue #335。
-
-**上流の不調への対処を「環境の判定」として埋めない**。0.152.1 のハングに
-対して proxy URL の形で起動可否を判定していたため、上流が直っても 5 日間
-SKIP のままだった。規約の正本は `claude/rules/shell.md`「環境の前提を assert
-するときは『守りたい挙動そのもの』を測る」で、この件はその実例として同
-ファイルに載せてある (`*.sh` を編集するときに自動で load される場所)。
-**`sandbox.excludedCommands` に `codex *` を足す案は採らない** — path/domain
-を絞る現方式で足りることが実測で確かめられ、sandbox を丸ごと外す必要が無い。
+agent の Bash sandbox 内で `codex-review` が回るかどうか、回すための設定、
+`sandbox.excludedCommands` に `codex *` を足さない理由は
+`claude/skills/codex-review/SKILL.md` の「Running under a shell sandbox」節が
+正本 (経緯は issue #335)。上流の不調を環境の判定として埋めない規約は
+`claude/rules/shell.md`。
 
 - 切り替え: `/model`、Agent ツールの `model` パラメータ
   (例: `Agent(subagent_type: "general-purpose", model: "sonnet", prompt: ...)`
@@ -124,8 +113,6 @@ SKIP のままだった。規約の正本は `claude/rules/shell.md`「環境の
 - **並列 fan-out は中モデル + orchestrator パターンが上位モデル単体より
   高性能かつ安い**: Anthropic の multi-agent research system の実測で
   Opus lead + Sonnet subagent が単体 Opus を 90.2% 上回った
-- **cascade 型エスカレーション**(中モデル実装 → メイン軽 verify → 疑わし
-  ければ第二意見)が静的割り当てよりコスト最適(FrugalGPT 系サーベイ)
 - **委譲は「自己完結タスク → 結果を返す型」に限る**: 逐次質問往復は
   fresh context の利点を消すのでメインで拾う
 
@@ -215,8 +202,9 @@ vacuous pass する)。世代レベル記述にしたことで**ズレの発生�
 - AI レビュー(codex-review / code-review)は信頼できる diff 専用。
   外部コントリビュータの PR に無条件で自動レビューを走らせない
   (prompt injection 前提の運用)
-- 高リスク変更(セキュリティ境界・hooks・認証・リリース前最終確認)の
-  merge 前は `/adversarial-review`(競争的 2 体レビュー)を使う
+- 高リスク変更のレビューは `/dev` のフル隊列と `/pr` tier=high で行う。
+  見逃しが許されないと判断したときは、任意で `/adversarial-review`
+  (競争的 2 体レビュー)を追加する
 
 ## 7. メモリ運用(auto memory)
 
@@ -1253,7 +1241,7 @@ enforce したいなら managed (policy) 設定に置く。この repo は正本
   user 書き込み可能な repo への symlink にすると、**agent が Edit tool で
   policy を書き換えられる**(`~/.claude/settings.json` が実際にそうなって
   いるとおり、Edit 経路には sandbox の denyWrite が効かない —
-  memory `project_settings_files_sandbox_lock`)。policy を repo に
+  `docs/sandbox-git.md`「削除を拒否するパス」)。policy を repo に
   symlink するのは権限昇格の経路を自分で作ること
 - macOS の配置先 `/Library/Application Support/ClaudeCode/` は agent から
   書けない。**塞いでいるのは OS の権限**(`root:admin` の `drwxr-xr-x` で

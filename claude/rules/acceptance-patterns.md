@@ -35,6 +35,24 @@ paths:
   判定器の exit code も主張の一部**として両方向で測る
   (`tests/branch-name-validator/` が「修正後の式が敵対入力を reject する」
   ことを pin している。壊れた形そのものは pin していない)
+- **外部由来の名前 (ref 名・PR title・package 名) をコマンド文字列に書き込まない**。
+  git は ref 名に shell のメタ文字を許す (`git check-ref-format --branch 'foo$(id);x'`
+  は exit 0)。この repo は public で、`/issue` は issue title からブランチ名を作るので、
+  外部の文字列が名前に入る経路がある。二重引用符で囲んでも `$(...)` は展開されるので、
+  クォートでは防げない。名前を渡さずに済むなら `HEAD` で済ませる
+  (`git push origin HEAD` / `git rev-parse HEAD`)。名前が要るときの渡し方は次の 2 つに限る。
+  (1) **出力側で突き合わせる**: `--head <name>` のように絞り込まず、全件を取って出力の
+  行を比べる。
+  (2) **git やファイルに名前を出させて、コマンド置換で渡す**:
+  `"$(git branch --show-current)"` / `"$(cat "<scratchpad>/x.txt")"`。コマンド置換の
+  *出力*は shell に再スキャンされないので、`$(...)` や `;` を含む名前でもリテラルな
+  1 引数として届く (`printf '%s\n' "$(printf '%s' 'foo$(id);x')"` は `foo$(id);x` を出す)。
+  危険なのは名前を**タイプし直す**ことで、git に名前を尋ねること自体ではない。
+  ファイルに控える場合も、**読むのは shell** にする。要点は、名前がコマンド文字列を
+  経由しないこと。git やスクリプトが書く経路 (`/next` の `merged-branch.txt`、
+  `/dependabot-bulk` の `classified.json`) では、名前は LLM の出力も通らない。
+  LLM が作った名前を tool で書く経路 (`/issue`) では、文字集合の検証と組にして
+  「検証した文字列と実際に使う文字列が同じ」ことを保証する
 - **一時ファイルの置き場: agent が打つ手順では `$TMPDIR` を裸で書く**。
   `WORK=$(mktemp -d "${TMPDIR:-/tmp}/x.XXXXXX")` は 2 つの理由で使えない。
   (1) Bash tool 呼び出し間で shell 変数は persist しないので次の呼び出しで

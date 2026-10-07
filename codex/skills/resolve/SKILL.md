@@ -12,10 +12,11 @@ Execute these steps faithfully in order. Do not skip steps or make independent j
    - Run `gh repo view --json owner --jq '.owner.login'` → `<owner>`
    - Run `gh repo view --json name --jq '.name'` → `<repo>`
    - Run `gh pr view --json number --jq .number` (uses upstream tracking; may fail). If a number comes back, use it as `<pr_number>`.
-   - Otherwise fall back: get the branch with `git branch --show-current`, then run `gh pr list --state open --limit 100 --json number,baseRefName,headRefName,headRepositoryOwner` as a bare invocation and read the output, keeping the rows whose `headRefName` equals that branch and whose `headRepositoryOwner.login` equals `<owner>`. **Do not substitute the branch name into the command** — ref names may contain `$(...)` or `;` (`git check-ref-format --branch 'foo$(id);x'` exits 0) and this repo is public, so an issue title can reach a branch name via `/issue`; quoting does not stop `$(...)` from expanding. Matching on the output side keeps the name out of the command string. `--limit` is spelled out because `gh pr list` defaults to 30 rows, and a repo with more open PRs than that would silently report "No PR found".
+   - Otherwise fall back: get the branch with `git branch --show-current`, then run `gh pr list --state open --limit 100 --json number,baseRefName,headRefName,headRepositoryOwner` as a bare invocation and read the output, keeping the rows whose `headRefName` equals that branch and whose `headRepositoryOwner.login` equals `<owner>`. **Do not substitute the branch name into the command** — match on the output side instead (why: the 「外部由来の名前」 item in `claude/rules/acceptance-patterns.md`). `--limit` is spelled out because `gh pr list` defaults to 30 rows, and a repo with more open PRs than that would silently report "No PR found".
      - 0 matches → report "No PR found for the current branch" and stop.
      - >1 matches → list `PR #<n> -> <baseRefName>` for each, ask the user which one, then proceed.
 2. Fetch unresolved review threads:
+   - Claude 版の 1 行インライン形と違うのは意図的 (Claude 版は Claude Code の sandbox で観測された x509 失敗 #359 と、pipe を禁じる Claude 固有の `guard-sandbox-exclusions.sh` を避けている)。この形が `block-dangerous-commands.sh` を通ることは 2026-10-07 に hook へ直接入力して確かめた。codex 上で `gh` が x509 失敗を出さないかは未確認
    ```bash
    gh api graphql \
      -F query=@"$HOME/.agents/skills/resolve/queries/unresolved-threads.graphql" \
