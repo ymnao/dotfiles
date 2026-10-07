@@ -195,8 +195,7 @@ user に報告して指示を待つ。
 **PR に載せるか**を決める仕組みなので、**もう持ち込んでしまったものには
 効かない** — 流しても状態は変わらないまま merge される。2 周上限は発散防止の
 ための制限であって、自分が壊したものを放置する根拠ではない。上限を超えて
-回すときは user 承認を取り、構造化ログの `round=` は 3 以降も連番で出す
-(`applied` は実数)。
+回すときは user 承認を取る。
 
 「持ち込んだ」に当たる実例:
 
@@ -279,58 +278,6 @@ fix-or-issue-or-dismiss ポリシーに委ねる (発散防止)。
 
 codex-review は step 5 の /pr が risk tier に応じて実行するため
 ここでは呼ばない (重複実行の回避)。
-
-#### 構造化ログ (周回数と完了状態の機械検証用)
-
-各 round の開始時と終了時に、以下を **行頭から (テンプレートの `N`
-は整数値に展開して) この形式** で応答テキストに出力する (grep で検証
-されるため前後に装飾を付けない):
-
-```
-[dev/review-loop] round=N phase=start head=<git HEAD の短縮 SHA> dirty=<0|1>
-[dev/review-loop] round=N phase=end applied=N status=<complete|continue|cap-reached> head=<sha> dirty=<0|1>
-```
-
-- `N` (round) は 1 以上の整数。既定は 1 または 2 で、**user 承認で上限を
-  延長した場合 (4-0 の「live 環境に持ち込んだ実害」例外) のみ 3 以降も
-  連番で出す**
-- `head=<sha>` は当該時点の `git rev-parse --short HEAD` (7 文字前後)
-- `dirty=<0|1>` は当該時点で `git status --porcelain` の出力が空なら
-  `0`、あれば `1` (uncommitted changes の有無)
-- `applied=N` は当該 round で apply した指摘の件数 (fix commit 数ではなく
-  /simplify / code-reviewer の指摘のうち fix した件数の合算、単位や
-  カンマを付けずに整数のみ)
-- `status=` の 3 値:
-  - `continue` — この round で修正が入り次 round へ再周回する
-    (round=1 の end でのみ出現しうる、round=2 では出さない)
-  - `complete` — 指摘 0 で loop 正常終了 (round=1 で 0 指摘完了も含む)
-  - `cap-reached` — round=2 で残指摘があるが 2 周上限のため fix せず
-    step 5 (/pr) の fix-or-issue-or-dismiss へ引き渡す
-- **`applied` は実測値**: その round で実際に fix した件数をそのまま書く。
-  round=2 は「発散防止のため新規指摘を fix しない」規約 (本 step 冒頭) に
-  従うので**結果として** `0` になるのが基本形だが、fix を伴う経路
-  (上限延長、step 4-0 の例外による即 fix など) を通れば非ゼロになる。
-  **「round=2 の applied は必ず 0、ただし例外は〜」と例外を列挙する形で
-  書かないこと** — step 4-0 側に経路が増えるたびログ規定が追随を要求され、
-  追随を忘れると「規約を守ると必ずログ規定に違反する」状態に戻る
-  (2026-08-08 の issue #296 で実際に踏み、列挙を 1 つ増やす形で直しかけた)
-- **round=2 の status**: `complete` (残指摘 0) か `cap-reached` (残指摘あり)
-  の 2 択で `continue` は取らない。**上限を延長した round だけは
-  `continue` を取りうる** (再周回するのはこの経路だけ。step 4-0 の例外に
-  よる即 fix は「新規指摘を fix しない」規約を外すものではないので
-  再周回しない)。延長の承認を得た turn がその根拠になる
-- **fix コミットを作らない round の head/dirty 不変**: その round で fix
-  コミットを作らなかったとき (= `applied=0`) は、
-  `phase=start` と `phase=end` の `head=` と `dirty=` がそれぞれ
-  同一でなければならない (両方 `0` または両方 `1`)。Edit / Write tool
-  call マーカーでは Bash 経由の変更を取りこぼすため head + dirty の
-  同値比較で全経路 (Bash / apply_patch / sed 含む) の変更混入を検出
-  する。`dirty=0` を強制しないのは、sandbox の制限で解消できない
-  pre-existing な untracked 残存により `dirty=1` スタートが起こり得る
-  ため (start と end で同一であることだけを見る)。**既知の非検出**:
-  `dirty` は二値なので、`dirty=1` で始まった round に新規の uncommitted
-  change が加わっても `1 → 1` のまま通る (完全に見るには
-  `git status --porcelain` の checksum 比較が要る)
 
 ### 5. PR 作成
 
