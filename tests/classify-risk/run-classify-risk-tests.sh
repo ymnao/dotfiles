@@ -61,9 +61,8 @@ assert_tier() {
 
 # assert_reason <name> <期待する部分文字列> — 直前のブランチの reasons を assert。
 # assert_tier は `.tier` しか見ないので、reason 文字列は無検査で消せてしまう。
-# この JSON は claude/skills/pr/SKILL.md step 4 で「応答本文に verbatim で
-# 転記する」と規定され PR の evidence に載る出力なので、床が効いた根拠が
-# 本文に残ることまで固定する
+# reasons は claude/skills/pr/SKILL.md step 4 で PR の evidence に転記される
+# 出力なので、床が効いた根拠が本文に残ることまで固定する
 assert_reason() {
   local name="$1" want="$2" got
   got=$(bash "$CLASSIFIER" main | jq -r '.reasons | join(" ")')
