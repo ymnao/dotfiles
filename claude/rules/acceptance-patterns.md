@@ -20,21 +20,15 @@ paths:
   「**解析できてしまった**」経路で通るため、fail-closed にした安心感が
   そのまま盲点になる。受理パターンを書いたら、**それにマッチしてしまう危険な
   入力**を自分で構成して試す(マッチしない入力を試すだけでは足りない)。
-  実例: issue #213 の対応で 2 周連続で踏んだ。1 周目は「command から repo 参照の
-  断片を抽出して照合」する形で、断片が 1 つ取れると同じ command 内の他の参照が
-  捨てられた(`bash "$A" && bash /tmp/evil.sh` の後半)。2 周目は受理パターン
-  `^(bash|sh|...) "?([^"]+)"?$` の `[^"]+` が空白を含むため、クォート無しで
-  書くと後続コマンドごと 1 個のパスとして吸い込まれ、前方一致で「監視対象内」と
-  判定された。いずれも「未知の形は fail」という規約自体は満たしていた。
-  実例: PR #331。ブランチ名の安全な文字集合を検査する `awk` を SKILL.md に
-  書いたが、**判定器の exit code を敵対入力で測っていなかった**。`awk` の
-  main rule の `exit` は END を実行し、END 側の `exit <expr>` が status を
-  上書きするため (`printf 'x\n' | awk '{exit 7} END{exit 3}'` は 3)、
-  `... {exit 1} END{exit NR!=1}` は 1 行入力なら何でも exit 0 になり
-  `foo$(id);x` を受理していた。受理パターンを書いたら、**パターンだけでなく
-  判定器の exit code も主張の一部**として両方向で測る
-  (`tests/branch-name-validator/` が「修正後の式が敵対入力を reject する」
-  ことを pin している。壊れた形そのものは pin していない)
+  実例: issue #213 — 断片を 1 つ抽出した時点で同じ command 内の他の参照を捨てる形
+  (`bash "$A" && bash /tmp/evil.sh` の後半) と、`[^"]+` が空白を含み後続コマンドごと
+  1 個のパスに吸い込む形。どちらも「未知の形は fail」は満たしていた。
+  あわせて、**パターンだけでなく判定器の exit code も主張の一部**として
+  両方向で測る。`awk` の main rule の `exit` は END を実行し、END 側の `exit <expr>` が
+  status を上書きするため (`printf 'x\n' | awk '{exit 7} END{exit 3}'` は 3)、
+  `... {exit 1} END{exit NR!=1}` は 1 行入力なら何でも exit 0 になる
+  (実例: PR #331 — この形が `foo$(id);x` を受理していた。`tests/branch-name-validator/`
+  が pin しているのは修正後の式の exit code で、壊れた形そのものは pin していない)
 - **外部由来の名前 (ref 名・PR title・package 名) をコマンド文字列に書き込まない**。
   git は ref 名に shell のメタ文字を許す (`git check-ref-format --branch 'foo$(id);x'`
   は exit 0)。この repo は public で、`/issue` は issue title からブランチ名を作るので、
@@ -62,8 +56,7 @@ paths:
   既定値つきの `> "${TMPDIR:-/tmp}/f"` もブロックされる (2026-09-02 実測)。
   スクリプト (`.sh`) 内では `mktemp -d` が正しい — 制約は agent が Bash tool
   から直接打つ形にだけ掛かる (`claude/rules/shell.md` の `mktemp` 項と対)。
-  実例: `dependabot-bulk` skill は 2026-07-14 から 7 週間、この形で step 2 が
-  実行不能なまま気付かれずにいた (issue #330 の対応中に判明)。
+  実例: issue #330 の対応中に、`dependabot-bulk` の step 2 がこの形で実行不能だったと判明した。
   **ただし `$TMPDIR` はセッションを分けない**。uid スコープの固定パス (実測:
   `/tmp/claude-501`) で、セッション ID も repo 名も含まないため、並走する別
   セッションの同じ手順が同じパスへ書く。**後の step で読み直して、検証済みと
@@ -77,5 +70,5 @@ paths:
   検証そのものが空振りになる** — 検証した文字列と実際に使う文字列が別物になり、
   ゲートが「協力的な agent しか縛らない」状態へ戻る
 - **ロードは適用の必要条件であって十分条件ではない。** この項の適用漏れは
-  `*.sh` 側でも起きている (issue #284 は 3 周連続)。この rule が context に
+  `*.sh` 側でも起きている (issue #284)。この rule が context に
   入っていることを「検査した」の代わりにしない

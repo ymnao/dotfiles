@@ -27,7 +27,7 @@ Default: run all 3 in the order above. If the user named one (`/codex-review sec
 
 ### 1. Detect
 
-Run `bash "$HOME/.claude/skills/codex-review/scripts/run-review.sh" <P>` **with the Bash tool's `timeout` set to `600000` (10 分)** and branch on the exit code。timeout を省くと Bash tool の既定 120s で呼び側が先に切り、watchdog が SKIP を返す機会ごと失われる (2026-09-07 実測: 5 commit ぶんの diff で 1 観点が 100s を超えた)。`CODEX_REVIEW_TIMEOUT` を上げるときも 600s を超えない — それ以上は呼び側が必ず先に切る。
+Run `bash "$HOME/.claude/skills/codex-review/scripts/run-review.sh" <P>` **with the Bash tool's `timeout` set to `600000` (10 分)** and branch on the exit code。timeout を省くと Bash tool の既定 120s で呼び側が先に切り、watchdog が SKIP を返す機会ごと失われる (1 観点で 100s を超えた。2026-09-07 実測)。`CODEX_REVIEW_TIMEOUT` を上げるときも 600s を超えない — それ以上は呼び側が必ず先に切る。
 
 - `0` (pass) → record perspective as PASS. Go to the next perspective.
 - `2` (findings) → stdout is validated JSON. Parse `findings` and go to step 2.
@@ -64,7 +64,7 @@ detect→apply の途中で勝手に commit しない — fix は working tree �
 
 ここを「Tier1/Tier2 なら fix が既定」(= `/pr` step 4 の (a)) で上書きしないこと。**(a) が既定なのは detect 側の finding に対してで、confirm 側には適用しない**。confirm で fix を重ねると、その fix を確認する confirm がまた必要になり、**停止条件が「指摘が出なくなること」に戻る** — レビュアーは recall 最適化されているので、それは原理的に到達しない。confirm の停止条件は「1 回だけ回して残りを user に返すこと」であって、コードが綺麗になったことではない。
 
-実例: issue #255 の対応で、confirm run が出した MEDIUM/98 (`.txt` の一括除外で MCP 許可リストが無レビューで通る) を「CONFIRMED な Tier2 だから (a) fix が既定」と読んで fix した。指摘自体は正しく修正も妥当だったが、**user チェックポイントを通さずに 2 周目の fix を足した**点でこの節に反していた。前サイクル (issue #230) では同じ状況で fix せず UNRESOLVED にしており、2 サイクルで判断が割れていたため明文化した。
+実例: issue #255 — confirm run の CONFIRMED な Tier2 を (a) の既定で fix し、user チェックポイントを飛ばした (前サイクルの issue #230 では UNRESOLVED にしており、判断が割れていた)。
 
 ## Report format
 
@@ -98,17 +98,15 @@ Then per-perspective details, one line per finding:
 - **Design: split file layout**: this skill's scripts live in `claude/skills/codex-review/scripts/`; the perspective prompts live in `codex/review-prompts/` (codex-facing content). The split is intentional — to tweak a perspective, edit the `.md` under `codex/review-prompts/`.
 - **Running under a shell sandbox** (Claude Code の Bash sandbox 等): 失敗モードは 3 つある。(A) (B) は run-review.sh が exit 3 (SKIP) にし (ERROR ではなく明示的 skip)、(C) は run-review.sh が起動前に CA バンドルを渡して塞ぐ。
 
-  **(A) ハング — watchdog で打ち切る。**2026-09-02 に codex-cli 0.152.1 は、`HTTPS_PROXY` が資格情報つき proxy を指すこの sandbox で HTTP リクエストが**すべて** `error sending request` で失敗し、`responses_retry` の 60s バックオフに入って**終了しなくなった** (issue #335)。(B) の stderr シグネチャ検出は codex が終了しないと走らないので捕まえられない。run-review.sh は codex を background で起動し、`CODEX_REVIEW_TIMEOUT` (既定 300s) を超えたら kill して exit 3 を返す。
-
-  **2026-09-07 の実測 (codex-cli 0.153.4): 同じ sandbox から 3 観点とも完走する。**ハングは再現せず、失敗するのは `chatgpt.com/backend-api/ps/mcp` への MCP 接続だけで、レビュー本体には影響しない。**再現しなくなった原因が codex 側 (0.152.1 → 0.153.4) か sandbox 側かは未確定** — 0.152.1 の再測はしていない。ここには以前「proxy URL に userinfo があれば codex を起動せず SKIP」する preflight を置いていたが、proxy の形は「codex がこの環境で動くか」のプロキシでしかなく、動くようになった後も skill 全体を SKIP させ続けていた。ハングを直接測る watchdog に置き換えて削除した (回帰テスト: `tests/codex-review-skip/` の watchdog-hang ケース)。
+  **(A) ハング — watchdog で打ち切る。**proxy 経由の HTTP リクエストがすべて失敗すると、codex は retry のバックオフに入って終了しないことがある (issue #335)。(B) の stderr シグネチャ検出は codex が終了しないと走らないので捕まえられない。run-review.sh は codex を background で起動し、`CODEX_REVIEW_TIMEOUT` (既定 300s) を超えたら kill して exit 3 を返す (回帰テスト: `tests/codex-review-skip/` の watchdog-hang ケース)。「proxy URL の形を見て codex を起動せず SKIP する」preflight は置かない — proxy の形は「codex がこの環境で動くか」のプロキシでしかなく、以前置いていたものは codex が完走するようになった後も skill 全体を SKIP させ続けた。完走する状態でも `chatgpt.com/backend-api/ps/mcp` への MCP 接続は失敗するが、レビュー本体には影響しない (2026-09-07 実測)。
 
   **(B) filesystem 起因 — 起動後の stderr シグネチャで検出する。**外側シェルが `$HOME/.codex/` 配下の SQLite (`state_*.sqlite` / `goals_*.sqlite` / `memories_*.sqlite`) の write を allow していない場合、`codex` CLI 内部の in-process app-server client が state DB を open できず `failed to initialize in-process app-server client: Operation not permitted (os error 1)` で exit する。run-review.sh はこのシグネチャを検出して exit 3 を返す。
 
-  **(C) TLS 検証 — CA バンドルをファイルで渡して塞ぐ。**codex は既定でシステムの証明書ストアで TLS を検証するが、この sandbox 内ではその検証が通らず、`auth.openai.com` / `chatgpt.com` への接続がすべて `error sending request` で落ちて exit 1 (ERROR) になる (2026-09-25 実測、codex-cli 0.156.1 / 0.157.0)。ドメインは allowlist 済みで、proxy への接続自体は成功している。`CODEX_CA_CERTIFICATE` に CA バンドルを与えると codex は rustls backend に切り替わって完走するので、run-review.sh は `CODEX_CA_CERTIFICATE` / `SSL_CERT_FILE` が未設定のとき Homebrew の `ca-certificates` バンドル (`CODEX_REVIEW_CA_BUNDLE` で変更可) を渡す (回帰テスト: `tests/codex-review-skip/` の ca-* ケース)。codex は渡したバンドルを組み込みのルートに**足す** (自己署名 CA 1 本だけのバンドルでも完走した) ので、信頼を外されたルートを含む `/etc/ssl/cert.pem` は使わない。バンドルが見つからない環境では (C) は塞がらず、SKIP 経路も無いので exit 1 (ERROR) になる。2026-09-07 には渡さずに完走していた。どちらの側が変わったか (codex の検証方式か sandbox か) は未確定。
+  **(C) TLS 検証 — CA バンドルをファイルで渡して塞ぐ。**codex は既定でシステムの証明書ストアで TLS を検証するが、この sandbox 内ではその検証が通らず、`auth.openai.com` / `chatgpt.com` への接続がすべて `error sending request` で落ちて exit 1 (ERROR) になる (2026-09-25 実測。ドメインは allowlist 済みで、proxy への接続自体は成功していた)。`CODEX_CA_CERTIFICATE` に CA バンドルを与えると codex は rustls backend に切り替わって完走するので、run-review.sh は `CODEX_CA_CERTIFICATE` / `SSL_CERT_FILE` が未設定のとき Homebrew の `ca-certificates` バンドル (`CODEX_REVIEW_CA_BUNDLE` で変更可) を渡す (回帰テスト: `tests/codex-review-skip/` の ca-* ケース)。codex は渡したバンドルを組み込みのルートに**足す** (自己署名 CA 1 本だけのバンドルでも完走した) ので、信頼を外されたルートを含む `/etc/ssl/cert.pem` は使わない。バンドルが見つからない環境では (C) は塞がらず、SKIP 経路も無いので exit 1 (ERROR) になる。
 
   回避策は 2 通り:
 
   1. **sandbox 外で実行** ((A) / (B) どちらにも効く) — user が別 terminal で `bash "$HOME/.claude/skills/codex-review/scripts/run-review.sh" <perspective>` を叩き、出力を PR body / evidence に paste。
-  2. **Claude Code settings で許可を拡張** ((B) に効く。(A) のハングは許可の問題ではないので、これで防げるものではない) — `~/.claude/settings.json` の `permissions` で `~/.codex/**` を write allow に、network allowlist に `chatgpt.com` + `auth.openai.com` (auth mode = chatgpt の場合) または `api.openai.com` (API key の場合) を追加。ChatGPT auth では実 API call でも `chatgpt.com/backend-api/` を叩くため、SQLite だけでなく network 側も allow が必要。加えて token refresh は `auth.openai.com` の OAuth endpoint を叩くため、`chatgpt.com` だけでは refresh 時に exit 1 になる (chatgpt.com のみ許可した状態で 3 回連続失敗した実例あり)。
+  2. **Claude Code settings で許可を拡張** ((B) に効く。(A) のハングは許可の問題ではないので、これで防げるものではない) — `~/.claude/settings.json` の `permissions` で `~/.codex/**` を write allow に、network allowlist に `chatgpt.com` + `auth.openai.com` (auth mode = chatgpt の場合) または `api.openai.com` (API key の場合) を追加。ChatGPT auth では実 API call でも `chatgpt.com/backend-api/` を叩くため、SQLite だけでなく network 側も allow が必要。加えて token refresh は `auth.openai.com` の OAuth endpoint を叩くため、`chatgpt.com` だけでは refresh 時に exit 1 になる。
 
   この dotfiles の `claude/settings.json` は回避策 2 を配線済みで (`sandbox.filesystem.allowWrite` に `~/.codex`、`sandbox.network.allowedDomains` に `chatgpt.com` + `auth.openai.com`)、(C) の CA 指定と併せて **sandbox 内から codex-review が回る** (2026-09-25 実測)。回避策 1 は watchdog が SKIP を返したときの退避先として残す。write allow を SQLite ファイルに絞らずディレクトリ単位にしているのは、codex CLI が sessions/ / history.jsonl / log/ / auth.json (token refresh) 等にも書き込むため。`excludedCommands` に `codex *` を足す案は sandbox を丸ごと外すので採らない — path/domain を絞る現方式で足りていることが実測で確かめられた。

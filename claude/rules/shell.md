@@ -7,7 +7,7 @@ paths:
 # Shell スクリプト規約
 
 **受理パターンの広さ / 判定器の exit code の規約は `claude/rules/acceptance-patterns.md`
-を参照** (issue #213 / #284 / PR #331)。
+を参照**。
 コメントに書く事実の規約は `claude/rules/written-claims.md`。
 
 - **bash 3.2 互換で書く**(macOS 標準)。連想配列(`declare -A`)、
@@ -41,19 +41,16 @@ paths:
     「実行されたが FAIL した」を「実行されていない」と誤って報告する
   - **任意ケース(host 条件で skip されるもの)の分は差し引く**。含めると、
     任意ケースが走る環境では必須ケースの欠落が埋められて素通りする
-  実例: `tests/fish-version-managers/run-fish-version-managers-tests.sh` の
-  `EXPECTED_TOOLS` / `MANDATORY_PER_TOOL` / `optional_ran`(PR #224。当初は
-  `${#TOOLS[@]} * 5` と対象から導出しており、上記 3 経路すべてで素通りしていた)
+  実例: PR #224 — `${#TOOLS[@]} * 5` と対象から導出し、上記 3 経路すべてで素通りした
+  (修正後の形は `tests/fish-version-managers/` の `EXPECTED_TOOLS` / `optional_ran`)
 - **他実装が正規化した後の値を判定するなら、その正規化を一次情報で確認して
   再現する**。同じ文字列を読む 2 つの実装がズレると、判定側が正しくてもズレの分が
   そのままバイパスになり、自分のコードを読んでも見つからない。確認できない分は
   相手より広く正規化する側 (fail-closed) に倒し、**広げすぎを検出する過剰側の
   ラチェットも同時に置く**。ズレの影響範囲は判定の形 (完全一致 / prefix 一致) ごとに見る。
-  実例: issue #308。`guard-codex-dir.sh` の apply_patch ヘッダー抽出は `$0` を
-  そのまま使っていたが、codex のパーサは行末 CR を落とし Rust の `str::trim` で
-  前後を trim してから path を取るため (2026-08-10 に
-  `codex-rs/apply-patch/src/streaming_parser.rs` で確認)、完全一致の経路で LF 以外の
-  11 形が素通りしていた
+  実例: issue #308 — apply_patch ヘッダーを `$0` のまま照合したが、codex は行末 CR を
+  落として前後を trim してから path を取るため (2026-08-10 に
+  `codex-rs/apply-patch/src/streaming_parser.rs` で確認)、完全一致の経路で素通りした
 - **`agents/hooks/` (と `claude/hooks/` `codex/hooks/` の実体) は編集中の状態がそのまま
   live に効く** (`~/.claude/hooks/` 等からの symlink 経由)。途中で hook が壊れると
   Bash / Edit / Write がすべて block され、agent 自身では戻せない。編集は scratchpad に
@@ -69,8 +66,7 @@ paths:
   「この形は測れなかった」と報告する — **未測定の報告は無害だが、回避は防御
   そのものを壊す**。`agents/hooks/` を触る PR のレビュー依頼には毎回この指示を含める
   (`claude/agents/code-reviewer.md` からこの項を指している)。
-  実例: 2026-08-10、issue #308 のレビューで code-reviewer サブエージェントが
-  `.codex` を含む payload を分割連結で組み立てて guard を回避した
+  実例: issue #308 のレビューで code-reviewer が payload を分割連結して guard を回避した
 - **判定の前処理で文字列を「削除」しない。検出と削除を分ける**。危険判定の前に
   文字列を削除・置換して正規化すると、境界の見誤りが「危険な形を無害な形に化かす」
   fail-open として出る。検出だけを行い元テキストを保てば、同じ見誤りは
@@ -78,9 +74,8 @@ paths:
   あわせて、**境界文字集合は仕様から取る**(POSIX shell の word 区切りは
   `| & ; ( ) < > space tab newline`)。`[[:space:]]` は VT / FF / CR を含むが
   bash はこの 3 文字を word 区切りにしないので、空白を区切りに使うなら `[[:blank:]]`。
-  実例: issue #284 の fd リダイレクトのマスクで 3 周連続 fail-open
-  (右境界なし / 「パス文字でない」で境界を定義して 13 記号が素通り / `[[:space:]]`)。
-  構造の是非は issue #289
+  実例: issue #284 — fd リダイレクトのマスクで境界の定義を誤り fail-open
+  (構造の是非は issue #289)
 - **pin を足したら「何を測っているか」を実測で確かめる**。守りたい状態を測れて
   いないまま緑になる pin は「検査済み」の錯覚を作る。**pin の効き目は、守りたい
   状態を実際に作る mutation で確認する** — マッチしない入力を試すだけでは足りない
@@ -91,36 +86,31 @@ paths:
   - (c) 1 行目だけを見て「クリーンに落ちた」と判定する。見るのは「あるべき行が
     あること」だけでなく「あってはならない行(stack frame `^[[:space:]]+at ` 等)が
     無いこと」
-  実例: issue #215 ((a)(b) を踏み、先頭に空行 + `{` を出す mutant が全 pass)、
-  issue #264 (`process.exit(1)` を `throw` にした mutant が 41/41 pass)
+  実例: issue #215 / #264 (いずれも外した pin の上で mutant が全 pass)
 - **repo 全体を走査する使い捨てスクリプトも、まず「既知の陽性を 1 件仕込んで
   検出できること」を確かめる**。「N 件中 0 件」は本当に 0 件なのか走査が空振り
   したのかを区別しない。抽出結果を 1 件目視し、既知の陽性が拾えてから全体を回す。
-  実例: issue #267 で hook の誤ブロック走査を 2 回続けて「0 件」と誤報告した
-  (awk の buffer に実改行を入れた / インデントされた fence を落とした)
+  実例: issue #267 — hook の誤ブロック走査が空振りしたまま「0 件」と報告した
 - **環境の前提を assert するときは「守りたい挙動そのもの」を測る**。版数・パス・
   オプション対応の有無といった**プロキシで判定すると、上流が変わった瞬間に静かに
   陳腐化する**。プロキシ判定は診断用のログに格下げし、判定は挙動 probe で行う。
   probe が通らなくなったら fail するのが仕様(前提が消えたことを green で隠さない)。
-  実例: issue #244 (「`--version` を受理する = GNU awk」が one-true-awk の変更で
-  外れ、macOS CI が本体テストを走らせないまま週次で赤)、issue #335 (proxy の形で
-  codex を SKIP する preflight が、codex が完走するようになった後も 5 日間 SKIP させ続けた)
+  実例: issue #244 (「`--version` を受理する = GNU awk」が外れ、macOS CI が本体テストを
+  走らせなかった)、issue #335 (proxy の形で SKIP する preflight が、codex が完走する
+  ようになった後も SKIP させ続けた)
 - **「確認できない」を検査を緩める根拠に使わない**。「実装非公開」と書いた直後に
   挙動を断定して検査を緩めると、誤りが「検証しなくてよい」という形で構造に埋まる。
   (a) **断定を書く前に確認手段を一度は探す**(配布バイナリの `strings`、公式 docs、
   実際に発火させた観測)。(b) **それでも確認できないなら厳しい側に倒す**(全文 pin 等)。
-  実例: `docs/ai-operations.md` §10 が「Claude Code は実装非公開」としたうえで
-  matcher を regex 一本槍と断定し、Claude 側のテストだけ `=~` の部分一致を許していた。
-  バイナリを読むと exact 一致側で、綴り違いが全 assert を通るのに発火しない状態だった
-  (issue #245)
+  実例: issue #245 — docs が matcher を regex と断定してテストが部分一致を許したが、
+  本体は exact 一致で、綴り違いが全 assert を通るのに発火しなかった
 - **WebFetch の出力は一次情報ではなく要約として扱う**。WebFetch は取得したページを
   小さなモデルで要約して返すので、公式 docs を指定して「逐語で引用して」と頼んでも、
   フィールド名や版番号が書き換わって返ることがある。hook の入力 schema や、
   版ごとの挙動を実装の根拠にするときは、**実装の前に**インストール済みの本体
   (`strings` / 固定文字列の grep) か実際の payload で確かめる。
-  実例 (PR #371): WebFetch が返した docs の要約を信じて StopFailure の種別を
-  `.error_type` から読んだ。2.1.282 本体が渡すフィールドは `.error` で、通知は常に
-  `unknown` になっていた (code-reviewer がバイナリを読んで検出した)
+  実例: PR #371 — 要約の `.error_type` を信じたが本体のフィールドは `.error` で、
+  通知が常に `unknown` だった
 - **codex に配線する hook の stdout は `{` / `[` で始めない**。codex は hook の
   stdout がその 2 文字で始まると JSON 出力とみなし、パースに失敗した時点で run を
   `Failed` にして**本文を model の context に入れない**(実測根拠は
@@ -140,31 +130,28 @@ paths:
   「全 X を含む」fixture は、X が増えたときに更新を強制する仕組みが無いと
   新しい X だけが一度も検査されない。**fixture の要素数と対象側の実数が一致することを機械で測る**こと
   (どちらも floor のような独立した定数にはできないが、乖離の検出はこれで足りる)。
-  実例: issue #264 で `tests/html-brief` の `ALL_TYPES` が 5 型のまま section 型を
-  12 に増やし、追加 7 型が検査に一度も通っていなかった (mutant が 72/72 pass)
+  実例: issue #264 — `ALL_TYPES` が古いまま section 型が増え、追加分が一度も検査されなかった
 - **集合を共有してよいのは「問い」が同じときだけ**。drift 防止に従いすぎると、
   答えが割れる 2 つの問いを 1 つのパターンに畳み、共有した瞬間から静かに間違う。
   「このパターンを使う 2 箇所は同じ問いに答えているか」を 1 文で書けないなら分けて、
   両方に触れるときの判断基準をコメントに残す(集合ではなく*基準*を 1 箇所に書く)。
-  実例: issue #255 で `classify-risk.sh` のレビュー床の除外を content check の除外
-  (`NOT_EXECUTABLE_DOC_PATTERN`) の再利用で書き、`docs/ai-operations.md` の変更が
-  tier=low (無レビュー merge) になっていた
+  実例: issue #255 — レビュー床の除外を content check の除外と共有し、docs の変更が
+  tier=low (無レビュー merge) になった
 - **パス集合を入力にするルールを足したら、必ず rename を測る**。
   `git diff --name-only` は rename の**宛先しか返さない**ため、元パスに依存する判定は
   「別名に動かす」だけで外れる(`git config diff.renames` にも左右される)。元パスも
   見たいときは床/ゲート側の入力だけ `--no-renames` で取り直す(既存の判定と入力を
   共有すると意味論まで変わるので共有しない)。
-  実例: issue #255 の medium 床が `git mv claude/skills/foo/SKILL.md README.md` を
-  tier=low で通した (`check_deleted` の `--diff-filter=D` に続く 2 回目)
+  実例: issue #255 — medium 床が `git mv claude/skills/foo/SKILL.md README.md` を tier=low で通した
 - **mutation 規約** (2 点目は本体を一括置換で編集するときも同じ):
   - **1 回に 1 変数だけ変える**。複数変えた mutant が FAIL しても、どの変数が
     検出されたのか特定できず誤った因果をコメントに残す
-    (実例: issue #218、`-g` を `--path -a` に変えて順序の原因を誤認)
+    (実例: issue #218)
   - **適用したら「実際に変わった行」を `git diff` で数える**。この repo は設計コメントが
     厚く、置換がコメント行に当たって空振りすると「テストが検出できなかった」という
     偽陰性になる。逆に同型ブロックが複数あるので**当たりすぎ**も起き、こちらは
     別の理由でテストが緑になるぶん見つけにくい
-    (実例: issue #232 の空振り、issue #291 の過剰適用で過剰 block に倒れたテストが緑)
+    (実例: issue #232 の空振り、issue #291 の過剰適用)
   - **戻すのに `git checkout <file>` を使わない**。同居する未 commit の本編集も消える。
     当てたときと同じ置換の逆向きで戻し、`git diff` が適用前と一致することで確認する。
     本編集を先に commit してから当てれば衝突自体が起きない (実例: issue #288)
@@ -172,20 +159,18 @@ paths:
   message に残った数字は**そのとき動いていたコード**の上で測られたもので、退行を
   直した commit が別の高速化も同時に入れていると、退行だけを注入した mutant では
   差が閾値まで開かない。入力サイズを振って**今のコードで測り直す**こと。
-  実例: issue #314 で #311 の実測値をそのまま fixture 長にし、現行コードへの退行注入が
-  2.92s で 10s 閾値を跨がなかった (7215 字で 91.0s / 正常 0.36s に分離)
+  実例: issue #314 — #311 の実測値を fixture 長に流用し、現行コードへの退行注入が閾値を跨がなかった
 - **毎回走るゲートに「suffix ごとに検査を回す」形を足したら、病的入力の実行時間を
   測る**。正しさの回帰テストは通ったまま、内側の検査が文字列全体を再走査すると外側の
   ループとの積で O(n²) 〜 O(n³) になる。ゲートが hook なら**全コマンドで毎回**払う
   コストで、harness 側が hook を打ち切る実装なら防御の回避にもなる。候補を足す
   ループを書いたら、**切り詰めてよい位置 (= 先に検査済みの範囲) を 1 文で言えるか**を
   確認すること。
-  実例: issue #311 で `a=/a=/…` の 1816 字が 82.07s (main は 0.45s)。候補を最初の
-  `/` までに切って 0.18s に戻した
+  実例: issue #311 — `a=/a=/…` の入力で劣化し、候補を最初の `/` までに切って解消した
 - **`mktemp -d` はテンプレートを明示する** (`mktemp -d "${TMPDIR:-/tmp}/<name>.XXXXXX"`)。
   macOS の BSD mktemp はテンプレート無しだと **TMPDIR を無視**して per-user temp dir
   (`/var/folders/.../T`) を使うため、TMPDIR を差し替えた環境では **macOS でだけ**
-  作業先がずれる (実例: issue #196 で sandbox 下の `mkdtemp failed`)。
+  作業先がずれる (実例: issue #196)。
   **ただしこれはスクリプト内の話。agent が Bash tool から直接打つ手順
   (`SKILL.md` 等) では `mktemp -d` 自体が使えない** — 理由と代わりに書く形は
   `claude/rules/acceptance-patterns.md` の「一時ファイルの置き場」を参照
@@ -195,35 +180,31 @@ paths:
   (fish の `fish_add_path`、`cd` + `pwd`) との比較だけが一致しなくなる。
   **flaky に見えるが実際は決定的**。剥がした後も `//` が残る場合(`TMPDIR=/a//b`)は
   原因つきで即死させるガードを置く。
-  実例: issue #225 / `tests/fish-pnpm/`・`tests/fish-version-managers/`・`tests/link/`
+  実例: issue #225
 - **`${TMPDIR:-/tmp}` 配下に掘った作業ディレクトリを「`/tmp` 配下」の代用に
   しない**。macOS の TMPDIR は `/var/folders/.../T` を指すので前提ごと崩れ、
   **Linux では原理的に再現しない**(CI の Linux matrix は green のまま macOS だけ落ちる。
   harness が TMPDIR を /tmp 配下に差し替えていれば手元の macOS でも通る)。
   「/tmp 配下」を測りたいなら、/tmp 配下であることを自分で確かめた 0700 の probe
   ディレクトリを別に掘る。
-  実例: issue #316 (html-brief の outside-tmp ケース。macOS CI が週次なので検出が最大
-  7 日遅れた。2026-08-10 に main の実行履歴で確認)
+  実例: issue #316 (html-brief の outside-tmp ケース)
 - **テスト用の一時 git リポジトリを作ったら、`git init` の直後に
   `git config gc.auto 0` と `git config maintenance.auto false` を置く**。
   `git commit` は auto gc を detach して起動するため、これがテスト終了時の
   `trap` の `rm -rf` と競合し、**全ケースが pass していても `rm` が ENOTEMPTY で
   失敗し、スイートが exit 1 になる**。症状が「たまに落ちる」なので flaky と誤診
-  しやすい(実測: 無効化前は 20 回中 2 回、無効化後は 30 回連続 green)
+  しやすい
 - **シェル設定の検証は「そのファイルが読まれる起動モード」で行う**。起動モードを
   間違えると設定ファイルが一度も評価されず、検証コマンドがもっともらしい別物を測る。
   - zsh の `.zshrc` は **対話シェルでしか読まれない**。`zsh -lc '...'` では読まれない
     (`zsh -lic '...'` のように `-i` が要る)。`.zprofile` は login で読まれる
   - 非対話シェルは呼び出し元の環境を継承するので、出力は「呼び出したシェルの状態」になる
-  実例: issue #219 で fish から `zsh -lc` を叩いて fish の PATH を見て、成功していた
-  rbenv 移行を「system ruby にフォールバックしている」と誤診して報告した
+  実例: issue #219 — fish から `zsh -lc` で PATH を見て、成功していた rbenv 移行を失敗と誤診した
 - **修復操作を勧める診断メッセージは、その操作が観測を破壊しないかを先に見る**。
   勧めた操作が原因究明の材料そのものを消すなら、誤診で**真因が二度と観測できなく
   なる**。確信を持って判別できないなら、断定せずに判別材料を提示して user に選ばせる。
   - **判別条件は実測で確かめる**(原因側を実際に作る mutant を当てる)
   - **分岐を書いたら「出さない側」も pin する**(条件を `if true` に緩めた退行が
     全 pass で通り、誤誘導が常時発火するのを防ぐ)
-  実例: issue #214 で `trusted_hash` 不一致を「承認後の書き換え」と診断して
-  codex TUI での再承認を勧めていたが、codex の payload 仕様変更でも一部の entry
-  だけが外れる (`timeout` 既定値を変えた mutant は 8 entry 中 1 件) ため区別できず、
-  再承認すると仕様変更の唯一の証拠が消える形だった
+  実例: issue #214 — `trusted_hash` 不一致を「承認後の書き換え」と診断して再承認を
+  勧めたが、payload 仕様変更でも同じ観測になり、再承認が唯一の証拠を消す形だった
