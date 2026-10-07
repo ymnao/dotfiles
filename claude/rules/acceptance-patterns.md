@@ -24,10 +24,11 @@ paths:
   (`bash "$A" && bash /tmp/evil.sh` の後半) と、`[^"]+` が空白を含み後続コマンドごと
   1 個のパスに吸い込む形。どちらも「未知の形は fail」は満たしていた。
   あわせて、**パターンだけでなく判定器の exit code も主張の一部**として
-  両方向で測る (`tests/branch-name-validator/` が修正後の式を pin している)。`awk` の main rule の `exit` は END を実行し、END 側の `exit <expr>` が
+  両方向で測る。`awk` の main rule の `exit` は END を実行し、END 側の `exit <expr>` が
   status を上書きするため (`printf 'x\n' | awk '{exit 7} END{exit 3}'` は 3)、
   `... {exit 1} END{exit NR!=1}` は 1 行入力なら何でも exit 0 になる
-  (実例: PR #331 — この形が `foo$(id);x` を受理していた)
+  (実例: PR #331 — この形が `foo$(id);x` を受理していた。`tests/branch-name-validator/`
+  が pin しているのは修正後の式の exit code で、壊れた形そのものは pin していない)
 - **外部由来の名前 (ref 名・PR title・package 名) をコマンド文字列に書き込まない**。
   git は ref 名に shell のメタ文字を許す (`git check-ref-format --branch 'foo$(id);x'`
   は exit 0)。この repo は public で、`/issue` は issue title からブランチ名を作るので、
