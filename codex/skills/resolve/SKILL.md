@@ -18,7 +18,7 @@ Execute these steps faithfully in order. Do not skip steps or make independent j
 2. Fetch unresolved review threads:
    ```bash
    gh api graphql \
-     -F query=@"$HOME/.codex/skills/resolve/queries/unresolved-threads.graphql" \
+     -F query=@"$HOME/.agents/skills/resolve/queries/unresolved-threads.graphql" \
      -f owner=<owner> -f repo=<repo> -F number=<pr_number> \
    | jq --argjson pr_number <pr_number> '{
        pr_number: $pr_number,
