@@ -22,7 +22,7 @@ Run each `gh` command as a bare invocation and substitute prior output literally
    - 0 matches → proceed / ≥1 match → report the PR URL and stop
 3. Pre-check: if `commit_count` is 0 → report no commits from base branch and stop
 4. Classify risk and run tier-appropriate review (do NOT skip this step):
-   - Run `bash "$HOME/.claude/skills/pr/scripts/classify-risk.sh" <base_branch>` — yields `{"tier": ..., "reasons": [...]}`。この JSON 出力は応答本文に **verbatim** で転記する
+   - Run `bash "$HOME/.claude/skills/pr/scripts/classify-risk.sh" <base_branch>` — yields `{"tier": ..., "reasons": [...]}`。この JSON 出力は応答本文に **verbatim** で転記する(evidence の「リスク分類」に tier と reasons をそのまま載せるため)
    - **low**: if the project defines lint / typecheck commands, run them and fix failures. No review needed.
    - **medium**: run the codex-review `security` perspective (follow the codex-review skill's detect→verify→apply→confirm steps for that one perspective). Also run the project's test suite if one exists.
    - **high**: run all 3 codex-review perspectives AND the project's test suite. Then do the explain-the-diff walkthrough (step 5).

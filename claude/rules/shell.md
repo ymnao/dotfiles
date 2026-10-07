@@ -8,7 +8,7 @@ paths:
 
 **受理パターンの広さ / 判定器の exit code の規約は `claude/rules/acceptance-patterns.md`
 を参照** (issue #213 / #284 / PR #331)。
-コメントに書く事実の規約は `claude/rules/written-claims.md` (`.sh` でもロードされる)。
+コメントに書く事実の規約は `claude/rules/written-claims.md`。
 
 - **bash 3.2 互換で書く**(macOS 標準)。連想配列(`declare -A`)、
   `${var,,}` / `${var^^}`、`readarray` は使わない。小文字化は
