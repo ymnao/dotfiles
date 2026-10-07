@@ -74,9 +74,7 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      含むときだけ**。
      **diff 非空を条件にしない** — 自分の PR の後に Dependabot PR 等が
      merge されれば diff は必ず非空になり、unlink 制限と無関係な merge の
-     たびに user を止めることになる (2026-08-08 実測: PR #294 merge 後の
-     diff は #295 の `.github/workflows/test.yml` 1 件だけで、checkout は
-     unlink エラー無しに成功した)
+     たびに user を止めることになる
    - **既に main checkout 済みで `git pull` が unlink 失敗**:
      この状況は origin/main が locked file を書き換えている場合に発生
      するため、local main の working tree は古い locked file が残った
@@ -94,8 +92,6 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
         この確認を飛ばすと上記の禁止手順と同じ事故になる
      4. `git update-ref refs/heads/main <new>` → `git reset` (mixed)
      5. `git status --porcelain` が空になることを確認する
-     実測: 2026-08-06 に PR #278 (skills 2 ファイル) の pull でこの手順を
-     使い、`git diff` 空 → ref 前進 → clean を確認した
 3. **ブランチ削除**: merge 済みの作業ブランチを `git branch -d` で削除する。
    これも config lock の警告を出しながら削除には成功するので、
    `git branch -d -- "$(cat <scratchpad>/merged-branch.txt)"` と `git branch` を
@@ -113,7 +109,8 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
    - `--` を置くのは、`-` で始まる ref 名が `git branch` のオプションとして
      読まれるのを防ぐため
    - **`-d` が拒否されたら** (squash merge の repo では元コミットが main の
-     祖先にならないため毎回こうなる)、`-d` の安全判定を代替する次の 2 点を
+     祖先にならないため毎回こうなる。remote ブランチは deleteBranchOnMerge で
+     merge 時に消えているので、残るのはローカルだけ)、`-d` の安全判定を代替する次の 2 点を
      **step 1 で取った値と照合してから** `-D` を使う。どちらか一方でも
      欠けたら `-D` は使わず**報告して停止する** (step 1 を通過している時点で
      PR が MERGED であることは確定しているので、ここでは確認しない)。
@@ -136,16 +133,6 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      上の 2 点は後続 merge に影響されない
    - 上記 2 点を確認できていれば user に都度確認を取らない。squash merge は
      毎サイクル発生するため、確認を挟むと定型質問が毎回入る
-   - 実測: 2026-08-17 に ghirgana で 3 回発生 (PR #11 / #12 / #20 の後始末)。
-     remote ブランチは deleteBranchOnMerge で merge 時に消えているので、
-     残るのはローカルだけ
-   - 実測: 2026-08-23 に dotfiles PR #324 で `gh pr view` が
-     `state,mergedAt,url,headRefOid,mergeCommit` の 5 値を 1 回で返すことを
-     確認した。`git merge-base --is-ancestor` は祖先 exit 0 / 非祖先 exit 1 /
-     object 不在 exit 128 (`fatal: Not a valid commit name`)。旧条件の誤停止は
-     scratch repo で再現した — main 側で既存 1 行を書き換えると、完全に squash
-     merge 済みのブランチに対して main との差分が
-     `+<書き換え前の行>` を出す
 4. **学びの昇格チェック**: このセッションで CLAUDE.md / skill / memory に
    昇格すべき学び (同じ指摘を 2 回受けた・skill の手順が実態とズレていた等)
    がないか振り返り、あれば提案する (勝手に書き換えない)。
@@ -181,8 +168,8 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      摩擦を生むことが知られており (kubernetes/kubernetes#103151)、判断は人が持つ
 
    **目的側 (日常設定の摩擦) の取りこぼしをここで user に聞かない。**
-   頻度や閾値を付けた縮小版も置かない (経緯は `.claude/backlog.conf` の
-   コメント。同じ目的の機構を 2 世代廃止している)。
+   頻度や閾値を付けた縮小版も置かない (理由は `.claude/backlog.conf` の
+   コメント)。
 
    なお、**この節の計測自体を作り込まない**。集計スクリプトや eval を足したく
    なったら、それは「改善機械を改善する機械」であり本末転倒のサイン。gh の
