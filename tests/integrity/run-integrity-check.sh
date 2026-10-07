@@ -95,6 +95,14 @@ if [ -d "$H/.codex" ]; then
   fi
 fi
 
+# codex は skill 探索でファイル symlink を捨てる (openai/codex#15756)。共有は skill ディレクトリごとの symlink で行う
+for d in "$DOTFILES/codex/skills"/*/; do
+  if [ -L "${d}SKILL.md" ]; then
+    echo "NG: ${d}SKILL.md がファイル symlink (codex に読まれない)"
+    fail=1
+  fi
+done
+
 # 3. ~/.claude.json の MCP 定義
 cj="$H/.claude.json"
 allowlist="$SCRIPT_DIR/allowed-mcp.txt"

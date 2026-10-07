@@ -12,7 +12,7 @@ Run each `gh` command as a bare invocation and substitute prior output literally
 1. Resolve the default branch and gather local branch info:
    - Run `gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name'` — yields the default branch (e.g. `main`)
    - If that fails (no GitHub remote), use the empty string; the script falls back to `refs/remotes/origin/HEAD`
-   - Run `bash "$HOME/.codex/skills/pr/scripts/gather-branch-info.sh" <default-branch>` substituting the value literally
+   - Run `bash "$HOME/.agents/skills/pr/scripts/gather-branch-info.sh" <default-branch>` substituting the value literally
 2. Check for an existing OPEN PR for this branch (avoids creating a duplicate):
    - Run `gh repo view --json owner --jq '.owner.login'` — yields `<owner>`
    - Run `gh pr list --state open --limit 100 --json number,url,headRefName,baseRefName,headRepositoryOwner` as a bare invocation, then read the output and keep the rows whose `headRefName` equals `branch_name`, `baseRefName` equals `base_branch`, and `headRepositoryOwner.login` equals `<owner>`
@@ -22,7 +22,7 @@ Run each `gh` command as a bare invocation and substitute prior output literally
    - 0 matches → proceed / ≥1 match → report the PR URL and stop
 3. Pre-check: if `commit_count` is 0 → report no commits from base branch and stop
 4. Classify risk and run tier-appropriate review (do NOT skip this step):
-   - Run `bash "$HOME/.codex/skills/pr/scripts/classify-risk.sh" <base_branch>` — yields `{"tier": ..., "reasons": [...]}`
+   - Run `bash "$HOME/.agents/skills/pr/scripts/classify-risk.sh" <base_branch>` — yields `{"tier": ..., "reasons": [...]}`
    - **low**: if the project defines lint / typecheck commands, run them and fix failures. No review needed.
    - **medium**: run the project's test suite if one exists. Independent AI review is
      NOT available in this harness (codex reviewing its own diff is self-review, which
