@@ -76,7 +76,7 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      打たない) → 空、または locked path を含まなければ
      `git checkout main`。この fetch は `fatal: failed to store: 100001` を
      出しながら ref の更新には成功する (proxy の資格情報を credential
-     helper に保存できないため。CLAUDE.md「変更時の注意」)。**`fatal:` で中断しない**。ただし成否をエラー文言で判定
+     helper に保存できないため。`docs/sandbox-git.md`)。**`fatal:` で中断しない**。ただし成否をエラー文言で判定
      するのも誤り (通信 / 認証 / remote 不在でも別の文言が出る) なので、
      **`git ls-remote origin refs/heads/main` と `git rev-parse main` の
      SHA が一致すること**を fetch の成功条件にする。

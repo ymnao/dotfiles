@@ -92,7 +92,7 @@ dotfiles/
 ├── agents/         # AI エージェント共通設定（AGENTS.md、hook 正本）
 ├── claude/         # Claude Code 設定（settings/skills/agents/rules/statusline）
 ├── codex/          # Codex CLI 設定
-├── docs/           # 運用ドキュメント（ai-operations.md）
+├── docs/           # 運用ドキュメント（ai-operations.md、sandbox-git.md）
 ├── tests/          # 設定・hook の回帰テスト
 ├── fish/           # Fish設定（macOS/Linux）
 ├── git/            # Git設定
