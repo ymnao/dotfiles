@@ -18,8 +18,8 @@ sandbox 内の git は、次の 2 種類のエラーを出しながら**本体�
 
 `fatal:` を失敗と読んで中断しない。成否はエラー出力ではなく**結果の状態**で確かめる
 (push / fetch は `git ls-remote` の remote SHA と手元の SHA の一致、削除は
-`git branch` の出力)。push に `-u` を付けないのは、`.git/config` への upstream 設定の
-書き込みだけが `error: unable to write upstream branch configuration` で失敗するため。
+`git branch` の出力)。push に `-u` を付けないのは、1 の lock 失敗で upstream 設定の
+書き込みだけが `error: unable to write upstream branch configuration` を出すため。
 
 `git ls-remote --heads` には `refs/heads/` を付けた完全な ref を渡す。短い名前は ref の
 末尾一致になり、別ブランチの行を拾う (`git ls-remote --heads origin bump-actions` は
@@ -29,8 +29,8 @@ sandbox 内の git は、次の 2 種類のエラーを出しながら**本体�
 
 sandbox の denyWithinAllow に入っているパス (settings 系・skills 系・hooks 系・
 agents / rules など、`~/.claude/` 配下へ symlink する設定資産。完全な列挙は harness の
-Filesystem policy が正本) は、Bash 経由の git から unlink できない。Edit / Write tool
-では書ける。そのため、これらのパスの中身を書き換える checkout / pull / merge は失敗するか、
+Filesystem policy が正本) は、Bash 経由では書き込めない (git の unlink を含む)。
+Edit / Write tool では書ける。そのため、これらのパスの中身を書き換える checkout / pull / merge は失敗するか、
 半端な状態を残す (以下の各節)。
 
 ## remote 追跡ブランチへ移る: config を書かない 2 段階
@@ -84,4 +84,4 @@ HEAD 不動で、`checkout -b` のような半端な状態は残らない)。
 3. Bash の cwd が本体に戻るので PR は `gh pr create -R … --head <branch>` の形になり、
    verify-ci-before-pr hook が止める (cwd の HEAD の CI しか見られないため。#382)。
    回避は hook の stderr に従う。`--head` には自分で切ったブランチ名だけを渡す
-   (理由は `/pr` skill step 2)
+   (理由は `claude/rules/acceptance-patterns.md` の「外部由来の名前」の項)

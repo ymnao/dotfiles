@@ -26,10 +26,10 @@ fail-loud になる場所の版数固定はこの規約の対象外**(eval 実�
 
 | 役割 | モデル | effort | 用途 |
 |---|---|---|---|
-| メイン(統括・意思決定・実装) | Opus 世代 | high(難所は xhigh) | 全体制御・decisions・並列調整・実装・軽 verify・PR 作成 |
+| メイン(統括・意思決定・実装) | Opus 世代 | high(難所は xhigh) | 全体制御・decisions・並列調整・実装・PR 作成 |
 | **plan 立案**(非自明タスク) | **Fable 世代** | - | `/dev` step 2 の変更ファイル・実装手順・考慮点の立案。self-preference bias 回避 + 推論深度確保のためメイン Opus からサブエージェント委譲 |
 | 並列 fan-out(中軽度並列) | Sonnet 世代 | high | /simplify の観点別 finder、多点調査 |
-| 独立第二意見(別モデル系統) | Fable 世代など | - | fresh context のレビュー、難しい設計判断、cascade でメインが疑わしいと判定したときのエスカレーション先 |
+| 独立第二意見(別モデル系統) | Fable 世代など | - | fresh context のレビュー、難しい設計判断 |
 | 探索・情報収集 | Haiku 世代 | - | 軽い調査・ファイル探索 |
 
 **実測 (2026-09-26 / `claude` 2.1.282)**: メインは Opus 5.5 (`claude-opus-5-5`)、
@@ -113,8 +113,6 @@ agent の Bash sandbox 内で `codex-review` が回るかどうか、回すた�
 - **並列 fan-out は中モデル + orchestrator パターンが上位モデル単体より
   高性能かつ安い**: Anthropic の multi-agent research system の実測で
   Opus lead + Sonnet subagent が単体 Opus を 90.2% 上回った
-- **cascade 型エスカレーション**(中モデル実装 → メイン軽 verify → 疑わし
-  ければ第二意見)が静的割り当てよりコスト最適(FrugalGPT 系サーベイ)
 - **委譲は「自己完結タスク → 結果を返す型」に限る**: 逐次質問往復は
   fresh context の利点を消すのでメインで拾う
 
@@ -1243,7 +1241,7 @@ enforce したいなら managed (policy) 設定に置く。この repo は正本
   user 書き込み可能な repo への symlink にすると、**agent が Edit tool で
   policy を書き換えられる**(`~/.claude/settings.json` が実際にそうなって
   いるとおり、Edit 経路には sandbox の denyWrite が効かない —
-  memory `project_settings_files_sandbox_lock`)。policy を repo に
+  `docs/sandbox-git.md`「削除を拒否するパス」)。policy を repo に
   symlink するのは権限昇格の経路を自分で作ること
 - macOS の配置先 `/Library/Application Support/ClaudeCode/` は agent から
   書けない。**塞いでいるのは OS の権限**(`root:admin` の `drwxr-xr-x` で

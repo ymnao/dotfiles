@@ -54,8 +54,7 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
 2. **main 更新**: `git checkout main` → `git pull origin main --ff-only`。
    sandbox が削除を拒否するパス (settings 系・skills 系・hooks 系など。
    説明は `docs/sandbox-git.md` の「削除を拒否するパス」節) に触る PR
-   では unlink 制限で
-   checkout / pull / reset --hard が失敗する。状況別 workaround:
+   では unlink 制限で checkout / pull / reset --hard が失敗する。状況別 workaround:
    - **feature ブランチ checkout 中**:
      `git fetch origin main:main` (non-fast-forward は refspec が自動拒否
      するので安全) → **`git diff HEAD main --name-only`** で変更ファイルを

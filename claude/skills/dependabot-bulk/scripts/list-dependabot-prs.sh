@@ -5,8 +5,8 @@ set -euo pipefail
 # JSON 配列として出力する。
 #
 # 呼び出し側 (SKILL.md) が gh を直接叩き、その出力を stdin で渡す構造。
-# 理由: bash → gh のネストは macOS Keychain 認証が切れる (memory
-# feedback_skill_gh_no_nested と gather-branch-info.sh 冒頭コメント参照)。
+# 理由: bash → gh のネストは macOS Keychain 認証が切れる (gather-branch-info.sh
+# 冒頭コメント参照)。
 #
 # 入力: gh pr list --author app/dependabot --state open --json number,title,headRefName,url,body,labels
 # 出力: 各 PR に semver / ecosystem / security を付与した JSON 配列

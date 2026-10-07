@@ -16,7 +16,7 @@ Execute these steps faithfully in order. Do not skip steps or make independent j
      - 0 matches → report "No PR found for the current branch" and stop.
      - >1 matches → list `PR #<n> -> <baseRefName>` for each, ask the user which one, then proceed.
 2. Fetch unresolved review threads:
-   - Claude 版の 1 行インライン形と違うのは意図的 (Claude 版は Claude Code の sandbox 固有の x509 失敗、issue #359 を避けている)。`block-dangerous-commands.sh` が実値を埋めたこの形を通すことは 2026-10-07 に hook へ直接入力して確かめた。codex 上で `gh` を走らせる確認はしていない
+   - Claude 版の 1 行インライン形と違うのは意図的。Claude 版は、Claude Code の sandbox で観測された x509 失敗 (issue #359) と、pipe を禁じる Claude 固有の `guard-sandbox-exclusions.sh` を避けている。`block-dangerous-commands.sh` (codex にも配線済み) が実値を埋めたこの形を通すことは 2026-10-07 に hook へ直接入力して確かめた。codex 上で `gh` を走らせて x509 失敗が出ないかは確かめていない
    ```bash
    gh api graphql \
      -F query=@"$HOME/.agents/skills/resolve/queries/unresolved-threads.graphql" \
