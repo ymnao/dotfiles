@@ -161,6 +161,22 @@ H="$BASE/home-mcp-ok"; make_good_home "$H"
 printf '{"projects":{"/x":{"allowedTools":[]}}}\n' >"$H/.claude.json"
 check "no-mcp-ok" 0 "$(run_checker "$H")"
 
+# 11. codex/skills の共有 skill。ディレクトリ symlink → OK / SKILL.md 単体の symlink → FAIL
+# (codex はファイル symlink の SKILL.md を読まず、5 skill が codex から見えていなかった)
+mkdir -p "$DF/claude/skills/shared"
+printf 'shared\n' >"$DF/claude/skills/shared/SKILL.md"
+ln -s ../../claude/skills/shared "$DF/codex/skills/shared"
+H="$BASE/home-skill-dirlink"; make_good_home "$H"
+ln -s "$DF/codex/skills/shared" "$H/.agents/skills/shared"
+check "skill-dir-symlink-ok" 0 "$(run_checker "$H")"
+rm "$DF/codex/skills/shared"
+mkdir -p "$DF/codex/skills/shared"
+ln -s ../../../claude/skills/shared/SKILL.md "$DF/codex/skills/shared/SKILL.md"
+H="$BASE/home-skill-filelink"; make_good_home "$H"
+ln -s "$DF/codex/skills/shared" "$H/.agents/skills/shared"
+check "skill-file-symlink" 1 "$(run_checker "$H")"
+rm -r "$DF/codex/skills/shared"
+
 # ---- verify-settings-codex-domains.sh の selftest (issue #189) ----
 # 検知器が壊れて常に PASS を返す退行を防ぐ。base fixture は全項目を
 # 含み、tamper 版はそれぞれ 1 項目を欠落/破壊して FAIL 期待。
