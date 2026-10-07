@@ -22,7 +22,7 @@ Run each `gh` command as a bare invocation and substitute prior output literally
    - 0 matches → proceed / ≥1 match → report the PR URL and stop
 3. Pre-check: if `commit_count` is 0 → report no commits from base branch and stop
 4. Classify risk and run tier-appropriate review (do NOT skip this step):
-   - Run `bash "$HOME/.claude/skills/pr/scripts/classify-risk.sh" <base_branch>` — yields `{"tier": ..., "reasons": [...]}`。この JSON 出力は応答本文に **verbatim** で転記する(eval が literal `"tier": "<tier>"` を grep して分類 tier を pin するため。paraphrase して `tier=high` 等の prose だけを書くと pin が hit しない)
+   - Run `bash "$HOME/.claude/skills/pr/scripts/classify-risk.sh" <base_branch>` — yields `{"tier": ..., "reasons": [...]}`。tier と reasons は evidence の「リスク分類」に転記する
    - **low**: if the project defines lint / typecheck commands, run them and fix failures. No review needed.
    - **medium**: run the codex-review `security` perspective (follow the codex-review skill's detect→verify→apply→confirm steps for that one perspective). Also run the project's test suite if one exists.
    - **high**: run all 3 codex-review perspectives AND the project's test suite. Then do the explain-the-diff walkthrough (step 5).
@@ -75,32 +75,7 @@ Run each `gh` command as a bare invocation and substitute prior output literally
    - **Title**: under 70 characters, summarizing the changes
    - **Body**: use the repo's PR template if `pr_template` is not null, otherwise the default template below. ALWAYS append the evidence section (below) at the end of the body.
 7. Run `git push origin HEAD` (no-op if origin is already up to date; also syncs review-fix commits made after an early push). **ブランチ名を代入しない** (理由は step 2 に書いた)。`git push origin HEAD` は "A handy way to push the current branch to the same name on the remote" (`git help push`) で `<branch_name>` 指定と等価。**`-u` は付けない** — sandbox 下では `.git/config` を lock できず、upstream 設定の書き込みだけが `error: unable to write upstream branch configuration` で失敗する。また sandbox 内の push は `-u` の有無と関係なく `fatal: failed to store: 100001` を出す (proxy の資格情報を credential helper に保存できないため)。**push 本体は成功しているのに `fatal:` の文言で失敗と誤読する**ため、確認は `git ls-remote --heads origin "refs/heads/$(git branch --show-current)"` を打ち、返った行の SHA が `git rev-parse HEAD` と一致することで行う。**`refs/heads/` を付けた完全な ref を渡す** — 短い名前を渡すと ref の末尾一致になり、別ブランチの行を拾う (実測: `git ls-remote --heads origin bump-actions` は `refs/heads/chore/bump-actions` を返す。`refs/heads/bump-actions` なら返さない)。**この `"$(...)"` は代入とは別物で安全** — コマンド置換の *出力* は shell に再スキャンされないので、`$(...)` や `;` を含む ref 名でもリテラルな 1 引数として git に渡る (実測: `printf '%s\n' "$(printf '%s' 'foo$(id);x')"` は `foo$(id);x` を出す)。危険なのは名前を**コマンド文字列に書き込む**ことであって、git に名前を尋ねること自体ではない。パターン無しの全件 (`git ls-remote --heads origin`) でも安全だが、この repo では 187 行返るので絞る。If the push is rejected as non-fast-forward (origin advanced independently), do NOT force push — report the divergence to the user and stop. sandbox 内の git のほかの罠 (checkout / merge / worktree) は `docs/sandbox-git.md`
-8. Create the PR with `gh pr create`. Add `--draft` when step 4 **or** step 5 decided draft (draft-wins). **Exception**: user が PR 作成前の任意の時点(step 5 の walkthrough 応答 / それ以前 いずれも可、tier を問わない)で「step 4 の draft 判定は別 PR で追う。normal で作って」等、draft 判定を明示的に override する指示を出した場合は normal で作成し、その override 内容(受け取った user 指示の要約と受け取った step)を evidence の Draft 判定に記録する。**制約**: normal override でも hook の defer 検査は bypass されないため、未起票 finding が残ったまま normal 化するには (b) 起票または (c) dismiss (「追跡しない (user 指示: <要約>)」の記録) が前提。marker 文字列 `defer(未起票)` を残すと hook が block して deadlock になる。If `linked_issue` exists, include `Closes #<number>` in the body. ただし **tier=high で override が step 5 前に受け取られた場合**、step 5 walkthrough で新 finding が surface した際は override 継続意思を user に再確認する(walkthrough で見えた新事実に対して pre-walkthrough override が sticky にならないよう safety net)。この再確認は「[Telemetry markers](#telemetry-markers)」節の 2 つの marker(`override-recheck` / `override-recheck-question`)の形式で出力し、user の回答を受け取るまで `gh pr create` を実行しない。
-
-## Telemetry markers
-
-eval が挙動を機械検証するための literal。行頭一字一句この形式で出力し、前後に装飾を付けない(先頭に quote / bullet / インデントを付けない、末尾にも文字を足さない)。
-
-- **override-recheck** — step 8 の再確認発火(tier=high、pre-walkthrough override、step 5 walkthrough で surface した新 finding が対象)の**直前**に、対象 finding 識別子を添えて 1 行出力する:
-
-  ```
-  [pr/walkthrough] override-recheck finding=<id>
-  ```
-
-- **override-recheck-question** — 上記 `override-recheck` marker の**直後**(marker 行と question marker 行の間に non-blank 行を挟まない。blank 行の挟み込みは可)に、override 継続意思を user に尋ねる質問文を同一行に載せて 1 行出力する。質問文は非空:
-
-  ```
-  [pr/walkthrough] override-recheck-question: <質問文>
-  ```
-
-  出力例(2 行セット):
-
-  ```
-  [pr/walkthrough] override-recheck finding=F2
-  [pr/walkthrough] override-recheck-question: walkthrough で新たに F2 が surface しました。pre-walkthrough override を継続して normal で作成しますか?
-  ```
-
-  question marker を出したら、その turn では `gh pr create` を実行せず、次 turn の user 応答を待つ。
+8. Create the PR with `gh pr create`. Add `--draft` when step 4 **or** step 5 decided draft (draft-wins). **Exception**: user が PR 作成前の任意の時点(step 5 の walkthrough 応答 / それ以前 いずれも可、tier を問わない)で「step 4 の draft 判定は別 PR で追う。normal で作って」等、draft 判定を明示的に override する指示を出した場合は normal で作成し、その override 内容(受け取った user 指示の要約と受け取った step)を evidence の Draft 判定に記録する。**制約**: normal override でも hook の defer 検査は bypass されないため、未起票 finding が残ったまま normal 化するには (b) 起票または (c) dismiss (「追跡しない (user 指示: <要約>)」の記録) が前提。marker 文字列 `defer(未起票)` を残すと hook が block して deadlock になる。If `linked_issue` exists, include `Closes #<number>` in the body. ただし **tier=high で override が step 5 前に受け取られた場合**、step 5 walkthrough で新 finding が surface した際は override 継続意思を user に再確認する(walkthrough で見えた新事実に対して pre-walkthrough override が sticky にならないよう safety net)。再確認では対象 finding の識別子を添えて override を継続するかを尋ね、その turn では `gh pr create` を実行せず、user の回答を受け取ってから作成する。
 
 ## Default template (fallback)
 
