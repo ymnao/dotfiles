@@ -97,7 +97,7 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
    `git branch -d -- "$(cat <scratchpad>/merged-branch.txt)"` と `git branch` を
    `;` で continue させて 1 コマンドで打ち (`&&` にしない)、
    警告文ではなく後者の出力で消えたことを確認する
-   - ブランチ名をタイプして埋め込まない。step 1 で控えたファイルから
+   - **ブランチ名をタイプして埋め込まない**。step 1 で控えたファイルから
      `"$(cat ...)"` で渡す (根拠は step 1 に書いた)
    - 打つ前に stale チェック: `cat <scratchpad>/merged-branch.txt` を打って
      中身を出し、step 1 の `headRefName` と一致することを確かめる。
@@ -109,8 +109,8 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
    - `--` を置くのは、`-` で始まる ref 名が `git branch` のオプションとして
      読まれるのを防ぐため
    - **`-d` が拒否されたら** (squash merge の repo では元コミットが main の
-     祖先にならないため毎回こうなる。remote ブランチは deleteBranchOnMerge で
-     merge 時に消えているので、残るのはローカルだけ)、`-d` の安全判定を代替する次の 2 点を
+     祖先にならないため毎回こうなる。deleteBranchOnMerge が有効な repo では
+     remote ブランチは merge 時に消えているので、残るのはローカルだけ)、`-d` の安全判定を代替する次の 2 点を
      step 1 で取った値と照合してから `-D` を使う。どちらか一方でも
      欠けたら `-D` は使わず**報告して停止する** (step 1 を通過している時点で
      PR が MERGED であることは確定しているので、ここでは確認しない)。

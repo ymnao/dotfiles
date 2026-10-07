@@ -21,7 +21,7 @@ simplify / codex-review / pr の個別指示と code-reviewer サブエージェ
   `/issue` が plan を提案した時点で step 2 の判定に合流する。
   issue 本文だけでは要件が揃わないことがある — 前のセッションが追加要件を
   HANDOFF や後続 issue にだけ書き足していることがあるため (ymnao/portfolio#23
-  で取りこぼした)。`/issue` が plan を提案する前に次の 2 つも読み、
+  で取りこぼした)。**`/issue` が plan を提案する前に**次の 2 つも読み、
   plan (自明タスクの 1-3 行 plan を含む) の要件に加える:
   - プロジェクトルートに `HANDOFF.md` があれば全体を読み、その issue に
     関わる記述

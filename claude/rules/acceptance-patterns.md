@@ -23,8 +23,8 @@ paths:
   実例: issue #213 — 断片を 1 つ抽出した時点で同じ command 内の他の参照を捨てる形
   (`bash "$A" && bash /tmp/evil.sh` の後半) と、`[^"]+` が空白を含み後続コマンドごと
   1 個のパスに吸い込む形。どちらも「未知の形は fail」は満たしていた。
-  受理パターンを書いたら、**パターンだけでなく判定器の exit code も主張の一部**として
-  両方向で測る。`awk` の main rule の `exit` は END を実行し、END 側の `exit <expr>` が
+  あわせて、**パターンだけでなく判定器の exit code も主張の一部**として
+  両方向で測る (`tests/branch-name-validator/` が修正後の式を pin している)。`awk` の main rule の `exit` は END を実行し、END 側の `exit <expr>` が
   status を上書きするため (`printf 'x\n' | awk '{exit 7} END{exit 3}'` は 3)、
   `... {exit 1} END{exit NR!=1}` は 1 行入力なら何でも exit 0 になる
   (実例: PR #331 — この形が `foo$(id);x` を受理していた)

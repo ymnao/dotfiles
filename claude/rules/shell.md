@@ -49,8 +49,8 @@ paths:
   相手より広く正規化する側 (fail-closed) に倒し、**広げすぎを検出する過剰側の
   ラチェットも同時に置く**。ズレの影響範囲は判定の形 (完全一致 / prefix 一致) ごとに見る。
   実例: issue #308 — apply_patch ヘッダーを `$0` のまま照合したが、codex は行末 CR を
-  落として前後を trim してから path を取るため (2026-08-10 に `codex-rs/apply-patch/src/streaming_parser.rs` で確認)、
-  完全一致の経路で素通りした
+  落として前後を trim してから path を取るため (2026-08-10 に
+  `codex-rs/apply-patch/src/streaming_parser.rs` で確認)、完全一致の経路で素通りした
 - **`agents/hooks/` (と `claude/hooks/` `codex/hooks/` の実体) は編集中の状態がそのまま
   live に効く** (`~/.claude/hooks/` 等からの symlink 経由)。途中で hook が壊れると
   Bash / Edit / Write がすべて block され、agent 自身では戻せない。編集は scratchpad に
