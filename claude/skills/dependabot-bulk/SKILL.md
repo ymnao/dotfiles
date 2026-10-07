@@ -48,7 +48,7 @@ open な Dependabot PR を 1 branch に統合し、push を 1 回にして CI �
    - 既存の場合 (同日リトライ / 朝夕 2 回運用) は `deps/bulk-<YYYY-MM-DD>-2` `-3` と suffix を付けて空きを探す
    - 決めた名前で `git checkout -b <名前>`
 7. **依存ごとに 1 commit を積む** (ecosystem で取り込み方が違う)
-   - **PR の headRefName / title / package 名をコマンド文字列にタイプし直さない**。下記のとおり `classified.json` から `"$(jq ...)"` で引数として渡す (理屈は `/next` step 1 と同じ)。このスキル固有の事情は、`extract_package` が title から `[^ ]+` で名前を抜くため `Bump $(id) from 1.0.0 to 1.0.1` のような title がそのまま package 名として通ること
+   - **PR の headRefName / title / package 名をコマンド文字列にタイプし直さない**。下記のとおり `classified.json` から `"$(jq ...)"` で引数として渡す (理屈は `claude/rules/acceptance-patterns.md` の「外部由来の名前」の項)。このスキル固有の事情は、`extract_package` が title から `[^ ]+` で名前を抜くため `Bump $(id) from 1.0.0 to 1.0.1` のような title がそのまま package 名として通ること
    - **`$(...)` が空文字を返す経路を fail-closed にする**。jq は「番号に一致する要素が無い」ときだけでなく、`classified.json` が空 / 不在 / 壊れているときも**何も出力せず exit 0** を返す。`$(...)` の exit code はコマンドの成否に影響しないので `&&` でも捕まらない。したがって空文字が渡っても止まる形にしておく:
      - `git fetch origin ""` は失敗せず remote の HEAD を `FETCH_HEAD` に入れて **exit 0** を返す (実測)。そのまま cherry-pick するとデフォルトブランチの HEAD を積む。**`refs/heads/` を前置**すると空のとき `fatal: invalid refspec 'refs/heads/'` で止まる
      - `git commit` は subject 用の `-m` を **1 つだけ**渡す (trailer も同じ jq 式で作る)。空文字なら `Aborting commit due to empty commit message` で止まる。`-m "" -m "統合元: #<N>"` の 2 段だと 2 つ目が subject に繰り上がって**通ってしまう** (実測)
@@ -86,7 +86,7 @@ open な Dependabot PR を 1 branch に統合し、push を 1 回にして CI �
 
 ### `/simplify` は免除
 
-このスキルで作る統合 PR は Dependabot 由来で authored code がない (lockfile と yml の pin 番号のみ)。人が書いたコードのレビュー対象がないため、`/simplify` は免除する。MEMORY `feedback_simplify_every_pr` は「変更が小さい」でのスキップを禁じているが、本ケースは「著者が Dependabot / 内容が数字更新のみ」という質的例外として扱う。`code-reviewer` サブエージェントも同様の判断で省略してよい。ただし tier=high の ci-config ルールに hit する変更 (test.yml 大量 bump 等) が含まれる場合は codex-review の実施を検討する。
+このスキルで作る統合 PR は Dependabot 由来で authored code がない (lockfile と yml の pin 番号のみ)。人が書いたコードのレビュー対象がないため、`/simplify` は免除する。「変更が小さい」は /simplify を省く理由にならないが、本ケースは「著者が Dependabot / 内容が数字更新のみ」という質的例外として扱う。`code-reviewer` サブエージェントも同様の判断で省略してよい。ただし tier=high の ci-config ルールに hit する変更 (test.yml 大量 bump 等) が含まれる場合は codex-review の実施を検討する。
 
 ### verify-ci-before-pr hook の扱い
 

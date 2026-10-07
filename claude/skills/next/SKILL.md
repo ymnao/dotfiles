@@ -18,32 +18,23 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      ぶんだけ tool call が増える)
    - あわせて `git rev-parse HEAD` を打ち、作業ブランチの SHA を控える。
      step 3 でこの値を使う。**ブランチ名をコマンドに埋め込んで
-     `git rev-parse <branch>` とはしない** — ref 名には `$(...)` や `;` を
-     含められる (`git check-ref-format --branch 'foo$(id);x'` は通る) ため、
-     コマンド文字列へ代入すると shell 展開が起きる。この repo は public で
-     `/issue` は issue title からブランチ名を作るので、外部文字列が名前に
-     入る経路がある。ここでまだ作業ブランチ上にいる (step 2 の checkout は
-     この後) ので、`HEAD` で足りる
+     `git rev-parse <branch>` とはしない** (理由は
+     `claude/rules/acceptance-patterns.md` の「外部由来の名前」の項)。
+     ここでまだ作業ブランチ上にいる (step 2 の checkout はこの後) ので、
+     `HEAD` で足りる
    - **step 3 のブランチ削除だけは名前が要る** (`git branch -d` に `HEAD` は
      渡せない)。そこで**ここで名前をファイルに控える**。step 2 で main へ移ると
      `git branch --show-current` は main を返してしまうので、作業ブランチ上に
      いるこの時点が最後の機会。**置き場は system prompt が示すセッションの
      scratchpad ディレクトリ**で、以下 `<scratchpad>` と書く:
      `git branch --show-current > <scratchpad>/merged-branch.txt`
-     - **`$TMPDIR` を使わない**。**並走する別セッションの `/next` が同じパスへ
-       書く**ので、`cat` と `git branch -D` の間に中身が入れ替わりうる。読んだ
-       時点で `headRefName` と突き合わせても**その後の書き換えは塞げない**
-       (TOCTOU) — 検査を足すのではなく、**衝突しないパスを選ぶ**方で閉じる。
-       `<scratchpad>` はセッション ID を含むので、**他セッションの `/next` は
-       同じパスを踏まない**。なぜ `$TMPDIR` が分離にならないか、閉じているのが
-       権限ではなく非衝突であることの根拠は
-       `claude/rules/acceptance-patterns.md` の一時ファイル置き場の項 (正本)
-     - **名前を検証するのではなく、agent がタイプし直さない形にする**。step 3
-       では `"$(cat <scratchpad>/merged-branch.txt)"` として渡す。コマンド置換の
-       *出力* は shell に再スキャンされないので、`$(...)` や `;` を含む ref 名
-       でもリテラルな 1 引数として git に届く。**書いたのは git、読むのも
-       shell で、名前が LLM の出力を経由しない** — 文字集合の検証と違って
-       「検証した文字列と実際に使う文字列が同じである」ことが構造的に保証される
+     - **`$TMPDIR` を使わない**。並走する別セッションの `/next` が同じパスへ
+       書くので、`cat` と `git branch -D` の間に中身が入れ替わりうる。読んだ
+       時点で突き合わせてもその後の書き換えは塞げない (TOCTOU) ので、
+       衝突しないパスを選ぶ方で閉じる (正本は
+       `claude/rules/acceptance-patterns.md` の一時ファイル置き場の項)
+     - step 3 では `"$(cat <scratchpad>/merged-branch.txt)"` として渡し、
+       名前を agent がタイプし直さない (上と同じ「外部由来の名前」の項)
      - **この 2 コマンドは別々の Bash 呼び出しで打つこと**。同じ呼び出しに
        redirect と `$(cat ...)` を同居させると `block-dangerous-commands.sh` が
        「動的展開を含む書き込み系リダイレクト」としてブロックする。分けて打てば
@@ -51,10 +42,8 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
        別の呼び出しなので、通常の手順どおりに進めれば問題にならない。
        **`<scratchpad>` はリテラルのパスとして書く** — 変数に入れると redirect
        側が「動的展開」と判定されて同じ hook に掛かる (`> "$SCRATCHPAD/..."`
-       は exit=2 を実測)。**`$TMPDIR` だけは例外で掛からない** (hook が判定前に
-       `$TMPDIR` / `$HOME` / `$XDG_*` を residual から除去する。正本は
-       `claude/rules/acceptance-patterns.md` の一時ファイル置き場の項)。
-       それでも使わないのは、hook ではなく上の非衝突が理由
+       は exit=2 を実測)。`$TMPDIR` はこの hook には掛からないが、上の非衝突の
+       理由で使わない
      - **残る stale は同一セッション内の再実行だけ**。1 セッションで `/next` を
        2 回回すと前の PR のブランチ名が残っている。step 3 では**消す前に中身を
        step 1 の `headRefName` と突き合わせ**、一致しなければ削除せず報告する
@@ -63,11 +52,8 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      - step 3 は削除後にこのファイルを消す。残さなければ同一セッション内の
        stale 化も起きない
 2. **main 更新**: `git checkout main` → `git pull origin main --ff-only`。
-   sandbox denyWithinAllow に含まれるパス (settings 系 / skills 系 /
-   hooks 系 / agents・rules・commands・workflows・mcp 等の Claude 設定
-   ファイル群 = ~/.claude/ 配下に symlink する設定資産一般。完全な列挙は
-   harness の Filesystem policy が正本、判定原則は memory
-   `project_settings_files_sandbox_lock.md`) に触る PR では unlink 制限で
+   sandbox が削除を拒否するパス (判定原則は `docs/sandbox-git.md` の
+   「削除を拒否するパス」節) に触る PR では unlink 制限で
    checkout / pull / reset --hard が失敗する。状況別 workaround:
    - **feature ブランチ checkout 中**:
      `git fetch origin main:main` (non-fast-forward は refspec が自動拒否
@@ -85,7 +71,7 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      stale な main へ checkout してしまう。**SHA 不一致なら即 user
      Terminal 依頼** (main がそもそも想定と違う状態)。
      **user Terminal 依頼にフォールバックするのは diff が locked path を
-     含むときだけ** (memory `project_settings_pr_pull_workaround.md`)。
+     含むときだけ**。
      **diff 非空を条件にしない** — 自分の PR の後に Dependabot PR 等が
      merge されれば diff は必ず非空になり、unlink 制限と無関係な merge の
      たびに user を止めることになる (2026-08-08 実測: PR #294 merge 後の
@@ -171,8 +157,8 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      承認されても記述が stale になる)。repo に置くものは merge 済み main
      から作業ブランチを切って commit し、memory はその場で反映する
    - **repo 側は commit で止めず `/pr` skill で PR 作成まで行う**。
-     `/next` の起動をこの PR 作成の明示指示とみなす (memory
-     `feedback_pr_creation` の例外)。commit だけで止めると昇格ブランチが
+     `/next` の起動をこの PR 作成の明示指示とみなす (PR は明示指示を待つ
+     原則の例外)。commit だけで止めると昇格ブランチが
      宙に浮き、次セッションに「PR を作るだけ」の残タスクとして持ち越される。
      handoff にその 1 行を書く手間ごと無駄になる
    - 反映結果 (どこに何を書いたか / ブランチ名 / PR URL) を step 5 の

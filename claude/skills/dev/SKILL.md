@@ -202,7 +202,7 @@ user に報告して指示を待つ。
 
 - **live 環境への副作用** — `claude/hooks/` `claude/settings.json`
   `claude/skills/` 等は `~/.claude/` への symlink 経由で **commit も merge も
-  待たずに有効になる** (memory `project_dotfiles_env_quirks`)。
+  待たずに有効になる** (配置は repo CLAUDE.md「構造の要点」)。
   実例: issue #267 (開発中の hook の無限ループ)
 - **diff の中に書いた誤った記述** — 誤りが正本ドキュメントとして定着し、
   merge 後に気付く機会が無い。実例: issue #245 (効いていない設定を防御層と
@@ -373,5 +373,5 @@ merge 後の後続は `/next` skill が担う。
   黙って消えることはない。**ただし三択は「PR に載せるかどうか」を決める
   仕組みなので、既に user 環境で起きている不具合には効かない** — 適用外の
   条件は step 4-0 の例外が正本
-- PR 作成は明示指示待ちの原則 (memory) の例外: `/dev` の起動自体が
+- PR 作成は user の明示指示を待つのが原則だが、その例外: `/dev` の起動自体が
   PR 作成までの明示指示とみなす
