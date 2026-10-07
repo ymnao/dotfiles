@@ -179,8 +179,9 @@ vacuous pass する)。世代レベル記述にしたことで**ズレの発生�
   「非自明タスクの plan」・「/pr の finding 分類承認 ((b)/(c) が 1 件でも
   あるとき発火)」・「merge」の 3 点。レビュー finding は
   fix-or-issue-or-dismiss ポリシー(fix / issue 起票 / 対応しない の三択。
-  「対応しない」は許可 3 条件 + user 承認 + PR body 記録が必須、未起票 defer は
-  verify-ci-before-pr hook がブロック)で次セッションへの暗黙持ち越しを防ぐ
+  「対応しない」は pr skill step 4 (c) の許可条件 + user 承認 + PR body 記録が
+  必須、未起票 defer は verify-ci-before-pr hook がブロック)で次セッションへの
+  暗黙持ち越しを防ぐ
 - 無関係なタスクの間で `/clear`(コンテキストを引きずらない)
 - **2 回訂正して直らなければ `/clear`** し、学んだことを盛り込んだ
   プロンプトで新セッションを始める(訂正が蓄積した長セッションより、
