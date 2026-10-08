@@ -11,11 +11,25 @@
 - ユーザーの interactive shell は **fish**。手で叩かせるコマンドは fish 構文で提示する
   (`export` / `alias` / `source ~/.zshrc` 等の bash/zsh 構文は使わない)
 - Claude Code / codex の Bash tool は zsh 経由なので agent 自身のコマンドは影響を受けない
+- agent の Bash 呼び出しは hook (`agents/hooks/block-dangerous-commands.sh`、Claude Code ではさらに
+  `claude/hooks/guard-sandbox-exclusions.sh`) がコマンド文字列を静的に判定する。止まるたびに往復が 1 つ増えるので、止まる形を最初から書かない
+  - hook は heredoc の中身もコードとして見るので、backtick / `$(...)` / `${...}` を含む本文はクォート付き heredoc (`<<'EOF'`) でも
+    止まりうる → 最初からファイル経路にする: コミット本文は `git commit -F <file>`、PR / issue 本文は `--body-file <file>`、
+    スクリプトはファイルに書いて `bash <file>` / `python3 <file>`、ソース編集はファイル編集ツールで行う
+  - コマンド名が変数展開 (`"$JAVA_HOME/bin/javap"`) → 絶対パスを書いたラッパーをファイルに置いて `bash <file>`
+  - (Claude Code のみ) `gh` は 1 呼び出し 1 コマンド (`&&` / `;` / パイプ / ループ / 前置きの `cd` に混ぜない)。加工は `--jq`、
+    対象 repo は `--repo`、CI 待ちは `gh run watch <id> --exit-status` を単独で。コマンド置換 (`x=$(gh ...)`) と監視ツールの中の
+    `gh` は hook を通っても sandbox 内で走って TLS で落ち、「pending」にも「完了」にも見える。背景は dotfiles の docs/ai-operations.md §10
 
 ## ブランチと開発フロー
 
 - **main への直接コミット禁止**。変更は 作業ブランチ → PR → レビュー → merge の順で行う
 - ブランチ名は英語小文字とハイフン: `feature/<機能名>` `fix/<バグ名>` `refactor/<対象>` `docs/<対象>`
+- 実装の終点は commit。push / PR 作成 / merge と、戻しにくい共有状態の変更 (PR・issue の close、release 作成) は
+  user の明示語 (「push して」「PR 作って」等) を待つ。plan に「コミット & PR」と書いてあっても "ok" は commit まで。
+  「マージしたい」等の状態表明は実行許可ではない。commit と push を 1 コマンドで連結しない
+- 例外: 手順に push / PR 作成が明記された skill の起動は、その SKILL.md に明記された操作 (close を含む) の明示指示とみなす
+  (merge は含まない)。repo 固有の例外はその repo の memory に置く
 
 ## コミットメッセージ
 

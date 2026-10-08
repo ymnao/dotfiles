@@ -1,6 +1,6 @@
 # sandbox 内の git
 
-agent の sandbox 内で git の ref 操作 (checkout / merge / fetch / push /
+agent の sandbox 内で git の ref 操作 (init / checkout / merge / fetch / push /
 branch -d / worktree) をするときの罠と回避手順。
 
 ## エラーを出しながら本体は成功する 2 種類
@@ -33,21 +33,38 @@ Filesystem policy が正本) は、Bash 経由では書き込めない (git の 
 Edit / Write tool では書ける)。そのため、これらのパスの中身を書き換える checkout /
 pull / merge は失敗するか、半端な状態を残す (以下の各節)。
 
-## remote 追跡ブランチへ移る: config を書かない 2 段階
+## remote 追跡ブランチから `checkout -b` / `switch -c` で切る: config を書かない 2 段階
 
 「本体は成功する」は全てのコマンドには当てはまらない。
 `git checkout -b <branch> origin/<branch>` は upstream 設定の書き込みに失敗すると、
 **ref だけ作って HEAD は元のまま・index と working tree だけ切り替え先のツリーに
 置き換わる半端な状態を残す** (2026-08-07 に実測。`tests/` が物理的に消えた)。
+`git switch -c <new> <start>` も同じ形で止まり、元ブランチ上で「新ブランチに無い
+ファイル」がすべて staged な削除 (`D`) に見える (portfolio repo で 2026-08-18 に実測。
+`<start>` の種別は記録されていない)。
 
-remote 追跡ブランチに移るときは `git branch --no-track <branch> origin/<branch>` →
-`git checkout <branch>` の 2 段階で行う。復旧は
-`git restore --source=HEAD --staged --worktree .` (`reset --hard` は禁止のまま)。
+止まるのは upstream を書くときだけで、git の既定 (`branch.autoSetupMerge=true`) が
+upstream を書くのは start-point が remote 追跡ブランチのときに限る (`git help config`)。
+start-point なしの `git switch -c <new>` が fatal を出さずに通ることは ghirgana repo で
+2026-09-07 に実測している。
+
+remote 追跡ブランチから切るときは `git branch --no-track <branch> origin/<branch>` →
+`git checkout <branch>` の 2 段階で行う。半端な状態からの復旧は、新ブランチで続けるなら
+`git switch <branch>` (`-c` なし。ref が意図した commit を指していることを先に確かめる)、
+元ブランチに戻るなら `git restore --source=HEAD --staged --worktree .`
+(`reset --hard` は禁止のまま)。
 
 復旧後も、`claude/skills/` など sandbox が削除を拒否するパスの実体ファイルが
 untracked として残り、以後の `git checkout` / `git merge` が「上書きされる untracked
 がある」と言って中断することがある。**古い commit のツリーへ checkout する作業自体を
 避ける** (新しいブランチを main から切って変更を載せ直す方が速い)。
+
+## `git init` は完走しない (回避策なし)
+
+`git init -b main` は hooks の sample のコピーで `Operation not permitted` になり、
+`--template=<空ディレクトリ>` で hooks を避けても `.git/config` を書けずに止まる
+(2026-09-25 に実測)。新規 repo は `git init` だけ user に依頼する (fish 構文で提示)。
+以降の add / commit / push と `gh repo create --source=<path> --push` は通る。
 
 ## 既存ブランチ間の checkout で locked path が `M` で残る
 
