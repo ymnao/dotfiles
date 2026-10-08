@@ -1,6 +1,6 @@
 # sandbox 内の git
 
-agent の sandbox 内で git の ref 操作 (checkout / merge / fetch / push /
+agent の sandbox 内で git の ref 操作 (init / checkout / merge / fetch / push /
 branch -d / worktree) をするときの罠と回避手順。
 
 ## エラーを出しながら本体は成功する 2 種類
@@ -33,23 +33,27 @@ Filesystem policy が正本) は、Bash 経由では書き込めない (git の 
 Edit / Write tool では書ける)。そのため、これらのパスの中身を書き換える checkout /
 pull / merge は失敗するか、半端な状態を残す (以下の各節)。
 
-## start-point を渡す `checkout -b` / `switch -c`: config を書かない 2 段階
+## remote 追跡ブランチから `checkout -b` / `switch -c` で切る: config を書かない 2 段階
 
 「本体は成功する」は全てのコマンドには当てはまらない。
 `git checkout -b <branch> origin/<branch>` は upstream 設定の書き込みに失敗すると、
 **ref だけ作って HEAD は元のまま・index と working tree だけ切り替え先のツリーに
 置き換わる半端な状態を残す** (2026-08-07 に実測。`tests/` が物理的に消えた)。
+`git switch -c <new> <start>` も同じ形で止まり、元ブランチ上で「新ブランチに無い
+ファイル」がすべて staged な削除 (`D`) に見える (portfolio repo で 2026-08-18 に実測。
+`<start>` の種別は記録されていない)。
 
-`git switch -c <new> <start>` も同じ形で止まる (portfolio repo で 2026-08-18 に実測)。
-HEAD が元ブランチに残るので、元ブランチ上で「新ブランチに無いファイル」がすべて
-staged な削除 (`D`) に見える。start-point を渡さない `git switch -c <new>` /
-`git checkout -b <new>` は tracking を書かないので fatal を出さずに通る (ghirgana repo で
-2026-09-07 に実測)。
+止まるのは upstream を書くときだけで、git の既定 (`branch.autoSetupMerge=true`) が
+upstream を書くのは start-point が remote 追跡ブランチのときに限る (`git help config`)。
+仕様上、ローカルブランチからや start-point なしで切る形は config を書かない。
+start-point なしの `git switch -c <new>` が fatal を出さずに通ることは ghirgana repo で
+2026-09-07 に実測している。
 
-start-point から切るときは `git branch --no-track <branch> <start>` →
-`git checkout <branch>` の 2 段階で行う。復旧は、ref が意図した commit を指していれば
-`git switch <branch>` (`-c` なし) で HEAD を移す。working tree が元ブランチと食い違って
-いるときは `git restore --source=HEAD --staged --worktree .` (`reset --hard` は禁止のまま)。
+remote 追跡ブランチから切るときは `git branch --no-track <branch> origin/<branch>` →
+`git checkout <branch>` の 2 段階で行う。半端な状態からの復旧は、新ブランチで続けるなら
+`git switch <branch>` (`-c` なし。ref が意図した commit を指していることを先に確かめる)、
+元ブランチに戻るなら `git restore --source=HEAD --staged --worktree .`
+(`reset --hard` は禁止のまま)。
 
 復旧後も、`claude/skills/` など sandbox が削除を拒否するパスの実体ファイルが
 untracked として残り、以後の `git checkout` / `git merge` が「上書きされる untracked

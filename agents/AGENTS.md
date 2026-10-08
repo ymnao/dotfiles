@@ -13,12 +13,14 @@
 - Claude Code / codex の Bash tool は zsh 経由なので agent 自身のコマンドは影響を受けない
 - agent の Bash 呼び出しは hook (`agents/hooks/block-dangerous-commands.sh`、Claude Code ではさらに
   `claude/hooks/guard-sandbox-exclusions.sh`) がコマンド文字列を静的に判定する。止まるたびに往復が 1 つ増えるので、止まる形を最初から書かない
-  - backtick / `$(...)` / `${...}` を含む文字列は、クォート付き heredoc (`<<'EOF'`) の中でも止まる → コミット本文は `git commit -F <file>`、
-    PR / issue 本文は `--body-file <file>`、スクリプトはファイルに書いて `bash <file>` / `python3 <file>`、ソース編集はファイル編集ツールで行う
+  - hook は heredoc の中身もコードとして行単位で見るので、backtick / `$(...)` / `${...}` が行頭や `(` の直後に来るとクォート付き heredoc
+    (`<<'EOF'`) でも止まる。位置次第なので最初からファイル経路にする → コミット本文は `git commit -F <file>`、PR / issue 本文は
+    `--body-file <file>`、スクリプトはファイルに書いて `bash <file>` / `python3 <file>`、ソース編集はファイル編集ツールで行う
   - コマンド名が変数展開 (`"$JAVA_HOME/bin/javap"`) → 絶対パスを書いたラッパーをファイルに置いて `bash <file>`
-  - (Claude Code のみ) `gh` は 1 呼び出し 1 コマンド (`&&` / `;` / パイプ / コマンド置換 / ループ / 前置きの `cd` に混ぜない)。
-    加工は `--jq`、対象 repo は `--repo`、CI 待ちは `gh run watch <id> --exit-status` を単独で。ループや監視ツールの中の `gh` は
-    TLS で落ちて「pending」に見える。背景は dotfiles の docs/ai-operations.md §10
+  - (Claude Code のみ) `gh` は 1 呼び出し 1 コマンド (`&&` / `;` / パイプ / ループ / 前置きの `cd` に混ぜない)。加工は `--jq`、
+    対象 repo は `--repo`、CI 待ちは `gh run watch <id> --exit-status` を単独で。コマンド置換 (`x=$(gh ...)`) やループ・監視ツールの
+    中の `gh` は hook を通っても sandbox 内で走って TLS で落ち、書き方次第で「まだ pending」にも「完了」にも見える。背景は
+    dotfiles の docs/ai-operations.md §10
 
 ## ブランチと開発フロー
 
@@ -27,8 +29,8 @@
 - 実装の終点は commit。push / PR 作成 / merge と、戻しにくい共有状態の変更 (PR・issue の close、release 作成) は
   user の明示語 (「push して」「PR 作って」等) を待つ。plan に「コミット & PR」と書いてあっても "ok" は commit まで。
   「マージしたい」等の状態表明は実行許可ではない。commit と push を 1 コマンドで連結しない
-- 例外: `/dev` の起動と `/next` step 4 (学びの昇格) は PR 作成までの明示指示とみなす (merge は含まない)。
-  repo 固有の例外はその repo の memory に置く
+- 例外: 手順に push / PR 作成を含む skill (`/dev`・`/dependabot-bulk`・`/next` step 4 の学びの昇格) の起動は、その手順の範囲の
+  明示指示とみなす (merge は含まない)。repo 固有の例外はその repo の memory に置く
 
 ## コミットメッセージ
 
