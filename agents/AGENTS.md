@@ -16,9 +16,9 @@
   - backtick / `$(...)` / `${...}` を含む文字列は、クォート付き heredoc (`<<'EOF'`) の中でも止まる → コミット本文は `git commit -F <file>`、
     PR / issue 本文は `--body-file <file>`、スクリプトはファイルに書いて `bash <file>` / `python3 <file>`、ソース編集はファイル編集ツールで行う
   - コマンド名が変数展開 (`"$JAVA_HOME/bin/javap"`) → 絶対パスを書いたラッパーをファイルに置いて `bash <file>`
-  - (Claude Code のみ) `gh` は 1 呼び出し 1 コマンド。`&&` / `;` / パイプ / `x=$(gh ...)` / ループ / 前置きの `cd` に混ぜない。
+  - (Claude Code のみ) `gh` は 1 呼び出し 1 コマンド (`&&` / `;` / パイプ / コマンド置換 / ループ / 前置きの `cd` に混ぜない)。
     加工は `--jq`、対象 repo は `--repo`、CI 待ちは `gh run watch <id> --exit-status` を単独で。ループや監視ツールの中の `gh` は
-    sandbox 内で走って TLS で落ち、失敗が「pending」に見える。背景は dotfiles の docs/ai-operations.md §10「sandbox の excludedCommands が『一次防御』を丸ごと外す経路」
+    TLS で落ちて「pending」に見える。背景は dotfiles の docs/ai-operations.md §10
 
 ## ブランチと開発フロー
 
