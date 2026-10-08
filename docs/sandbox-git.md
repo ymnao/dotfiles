@@ -45,7 +45,6 @@ pull / merge は失敗するか、半端な状態を残す (以下の各節)。
 
 止まるのは upstream を書くときだけで、git の既定 (`branch.autoSetupMerge=true`) が
 upstream を書くのは start-point が remote 追跡ブランチのときに限る (`git help config`)。
-仕様上、ローカルブランチからや start-point なしで切る形は config を書かない。
 start-point なしの `git switch -c <new>` が fatal を出さずに通ることは ghirgana repo で
 2026-09-07 に実測している。
 
