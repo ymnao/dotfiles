@@ -17,9 +17,9 @@
     止まりうる → 最初からファイル経路にする: コミット本文は `git commit -F <file>`、PR / issue 本文は `--body-file <file>`、
     スクリプトはファイルに書いて `bash <file>` / `python3 <file>`、ソース編集はファイル編集ツールで行う
   - コマンド名が変数展開 (`"$JAVA_HOME/bin/javap"`) → 絶対パスを書いたラッパーをファイルに置いて `bash <file>`
-  - (Claude Code のみ) `gh` は 1 呼び出し 1 コマンド (`&&` / `;` / パイプ / 前置きの `cd` に混ぜない)。加工は `--jq`、対象 repo は
-    `--repo`、CI 待ちは `gh run watch <id> --exit-status` を単独で。コマンド置換 (`x=$(gh ...)`)・ループ・監視ツールの中の `gh` は
-    hook を通っても sandbox 内で走って TLS で落ち、「pending」にも「完了」にも見える。背景は dotfiles の docs/ai-operations.md §10
+  - (Claude Code のみ) `gh` は 1 呼び出し 1 コマンド (`&&` / `;` / パイプ / ループ / 前置きの `cd` に混ぜない)。加工は `--jq`、
+    対象 repo は `--repo`、CI 待ちは `gh run watch <id> --exit-status` を単独で。コマンド置換 (`x=$(gh ...)`) と監視ツールの中の
+    `gh` は hook を通っても sandbox 内で走って TLS で落ち、「pending」にも「完了」にも見える。背景は dotfiles の docs/ai-operations.md §10
 
 ## ブランチと開発フロー
 
@@ -28,8 +28,8 @@
 - 実装の終点は commit。push / PR 作成 / merge と、戻しにくい共有状態の変更 (PR・issue の close、release 作成) は
   user の明示語 (「push して」「PR 作って」等) を待つ。plan に「コミット & PR」と書いてあっても "ok" は commit まで。
   「マージしたい」等の状態表明は実行許可ではない。commit と push を 1 コマンドで連結しない
-- 例外: 手順に push / PR 作成が明記された skill の起動は、その手順の範囲の明示指示とみなす (merge は含まない。範囲の正本は
-  各 SKILL.md)。repo 固有の例外はその repo の memory に置く
+- 例外: 手順に push / PR 作成が明記された skill の起動は、その SKILL.md に明記された操作 (close を含む) の明示指示とみなす
+  (merge は含まない)。repo 固有の例外はその repo の memory に置く
 
 ## コミットメッセージ
 
