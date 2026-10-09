@@ -174,7 +174,12 @@ fi
 # 別名に動かすと元パスの削除側 (全行) が diff に残る。
 # check-attr を toplevel で走らせ、pathspec に top を付けるのは、
 # --name-only が cwd ではなく toplevel 基準のパスを返すため。
+# Why not process substitution で直接読む: 中の git が失敗しても set -e が
+# 効かず、除外ゼロのまま全 diff を送る形に黙って戻る。
 TOPLEVEL="$(git rev-parse --show-toplevel)"
+ATTR_LIST="$(mktemp "${TMPDIR:-/tmp}/codex-review.attr.XXXXXX")"
+git diff --name-only --no-renames -z "$BASE_BRANCH...HEAD" \
+  | git -C "$TOPLEVEL" check-attr -z --stdin linguist-generated > "$ATTR_LIST"
 EXCLUDE_PATHSPEC=()
 EXCLUDED_PATHSPEC=()
 while IFS= read -r -d '' attr_path && IFS= read -r -d '' _ && IFS= read -r -d '' attr_value; do
@@ -184,13 +189,24 @@ while IFS= read -r -d '' attr_path && IFS= read -r -d '' _ && IFS= read -r -d ''
       EXCLUDED_PATHSPEC+=(":(top,literal)$attr_path")
       ;;
   esac
-done < <(git diff --name-only --no-renames -z "$BASE_BRANCH...HEAD" \
-  | git -C "$TOPLEVEL" check-attr -z --stdin linguist-generated)
+done < "$ATTR_LIST"
+rm -f "$ATTR_LIST"
 EXCLUDED_STAT=""
 if [ "${#EXCLUDED_PATHSPEC[@]}" -gt 0 ]; then
-  EXCLUDED_STAT="$(git diff --stat --no-renames "$BASE_BRANCH...HEAD" -- "${EXCLUDED_PATHSPEC[@]}")"
+  # 長いパスの省略と非 ASCII の 8 進エスケープを止め、ファイルを名前で
+  # 同定できる形にする。
+  EXCLUDED_STAT="$(git -c core.quotePath=false diff --stat=1000 --no-renames \
+    "$BASE_BRANCH...HEAD" -- "${EXCLUDED_PATHSPEC[@]}")"
+  # stdout は検証済み JSON だけの契約なので stderr に出す。
+  warn "codex-review $PERSPECTIVE: linguist-generated files excluded from review:" >&2
+  printf '%s\n' "$EXCLUDED_STAT" >&2
 fi
 DIFF_CONTENT="$(git diff "$BASE_BRANCH...HEAD" -- ${EXCLUDE_PATHSPEC[@]+"${EXCLUDE_PATHSPEC[@]}"})"
+# 全ファイルが除外された場合。codex に空の diff を渡すと、何もレビュー
+# していないのに pass が返りうる。
+if [ -z "$DIFF_CONTENT" ] && [ -n "$EXCLUDED_STAT" ]; then
+  error "no reviewable changes beyond $BASE_BRANCH: every changed file is linguist-generated (cwd: $CWD)"
+fi
 
 # codex review subcommand rejects --base + PROMPT in 0.142.3 (verified:
 # `error: the argument '--base <BRANCH>' cannot be used with '[PROMPT]'`).

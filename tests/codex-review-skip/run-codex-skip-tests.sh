@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# codex-review run-review.sh の skip 判定 (exit 3/4) の回帰テスト。
+# codex-review run-review.sh の skip 判定 (exit 3/4/5) と生成ファイル除外の
+# 回帰テスト。
 #
 # 検証観点:
 #   - sandbox シグネチャ → exit 3
@@ -55,16 +56,24 @@ exit 1
 EOF
 chmod +x "$WORKDIR/bin/codex"
 
+# clone の origin/HEAD は元 repo の HEAD (feature) を指すので、base を main に
+# 戻しておく (run-review.sh は origin/HEAD から base を決める)。
+configure_repo() {
+  if git -C "$1" remote get-url origin >/dev/null 2>&1; then
+    git -C "$1" remote set-head origin main
+  fi
+  git -C "$1" config user.email "test@example.com"
+  git -C "$1" config user.name "test"
+  git -C "$1" config gc.auto 0
+  git -C "$1" config maintenance.auto false
+}
+
 # fake repo: main + feature (1 commit 先) で run-review.sh の前提を満たす。
-# feature 側の linguist-generated な gen/data.csv は diff から外れるべきもの
-# (issue #410)
+# feature 側に linguist-generated なファイルは無い (除外が空の経路)
 FAKE_REPO="$WORKDIR/repo"
-mkdir -p "$FAKE_REPO/gen" "$FAKE_REPO/sub"
+mkdir -p "$FAKE_REPO/sub"
 git -C "$FAKE_REPO" init -q -b main
-git -C "$FAKE_REPO" config user.email "test@example.com"
-git -C "$FAKE_REPO" config user.name "test"
-git -C "$FAKE_REPO" config gc.auto 0
-git -C "$FAKE_REPO" config maintenance.auto false
+configure_repo "$FAKE_REPO"
 printf 'a\n' >"$FAKE_REPO/f.txt"
 printf 'gen/*.csv linguist-generated=true\n' >"$FAKE_REPO/.gitattributes"
 printf 'keep\n' >"$FAKE_REPO/sub/keep.txt"
@@ -72,9 +81,27 @@ git -C "$FAKE_REPO" add -A
 git -C "$FAKE_REPO" commit -qm base
 git -C "$FAKE_REPO" checkout -qb feature
 printf 'b\n' >>"$FAKE_REPO/f.txt"
-printf 'GENERATED_ROW_MARKER\n' >"$FAKE_REPO/gen/data.csv"
 git -C "$FAKE_REPO" add -A
 git -C "$FAKE_REPO" commit -qm change
+
+# GEN_REPO: feature に加えて生成ファイルを足す (issue #410)
+GEN_REPO="$WORKDIR/gen-repo"
+git clone -q -b feature "$FAKE_REPO" "$GEN_REPO"
+configure_repo "$GEN_REPO"
+mkdir -p "$GEN_REPO/gen"
+printf 'GENERATED_ROW_MARKER\n' >"$GEN_REPO/gen/data.csv"
+git -C "$GEN_REPO" add -A
+git -C "$GEN_REPO" commit -qm generated
+
+# GEN_ONLY_REPO: main から生成ファイルだけを変える
+GEN_ONLY_REPO="$WORKDIR/gen-only-repo"
+git clone -q -b main "$FAKE_REPO" "$GEN_ONLY_REPO"
+configure_repo "$GEN_ONLY_REPO"
+git -C "$GEN_ONLY_REPO" checkout -qb feature
+mkdir -p "$GEN_ONLY_REPO/gen"
+printf 'GENERATED_ROW_MARKER\n' >"$GEN_ONLY_REPO/gen/data.csv"
+git -C "$GEN_ONLY_REPO" add -A
+git -C "$GEN_ONLY_REPO" commit -qm generated
 
 pass=0
 fail=0
@@ -118,16 +145,17 @@ run_case generic-error   1 "some other fatal error"
 #
 # 生成ファイルの中身が prompt に入らず、名前は除外節に載り、通常ファイルの
 # diff は残ること。サブディレクトリからも見る: --name-only は toplevel 基準の
-# パスを返すので、cwd 基準で解釈すると除外が外れる。
+# パスを返すので、cwd 基準で解釈すると除外が外れる。除外したことは呼び側
+# (stderr) にも出ること。
 #
 # $1=名前, $2=run-review.sh を走らせるディレクトリ
 run_exclude_case() {
-  local name="$1" dir="$2" record="$WORKDIR/codex-stdin" problems=""
+  local name="$1" dir="$2" record="$WORKDIR/codex-stdin" err="$WORKDIR/run-stderr" problems=""
   rm -f "$record"
   (cd "$dir" \
     && HTTPS_PROXY='' https_proxy='' \
        PATH="$WORKDIR/bin:$PATH" CODEX_STDIN_RECORD="$record" \
-       bash "$TARGET" security >/dev/null 2>&1) || true
+       bash "$TARGET" security >/dev/null 2>"$err") || true
   if [ ! -f "$record" ]; then
     problems="codex not called"
   else
@@ -136,6 +164,7 @@ run_exclude_case() {
     grep -qF 'gen/data.csv' "$record" || problems="$problems excluded-file-unnamed"
     grep -qxF '+b' "$record" || problems="$problems regular-diff-missing"
   fi
+  grep -qF 'excluded from review' "$err" || problems="$problems not-reported-to-caller"
   if [ -z "$problems" ]; then
     pass=$((pass + 1))
   else
@@ -144,8 +173,26 @@ run_exclude_case() {
   fi
 }
 
-run_exclude_case exclude-generated-root   "$FAKE_REPO"
-run_exclude_case exclude-generated-subdir "$FAKE_REPO/sub"
+run_exclude_case exclude-generated-root   "$GEN_REPO"
+run_exclude_case exclude-generated-subdir "$GEN_REPO/sub"
+
+# 変更が生成ファイルだけなら codex を呼ばずに ERROR。空の diff を渡すと、
+# 何も見ていないのに pass が返りうる。
+gen_only_rc=0
+gen_only_marker="$WORKDIR/codex-called-gen-only"
+rm -f "$gen_only_marker"
+(cd "$GEN_ONLY_REPO" \
+  && HTTPS_PROXY='' https_proxy='' \
+     PATH="$WORKDIR/bin:$PATH" CODEX_CALLED_MARKER="$gen_only_marker" \
+     bash "$TARGET" security >/dev/null 2>&1) || gen_only_rc=$?
+if [ "$gen_only_rc" = 1 ] && [ ! -f "$gen_only_marker" ]; then
+  pass=$((pass + 1))
+else
+  gen_only_called=no
+  [ -f "$gen_only_marker" ] && gen_only_called=yes
+  echo "FAIL exclude-all-generated: expected=(exit 1, called no) got=(exit $gen_only_rc, called $gen_only_called)"
+  fail=$((fail + 1))
+fi
 
 # --- watchdog (issue #335) ---
 #
