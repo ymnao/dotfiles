@@ -176,18 +176,20 @@ fi
 # --name-only が cwd ではなく toplevel 基準のパスを返すため。
 # Why not process substitution で直接読む: 中の git が失敗しても set -e が
 # 効かず、除外ゼロのまま全 diff を送る形に黙って戻る。
-# Why not working tree の .gitattributes で判定する: レビュー対象のブランチ
-# 自身が任意のファイルに属性を付けて、レビューから隠せてしまう。--source に
-# base を渡すと、branch 側と working tree 側の .gitattributes は読まれない
-# (git 2.56.0、2026-10-10 実測)。branch で新たに付けた属性は merge 後の次の
+# Why not working tree の .gitattributes を使う: レビュー対象のブランチ自身が
+# 任意のファイルを隠せる (linguist-generated で除外させる、-diff で
+# "Binary files differ" に潰す)。GIT_ATTR_SOURCE に base を渡すと、以降の git は
+# branch 側と working tree 側の .gitattributes を読まない (git 2.56.0、
+# 2026-10-10 実測。git 2.42 以降)。branch で新たに付けた属性は merge 後の次の
 # レビューから効く。
+export GIT_ATTR_SOURCE="$BASE_BRANCH"
 TOPLEVEL="$(git rev-parse --show-toplevel)"
 ATTR_LIST="$(mktemp "${TMPDIR:-/tmp}/codex-review.attr.XXXXXX")"
 # Why not 下の cleanup に載せる: その trap はここより後で張られるので、
 # git の失敗で set -e が落としたときに消えない。
 trap 'rm -f "$ATTR_LIST"' EXIT
 git diff --name-only --no-renames -z "$BASE_BRANCH...HEAD" \
-  | git -C "$TOPLEVEL" check-attr --source="$BASE_BRANCH" -z --stdin linguist-generated > "$ATTR_LIST"
+  | git -C "$TOPLEVEL" check-attr -z --stdin linguist-generated > "$ATTR_LIST"
 EXCLUDE_PATHSPEC=()
 EXCLUDED_PATHSPEC=()
 while IFS= read -r -d '' attr_path && IFS= read -r -d '' _ && IFS= read -r -d '' attr_value; do

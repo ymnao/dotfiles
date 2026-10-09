@@ -103,13 +103,20 @@ make_gen_repo "$GEN_REPO" feature
 GEN_ONLY_REPO="$WORKDIR/gen-only-repo"
 make_gen_repo "$GEN_ONLY_REPO" main
 
-# BRANCH_ATTR_REPO: レビュー対象のブランチ自身が f.txt に属性を付ける
+# BRANCH_ATTR_REPO / BRANCH_NODIFF_REPO: レビュー対象のブランチ自身が f.txt に
+# 属性を付けて隠そうとする (除外させる / "Binary files differ" に潰す)
 BRANCH_ATTR_REPO="$WORKDIR/branch-attr-repo"
 git clone -q -b feature "$FAKE_REPO" "$BRANCH_ATTR_REPO"
 configure_repo "$BRANCH_ATTR_REPO"
 printf 'f.txt linguist-generated=true\n' >>"$BRANCH_ATTR_REPO/.gitattributes"
 git -C "$BRANCH_ATTR_REPO" add -A
 git -C "$BRANCH_ATTR_REPO" commit -qm hide
+BRANCH_NODIFF_REPO="$WORKDIR/branch-nodiff-repo"
+git clone -q -b feature "$FAKE_REPO" "$BRANCH_NODIFF_REPO"
+configure_repo "$BRANCH_NODIFF_REPO"
+printf 'f.txt -diff\n' >>"$BRANCH_NODIFF_REPO/.gitattributes"
+git -C "$BRANCH_NODIFF_REPO" add -A
+git -C "$BRANCH_NODIFF_REPO" commit -qm hide
 
 pass=0
 fail=0
@@ -184,21 +191,28 @@ run_exclude_case() {
 run_exclude_case exclude-generated-root   "$GEN_REPO"
 run_exclude_case exclude-generated-subdir "$GEN_REPO/sub"
 
-# ブランチが付けた属性では除外しないこと (base の .gitattributes だけを見る)。
-# working tree の属性で判定すると、レビュー対象自身が任意のファイルを隠せる。
-branch_attr_record="$WORKDIR/codex-stdin-branch-attr"
-rm -f "$branch_attr_record"
-(cd "$BRANCH_ATTR_REPO" \
-  && HTTPS_PROXY='' https_proxy='' \
-     PATH="$WORKDIR/bin:$PATH" CODEX_STDIN_RECORD="$branch_attr_record" \
-     bash "$TARGET" security >/dev/null 2>&1) || true
-if [ -f "$branch_attr_record" ] && grep -qxF '+b' "$branch_attr_record" \
-  && ! grep -qF '## Excluded from the diff' "$branch_attr_record"; then
-  pass=$((pass + 1))
-else
-  echo "FAIL branch-added-attr-ignored: f.txt was hidden from the prompt (or codex not called)"
-  fail=$((fail + 1))
-fi
+# ブランチが付けた属性は効かないこと (base の .gitattributes だけを見る)。
+# working tree の属性を使うと、レビュー対象自身が任意のファイルを隠せる。
+#
+# $1=名前, $2=run-review.sh を走らせるディレクトリ
+run_branch_attr_case() {
+  local name="$1" dir="$2" record="$WORKDIR/codex-stdin"
+  rm -f "$record"
+  (cd "$dir" \
+    && HTTPS_PROXY='' https_proxy='' \
+       PATH="$WORKDIR/bin:$PATH" CODEX_STDIN_RECORD="$record" \
+       bash "$TARGET" security >/dev/null 2>&1) || true
+  if [ -f "$record" ] && grep -qxF '+b' "$record" \
+    && ! grep -qF '## Excluded from the diff' "$record"; then
+    pass=$((pass + 1))
+  else
+    echo "FAIL $name: f.txt was hidden from the prompt (or codex not called)"
+    fail=$((fail + 1))
+  fi
+}
+
+run_branch_attr_case branch-generated-attr-ignored "$BRANCH_ATTR_REPO"
+run_branch_attr_case branch-nodiff-attr-ignored    "$BRANCH_NODIFF_REPO"
 
 # 変更が生成ファイルだけなら codex を呼ばずに ERROR。空の diff を渡すと、
 # 何も見ていないのに pass が返りうる。
