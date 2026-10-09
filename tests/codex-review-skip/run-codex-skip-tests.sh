@@ -178,19 +178,23 @@ run_exclude_case exclude-generated-subdir "$GEN_REPO/sub"
 
 # 変更が生成ファイルだけなら codex を呼ばずに ERROR。空の diff を渡すと、
 # 何も見ていないのに pass が返りうる。
+# 文言も見るのは、他の起動前 ERROR (base 解決失敗等) でも exit 1・未起動に
+# なり、fixture がこの分岐まで届かなくなっても green のままになるため。
 gen_only_rc=0
 gen_only_marker="$WORKDIR/codex-called-gen-only"
+gen_only_err="$WORKDIR/gen-only-stderr"
 rm -f "$gen_only_marker"
 (cd "$GEN_ONLY_REPO" \
   && HTTPS_PROXY='' https_proxy='' \
      PATH="$WORKDIR/bin:$PATH" CODEX_CALLED_MARKER="$gen_only_marker" \
-     bash "$TARGET" security >/dev/null 2>&1) || gen_only_rc=$?
-if [ "$gen_only_rc" = 1 ] && [ ! -f "$gen_only_marker" ]; then
+     bash "$TARGET" security >/dev/null 2>"$gen_only_err") || gen_only_rc=$?
+if [ "$gen_only_rc" = 1 ] && [ ! -f "$gen_only_marker" ] \
+  && grep -qF 'every changed file is linguist-generated' "$gen_only_err"; then
   pass=$((pass + 1))
 else
   gen_only_called=no
   [ -f "$gen_only_marker" ] && gen_only_called=yes
-  echo "FAIL exclude-all-generated: expected=(exit 1, called no) got=(exit $gen_only_rc, called $gen_only_called)"
+  echo "FAIL exclude-all-generated: expected=(exit 1, called no, all-generated message) got=(exit $gen_only_rc, called $gen_only_called): $(cat "$gen_only_err")"
   fail=$((fail + 1))
 fi
 
