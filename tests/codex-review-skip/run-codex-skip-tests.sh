@@ -103,6 +103,14 @@ make_gen_repo "$GEN_REPO" feature
 GEN_ONLY_REPO="$WORKDIR/gen-only-repo"
 make_gen_repo "$GEN_ONLY_REPO" main
 
+# BRANCH_ATTR_REPO: レビュー対象のブランチ自身が f.txt に属性を付ける
+BRANCH_ATTR_REPO="$WORKDIR/branch-attr-repo"
+git clone -q -b feature "$FAKE_REPO" "$BRANCH_ATTR_REPO"
+configure_repo "$BRANCH_ATTR_REPO"
+printf 'f.txt linguist-generated=true\n' >>"$BRANCH_ATTR_REPO/.gitattributes"
+git -C "$BRANCH_ATTR_REPO" add -A
+git -C "$BRANCH_ATTR_REPO" commit -qm hide
+
 pass=0
 fail=0
 
@@ -175,6 +183,22 @@ run_exclude_case() {
 
 run_exclude_case exclude-generated-root   "$GEN_REPO"
 run_exclude_case exclude-generated-subdir "$GEN_REPO/sub"
+
+# ブランチが付けた属性では除外しないこと (base の .gitattributes だけを見る)。
+# working tree の属性で判定すると、レビュー対象自身が任意のファイルを隠せる。
+branch_attr_record="$WORKDIR/codex-stdin-branch-attr"
+rm -f "$branch_attr_record"
+(cd "$BRANCH_ATTR_REPO" \
+  && HTTPS_PROXY='' https_proxy='' \
+     PATH="$WORKDIR/bin:$PATH" CODEX_STDIN_RECORD="$branch_attr_record" \
+     bash "$TARGET" security >/dev/null 2>&1) || true
+if [ -f "$branch_attr_record" ] && grep -qxF '+b' "$branch_attr_record" \
+  && ! grep -qF '## Excluded from the diff' "$branch_attr_record"; then
+  pass=$((pass + 1))
+else
+  echo "FAIL branch-added-attr-ignored: f.txt was hidden from the prompt (or codex not called)"
+  fail=$((fail + 1))
+fi
 
 # 変更が生成ファイルだけなら codex を呼ばずに ERROR。空の diff を渡すと、
 # 何も見ていないのに pass が返りうる。
