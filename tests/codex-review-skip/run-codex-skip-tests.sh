@@ -6,6 +6,8 @@ set -euo pipefail
 # 検証観点:
 #   - sandbox シグネチャ → exit 3
 #   - usage limit / rate limit / too many requests (各単独) → exit 4
+#   - 入力上限 (input_too_large) → exit 5
+#   - linguist-generated なファイルを diff から外す
 #   - 裸の数値 429 のみ / "rate limiter" 部分一致 / 汎用エラー → exit 1
 #     (SKIP 誤判定で ERROR が隠蔽されない)
 #   - 終了しない codex を watchdog が打ち切る → exit 3 (issue #335)
@@ -42,6 +44,7 @@ cat >"$WORKDIR/bin/codex" <<'EOF'
 #!/bin/sh
 [ -n "${CODEX_CALLED_MARKER:-}" ] && : >"$CODEX_CALLED_MARKER"
 [ -n "${CODEX_CA_RECORD:-}" ] && printf '%s' "${CODEX_CA_CERTIFICATE:-}" >"$CODEX_CA_RECORD"
+[ -n "${CODEX_STDIN_RECORD:-}" ] && cat >"$CODEX_STDIN_RECORD"
 if [ -n "${CODEX_SLEEP:-}" ]; then
   sleep "$CODEX_SLEEP" &
   [ -n "${CODEX_GRANDCHILD_FILE:-}" ] && printf '%s\n' "$!" >"$CODEX_GRANDCHILD_FILE"
@@ -52,17 +55,24 @@ exit 1
 EOF
 chmod +x "$WORKDIR/bin/codex"
 
-# fake repo: main + feature (1 commit 先) で run-review.sh の前提を満たす
+# fake repo: main + feature (1 commit 先) で run-review.sh の前提を満たす。
+# feature 側の linguist-generated な gen/data.csv は diff から外れるべきもの
+# (issue #410)
 FAKE_REPO="$WORKDIR/repo"
-mkdir -p "$FAKE_REPO"
+mkdir -p "$FAKE_REPO/gen" "$FAKE_REPO/sub"
 git -C "$FAKE_REPO" init -q -b main
 git -C "$FAKE_REPO" config user.email "test@example.com"
 git -C "$FAKE_REPO" config user.name "test"
+git -C "$FAKE_REPO" config gc.auto 0
+git -C "$FAKE_REPO" config maintenance.auto false
 printf 'a\n' >"$FAKE_REPO/f.txt"
+printf 'gen/*.csv linguist-generated=true\n' >"$FAKE_REPO/.gitattributes"
+printf 'keep\n' >"$FAKE_REPO/sub/keep.txt"
 git -C "$FAKE_REPO" add -A
 git -C "$FAKE_REPO" commit -qm base
 git -C "$FAKE_REPO" checkout -qb feature
 printf 'b\n' >>"$FAKE_REPO/f.txt"
+printf 'GENERATED_ROW_MARKER\n' >"$FAKE_REPO/gen/data.csv"
 git -C "$FAKE_REPO" add -A
 git -C "$FAKE_REPO" commit -qm change
 
@@ -96,10 +106,46 @@ run_case rate-limit      4 "Rate limit reached for requests"
 run_case rate-limited    4 "You are being rate limited"
 run_case too-many-reqs   4 "stream error: 429 Too Many Requests"
 
+# 入力上限 → 5 (codex-cli 0.161.0 の実際の stderr。issue #410)
+run_case input-too-large 5 'Error: turn/start: turn/start failed: Input exceeds the maximum length of 1048576 characters. (code -32602), data: {"input_error_code":"input_too_large","max_chars":1048576,"actual_chars":1100010}'
+
 # SKIP 誤判定の負例 → 1 (ERROR のまま)
 run_case bare-429        1 "connection to port 4290 failed"
 run_case rate-limiter    1 "rate limiter initialization failed"
 run_case generic-error   1 "some other fatal error"
+
+# --- linguist-generated の除外 (issue #410) ---
+#
+# 生成ファイルの中身が prompt に入らず、名前は除外節に載り、通常ファイルの
+# diff は残ること。サブディレクトリからも見る: --name-only は toplevel 基準の
+# パスを返すので、cwd 基準で解釈すると除外が外れる。
+#
+# $1=名前, $2=run-review.sh を走らせるディレクトリ
+run_exclude_case() {
+  local name="$1" dir="$2" record="$WORKDIR/codex-stdin" problems=""
+  rm -f "$record"
+  (cd "$dir" \
+    && HTTPS_PROXY='' https_proxy='' \
+       PATH="$WORKDIR/bin:$PATH" CODEX_STDIN_RECORD="$record" \
+       bash "$TARGET" security >/dev/null 2>&1) || true
+  if [ ! -f "$record" ]; then
+    problems="codex not called"
+  else
+    grep -qF 'GENERATED_ROW_MARKER' "$record" && problems="$problems generated-content-in-prompt"
+    grep -qF '## Excluded from the diff' "$record" || problems="$problems no-excluded-section"
+    grep -qF 'gen/data.csv' "$record" || problems="$problems excluded-file-unnamed"
+    grep -qxF '+b' "$record" || problems="$problems regular-diff-missing"
+  fi
+  if [ -z "$problems" ]; then
+    pass=$((pass + 1))
+  else
+    echo "FAIL $name:$problems"
+    fail=$((fail + 1))
+  fi
+}
+
+run_exclude_case exclude-generated-root   "$FAKE_REPO"
+run_exclude_case exclude-generated-subdir "$FAKE_REPO/sub"
 
 # --- watchdog (issue #335) ---
 #

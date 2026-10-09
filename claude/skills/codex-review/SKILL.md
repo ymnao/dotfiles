@@ -34,6 +34,7 @@ Run `bash "$HOME/.claude/skills/codex-review/scripts/run-review.sh" <P>` **with 
 - `1` (setup/parse error) → report the stderr message, record perspective as ERROR, and continue with the next perspective. If 2 consecutive perspectives end in exit 1, stop the whole skill and report to the user.
 - `3` (sandbox skip) → record perspective as SKIPPED and continue with the next perspective. If ALL perspectives end in SKIP, stop and point to "Running under a shell sandbox" in Notes for unblock steps.
 - `4` (rate-limit skip) → record perspective as SKIPPED (rate limit) and **stop the whole skill immediately** (残り観点も同じアカウントの同じリミット窓に当たるため実行しない)。ERROR カウントには入れない。呼び側 (pr / dev skill) には第二意見のフォールバック (Fable 系統サブエージェントのフレッシュレビュー) を促す。リミット窓は 5 時間/週次単位なのでセッション内リトライはしない。
+- `5` (input-too-large skip) → record perspective as SKIPPED (input too large) and **stop the whole skill immediately** (残り観点にも同じ diff を渡すので必ず上限を超える)。ERROR カウントには入れない。呼び側 (pr / dev skill) には `4` と同じく Fable へのフォールバックを促す。
 
 ### 2. Verify (do this for EVERY finding BEFORE applying any fix)
 
@@ -90,7 +91,8 @@ Then per-perspective details, one line per finding:
 ## Notes
 
 - **Review target = caller's cwd**: the script does not `cd` unless `CODEX_REVIEW_REPO` is set. This skill is not dotfiles-specific.
-- **Output contract**: run-review.sh returns validated JSON (schema-checked by `parse-review-output.sh`). Exit codes: 0 pass / 2 findings / 1 error / 3 sandbox skip / 4 rate-limit skip / 130 も 143 も中断 (INT / TERM。レビュー結果ではないので再実行する)。Do NOT attempt to parse codex prose yourself; if you get exit 1, treat it as an error, not as PASS.
+- **Output contract**: run-review.sh returns validated JSON (schema-checked by `parse-review-output.sh`). Exit codes: 0 pass / 2 findings / 1 error / 3 sandbox skip / 4 rate-limit skip / 5 input-too-large skip / 130 も 143 も中断 (INT / TERM。レビュー結果ではないので再実行する)。Do NOT attempt to parse codex prose yourself; if you get exit 1, treat it as an error, not as PASS.
+- **生成ファイルの除外**: `.gitattributes` で `linguist-generated` が付いたファイルは diff から外し、prompt には `--stat` だけを載せる (codex には「レビューしていない」と明示する)。codex exec の入力上限は 1,048,576 文字で、生成 CSV 1 本で超えて全観点が ERROR になった (issue #410)。それでも上限を超えたときは exit 5 になる。超えた原因が属性の付いていない生成物なら、その repo の `.gitattributes` に属性を足すと除外の対象になる。
 - **Model selection**: run-review.sh はモデルを指定しない — `codex/config.toml` の global 設定 (`model` / `model_reasoning_effort`) が唯一の選択点。観点別・リスク tier 別の切り替えは意図的に持たない (計測なしの最適化はしない)。必要になったら `codex exec -c model=... -c model_reasoning_effort=...` の per-call override で実現できる。
 - **Why verify-then-fix**: cross-vendor reviewers have non-overlapping blind spots but also produce false positives; verification against the actual code filters them before they cost edit time. Detection is instructed to over-report ("report everything") and this skill filters downstream — do not skip verification because findings "look obviously right".
 - **Do not commit** fixes from this skill — ただし confirm run (step 4) の直前だけは commit する。run-review.sh が渡すのは `<base>...HEAD` の commit 済み diff なので、commit しないと confirm が古い状態を見る。
