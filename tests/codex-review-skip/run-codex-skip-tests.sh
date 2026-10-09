@@ -84,24 +84,24 @@ printf 'b\n' >>"$FAKE_REPO/f.txt"
 git -C "$FAKE_REPO" add -A
 git -C "$FAKE_REPO" commit -qm change
 
-# GEN_REPO: feature に加えて生成ファイルを足す (issue #410)
-GEN_REPO="$WORKDIR/gen-repo"
-git clone -q -b feature "$FAKE_REPO" "$GEN_REPO"
-configure_repo "$GEN_REPO"
-mkdir -p "$GEN_REPO/gen"
-printf 'GENERATED_ROW_MARKER\n' >"$GEN_REPO/gen/data.csv"
-git -C "$GEN_REPO" add -A
-git -C "$GEN_REPO" commit -qm generated
+# FAKE_REPO の <起点> から feature を切り、生成ファイルを 1 commit 足した
+# clone を <dest> に作る (issue #410)
+make_gen_repo() {
+  local dest="$1" from="$2"
+  git clone -q -b "$from" "$FAKE_REPO" "$dest"
+  configure_repo "$dest"
+  git -C "$dest" checkout -qB feature
+  mkdir -p "$dest/gen"
+  printf 'GENERATED_ROW_MARKER\n' >"$dest/gen/data.csv"
+  git -C "$dest" add -A
+  git -C "$dest" commit -qm generated
+}
 
-# GEN_ONLY_REPO: main から生成ファイルだけを変える
+# GEN_REPO: 通常ファイルの変更 + 生成ファイル / GEN_ONLY_REPO: 生成ファイルだけ
+GEN_REPO="$WORKDIR/gen-repo"
+make_gen_repo "$GEN_REPO" feature
 GEN_ONLY_REPO="$WORKDIR/gen-only-repo"
-git clone -q -b main "$FAKE_REPO" "$GEN_ONLY_REPO"
-configure_repo "$GEN_ONLY_REPO"
-git -C "$GEN_ONLY_REPO" checkout -qb feature
-mkdir -p "$GEN_ONLY_REPO/gen"
-printf 'GENERATED_ROW_MARKER\n' >"$GEN_ONLY_REPO/gen/data.csv"
-git -C "$GEN_ONLY_REPO" add -A
-git -C "$GEN_ONLY_REPO" commit -qm generated
+make_gen_repo "$GEN_ONLY_REPO" main
 
 pass=0
 fail=0

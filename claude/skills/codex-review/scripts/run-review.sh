@@ -178,6 +178,9 @@ fi
 # 効かず、除外ゼロのまま全 diff を送る形に黙って戻る。
 TOPLEVEL="$(git rev-parse --show-toplevel)"
 ATTR_LIST="$(mktemp "${TMPDIR:-/tmp}/codex-review.attr.XXXXXX")"
+# Why not 下の cleanup に載せる: その trap はここより後で張られるので、
+# git の失敗で set -e が落としたときに消えない。
+trap 'rm -f "$ATTR_LIST"' EXIT
 git diff --name-only --no-renames -z "$BASE_BRANCH...HEAD" \
   | git -C "$TOPLEVEL" check-attr -z --stdin linguist-generated > "$ATTR_LIST"
 EXCLUDE_PATHSPEC=()
@@ -191,6 +194,7 @@ while IFS= read -r -d '' attr_path && IFS= read -r -d '' _ && IFS= read -r -d ''
   esac
 done < "$ATTR_LIST"
 rm -f "$ATTR_LIST"
+trap - EXIT
 EXCLUDED_STAT=""
 if [ "${#EXCLUDED_PATHSPEC[@]}" -gt 0 ]; then
   # 長いパスの省略と非 ASCII の 8 進エスケープを止め、ファイルを名前で
