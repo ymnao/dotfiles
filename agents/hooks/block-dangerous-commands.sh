@@ -100,13 +100,14 @@ expand_assignments() {
       if [[ "$_cur" =~ $_for_head ]]; then
         _fv=$_cur
         if [[ "$_fv" =~ $_for_eol_re ]]; then
-          _fv=$(printf '%s\n' "$_fv" | awk -v re="${_for_head}${_names}[[:space:]]*\$" '{
+          _fv=$(printf '%s\n' "$_fv" | awk -v re="${_for_head}${_names}[[:space:]]*\$" \
+            -v inre='(^|[[:space:]])in([[:space:]]|$)' '{
             if (p != "" && $0 ~ /^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*[[:space:]]*)*$/) {
-              if ($0 ~ /(^|[[:space:]])in([[:space:]]|$)/) { print p " " $0; p = "" } else p = p " " $0
+              if ($0 ~ inre) { print p " " $0; p = "" } else p = p " " $0
               next
             }
             l = (p == "") ? $0 : p " " $0
-            if ($0 ~ re && match($0, re) && substr($0, RSTART) !~ /[[:space:]]in([[:space:]]|$)/) { p = l; next }
+            if (match($0, re) && substr($0, RSTART) !~ inre) { p = l; next }
             p = ""; print l
           } END { if (p != "") print p }')
         fi
@@ -664,11 +665,12 @@ fi
 # brace 展開 `{a,b,c}` を全パターンに展開して配列 _brace_out に入れる。空 alt (`{,x}` /
 # `{x,}`) は空要素として扱う。最初の `}` の直前の `{` (最も内側の組) から解くのは、
 # 最初の `{` から解くとネスト `{build,{/,dist}}` を `{/}` という 1 語に化かして `/` を
-# 見落とすため。対応する `{` の無い `}` は落として進める。
+# 見落とすため。最初の `{` より前 (_head) は固定して後ろだけを見るのは、そこにある
+# 対応の無い `}` を 1 個ずつ落とすと `}` の個数 × 入力長の走査になるため。
 # 再帰ではなく作業リストで回すのは、件数が上限 $2 (0 は無制限) を超えた時点で打ち切るため
 # (`{a,b}{a,b}…` は件数が指数で増える)。超えたら 1 を返す。
 _expand_braces_into() {
-  local _cap=$2 _s _pre _rest _mid _post _work
+  local _cap=$2 _s _head _after _pre _rest _mid _post _work
   _work=("$1")
   _brace_out=()
   while [[ ${#_work[@]} -gt 0 ]]; do
@@ -676,14 +678,12 @@ _expand_braces_into() {
     unset "_work[${#_work[@]}-1]"
     case "$_s" in
       *"{"*","*"}"*)
-        _rest="${_s%%\}*}"
-        _pre="${_rest%\{*}"
+        _head="${_s%%\{*}"
+        _after="${_s#"$_head"}"
+        _rest="${_after%%\}*}"
+        _pre="${_head}${_rest%\{*}"
         _mid="${_rest##*\{}"
-        _post="${_s#*\}}"
-        if [[ "$_rest" != *"{"* ]]; then
-          _work[${#_work[@]}]="${_rest}${_post}"
-          continue
-        fi
+        _post="${_after#*\}}"
         while :; do
           _work[${#_work[@]}]="${_pre}${_mid%%,*}${_post}"
           [[ "$_mid" == *,* ]] || break
@@ -822,15 +822,17 @@ if [[ -n "$_rm_segs" ]]; then
     expand_assignments _lit_view
     _rm_dyn_segs+=$'\n'$(_rm_segs_of "$_lit_view")
   fi
+  _rm_dyn_sed=(-e "s#\\\$(\\{TMPDIR\\}|TMPDIR)(/[A-Za-z0-9_-])#${_sentinel}\\2#g")
   # 入力の中で mktemp を関数・alias として定義し直していたら、その出力は信じない。
-  # zsh の展開フラグ (`$~x` / `$^x` / `$=x` / `$+x`) も未解決の展開として数える。
-  _mktemp_strip="s/${_mktemp_subst_re}/${_sentinel}/g"
   _mktemp_redef_re='(^|[^A-Za-z0-9_])(function[[:space:]]+mktemp|alias[[:space:]]+mktemp|mktemp[[:space:]]*\()'
-  [[ "$command_pre_literal" =~ $_mktemp_redef_re ]] && _mktemp_strip='s/^$//'
-  _rm_dyn_re='\$[A-Za-z_{(@*#0-9!?~^=+-]|`|'"${_sentinel}"'[^;&|]*\.\.'
-  if [[ "$_rm_dyn_segs" == *[\$\`]* ]] && [[ "$(printf '%s\n' "$_rm_dyn_segs" | sed -E \
-      -e "s#\\\$(\\{TMPDIR\\}|TMPDIR)(/[A-Za-z0-9_-])#${_sentinel}\\2#g" \
-      -e "$_mktemp_strip")" =~ $_rm_dyn_re ]]; then
+  if ! [[ "$command_pre_literal" =~ $_mktemp_redef_re ]]; then
+    _rm_dyn_sed+=(-e "s/${_mktemp_subst_re}/${_sentinel}/g")
+  fi
+  # `$` の後に来うる文字を列挙せず、空白と引用符以外が続く `$` をすべて展開として数えるのは、
+  # 列挙に漏れた形 (zsh の `$~x` / `$^x` / `$=x` 等) がそのまま素通りになるため。
+  _rm_dyn_re='\$[^[:space:]"'"'"']|`|'"${_sentinel}"'[^;&|]*\.\.'
+  if [[ "$_rm_dyn_segs" == *[\$\`]* ]] \
+     && [[ "$(printf '%s\n' "$_rm_dyn_segs" | sed -E "${_rm_dyn_sed[@]}")" =~ $_rm_dyn_re ]]; then
     echo "ブロック: rm -rf の引数に値を静的に決められない展開が含まれています。パスをリテラルで書くか、\$TMPDIR 配下を指定してください。" >&2
     exit 2
   fi
