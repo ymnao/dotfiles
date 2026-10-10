@@ -487,10 +487,19 @@
 {"name": "bind-tmpdir-lowercase", "expect": "block", "command": "rm -rf $tmpdir/a", "reason": "変数名は大小を区別する ($tmpdir は未設定になりうる)"}
 {"name": "bind-xdg-not-excluded", "expect": "block", "command": "rm -rf $XDG_DATA_HOME/", "reason": "XDG_* は未設定のことがあり除外しない"}
 {"name": "bind-mktemp-dotdot", "expect": "block", "command": "rm -rf \"$(mktemp -d)/..\"", "reason": "mktemp の後の .. は除外しない"}
-{"name": "bind-mktemp-chained", "expect": "block", "command": "d=$(mktemp -d; echo /); rm -rf $d", "reason": "mktemp 以外のコマンドを含む置換は除外しない"}
-{"name": "bind-mktemp-chained-inline", "expect": "block", "command": "rm -rf $(mktemp -d; echo /)", "reason": "置換の中に mktemp 以外のコマンドがあれば除外しない"}
+{"name": "bind-mktemp-chained", "expect": "block", "command": "d=$(mktemp -d; echo x); rm -rf $d", "reason": "mktemp 以外のコマンドを含む置換は除外しない"}
+{"name": "bind-mktemp-chained-inline", "expect": "block", "command": "rm -rf $(mktemp -d; echo x)", "reason": "置換の中に mktemp 以外のコマンドがあれば除外しない"}
 {"name": "bind-mktemp-var-inline", "expect": "block", "command": "rm -rf $(mktemp -d $X)", "reason": "置換の中に別の展開を含む mktemp は除外しない"}
 {"name": "bind-mktemp-var-template", "expect": "block", "command": "d=$(mktemp -d $X/a.XXXX); rm -rf $d", "reason": "テンプレートに変数を含む mktemp は除外しない"}
+{"name": "bind-literalized-cmdsubst", "expect": "block", "command": "rm -rf \"$(git rev-parse --show-toplevel)\"", "reason": "危険コマンド名を含む置換も literal 化の前の view で未解決として扱う"}
+{"name": "bind-literalized-cmdsubst-assign", "expect": "block", "command": "d=$(git rev-parse --show-toplevel); rm -rf $d", "reason": "危険コマンド名を含む置換を経由した代入"}
+{"name": "bind-literalized-default", "expect": "block", "command": "rm -rf ${HOME:-git}", "reason": "既定値に危険コマンド名を含む展開"}
+{"name": "bind-brace-tmpdir-dotdot", "expect": "block", "command": "rm -rf $TMPDIR/.{.,}/x", "reason": "brace 展開後にだけ現れる .."}
+{"name": "bind-tmpdir-bare", "expect": "block", "command": "rm -rf $TMPDIR", "reason": "TMPDIR 自体 (未設定なら引数なし、設定済みなら共有領域ごと)"}
+{"name": "bind-tmpdir-trailing-slash", "expect": "block", "command": "rm -rf $TMPDIR/", "reason": "TMPDIR が未設定なら / になる"}
+{"name": "bind-append-assign", "expect": "block", "command": "x=; x+=/; rm -rf $x", "reason": "追記代入は値を追わない"}
+{"name": "bind-array-assign", "expect": "block", "command": "a=(/ b); rm -rf $a", "reason": "配列代入は値を追わない"}
+{"name": "bind-for-multi-name-newline-in", "expect": "block", "command": "for a b\nin reset x; do git $a --hard; done", "reason": "複数変数と in の間の改行"}
 {"name": "fp-accepted-rm-positional", "expect": "block", "command": "rm -rf \"$1\"", "reason": "位置パラメータは値を追えない"}
 {"name": "fp-accepted-rm-all-args", "expect": "block", "command": "rm -rf \"$@\"", "reason": "位置パラメータは値を追えない"}
 {"name": "fp-accepted-rm-tmpdir-default", "expect": "block", "command": "rm -rf \"${TMPDIR:-/tmp}/x\"", "reason": "修飾付きの TMPDIR は除外しない"}
