@@ -20,8 +20,9 @@ input=$(cat)
 # 大文字バイナリ（CHMOD / .Codex 等）対応のため事前に小文字化する。
 # 危険コマンド名（rm / git / chmod / sudo）にも codex 文字列と同じ gap を許容する
 # （クォート分割・バックスラッシュ挿入による回避対策。本判定は正規化後に検出する）。
+# 行継続 (`su\⏎do`) は JSON 上 `\\` + `\n` なので、`\n` も gap に含める。
 input_lower=$(printf '%s' "$input" | tr '[:upper:]' '[:lower:]')
-gap='([\\"'"'"']|\\\\|\\")*'
+gap='([\\"'"'"']|\\\\|\\"|\\n)*'
 # dotfile glob (.co* / .* / .[c]odex / .cod?x 等) と dotfile brace 展開
 # (.co{dex,x} 等) は literal "codex" 文字列を含まないため上の codex パターンでは
 # screener を通過しない。実行時のシェル glob/brace 展開で .codex にマッチしうる
@@ -44,6 +45,17 @@ if [[ -z "$command" ]]; then
   exit 0
 fi
 
+# 行継続 `\⏎` を消して前後をつないだ view を末尾に足す (`rm -rf \⏎/` / `git reset \⏎--hard`)。
+# 元の行を置き換えずに足すのは、`echo a\\⏎rm -rf /` の `\\⏎` (エスケープされた `\` +
+# コマンド区切りの改行) までつなぐと `arm` に化けて rm が判定から消えるため。足す側は
+# つなぎすぎても余分に検出するだけで済む。
+# bash の `${command//…/}` でつながないのは、bash 3.2 ではマッチ数の 2 乗で遅くなるため
+# (`\⏎` 2000 個で 0.2s → 6s を 2026-10-10 に /bin/bash 3.2.57 で実測)。
+_line_cont=$'\\\n'
+if [[ "$command" == *"$_line_cont"* ]]; then
+  command="$command"$'\n'"$(printf '%s\n' "$command" | awk '{ if (sub(/\\$/, "")) printf "%s", $0; else print }')"
+fi
+
 # 単純代入 var=value を「コマンド中の $var / ${var}」へ静的展開する。引数で渡した
 # 変数名の現在値を読み、展開済み値を同じ変数に書き戻す（bash 3.2: ${!1} の indirect
 # expand + printf -v で nameref を代用）。代入連鎖（p=~; q=$p; rm -rf $q のような
@@ -56,21 +68,45 @@ fi
 # p=/; for f in $p のような代入との連鎖を同じ反復の中で収束させるため。
 # 同名の値を先勝ちにせず空白で連結して全候補を判定に掛けるのは、f=a; for f in / の
 # ように実行時にどの値が効くかを静的に決められないため。
+# for 系は zsh の形も追う: 括弧リスト (`for f (a b)` / `foreach f (a b)`)、複数変数
+# (`for a b in …` は各変数がリストの値を順にとるので、どの変数にもリスト全体を割り当てる)、
+# 変数と in の間の改行 (`for f⏎in …`)。改行をすべて消した 1 行の view にしないのは、
+# リストの終端が消えて後続のコマンドまでリストに吸い込むのと、grep が巨大な 1 行を
+# 走査して入力長の 2 乗で遅くなるため (for を 100 個並べた入力で 2.1s → 11s を 2026-10-10 に実測)。
+# `for NAME…` で終わる行にだけ次の行をつなぐ。
+# `$(mktemp …)` だけは空白を含んでも値ごと代入として拾う (rm の除外判定が mktemp の
+# 引数まで見るため)。`;` / `$` / 括弧を含む置換はこの形に入らず、従来どおり空白で切れる。
 expand_assignments() {
-  local _var=$1 _prev _iter=0 _cur=${!1} assignments asgn name val esc_name esc_val
+  local _var=$1 _prev _iter=0 _cur=${!1} assignments asgn name val esc_name esc_val _fv
+  local _names='[A-Za-z_][A-Za-z0-9_]*([[:space:]]+[A-Za-z_][A-Za-z0-9_]*)*'
   while [[ $_iter -lt 8 ]]; do
     _prev=$_cur
     _iter=$((_iter + 1))
     assignments=$({
       printf '%s' "$_cur" \
-        | grep -oE '(^|[[:space:];&|])[A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*' \
+        | grep -oE '(^|[[:space:];&|])[A-Za-z_][A-Za-z0-9_]*=(\$\(mktemp[^();&|`$]*\)|[^[:space:];&|]*)' \
         | sed -E 's/^[[:space:];&|]+//'
-      [[ "$_cur" == *for* || "$_cur" == *select* ]] && printf '%s' "$_cur" \
-        | grep -oE '(^|[[:space:];&|()])(for|select)[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]+in([[:space:]][^;&|]*|$)' \
-        | sed -E 's/^[[:space:];&|()]*(for|select)[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]+in[[:space:]]*/\2=/'
+      if [[ "$_cur" == *for* || "$_cur" == *select* ]]; then
+        _fv=$_cur
+        if [[ "$_fv" == *$'\n'* ]]; then
+          _fv=$(printf '%s\n' "$_fv" | sed -E -e ':a' \
+            -e "/(^|[[:space:];&|()])(for|select)[[:space:]]+${_names}[[:space:]]*\$/{" \
+            -e '$!N' -e 's/\n/ /' -e 'ta' -e '}')
+        fi
+        printf '%s\n' "$_fv" \
+          | grep -oE "(^|[[:space:];&|()])(for|select)[[:space:]]+${_names}[[:space:]]+in([[:space:]][^;&|]*|\$)" \
+          | sed -E "s/^[[:space:];&|()]*(for|select)[[:space:]]+(${_names})[[:space:]]+in[[:space:]]*/\\2=/"
+        printf '%s\n' "$_fv" \
+          | grep -oE "(^|[[:space:];&|()])(for|foreach|select)[[:space:]]+${_names}[[:space:]]*\\([^)]*\\)" \
+          | sed -E "s/^[[:space:];&|()]*(for|foreach|select)[[:space:]]+(${_names})[[:space:]]*\\((.*)\\)\$/\\2=\\4/"
+      fi
     } | awk '{
-      i = index($0, "="); n = substr($0, 1, i - 1); v = substr($0, i + 1)
-      if (!(n in vals)) { order[++k] = n; vals[n] = v } else vals[n] = vals[n] " " v
+      i = index($0, "="); v = substr($0, i + 1)
+      c = split(substr($0, 1, i - 1), ns, " ")
+      for (q = 1; q <= c; q++) {
+        n = ns[q]
+        if (!(n in vals)) { order[++k] = n; vals[n] = v } else vals[n] = vals[n] " " v
+      }
     } END { for (j = 1; j <= k; j++) print order[j] "=" vals[order[j]] }')
     [[ -z "$assignments" ]] && break
     while IFS= read -r asgn; do
@@ -599,6 +635,58 @@ if printf '%s' "$residual_redirect" | grep -qE '\$\(|`|\$[a-zA-Z_{]' \
   exit 2
 fi
 
+# brace 展開 `{a,b,c}` を全パターンに展開して配列 _brace_out に入れる。ネスト
+# `{a,{b,c}}` も解ける。空 alt (`{,x}` / `{x,}`) は空要素として扱う。
+# 再帰ではなく作業リストで回すのは、件数が上限 $2 (0 は無制限) を超えた時点で打ち切るため
+# (`{a,b}{a,b}…` は件数が指数で増える)。超えたら 1 を返す。
+_expand_braces_into() {
+  local _cap=$2 _s _pre _rest _mid _post _work
+  _work=("$1")
+  _brace_out=()
+  while [[ ${#_work[@]} -gt 0 ]]; do
+    _s=${_work[${#_work[@]}-1]}
+    unset "_work[${#_work[@]}-1]"
+    case "$_s" in
+      *"{"*","*"}"*)
+        _pre="${_s%%\{*}"
+        _rest="${_s#*\{}"
+        _mid="${_rest%%\}*}"
+        _post="${_rest#*\}}"
+        while :; do
+          _work[${#_work[@]}]="${_pre}${_mid%%,*}${_post}"
+          [[ "$_mid" == *,* ]] || break
+          _mid=${_mid#*,}
+        done
+        ;;
+      *)
+        _brace_out[${#_brace_out[@]}]=$_s
+        ;;
+    esac
+    if [[ $_cap -gt 0 && $((${#_work[@]} + ${#_brace_out[@]})) -gt $_cap ]]; then
+      return 1
+    fi
+  done
+}
+_expand_braces() {
+  _expand_braces_into "$1" 0
+  printf '%s\n' "${_brace_out[@]}"
+}
+# $2 の各行 (rm セグメント) のうち brace を含むものを展開し、変数 $1 の末尾に足す。
+_append_brace_view() {
+  local _seg
+  while IFS= read -r _seg; do
+    case "$_seg" in
+      *"{"*","*"}"*) ;;
+      *) continue ;;
+    esac
+    if ! _expand_braces_into "$_seg" 64; then
+      echo "ブロック: rm -rf の引数の brace 展開の候補が多すぎるため判定できません。展開後のパスを列挙して書いてください。" >&2
+      exit 2
+    fi
+    printf -v "$1" '%s\n%s' "${!1}" "$(printf '%s\n' "${_brace_out[@]}")"
+  done <<< "$2"
+}
+
 # --- 破壊的ファイル操作 ---
 # 大文字・大小混在表記（RM / Git 等、macOS は case-insensitive FS でバイナリ解決される）も検出するため本判定は -i を付ける。
 # 絶対パス起動（/bin/rm / /opt/homebrew/bin/git 等）も検出するため、本判定の先行文字クラスに / を含める
@@ -655,13 +743,39 @@ if printf '%s\n' "$command" | grep -qiE "$rm_rf_pattern"; then
     -e "s/${_sentinel}/~/g")
   expand_assignments command_for_tilde
 
+  # brace 展開 (`rm -rf {/,a}` / `{~,a}`) は展開後の各行を view の末尾に足して、下の
+  # 危険パス判定に掛ける。brace は tilde 展開より先に起きるので tilde 側の view にも足す。
+  _rm_segs=$(printf '%s\n' "$command" | grep -oiE "${rm_rf_pattern}[^;&|]*")
+  _rm_view=$command
+  if [[ "$_rm_segs" == *"{"*","*"}"* ]]; then
+    _append_brace_view _rm_view "$_rm_segs"
+    _append_brace_view command_for_tilde "$(printf '%s\n' "$command_for_tilde" | grep -oiE "${rm_rf_pattern}[^;&|]*")"
+  fi
+
   # tilde-prefix（~ / ~+ / ~- / ~user / ~user/path）は command_for_tilde で
   # 判定し、シングルクォート tilde リテラルや 'rm' 等の分割クオートを正しく
   # 扱う。/ / $HOME / .. / ./ の既存分岐はクオート除去後の view（$command）で
   # 従来どおり判定する。|| 短絡で第二 grep は第一が未マッチ時のみ走る。
-  if printf '%s\n' "$command" | grep -qiE '(^|[;&|({`[:space:]/\])rm[[:space:]].*[[:space:]]+(/|\$HOME|\.\.(/|[[:space:]]|[;&|)}`]|$)|\./?([[:space:]]|[;&|)}`]|$))' \
+  if printf '%s\n' "$_rm_view" | grep -qiE '(^|[;&|({`[:space:]/\])rm[[:space:]].*[[:space:]]+(/|\$HOME|\.\.(/|[[:space:]]|[;&|)}`]|$)|\./?([[:space:]]|[;&|)}`]|$))' \
      || printf '%s\n' "$command_for_tilde" | grep -qiE '(^|[;&|({`[:space:]/\])rm[[:space:]].*[[:space:]]+~[^/[:space:];&|)}`]*([/[:space:];&|)}`]|$)'; then
     echo "ブロック: rm -rf で危険なパスが指定されています" >&2
+    exit 2
+  fi
+
+  # 代入を展開しきった後も rm -rf の引数に展開 ($VAR / ${…} / $(…) / backtick) が残るなら、
+  # 値を静的に決められないので安全側でブロックする。束縛を追う形 (for / zsh の for /
+  # ${v:-x} …) を列挙で追いきれない分をここで閉じる。除外は値が一時領域に決まる
+  # `$TMPDIR` / `${TMPDIR}` と、`;` や `$` を含まない `$(mktemp …)` だけ。`$XDG_*` を
+  # 除外しないのは、未設定だと空に展開されて `$XDG_DATA_HOME/` が `/` になるため。
+  # 除外した展開より後ろに `..` があれば除外しない (`$TMPDIR/../..`)。大小を区別するのは
+  # 変数名が大小を区別するため (`$tmpdir` は別の、未設定でありうる変数)。
+  _rm_dyn=$(printf '%s\n' "$_rm_segs" | sed -E \
+    -e "s/\\\$\\{TMPDIR\\}/${_sentinel}/g" \
+    -e "s/\\\$TMPDIR([^A-Za-z0-9_]|\$)/${_sentinel}\\1/g" \
+    -e "s/\\\$\\(mktemp[^();&|\`\$]*\\)/${_sentinel}/g")
+  _rm_dyn_re='\$[A-Za-z_{(@*#0-9!?-]|`|'"${_sentinel}"'[^;&|]*\.\.'
+  if [[ "$_rm_dyn" =~ $_rm_dyn_re ]]; then
+    echo "ブロック: rm -rf の引数に値を静的に決められない展開が含まれています。パスをリテラルで書くか、\$TMPDIR 配下を指定してください。" >&2
     exit 2
   fi
 fi
@@ -740,26 +854,6 @@ _matches_codex() {
   esac
   _re=$(_glob_to_ere "$_comp")
   [[ ".codex" =~ ^${_re}$ ]]
-}
-# arg の brace 展開 `{a,b,c}` を全パターンに展開して 1 行ずつ stdout に出力。
-# 未対応: ネスト `{a,{b,c}}` は再帰で解ける。空 alt (`{,x}`) は空要素として扱う。
-_expand_braces() {
-  local _in=$1 _pre _rest _mid _post _alt _alts
-  case "$_in" in
-    *"{"*","*"}"*)
-      _pre="${_in%%\{*}"
-      _rest="${_in#*\{}"
-      _mid="${_rest%%\}*}"
-      _post="${_rest#*\}}"
-      IFS=, read -r -a _alts <<< "$_mid"
-      for _alt in "${_alts[@]}"; do
-        _expand_braces "${_pre}${_alt}${_post}"
-      done
-      ;;
-    *)
-      printf '%s\n' "$_in"
-      ;;
-  esac
 }
 # 候補文字列を `/` 区切り component に割り、`.codex` にマッチする glob があれば
 # ブロックする。$2 はメッセージに出す元の引数。
