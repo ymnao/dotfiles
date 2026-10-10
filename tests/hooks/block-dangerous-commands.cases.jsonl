@@ -538,7 +538,7 @@
 {"name": "bind-allow-cont-rel", "expect": "allow", "command": "rm -rf \\\n  build dist", "reason": "行継続をはさんだ相対パス"}
 {"name": "bind-allow-for-quoted", "expect": "allow", "command": "for d in a b; do rm -rf \"$d\"; done", "reason": "反復リストが相対パス"}
 {"name": "bind-allow-zsh-for-paren", "expect": "allow", "command": "for f (a b) rm -rf $f", "reason": "zsh の paren 形でリストが相対パス"}
-{"name": "bind-allow-for-newline-in", "expect": "allow", "command": "for f\nin a b; do echo $f; done", "reason": "改行をはさんだ in で相対パス"}
+{"name": "bind-allow-for-newline-in", "expect": "allow", "command": "for f\nin a b; do rm -rf \"$f\"; done", "reason": "改行をはさんだ in で相対パス"}
 {"name": "bind-allow-for-multiline-do", "expect": "allow", "command": "for f in a b\ndo\n  rm -rf \"$f\"\ndone", "reason": "リストの行の後に改行して do (多行 for の日常形)"}
 {"name": "bind-allow-for-multiline-do-inline", "expect": "allow", "command": "for f in a b\ndo rm -rf \"$f\"; done", "reason": "リストの行の後に改行して do と本体"}
 {"name": "bind-allow-for-newline-in-multiline-do", "expect": "allow", "command": "for f\nin a b\ndo\n  rm -rf \"$f\"\ndone", "reason": "改行つき in と改行つき do"}
