@@ -64,8 +64,8 @@ expand_assignments() {
         | grep -oE '(^|[[:space:];&|])[A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*' \
         | sed -E 's/^[[:space:];&|]+//'
       [[ "$_cur" == *for* || "$_cur" == *select* ]] && printf '%s' "$_cur" \
-        | grep -oE '(^|[[:space:];&|(){}])(for|select)[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]+in([[:space:]][^;&|]*|$)' \
-        | sed -E 's/^[[:space:];&|(){}]*(for|select)[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]+in[[:space:]]*/\2=/'
+        | grep -oE '(^|[[:space:];&|()])(for|select)[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]+in([[:space:]][^;&|]*|$)' \
+        | sed -E 's/^[[:space:];&|()]*(for|select)[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]+in[[:space:]]*/\2=/'
     })
     [[ -z "$assignments" ]] && break
     while IFS= read -r asgn; do
