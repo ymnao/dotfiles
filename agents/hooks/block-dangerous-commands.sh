@@ -51,8 +51,7 @@ fi
 # つなぎすぎても余分に検出するだけで済む。
 # bash の `${command//…/}` でつながないのは、bash 3.2 ではマッチ数の 2 乗で遅くなるため
 # (`\⏎` 2000 個で 0.2s → 6s を 2026-10-10 に /bin/bash 3.2.57 で実測)。
-_line_cont=$'\\\n'
-if [[ "$command" == *"$_line_cont"* ]]; then
+if [[ "$command" == *$'\\\n'* ]]; then
   command="$command"$'\n'"$(printf '%s\n' "$command" | awk '{ if (sub(/\\$/, "")) printf "%s", $0; else print }')"
 fi
 
@@ -76,29 +75,31 @@ fi
 # `for NAME…` で終わる行にだけ次の行をつなぐ。
 # `$(mktemp …)` だけは空白を含んでも値ごと代入として拾う (rm の除外判定が mktemp の
 # 引数まで見るため)。`;` / `$` / 括弧を含む置換はこの形に入らず、従来どおり空白で切れる。
+_mktemp_subst_re='\$\(mktemp[^();&|`$]*\)'
 expand_assignments() {
   local _var=$1 _prev _iter=0 _cur=${!1} assignments asgn name val esc_name esc_val _fv
+  local _for_head='(^|[[:space:];&|()])(for|foreach|select)[[:space:]]+'
   local _names='[A-Za-z_][A-Za-z0-9_]*([[:space:]]+[A-Za-z_][A-Za-z0-9_]*)*'
+  local _for_eol_re="${_for_head}[A-Za-z_][A-Za-z0-9_]*[[:blank:]]*"$'\n'
   while [[ $_iter -lt 8 ]]; do
     _prev=$_cur
     _iter=$((_iter + 1))
     assignments=$({
       printf '%s' "$_cur" \
-        | grep -oE '(^|[[:space:];&|])[A-Za-z_][A-Za-z0-9_]*=(\$\(mktemp[^();&|`$]*\)|[^[:space:];&|]*)' \
+        | grep -oE '(^|[[:space:];&|])[A-Za-z_][A-Za-z0-9_]*=('"${_mktemp_subst_re}"'|[^[:space:];&|]*)' \
         | sed -E 's/^[[:space:];&|]+//'
-      if [[ "$_cur" == *for* || "$_cur" == *select* ]]; then
+      if [[ "$_cur" =~ $_for_head ]]; then
         _fv=$_cur
-        if [[ "$_fv" == *$'\n'* ]]; then
+        if [[ "$_fv" =~ $_for_eol_re ]]; then
           _fv=$(printf '%s\n' "$_fv" | sed -E -e ':a' \
-            -e "/(^|[[:space:];&|()])(for|select)[[:space:]]+${_names}[[:space:]]*\$/{" \
+            -e "/${_for_head}${_names}[[:space:]]*\$/{" \
             -e '$!N' -e 's/\n/ /' -e 'ta' -e '}')
         fi
         printf '%s\n' "$_fv" \
-          | grep -oE "(^|[[:space:];&|()])(for|select)[[:space:]]+${_names}[[:space:]]+in([[:space:]][^;&|]*|\$)" \
-          | sed -E "s/^[[:space:];&|()]*(for|select)[[:space:]]+(${_names})[[:space:]]+in[[:space:]]*/\\2=/"
-        printf '%s\n' "$_fv" \
-          | grep -oE "(^|[[:space:];&|()])(for|foreach|select)[[:space:]]+${_names}[[:space:]]*\\([^)]*\\)" \
-          | sed -E "s/^[[:space:];&|()]*(for|foreach|select)[[:space:]]+(${_names})[[:space:]]*\\((.*)\\)\$/\\2=\\4/"
+          | grep -oE -e "${_for_head}${_names}[[:space:]]+in([[:space:]][^;&|]*|\$)" \
+            -e "${_for_head}${_names}[[:space:]]*\\([^)]*\\)" \
+          | sed -E -e "s/^[[:space:];&|()]*(for|foreach|select)[[:space:]]+(${_names})[[:space:]]+in[[:space:]]*/\\2=/" \
+            -e "s/^[[:space:];&|()]*(for|foreach|select)[[:space:]]+(${_names})[[:space:]]*\\((.*)\\)\$/\\2=\\4/"
       fi
     } | awk '{
       i = index($0, "="); v = substr($0, i + 1)
@@ -673,7 +674,7 @@ _expand_braces() {
 }
 # $2 の各行 (rm セグメント) のうち brace を含むものを展開し、変数 $1 の末尾に足す。
 _append_brace_view() {
-  local _seg
+  local _seg _line
   while IFS= read -r _seg; do
     case "$_seg" in
       *"{"*","*"}"*) ;;
@@ -683,7 +684,9 @@ _append_brace_view() {
       echo "ブロック: rm -rf の引数の brace 展開の候補が多すぎるため判定できません。展開後のパスを列挙して書いてください。" >&2
       exit 2
     fi
-    printf -v "$1" '%s\n%s' "${!1}" "$(printf '%s\n' "${_brace_out[@]}")"
+    for _line in "${_brace_out[@]}"; do
+      printf -v "$1" '%s\n%s' "${!1}" "$_line"
+    done
   done <<< "$2"
 }
 
@@ -697,7 +700,8 @@ rm_rf_pattern+='|([^;&|]*[[:space:]])?-[a-zA-Z]*f[a-zA-Z]*[rR][a-zA-Z]*'
 rm_rf_pattern+='|([^;&|]*[[:space:]])?(--recursive|-[a-zA-Z]*[rR][a-zA-Z]*)[^;&|]*(--force|[[:space:]]-[a-zA-Z]*f[a-zA-Z]*)'
 rm_rf_pattern+='|([^;&|]*[[:space:]])?(--force|-[a-zA-Z]*f[a-zA-Z]*)[^;&|]*(--recursive|[[:space:]]-[a-zA-Z]*[rR][a-zA-Z]*)'
 rm_rf_pattern+=')'
-if printf '%s\n' "$command" | grep -qiE "$rm_rf_pattern"; then
+_rm_segs=$(printf '%s\n' "$command" | grep -oiE "${rm_rf_pattern}[^;&|]*")
+if [[ -n "$_rm_segs" ]]; then
   # tilde 判定用 view を遅延生成する。rm を含むコマンドのみ生成コストを払い、
   # git/sudo/chmod など rm 以外のコマンドに対する sed 起動を削減する。view の
   # クオート除去方針はシングル/ダブルで非対称:
@@ -745,7 +749,6 @@ if printf '%s\n' "$command" | grep -qiE "$rm_rf_pattern"; then
 
   # brace 展開 (`rm -rf {/,a}` / `{~,a}`) は展開後の各行を view の末尾に足して、下の
   # 危険パス判定に掛ける。brace は tilde 展開より先に起きるので tilde 側の view にも足す。
-  _rm_segs=$(printf '%s\n' "$command" | grep -oiE "${rm_rf_pattern}[^;&|]*")
   _rm_view=$command
   if [[ "$_rm_segs" == *"{"*","*"}"* ]]; then
     _append_brace_view _rm_view "$_rm_segs"
@@ -769,12 +772,13 @@ if printf '%s\n' "$command" | grep -qiE "$rm_rf_pattern"; then
   # 除外しないのは、未設定だと空に展開されて `$XDG_DATA_HOME/` が `/` になるため。
   # 除外した展開より後ろに `..` があれば除外しない (`$TMPDIR/../..`)。大小を区別するのは
   # 変数名が大小を区別するため (`$tmpdir` は別の、未設定でありうる変数)。
-  _rm_dyn=$(printf '%s\n' "$_rm_segs" | sed -E \
-    -e "s/\\\$\\{TMPDIR\\}/${_sentinel}/g" \
-    -e "s/\\\$TMPDIR([^A-Za-z0-9_]|\$)/${_sentinel}\\1/g" \
-    -e "s/\\\$\\(mktemp[^();&|\`\$]*\\)/${_sentinel}/g")
+  # .codex 判定用の residual の除外 ($HOME / $XDG_* / 大小無視) を共有しないのは、
+  # あちらは「cwd 外か」、こちらは「空や任意の値に展開されないか」を問うため。
   _rm_dyn_re='\$[A-Za-z_{(@*#0-9!?-]|`|'"${_sentinel}"'[^;&|]*\.\.'
-  if [[ "$_rm_dyn" =~ $_rm_dyn_re ]]; then
+  if [[ "$_rm_segs" == *[\$\`]* ]] && [[ "$(printf '%s\n' "$_rm_segs" | sed -E \
+      -e "s/\\\$\\{TMPDIR\\}/${_sentinel}/g" \
+      -e "s/\\\$TMPDIR([^A-Za-z0-9_]|\$)/${_sentinel}\\1/g" \
+      -e "s/${_mktemp_subst_re}/${_sentinel}/g")" =~ $_rm_dyn_re ]]; then
     echo "ブロック: rm -rf の引数に値を静的に決められない展開が含まれています。パスをリテラルで書くか、\$TMPDIR 配下を指定してください。" >&2
     exit 2
   fi
