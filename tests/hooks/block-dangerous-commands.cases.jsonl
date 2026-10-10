@@ -501,6 +501,9 @@
 {"name": "bind-tmpdir-trailing-slash", "expect": "block", "command": "rm -rf $TMPDIR/", "reason": "TMPDIR が未設定なら / になる"}
 {"name": "bind-append-assign", "expect": "block", "command": "x=; x+=/; rm -rf $x", "reason": "追記代入は値を追わない"}
 {"name": "bind-array-assign", "expect": "block", "command": "a=(/ b); rm -rf $a", "reason": "配列代入は値を追わない"}
+{"name": "bind-unresolved-marker-assign", "expect": "block", "command": "__unresolved=a; x=; x+=/; rm -rf $x", "reason": "未解決の印への束縛は捨てる"}
+{"name": "bind-unresolved-marker-for", "expect": "block", "command": "for __unresolved in a; do x+=/; rm -rf $x; done", "reason": "未解決の印を for で束縛しても捨てる"}
+{"name": "bind-for-newline-in-multiline-body", "expect": "block", "command": "for f\nin /\ndo\n  rm -rf \"$f\"\ndone", "reason": "改行つき in で、do も改行の後"}
 {"name": "bind-for-multi-name-newline-in", "expect": "block", "command": "for a b\nin reset x; do git $a --hard; done", "reason": "複数変数と in の間の改行"}
 {"name": "fp-accepted-rm-positional", "expect": "block", "command": "rm -rf \"$1\"", "reason": "位置パラメータは値を追えない"}
 {"name": "fp-accepted-rm-all-args", "expect": "block", "command": "rm -rf \"$@\"", "reason": "位置パラメータは値を追えない"}
@@ -519,4 +522,7 @@
 {"name": "bind-allow-for-quoted", "expect": "allow", "command": "for d in a b; do rm -rf \"$d\"; done", "reason": "反復リストが相対パス"}
 {"name": "bind-allow-zsh-for-paren", "expect": "allow", "command": "for f (a b) rm -rf $f", "reason": "zsh の paren 形でリストが相対パス"}
 {"name": "bind-allow-for-newline-in", "expect": "allow", "command": "for f\nin a b; do echo $f; done", "reason": "改行をはさんだ in で相対パス"}
+{"name": "bind-allow-for-multiline-do", "expect": "allow", "command": "for f in a b\ndo\n  rm -rf \"$f\"\ndone", "reason": "リストの行の後に改行して do (多行 for の日常形)"}
+{"name": "bind-allow-for-multiline-do-inline", "expect": "allow", "command": "for f in a b\ndo rm -rf \"$f\"; done", "reason": "リストの行の後に改行して do と本体"}
+{"name": "bind-allow-for-newline-in-multiline-do", "expect": "allow", "command": "for f\nin a b\ndo\n  rm -rf \"$f\"\ndone", "reason": "改行つき in と改行つき do"}
 {"name": "bind-allow-date-subst", "expect": "allow", "command": "echo \"$(date) $x\"", "reason": "rm を含まないコマンド置換"}

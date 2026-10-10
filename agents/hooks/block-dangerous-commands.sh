@@ -77,6 +77,8 @@ fi
 # 行数の 2 乗になるため。
 # 追記 (`x+=…`) と配列 (`a=(…)`) は値を追わず、未解決の `$__unresolved` を割り当てる
 # (`x=; x+=/` を空に、`a=(/ b)` を `(/` に解決すると rm の fail-closed から外れるため)。
+# 入力側の `__unresolved` への束縛は捨てる (束縛されると印が値に解決されて外れるため)。
+# `read a` / `printf -v a` / `a[0]=` による再束縛は追っておらず、先行する `a=b` の値を信じる。
 # `$(mktemp …)` だけは空白を含んでも値ごと代入として拾う (rm の除外判定が mktemp の
 # 引数まで見るため)。`;` / `$` / 括弧を含む置換はこの形に入らず、従来どおり空白で切れる。
 _mktemp_subst_re='\$\(mktemp[^();&|`$]*\)'
@@ -97,9 +99,12 @@ expand_assignments() {
         _fv=$_cur
         if [[ "$_fv" =~ $_for_eol_re ]]; then
           _fv=$(printf '%s\n' "$_fv" | awk -v re="${_for_head}${_names}[[:space:]]*\$" '{
-            if (p != "" && $0 ~ /^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*[[:space:]]*)*$/) { p = p " " $0; next }
+            if (p != "" && $0 ~ /^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*[[:space:]]*)*$/) {
+              if ($0 ~ /(^|[[:space:]])in([[:space:]]|$)/) { print p " " $0; p = "" } else p = p " " $0
+              next
+            }
             l = (p == "") ? $0 : p " " $0
-            if ($0 ~ re) { p = l; next }
+            if ($0 ~ re && match($0, re) && substr($0, RSTART) !~ /[[:space:]]in([[:space:]]|$)/) { p = l; next }
             p = ""; print l
           } END { if (p != "") print p }')
         fi
@@ -114,6 +119,7 @@ expand_assignments() {
       c = split(substr($0, 1, i - 1), ns, " ")
       for (q = 1; q <= c; q++) {
         n = ns[q]
+        if (n == "__unresolved") continue
         if (!(n in vals)) { order[++k] = n; vals[n] = v } else vals[n] = vals[n] " " v
       }
     } END { for (j = 1; j <= k; j++) print order[j] "=" vals[order[j]] }')
