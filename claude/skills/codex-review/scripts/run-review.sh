@@ -28,6 +28,9 @@ set -euo pipefail
 #             4 = rate-limit skip (codex アカウントの usage/rate limit 到達。
 #                 5 時間窓/週次窓のためセッション内リトライは無意味 —
 #                 SKILL.md は SKIP 扱いにして ERROR カウントに入れない) /
+#             5 = input-too-large skip (diff が codex exec の入力上限を超えた。
+#                 同じ diff を渡す限り他の観点も必ず超えるので、SKILL.md は
+#                 rate limit と同じく全体を止めて fallback へ回す。issue #410) /
 #             130 / 143 = INT / TERM で中断された (trap が codex を道連れに
 #                 してから返す。レビュー結果ではないので呼び側は再実行する).
 #
@@ -160,7 +163,61 @@ fi
 # spawn its own `git diff` on every iteration. Trade-off: larger prompt payload
 # on huge diffs. For typical PR-sized reviews this is a wash for tokens but
 # avoids codex agent's own cwd ambiguity — codex sees the diff as given.
-DIFF_CONTENT="$(git diff "$BASE_BRANCH...HEAD")"
+#
+# .gitattributes で linguist-generated の付いたファイルは diff から外し、
+# 変更規模 (--stat) だけを prompt に載せる。生成 CSV 1 本で codex exec の
+# 入力上限 (1,048,576 文字) を超え、レビュー全体が ERROR になったため
+# (issue #410)。
+# Why not サイズ閾値で外す: 手書きの大きなファイルも黙って落ちる。何を
+# 生成物とみなすかは repo 側が .gitattributes で宣言する。
+# Why not rename 検出のまま名前を取る: rename の宛先しか返らず、生成ファイルを
+# 別名に動かすと元パスの削除側 (全行) が diff に残る。
+# check-attr を toplevel で走らせ、pathspec に top を付けるのは、
+# --name-only が cwd ではなく toplevel 基準のパスを返すため。
+# Why not process substitution で直接読む: 中の git が失敗しても set -e が
+# 効かず、除外ゼロのまま全 diff を送る形に黙って戻る。
+# Why not working tree の .gitattributes を使う: レビュー対象のブランチ自身が
+# 任意のファイルを隠せる (linguist-generated で除外させる、-diff で
+# "Binary files differ" に潰す)。GIT_ATTR_SOURCE に base を渡すと、以降の git は
+# branch 側と working tree 側の .gitattributes を読まない (git 2.56.0、
+# 2026-10-10 実測。git 2.42 以降)。branch で新たに付けた属性は merge 後の次の
+# レビューから効く。
+export GIT_ATTR_SOURCE="$BASE_BRANCH"
+TOPLEVEL="$(git rev-parse --show-toplevel)"
+ATTR_LIST="$(mktemp "${TMPDIR:-/tmp}/codex-review.attr.XXXXXX")"
+# Why not 下の cleanup に載せる: その trap はここより後で張られるので、
+# git の失敗で set -e が落としたときに消えない。
+trap 'rm -f "$ATTR_LIST"' EXIT
+git diff --name-only --no-renames -z "$BASE_BRANCH...HEAD" \
+  | git -C "$TOPLEVEL" check-attr -z --stdin linguist-generated > "$ATTR_LIST"
+EXCLUDE_PATHSPEC=()
+EXCLUDED_PATHSPEC=()
+while IFS= read -r -d '' attr_path && IFS= read -r -d '' _ && IFS= read -r -d '' attr_value; do
+  case "$attr_value" in
+    true|set)
+      EXCLUDE_PATHSPEC+=(":(top,exclude,literal)$attr_path")
+      EXCLUDED_PATHSPEC+=(":(top,literal)$attr_path")
+      ;;
+  esac
+done < "$ATTR_LIST"
+rm -f "$ATTR_LIST"
+trap - EXIT
+EXCLUDED_STAT=""
+if [ "${#EXCLUDED_PATHSPEC[@]}" -gt 0 ]; then
+  # 長いパスの省略と非 ASCII の 8 進エスケープを止め、ファイルを名前で
+  # 同定できる形にする。
+  EXCLUDED_STAT="$(git -c core.quotePath=false diff --stat=1000 --no-renames \
+    "$BASE_BRANCH...HEAD" -- "${EXCLUDED_PATHSPEC[@]}")"
+  # stdout は検証済み JSON だけの契約なので stderr に出す。
+  warn "codex-review $PERSPECTIVE: linguist-generated files excluded from review:" >&2
+  printf '%s\n' "$EXCLUDED_STAT" >&2
+fi
+DIFF_CONTENT="$(git diff "$BASE_BRANCH...HEAD" -- ${EXCLUDE_PATHSPEC[@]+"${EXCLUDE_PATHSPEC[@]}"})"
+# 全ファイルが除外された場合。codex に空の diff を渡すと、何もレビュー
+# していないのに pass が返りうる。
+if [ -z "$DIFF_CONTENT" ] && [ -n "$EXCLUDED_STAT" ]; then
+  error "no reviewable changes beyond $BASE_BRANCH: every changed file is linguist-generated (cwd: $CWD)"
+fi
 
 # codex review subcommand rejects --base + PROMPT in 0.142.3 (verified:
 # `error: the argument '--base <BRANCH>' cannot be used with '[PROMPT]'`).
@@ -238,8 +295,13 @@ trap 'trap - EXIT; cleanup; exit 143' TERM
 # シグネチャ検出 (下の Sandbox skip 判定) と、通常失敗時の診断表示の両方で使う。
 {
   cat "$PROMPT_FILE"
-  printf '\n\n## Target\n\nReview the diff below (produced by "git diff %s...HEAD" in %s). Do NOT modify any files. Output only the fenced JSON block per the Output contract above.\n\n```diff\n%s\n```\n' \
-    "$BASE_BRANCH" "$CWD" "$DIFF_CONTENT"
+  printf '\n\n## Target\n\nReview the diff below (produced by "git diff %s...HEAD" in %s). Do NOT modify any files. Output only the fenced JSON block per the Output contract above.\n' \
+    "$BASE_BRANCH" "$CWD"
+  if [ -n "$EXCLUDED_STAT" ]; then
+    printf '\n## Excluded from the diff\n\nThe files below are marked linguist-generated in .gitattributes. Their changes are left out of the diff and are NOT reviewed; only the change size is shown.\n\n```\n%s\n```\n' \
+      "$EXCLUDED_STAT"
+  fi
+  printf '\n```diff\n%s\n```\n' "$DIFF_CONTENT"
 } > "$PROMPT_TMP"
 
 # Why not codex 既定の証明書検証に任せる: codex は既定でシステムの証明書
@@ -334,6 +396,13 @@ if [ "$codex_rc" -ne 0 ]; then
     # (log.sh の skip() 自体は claude-init.sh の対話ログ用の stdout のまま)
     skip "codex-review $PERSPECTIVE: sandbox blocks codex in-process app-server client init" >&2
     exit 3
+  fi
+  # 入力上限の判定。codex は送信前にローカルで拒否し、stderr に
+  # "input_error_code":"input_too_large" を出して exit 1 する (codex-cli
+  # 0.161.0、2026-10-09 実測)。
+  if grep -qF 'input_too_large' "$RAW_ERR"; then
+    skip "codex-review $PERSPECTIVE: diff exceeds codex exec input limit" >&2
+    exit 5
   fi
   # Rate-limit skip 判定: codex アカウントの usage limit (ChatGPT プランの
   # 5 時間窓/週次窓) 到達は「review 対象コードの問題」ではなく「実行環境の
