@@ -455,3 +455,89 @@
 {"name":"tmpdir-default-redirect","expect":"block","command":"jq -r .x in.json > \"${TMPDIR:-/tmp}/classified.json\"","reason":"既定値つきは除去されずブロック — mktemp テンプレート形が skill 手順で使えない理由 (issue #330)"}
 {"name":"mktemp-var-redirect","expect":"block","command":"gh pr list --json number > \"$WORK/prs.json\"","reason":"mktemp -d の受け皿変数は除去対象外 (issue #330)"}
 {"name":"dependabot-bulk-step2-import","expect":"allow","command":"jq -n 'input' /private/tmp/claude-501/p/s/tasks/b1.output | bash \"$HOME/.claude/skills/dependabot-bulk/scripts/list-dependabot-prs.sh\" > \"$TMPDIR/dependabot-bulk/classified.json\"","reason":"dependabot-bulk step 2 の取り込み行。pipe 右辺の $HOME / $TMPDIR は再パース規則の対象外 (issue #364。同 step が hook に止まっていた issue #330 の再発防止)"}
+{"name": "bind-for-newline-in", "expect": "block", "command": "for f\nin /; do rm -rf $f; done", "reason": "改行をはさんだ in の反復リストを束縛として追う"}
+{"name": "bind-zsh-for-paren", "expect": "block", "command": "for f (/) rm -rf $f", "reason": "zsh の for NAME (LIST) 形"}
+{"name": "bind-zsh-for-paren-brace", "expect": "block", "command": "for f (/) { rm -rf $f }", "reason": "zsh の for NAME (LIST) { } 形"}
+{"name": "bind-zsh-foreach", "expect": "block", "command": "foreach f (/)\nrm -rf $f\nend", "reason": "zsh の foreach 形"}
+{"name": "bind-zsh-for-paren-multi", "expect": "block", "command": "for f (a /) rm -rf $f", "reason": "zsh の paren リストの 2 個目が /"}
+{"name": "bind-zsh-for-sudo", "expect": "block", "command": "for c (sudo) $c ls", "reason": "zsh の paren 形でコマンド名を束縛する sudo"}
+{"name": "bind-zsh-for-git-reset", "expect": "block", "command": "for c (reset) git $c --hard", "reason": "zsh の paren 形でサブコマンドを束縛する git reset --hard"}
+{"name": "bind-zsh-for-multi-name-in", "expect": "block", "command": "for a b in / x; do rm -rf $a; done", "reason": "zsh の複数変数 for は各変数がリストの値をとる"}
+{"name": "bind-for-newline-in-sudo", "expect": "block", "command": "for c\nin sudo; do $c ls; done", "reason": "改行をはさんだ in でコマンド名を束縛する sudo"}
+{"name": "bind-zsh-for-multi-name-git", "expect": "block", "command": "for a b in reset x; do git $a --hard; done", "reason": "複数変数 for でサブコマンドを束縛する git reset --hard"}
+{"name": "bind-zsh-for-multi-name-paren", "expect": "block", "command": "for a b (x /) rm -rf $b", "reason": "zsh の複数変数 paren 形"}
+{"name": "bind-cont-rm", "expect": "block", "command": "rm -rf \\\n/", "reason": "行継続をはさんだ rm -rf /"}
+{"name": "bind-cont-assign", "expect": "block", "command": "p=\\\n/; rm -rf $p", "reason": "行継続をはさんだ代入"}
+{"name": "bind-cont-for", "expect": "block", "command": "for f in \\\n/; do rm -rf $f; done", "reason": "行継続をはさんだ for の反復リスト"}
+{"name": "bind-cont-git-reset", "expect": "block", "command": "git reset \\\n--hard", "reason": "行継続をはさんだ git reset --hard"}
+{"name": "bind-cont-sudo-name", "expect": "block", "command": "su\\\ndo ls", "reason": "コマンド名の途中の行継続 (早期スクリーニングも通す)"}
+{"name": "bind-cont-rm-name", "expect": "block", "command": "r\\\nm -rf /", "reason": "rm の途中の行継続 (早期スクリーニングも通す)"}
+{"name": "bind-escaped-backslash-newline", "expect": "block", "command": "echo a\\\\\nrm -rf /", "reason": "\\\\ の後の改行は行継続ではなくコマンド区切り"}
+{"name": "bind-brace-rm", "expect": "block", "command": "rm -rf {/,a}", "reason": "brace 展開の候補に /"}
+{"name": "bind-brace-for", "expect": "block", "command": "for f in {/,a}; do rm -rf $f; done", "reason": "反復リストの brace 展開に /"}
+{"name": "bind-brace-tilde", "expect": "block", "command": "rm -rf {~,a}", "reason": "brace 展開の後に tilde 展開される"}
+{"name": "bind-brace-too-many", "expect": "block", "command": "rm -rf {a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}", "reason": "brace 展開の候補が上限 64 を超える"}
+{"name": "bind-modifier", "expect": "block", "command": "p=/; rm -rf ${p:-x}", "reason": "修飾付き展開は値を追わず未解決として扱う"}
+{"name": "bind-modifier-unset-default", "expect": "block", "command": "rm -rf ${UNSET:-/}", "reason": "既定値つき展開"}
+{"name": "bind-unbound-var", "expect": "block", "command": "rm -rf $UNKNOWN", "reason": "束縛の見えない変数"}
+{"name": "bind-cmdsubst-arg", "expect": "block", "command": "rm -rf $(cat list.txt)", "reason": "引数のコマンド置換は値を追えない"}
+{"name": "bind-tmpdir-dotdot", "expect": "block", "command": "rm -rf $TMPDIR/x/../..", "reason": "$TMPDIR の後の .. は除外しない"}
+{"name": "bind-tmpdir-brace-dotdot", "expect": "block", "command": "rm -rf ${TMPDIR}/x/..", "reason": "${TMPDIR} の後の .. は除外しない"}
+{"name": "bind-tmpdir-prefix-name", "expect": "block", "command": "rm -rf $TMPDIRX/a", "reason": "$TMPDIRX は TMPDIR ではない"}
+{"name": "bind-tmpdir-lowercase", "expect": "block", "command": "rm -rf $tmpdir/a", "reason": "変数名は大小を区別する ($tmpdir は未設定になりうる)"}
+{"name": "bind-xdg-not-excluded", "expect": "block", "command": "rm -rf $XDG_DATA_HOME/", "reason": "XDG_* は未設定のことがあり除外しない"}
+{"name": "bind-literalized-cmdsubst", "expect": "block", "command": "rm -rf \"$(git rev-parse --show-toplevel)\"", "reason": "危険コマンド名を含む置換も literal 化の前の view で未解決として扱う"}
+{"name": "bind-literalized-cmdsubst-assign", "expect": "block", "command": "d=$(git rev-parse --show-toplevel); rm -rf $d", "reason": "危険コマンド名を含む置換を経由した代入"}
+{"name": "bind-literalized-default", "expect": "block", "command": "rm -rf ${HOME:-git}", "reason": "既定値に危険コマンド名を含む展開"}
+{"name": "bind-brace-tmpdir-dotdot", "expect": "block", "command": "rm -rf $TMPDIR/x/.{.,}/.{.,}/y", "reason": "brace 展開後にだけ現れる .."}
+{"name": "bind-tmpdir-bare", "expect": "block", "command": "rm -rf $TMPDIR", "reason": "TMPDIR 自体 (未設定なら引数なし、設定済みなら共有領域ごと)"}
+{"name": "bind-tmpdir-glob-name", "expect": "block", "command": "rm -rf $TMPDIR/[a-z]*", "reason": "TMPDIR 直下を glob でまとめて消す形は除外しない"}
+{"name": "bind-for-blank-lines-in", "expect": "block", "command": "for c\n\nin reset; do git $c --hard; done", "reason": "変数と in の間に空行が複数"}
+{"name": "bind-tmpdir-trailing-slash", "expect": "block", "command": "rm -rf $TMPDIR/", "reason": "TMPDIR が未設定なら / になる"}
+{"name": "bind-append-assign", "expect": "block", "command": "x=; x+=/; rm -rf $x", "reason": "追記代入は値を追わない"}
+{"name": "bind-array-assign", "expect": "block", "command": "a=(/ b); rm -rf $a", "reason": "配列代入は値を追わない"}
+{"name": "bind-unresolved-marker-assign", "expect": "block", "command": "__unresolved=a; x=; x+=/; rm -rf $x", "reason": "未解決の印への束縛は捨てる"}
+{"name": "bind-unresolved-marker-for", "expect": "block", "command": "for __unresolved in a; do x+=/; rm -rf $x; done", "reason": "未解決の印を for で束縛しても捨てる"}
+{"name": "bind-for-newline-in-multiline-body", "expect": "block", "command": "for f\nin /\ndo\n  rm -rf \"$f\"\ndone", "reason": "改行つき in で、do も改行の後"}
+{"name": "bind-for-list-contains-in", "expect": "block", "command": "for c in reset in safe; do git $c --hard; done", "reason": "反復リストに in を含む (変数名は最初の in まで)"}
+{"name": "bind-for-multi-name-newline-in", "expect": "block", "command": "for a b\nin reset x; do git $a --hard; done", "reason": "複数変数と in の間の改行"}
+{"name": "bind-brace-nested-root", "expect": "block", "command": "rm -rf {build,{/,dist}}", "reason": "ネストした brace の内側に /"}
+{"name": "bind-brace-nested-abs", "expect": "block", "command": "rm -rf {build,{dist,}}/opt", "reason": "ネストした brace の空候補で絶対パスになる"}
+{"name": "bind-brace-stray-close", "expect": "block", "command": "rm -rf x} {/,dist}", "reason": "対応の無い } の後ろの brace 展開"}
+{"name": "bind-brace-empty-first", "expect": "block", "command": "rm -rf {,build}/", "reason": "先頭の空候補で / になる"}
+{"name": "bind-brace-empty-last", "expect": "block", "command": "rm -rf {build,}/", "reason": "末尾の空候補で / になる"}
+{"name": "bind-brace-cap-65", "expect": "block", "command": "rm -rf {d0,d1,d2,d3,d4,d5,d6,d7,d8,d9,d10,d11,d12,d13,d14,d15,d16,d17,d18,d19,d20,d21,d22,d23,d24,d25,d26,d27,d28,d29,d30,d31,d32,d33,d34,d35,d36,d37,d38,d39,d40,d41,d42,d43,d44,d45,d46,d47,d48,d49,d50,d51,d52,d53,d54,d55,d56,d57,d58,d59,d60,d61,d62,d63,d64}", "reason": "brace 展開の候補が 65 件"}
+{"name": "bind-zsh-flag-glob", "expect": "block", "command": "rm -rf $~TARGET", "reason": "zsh の展開フラグ $~"}
+{"name": "bind-zsh-flag-split", "expect": "block", "command": "rm -rf $=TARGET", "reason": "zsh の展開フラグ $="}
+{"name": "bind-zsh-flag-rcexpand", "expect": "block", "command": "rm -rf $^TARGET", "reason": "zsh の展開フラグ $^"}
+{"name": "bind-backtick-arg", "expect": "block", "command": "rm -rf `cat list.txt`", "reason": "backtick の置換"}
+{"name": "bind-special-star", "expect": "block", "command": "rm -rf \"$*\"", "reason": "特殊パラメータ $*"}
+{"name": "bind-special-status", "expect": "block", "command": "rm -rf \"$?\"", "reason": "特殊パラメータ $?"}
+{"name": "bind-special-bgpid", "expect": "block", "command": "rm -rf \"$!\"", "reason": "特殊パラメータ $!"}
+{"name": "bind-special-argc", "expect": "block", "command": "rm -rf \"$#\"", "reason": "特殊パラメータ $#"}
+{"name": "fp-accepted-rm-positional", "expect": "block", "command": "rm -rf \"$1\"", "reason": "位置パラメータは値を追えない"}
+{"name": "fp-accepted-rm-all-args", "expect": "block", "command": "rm -rf \"$@\"", "reason": "位置パラメータは値を追えない"}
+{"name": "fp-accepted-rm-tmpdir-default", "expect": "block", "command": "rm -rf \"${TMPDIR:-/tmp}/x\"", "reason": "修飾付きの TMPDIR は除外しない"}
+{"name": "fp-accepted-rm-env-var", "expect": "block", "command": "rm -rf \"$WORK/build\"", "reason": "コマンド内に束縛が無い環境変数"}
+{"name": "bind-allow-tmpdir", "expect": "allow", "command": "rm -rf $TMPDIR/x", "reason": "TMPDIR 配下"}
+{"name": "bind-allow-tmpdir-braced", "expect": "allow", "command": "rm -rf ${TMPDIR}/x", "reason": "${TMPDIR} 配下"}
+{"name": "bind-allow-tmpdir-quoted", "expect": "allow", "command": "rm -rf \"$TMPDIR/hook-tests\"", "reason": "引用符つき TMPDIR 配下"}
+{"name": "bind-allow-assign-tmpdir", "expect": "allow", "command": "d=\"$TMPDIR/x\"; rm -rf \"$d\"", "reason": "TMPDIR を経由した代入"}
+{"name": "fp-accepted-rm-mktemp-assign", "expect": "block", "command": "d=$(mktemp -d); rm -rf \"$d\"", "reason": "mktemp の出力は入力側で差し替えられるので信じない"}
+{"name": "bind-allow-brace-rel", "expect": "allow", "command": "rm -rf {build,dist}", "reason": "brace 展開の候補がすべて相対パス"}
+{"name": "bind-allow-brace-subdir", "expect": "allow", "command": "rm -rf build/{a,b}", "reason": "サブディレクトリの brace 展開"}
+{"name": "bind-allow-find-exec", "expect": "allow", "command": "find . -name x -exec rm -rf {} +", "reason": "find の {} は brace 展開ではない"}
+{"name": "bind-allow-cont-rel", "expect": "allow", "command": "rm -rf \\\n  build dist", "reason": "行継続をはさんだ相対パス"}
+{"name": "bind-allow-for-quoted", "expect": "allow", "command": "for d in a b; do rm -rf \"$d\"; done", "reason": "反復リストが相対パス"}
+{"name": "bind-allow-zsh-for-paren", "expect": "allow", "command": "for f (a b) rm -rf $f", "reason": "zsh の paren 形でリストが相対パス"}
+{"name": "bind-allow-for-newline-in", "expect": "allow", "command": "for f\nin a b; do rm -rf \"$f\"; done", "reason": "改行をはさんだ in で相対パス"}
+{"name": "bind-allow-for-multiline-do", "expect": "allow", "command": "for f in a b\ndo\n  rm -rf \"$f\"\ndone", "reason": "リストの行の後に改行して do (多行 for の日常形)"}
+{"name": "bind-allow-for-multiline-do-inline", "expect": "allow", "command": "for f in a b\ndo rm -rf \"$f\"; done", "reason": "リストの行の後に改行して do と本体"}
+{"name": "bind-allow-for-newline-in-multiline-do", "expect": "allow", "command": "for f\nin a b\ndo\n  rm -rf \"$f\"\ndone", "reason": "改行つき in と改行つき do"}
+{"name": "bind-allow-zsh-foreach", "expect": "allow", "command": "foreach f (build dist)\nrm -rf $f\nend", "reason": "zsh の foreach でリストが相対パス"}
+{"name": "bind-allow-zsh-multi-name-in", "expect": "allow", "command": "for a b in build dist; do rm -rf $a $b; done", "reason": "複数変数 for でリストが相対パス"}
+{"name": "bind-allow-zsh-multi-name-paren", "expect": "allow", "command": "for a b (build dist) rm -rf $a $b", "reason": "複数変数 paren 形でリストが相対パス"}
+{"name": "bind-allow-brace-cap-64", "expect": "allow", "command": "rm -rf {d0,d1,d2,d3,d4,d5,d6,d7,d8,d9,d10,d11,d12,d13,d14,d15,d16,d17,d18,d19,d20,d21,d22,d23,d24,d25,d26,d27,d28,d29,d30,d31,d32,d33,d34,d35,d36,d37,d38,d39,d40,d41,d42,d43,d44,d45,d46,d47,d48,d49,d50,d51,d52,d53,d54,d55,d56,d57,d58,d59,d60,d61,d62,d63}", "reason": "brace 展開の候補がちょうど上限の 64 件"}
+{"name": "bind-allow-brace-nested-rel", "expect": "allow", "command": "rm -rf {a,{b,c}}", "reason": "ネストした brace で候補がすべて相対パス"}
+{"name": "fp-accepted-rm-mktemp-inline", "expect": "block", "command": "rm -rf \"$(mktemp -d)\"", "reason": "mktemp の出力は入力側で差し替えられるので信じない"}
+{"name": "bind-allow-date-subst", "expect": "allow", "command": "echo \"$(date) $x\"", "reason": "rm を含まないコマンド置換"}
