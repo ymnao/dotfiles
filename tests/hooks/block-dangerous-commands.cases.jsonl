@@ -505,6 +505,22 @@
 {"name": "bind-unresolved-marker-for", "expect": "block", "command": "for __unresolved in a; do x+=/; rm -rf $x; done", "reason": "未解決の印を for で束縛しても捨てる"}
 {"name": "bind-for-newline-in-multiline-body", "expect": "block", "command": "for f\nin /\ndo\n  rm -rf \"$f\"\ndone", "reason": "改行つき in で、do も改行の後"}
 {"name": "bind-for-multi-name-newline-in", "expect": "block", "command": "for a b\nin reset x; do git $a --hard; done", "reason": "複数変数と in の間の改行"}
+{"name": "bind-brace-nested-root", "expect": "block", "command": "rm -rf {build,{/,dist}}", "reason": "ネストした brace の内側に /"}
+{"name": "bind-brace-nested-abs", "expect": "block", "command": "rm -rf {build,{dist,}}/opt", "reason": "ネストした brace の空候補で絶対パスになる"}
+{"name": "bind-brace-empty-first", "expect": "block", "command": "rm -rf {,build}/", "reason": "先頭の空候補で / になる"}
+{"name": "bind-brace-empty-last", "expect": "block", "command": "rm -rf {build,}/", "reason": "末尾の空候補で / になる"}
+{"name": "bind-brace-cap-65", "expect": "block", "command": "rm -rf {d0,d1,d2,d3,d4,d5,d6,d7,d8,d9,d10,d11,d12,d13,d14,d15,d16,d17,d18,d19,d20,d21,d22,d23,d24,d25,d26,d27,d28,d29,d30,d31,d32,d33,d34,d35,d36,d37,d38,d39,d40,d41,d42,d43,d44,d45,d46,d47,d48,d49,d50,d51,d52,d53,d54,d55,d56,d57,d58,d59,d60,d61,d62,d63,d64}", "reason": "brace 展開の候補が 65 件"}
+{"name": "bind-mktemp-prefix-name", "expect": "block", "command": "rm -rf $(mktempfoo)", "reason": "mktemp で始まる別名のコマンドは除外しない"}
+{"name": "bind-mktemp-redefined-func", "expect": "block", "command": "mktemp() { echo x; }; rm -rf \"$(mktemp)\"", "reason": "入力の中で mktemp を関数として定義し直した形"}
+{"name": "bind-mktemp-redefined-alias", "expect": "block", "command": "alias mktemp=echo; rm -rf \"$(mktemp -d)\"", "reason": "入力の中で mktemp を alias にした形"}
+{"name": "bind-zsh-flag-glob", "expect": "block", "command": "rm -rf $~TARGET", "reason": "zsh の展開フラグ $~"}
+{"name": "bind-zsh-flag-split", "expect": "block", "command": "rm -rf $=TARGET", "reason": "zsh の展開フラグ $="}
+{"name": "bind-zsh-flag-rcexpand", "expect": "block", "command": "rm -rf $^TARGET", "reason": "zsh の展開フラグ $^"}
+{"name": "bind-backtick-arg", "expect": "block", "command": "rm -rf `cat list.txt`", "reason": "backtick の置換"}
+{"name": "bind-special-star", "expect": "block", "command": "rm -rf \"$*\"", "reason": "特殊パラメータ $*"}
+{"name": "bind-special-status", "expect": "block", "command": "rm -rf \"$?\"", "reason": "特殊パラメータ $?"}
+{"name": "bind-special-bgpid", "expect": "block", "command": "rm -rf \"$!\"", "reason": "特殊パラメータ $!"}
+{"name": "bind-special-argc", "expect": "block", "command": "rm -rf \"$#\"", "reason": "特殊パラメータ $#"}
 {"name": "fp-accepted-rm-positional", "expect": "block", "command": "rm -rf \"$1\"", "reason": "位置パラメータは値を追えない"}
 {"name": "fp-accepted-rm-all-args", "expect": "block", "command": "rm -rf \"$@\"", "reason": "位置パラメータは値を追えない"}
 {"name": "fp-accepted-rm-tmpdir-default", "expect": "block", "command": "rm -rf \"${TMPDIR:-/tmp}/x\"", "reason": "修飾付きの TMPDIR は除外しない"}
@@ -525,4 +541,11 @@
 {"name": "bind-allow-for-multiline-do", "expect": "allow", "command": "for f in a b\ndo\n  rm -rf \"$f\"\ndone", "reason": "リストの行の後に改行して do (多行 for の日常形)"}
 {"name": "bind-allow-for-multiline-do-inline", "expect": "allow", "command": "for f in a b\ndo rm -rf \"$f\"; done", "reason": "リストの行の後に改行して do と本体"}
 {"name": "bind-allow-for-newline-in-multiline-do", "expect": "allow", "command": "for f\nin a b\ndo\n  rm -rf \"$f\"\ndone", "reason": "改行つき in と改行つき do"}
+{"name": "bind-allow-zsh-foreach", "expect": "allow", "command": "foreach f (build dist)\nrm -rf $f\nend", "reason": "zsh の foreach でリストが相対パス"}
+{"name": "bind-allow-zsh-multi-name-in", "expect": "allow", "command": "for a b in build dist; do rm -rf $a $b; done", "reason": "複数変数 for でリストが相対パス"}
+{"name": "bind-allow-zsh-multi-name-paren", "expect": "allow", "command": "for a b (build dist) rm -rf $a $b", "reason": "複数変数 paren 形でリストが相対パス"}
+{"name": "bind-allow-brace-cap-64", "expect": "allow", "command": "rm -rf {d0,d1,d2,d3,d4,d5,d6,d7,d8,d9,d10,d11,d12,d13,d14,d15,d16,d17,d18,d19,d20,d21,d22,d23,d24,d25,d26,d27,d28,d29,d30,d31,d32,d33,d34,d35,d36,d37,d38,d39,d40,d41,d42,d43,d44,d45,d46,d47,d48,d49,d50,d51,d52,d53,d54,d55,d56,d57,d58,d59,d60,d61,d62,d63}", "reason": "brace 展開の候補がちょうど上限の 64 件"}
+{"name": "bind-allow-brace-nested-rel", "expect": "allow", "command": "rm -rf {a,{b,c}}", "reason": "ネストした brace で候補がすべて相対パス"}
+{"name": "bind-allow-mktemp-inline", "expect": "allow", "command": "rm -rf \"$(mktemp -d)\"", "reason": "mktemp を直接引数に置いた形"}
+{"name": "bind-allow-mktemp-inline-sub", "expect": "allow", "command": "rm -rf \"$(mktemp -d)/sub\"", "reason": "mktemp を直接引数に置いた形の配下"}
 {"name": "bind-allow-date-subst", "expect": "allow", "command": "echo \"$(date) $x\"", "reason": "rm を含まないコマンド置換"}

@@ -81,7 +81,7 @@ fi
 # `read a` / `printf -v a` / `a[0]=` による再束縛は追っておらず、先行する `a=b` の値を信じる。
 # `$(mktemp …)` だけは空白を含んでも値ごと代入として拾う (rm の除外判定が mktemp の
 # 引数まで見るため)。`;` / `$` / 括弧を含む置換はこの形に入らず、従来どおり空白で切れる。
-_mktemp_subst_re='\$\(mktemp[^();&|`$]*\)'
+_mktemp_subst_re='\$\(mktemp([[:space:]][^();&|`$]*)?\)'
 expand_assignments() {
   local _var=$1 _prev _iter=0 _cur=${!1} assignments asgn name val esc_name esc_val _fv
   local _for_head='(^|[[:space:];&|()])(for|foreach|select)[[:space:]]+'
@@ -655,8 +655,10 @@ if printf '%s' "$residual_redirect" | grep -qE '\$\(|`|\$[a-zA-Z_{]' \
   exit 2
 fi
 
-# brace 展開 `{a,b,c}` を全パターンに展開して配列 _brace_out に入れる。ネスト
-# `{a,{b,c}}` も解ける。空 alt (`{,x}` / `{x,}`) は空要素として扱う。
+# brace 展開 `{a,b,c}` を全パターンに展開して配列 _brace_out に入れる。空 alt (`{,x}` /
+# `{x,}`) は空要素として扱う。最初の `}` の直前の `{` (最も内側の組) から解くのは、
+# 最初の `{` から解くとネスト `{build,{/,dist}}` を `{/}` という 1 語に化かして `/` を
+# 見落とすため。対応する `{` の無い `}` は落として進める。
 # 再帰ではなく作業リストで回すのは、件数が上限 $2 (0 は無制限) を超えた時点で打ち切るため
 # (`{a,b}{a,b}…` は件数が指数で増える)。超えたら 1 を返す。
 _expand_braces_into() {
@@ -668,10 +670,14 @@ _expand_braces_into() {
     unset "_work[${#_work[@]}-1]"
     case "$_s" in
       *"{"*","*"}"*)
-        _pre="${_s%%\{*}"
-        _rest="${_s#*\{}"
-        _mid="${_rest%%\}*}"
-        _post="${_rest#*\}}"
+        _rest="${_s%%\}*}"
+        _pre="${_rest%\{*}"
+        _mid="${_rest##*\{}"
+        _post="${_s#*\}}"
+        if [[ "$_rest" != *"{"* ]]; then
+          _work[${#_work[@]}]="${_rest}${_post}"
+          continue
+        fi
         while :; do
           _work[${#_work[@]}]="${_pre}${_mid%%,*}${_post}"
           [[ "$_mid" == *,* ]] || break
@@ -810,10 +816,15 @@ if [[ -n "$_rm_segs" ]]; then
     expand_assignments _lit_view
     _rm_dyn_segs+=$'\n'$(_rm_segs_of "$_lit_view")
   fi
-  _rm_dyn_re='\$[A-Za-z_{(@*#0-9!?-]|`|'"${_sentinel}"'[^;&|]*\.\.'
+  # 入力の中で mktemp を関数・alias として定義し直していたら、その出力は信じない。
+  # zsh の展開フラグ (`$~x` / `$^x` / `$=x` / `$+x`) も未解決の展開として数える。
+  _mktemp_strip="s/${_mktemp_subst_re}/${_sentinel}/g"
+  _mktemp_redef_re='(^|[^A-Za-z0-9_])(function[[:space:]]+mktemp|alias[[:space:]]+mktemp|mktemp[[:space:]]*\()'
+  [[ "$command_pre_literal" =~ $_mktemp_redef_re ]] && _mktemp_strip='s/^$//'
+  _rm_dyn_re='\$[A-Za-z_{(@*#0-9!?~^=+-]|`|'"${_sentinel}"'[^;&|]*\.\.'
   if [[ "$_rm_dyn_segs" == *[\$\`]* ]] && [[ "$(printf '%s\n' "$_rm_dyn_segs" | sed -E \
       -e "s#\\\$(\\{TMPDIR\\}|TMPDIR)(/[A-Za-z0-9_-])#${_sentinel}\\2#g" \
-      -e "s/${_mktemp_subst_re}/${_sentinel}/g")" =~ $_rm_dyn_re ]]; then
+      -e "$_mktemp_strip")" =~ $_rm_dyn_re ]]; then
     echo "ブロック: rm -rf の引数に値を静的に決められない展開が含まれています。パスをリテラルで書くか、\$TMPDIR 配下を指定してください。" >&2
     exit 2
   fi
