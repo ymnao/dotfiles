@@ -55,18 +55,19 @@ fi
 # for / select の反復リストを別関数で展開せず VAR=LIST 行として代入に混ぜるのは、
 # p=/; for f in $p のような代入との連鎖を同じ反復の中で収束させるため。
 expand_assignments() {
-  local _var=$1 _prev _iter=0 _cur=${!1} assignments loops asgn name val esc_name esc_val
+  local _var=$1 _prev _iter=0 _cur=${!1} assignments asgn name val esc_name esc_val
   while [[ $_iter -lt 8 ]]; do
     _prev=$_cur
     _iter=$((_iter + 1))
-    assignments=$(printf '%s' "$_cur" \
-      | grep -oE '(^|[[:space:];&|])[A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*' \
-      | sed -E 's/^[[:space:];&|]+//')
-    loops=$(printf '%s' "$_cur" \
-      | grep -oE '(^|[[:space:];&|(){}])(for|select)[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]+in([[:space:]][^;&|]*|$)' \
-      | sed -E 's/^[[:space:];&|(){}]*(for|select)[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]+in[[:space:]]*/\2=/')
-    assignments=$(printf '%s\n%s' "$assignments" "$loops")
-    [[ -z "${assignments//$'\n'/}" ]] && break
+    assignments=$({
+      printf '%s' "$_cur" \
+        | grep -oE '(^|[[:space:];&|])[A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*' \
+        | sed -E 's/^[[:space:];&|]+//'
+      [[ "$_cur" == *for* || "$_cur" == *select* ]] && printf '%s' "$_cur" \
+        | grep -oE '(^|[[:space:];&|(){}])(for|select)[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]+in([[:space:]][^;&|]*|$)' \
+        | sed -E 's/^[[:space:];&|(){}]*(for|select)[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]+in[[:space:]]*/\2=/'
+    })
+    [[ -z "$assignments" ]] && break
     while IFS= read -r asgn; do
       [[ -z "$asgn" ]] && continue
       name="${asgn%%=*}"
