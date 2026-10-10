@@ -52,15 +52,21 @@ fi
 # command 側と command_for_tilde 側で同じロジックを使うため関数化している（後者は
 # シングルクォート内 ~ をリテラル保持する事情で別途抽出が必要 → 代入展開以外の
 # 部分は本関数では扱わず、呼び出し前に view を作っておく）。
+# for / select の反復リストを別関数で展開せず VAR=LIST 行として代入に混ぜるのは、
+# p=/; for f in $p のような代入との連鎖を同じ反復の中で収束させるため。
 expand_assignments() {
-  local _var=$1 _prev _iter=0 _cur=${!1} assignments asgn name val esc_name esc_val
+  local _var=$1 _prev _iter=0 _cur=${!1} assignments loops asgn name val esc_name esc_val
   while [[ $_iter -lt 8 ]]; do
     _prev=$_cur
     _iter=$((_iter + 1))
     assignments=$(printf '%s' "$_cur" \
       | grep -oE '(^|[[:space:];&|])[A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*' \
       | sed -E 's/^[[:space:];&|]+//')
-    [[ -z "$assignments" ]] && break
+    loops=$(printf '%s' "$_cur" \
+      | grep -oE '(^|[[:space:];&|(){}])(for|select)[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]+in([[:space:]][^;&|]*|$)' \
+      | sed -E 's/^[[:space:];&|(){}]*(for|select)[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]+in[[:space:]]*/\2=/')
+    assignments=$(printf '%s\n%s' "$assignments" "$loops")
+    [[ -z "${assignments//$'\n'/}" ]] && break
     while IFS= read -r asgn; do
       [[ -z "$asgn" ]] && continue
       name="${asgn%%=*}"
