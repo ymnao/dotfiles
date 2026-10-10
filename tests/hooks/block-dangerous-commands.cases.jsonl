@@ -486,11 +486,6 @@
 {"name": "bind-tmpdir-prefix-name", "expect": "block", "command": "rm -rf $TMPDIRX/a", "reason": "$TMPDIRX は TMPDIR ではない"}
 {"name": "bind-tmpdir-lowercase", "expect": "block", "command": "rm -rf $tmpdir/a", "reason": "変数名は大小を区別する ($tmpdir は未設定になりうる)"}
 {"name": "bind-xdg-not-excluded", "expect": "block", "command": "rm -rf $XDG_DATA_HOME/", "reason": "XDG_* は未設定のことがあり除外しない"}
-{"name": "bind-mktemp-dotdot", "expect": "block", "command": "rm -rf \"$(mktemp -d)/..\"", "reason": "mktemp の後の .. は除外しない"}
-{"name": "bind-mktemp-chained", "expect": "block", "command": "d=$(mktemp -d; echo x); rm -rf $d", "reason": "mktemp 以外のコマンドを含む置換は除外しない"}
-{"name": "bind-mktemp-chained-inline", "expect": "block", "command": "rm -rf $(mktemp -d; echo x)", "reason": "置換の中に mktemp 以外のコマンドがあれば除外しない"}
-{"name": "bind-mktemp-var-inline", "expect": "block", "command": "rm -rf $(mktemp -d $X)", "reason": "置換の中に別の展開を含む mktemp は除外しない"}
-{"name": "bind-mktemp-var-template", "expect": "block", "command": "d=$(mktemp -d $X/a.XXXX); rm -rf $d", "reason": "テンプレートに変数を含む mktemp は除外しない"}
 {"name": "bind-literalized-cmdsubst", "expect": "block", "command": "rm -rf \"$(git rev-parse --show-toplevel)\"", "reason": "危険コマンド名を含む置換も literal 化の前の view で未解決として扱う"}
 {"name": "bind-literalized-cmdsubst-assign", "expect": "block", "command": "d=$(git rev-parse --show-toplevel); rm -rf $d", "reason": "危険コマンド名を含む置換を経由した代入"}
 {"name": "bind-literalized-default", "expect": "block", "command": "rm -rf ${HOME:-git}", "reason": "既定値に危険コマンド名を含む展開"}
@@ -512,9 +507,6 @@
 {"name": "bind-brace-empty-first", "expect": "block", "command": "rm -rf {,build}/", "reason": "先頭の空候補で / になる"}
 {"name": "bind-brace-empty-last", "expect": "block", "command": "rm -rf {build,}/", "reason": "末尾の空候補で / になる"}
 {"name": "bind-brace-cap-65", "expect": "block", "command": "rm -rf {d0,d1,d2,d3,d4,d5,d6,d7,d8,d9,d10,d11,d12,d13,d14,d15,d16,d17,d18,d19,d20,d21,d22,d23,d24,d25,d26,d27,d28,d29,d30,d31,d32,d33,d34,d35,d36,d37,d38,d39,d40,d41,d42,d43,d44,d45,d46,d47,d48,d49,d50,d51,d52,d53,d54,d55,d56,d57,d58,d59,d60,d61,d62,d63,d64}", "reason": "brace 展開の候補が 65 件"}
-{"name": "bind-mktemp-prefix-name", "expect": "block", "command": "rm -rf $(mktempfoo)", "reason": "mktemp で始まる別名のコマンドは除外しない"}
-{"name": "bind-mktemp-redefined-func", "expect": "block", "command": "mktemp() { echo x; }; rm -rf \"$(mktemp)\"", "reason": "入力の中で mktemp を関数として定義し直した形"}
-{"name": "bind-mktemp-redefined-alias", "expect": "block", "command": "alias mktemp=echo; rm -rf \"$(mktemp -d)\"", "reason": "入力の中で mktemp を alias にした形"}
 {"name": "bind-zsh-flag-glob", "expect": "block", "command": "rm -rf $~TARGET", "reason": "zsh の展開フラグ $~"}
 {"name": "bind-zsh-flag-split", "expect": "block", "command": "rm -rf $=TARGET", "reason": "zsh の展開フラグ $="}
 {"name": "bind-zsh-flag-rcexpand", "expect": "block", "command": "rm -rf $^TARGET", "reason": "zsh の展開フラグ $^"}
@@ -531,8 +523,7 @@
 {"name": "bind-allow-tmpdir-braced", "expect": "allow", "command": "rm -rf ${TMPDIR}/x", "reason": "${TMPDIR} 配下"}
 {"name": "bind-allow-tmpdir-quoted", "expect": "allow", "command": "rm -rf \"$TMPDIR/hook-tests\"", "reason": "引用符つき TMPDIR 配下"}
 {"name": "bind-allow-assign-tmpdir", "expect": "allow", "command": "d=\"$TMPDIR/x\"; rm -rf \"$d\"", "reason": "TMPDIR を経由した代入"}
-{"name": "bind-allow-mktemp", "expect": "allow", "command": "d=$(mktemp -d); rm -rf \"$d\"", "reason": "mktemp の結果"}
-{"name": "bind-allow-mktemp-sub", "expect": "allow", "command": "d=$(mktemp -d); rm -rf \"$d/sub\"", "reason": "mktemp の結果の配下"}
+{"name": "fp-accepted-rm-mktemp-assign", "expect": "block", "command": "d=$(mktemp -d); rm -rf \"$d\"", "reason": "mktemp の出力は入力側で差し替えられるので信じない"}
 {"name": "bind-allow-brace-rel", "expect": "allow", "command": "rm -rf {build,dist}", "reason": "brace 展開の候補がすべて相対パス"}
 {"name": "bind-allow-brace-subdir", "expect": "allow", "command": "rm -rf build/{a,b}", "reason": "サブディレクトリの brace 展開"}
 {"name": "bind-allow-find-exec", "expect": "allow", "command": "find . -name x -exec rm -rf {} +", "reason": "find の {} は brace 展開ではない"}
@@ -548,6 +539,5 @@
 {"name": "bind-allow-zsh-multi-name-paren", "expect": "allow", "command": "for a b (build dist) rm -rf $a $b", "reason": "複数変数 paren 形でリストが相対パス"}
 {"name": "bind-allow-brace-cap-64", "expect": "allow", "command": "rm -rf {d0,d1,d2,d3,d4,d5,d6,d7,d8,d9,d10,d11,d12,d13,d14,d15,d16,d17,d18,d19,d20,d21,d22,d23,d24,d25,d26,d27,d28,d29,d30,d31,d32,d33,d34,d35,d36,d37,d38,d39,d40,d41,d42,d43,d44,d45,d46,d47,d48,d49,d50,d51,d52,d53,d54,d55,d56,d57,d58,d59,d60,d61,d62,d63}", "reason": "brace 展開の候補がちょうど上限の 64 件"}
 {"name": "bind-allow-brace-nested-rel", "expect": "allow", "command": "rm -rf {a,{b,c}}", "reason": "ネストした brace で候補がすべて相対パス"}
-{"name": "bind-allow-mktemp-inline", "expect": "allow", "command": "rm -rf \"$(mktemp -d)\"", "reason": "mktemp を直接引数に置いた形"}
-{"name": "bind-allow-mktemp-inline-sub", "expect": "allow", "command": "rm -rf \"$(mktemp -d)/sub\"", "reason": "mktemp を直接引数に置いた形の配下"}
+{"name": "fp-accepted-rm-mktemp-inline", "expect": "block", "command": "rm -rf \"$(mktemp -d)\"", "reason": "mktemp の出力は入力側で差し替えられるので信じない"}
 {"name": "bind-allow-date-subst", "expect": "allow", "command": "echo \"$(date) $x\"", "reason": "rm を含まないコマンド置換"}

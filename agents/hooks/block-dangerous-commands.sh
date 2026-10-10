@@ -81,9 +81,6 @@ fi
 # `for c in reset in safe` の `c in reset` までを変数名として取るため)。
 # 入力側の `__unresolved` への束縛は捨てる (束縛されると印が値に解決されて外れるため)。
 # `read a` / `printf -v a` / `a[0]=` による再束縛は追っておらず、先行する `a=b` の値を信じる。
-# `$(mktemp …)` だけは空白を含んでも値ごと代入として拾う (rm の除外判定が mktemp の
-# 引数まで見るため)。`;` / `$` / 括弧を含む置換はこの形に入らず、従来どおり空白で切れる。
-_mktemp_subst_re='\$\(mktemp([[:space:]][^();&|`$]*)?\)'
 expand_assignments() {
   local _var=$1 _prev _iter=0 _cur=${!1} assignments asgn name val esc_name esc_val _fv
   local _for_head='(^|[[:space:];&|()])(for|foreach|select)[[:space:]]+'
@@ -94,7 +91,7 @@ expand_assignments() {
     _iter=$((_iter + 1))
     assignments=$({
       printf '%s' "$_cur" \
-        | grep -oE '(^|[[:space:];&|])[A-Za-z_][A-Za-z0-9_]*\+?=('"${_mktemp_subst_re}"'|[^[:space:];&|]*)' \
+        | grep -oE '(^|[[:space:];&|])[A-Za-z_][A-Za-z0-9_]*\+?=[^[:space:];&|]*' \
         | sed -E -e 's/^[[:space:];&|]+//' \
           -e 's/^([A-Za-z_][A-Za-z0-9_]*)(\+=|=\().*/\1=$__unresolved/'
       if [[ "$_cur" =~ $_for_head ]]; then
@@ -804,8 +801,10 @@ if [[ -n "$_rm_segs" ]]; then
   # 代入を展開しきった後も rm -rf の引数に展開 ($VAR / ${…} / $(…) / backtick) が残るなら、
   # 値を静的に決められないので安全側でブロックする。束縛を追う形 (for / zsh の for /
   # ${v:-x} …) を列挙で追いきれない分をここで閉じる。除外は一時領域の下を指す
-  # `$TMPDIR/<名前>` / `${TMPDIR}/<名前>` (名前は英数字・`_`・`-` で始まる) と、`;` や `$` を
-  # 含まない `$(mktemp …)` だけ。`$TMPDIR` 単体・`$TMPDIR/`・`$TMPDIR/[a-z]*` のような
+  # `$TMPDIR/<名前>` / `${TMPDIR}/<名前>` (名前は英数字・`_`・`-` で始まる) だけ。
+  # `$(mktemp …)` を除外しないのは、入力の中で mktemp を差し替える経路 (関数 / alias -g /
+  # PATH の前置き / eval / hash -p) を列挙で塞ぐことになり閉じないため。
+  # `$TMPDIR` 単体・`$TMPDIR/`・`$TMPDIR/[a-z]*` のような
   # glob や `.` 始まりを除外しないのは、TMPDIR が未設定 (Linux で起こりうる) だと `/` 配下に
   # なり、設定されていても sandbox では複数セッションが共有する領域をまとめて消すため。
   # `$XDG_*` を除外しないのも、未設定だと空に展開されて `$XDG_DATA_HOME/` が `/` になるため。
@@ -822,17 +821,12 @@ if [[ -n "$_rm_segs" ]]; then
     expand_assignments _lit_view
     _rm_dyn_segs+=$'\n'$(_rm_segs_of "$_lit_view")
   fi
-  _rm_dyn_sed=(-e "s#\\\$(\\{TMPDIR\\}|TMPDIR)(/[A-Za-z0-9_-])#${_sentinel}\\2#g")
-  # 入力の中で mktemp を関数・alias として定義し直していたら、その出力は信じない。
-  _mktemp_redef_re='(^|[^A-Za-z0-9_])(function[[:space:]]+mktemp|alias[[:space:]]+mktemp|mktemp[[:space:]]*\()'
-  if ! [[ "$command_pre_literal" =~ $_mktemp_redef_re ]]; then
-    _rm_dyn_sed+=(-e "s/${_mktemp_subst_re}/${_sentinel}/g")
-  fi
   # `$` の後に来うる文字を列挙せず、空白と引用符以外が続く `$` をすべて展開として数えるのは、
   # 列挙に漏れた形 (zsh の `$~x` / `$^x` / `$=x` 等) がそのまま素通りになるため。
   _rm_dyn_re='\$[^[:space:]"'"'"']|`|'"${_sentinel}"'[^;&|]*\.\.'
   if [[ "$_rm_dyn_segs" == *[\$\`]* ]] \
-     && [[ "$(printf '%s\n' "$_rm_dyn_segs" | sed -E "${_rm_dyn_sed[@]}")" =~ $_rm_dyn_re ]]; then
+     && [[ "$(printf '%s\n' "$_rm_dyn_segs" | sed -E \
+       "s#\\\$(\\{TMPDIR\\}|TMPDIR)(/[A-Za-z0-9_-])#${_sentinel}\\2#g")" =~ $_rm_dyn_re ]]; then
     echo "ブロック: rm -rf の引数に値を静的に決められない展開が含まれています。パスをリテラルで書くか、\$TMPDIR 配下を指定してください。" >&2
     exit 2
   fi
