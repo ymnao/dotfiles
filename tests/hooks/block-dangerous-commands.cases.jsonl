@@ -18,6 +18,36 @@
 {"name":"rm-abs-path","expect":"block","command":"/bin/rm -rf /","reason":"絶対パス起動"}
 {"name":"rm-var-assign","expect":"block","command":"a=rm; $a -rf /","reason":"変数代入経由"}
 {"name":"rm-var-chain-tilde","expect":"block","command":"p=~; q=$p; rm -rf $q","reason":"代入連鎖でホーム"}
+{"name":"rm-env-prefix-root","expect":"block","command":"FOO=1 rm -rf /","reason":"env 前置代入つき (issue #415 で固定)"}
+{"name":"rm-assign-then-root","expect":"block","command":"x=1; rm -rf /","reason":"無関係な代入の後 (issue #415 で固定)"}
+{"name":"rm-bashpid-prefix-root","expect":"block","command":"BASHPID=1 rm -rf /","reason":"特殊変数名の前置代入 (issue #415 で固定)"}
+{"name":"rm-bash-argv0-prefix-root","expect":"block","command":"BASH_ARGV0=x rm -rf /","reason":"特殊変数名の前置代入 (issue #415 で固定)"}
+{"name":"rm-for-loop-root","expect":"block","command":"for f in /; do rm -rf $f; done","reason":"for の反復変数経由 (issue #415 で固定)"}
+{"name":"rm-for-loop-multi","expect":"block","command":"for f in a /; do rm -rf $f; done","reason":"反復リストの一部が /"}
+{"name":"rm-for-loop-quoted-ref","expect":"block","command":"for f in /; do rm -rf \"$f\"; done","reason":"反復変数を \"$f\" で参照"}
+{"name":"rm-for-loop-brace-ref","expect":"block","command":"for f in /; do rm -rf ${f}; done","reason":"反復変数を ${f} で参照"}
+{"name":"rm-for-loop-quoted-list","expect":"block","command":"for f in \"/\"; do rm -rf $f; done","reason":"反復リストをクォート"}
+{"name":"rm-for-loop-tilde","expect":"block","command":"for f in ~; do rm -rf $f; done","reason":"反復リストが ~"}
+{"name":"rm-for-loop-home","expect":"block","command":"for f in $HOME; do rm -rf $f; done","reason":"反復リストが $HOME"}
+{"name":"rm-for-loop-newline","expect":"block","command":"for f in /\ndo\n  rm -rf $f\ndone","reason":"改行区切りの for"}
+{"name":"rm-for-loop-nospace-do","expect":"block","command":"for f in /;do rm -rf $f;done","reason":"; の後に空白なし"}
+{"name":"rm-select-loop-root","expect":"block","command":"select f in /; do rm -rf $f; done","reason":"select の反復変数経由"}
+{"name":"rm-for-loop-assign-chain","expect":"block","command":"p=/; for f in $p; do rm -rf $f; done","reason":"代入 → 反復リストの連鎖"}
+{"name":"rm-for-loop-shadowed-by-assign","expect":"block","command":"f=build; for f in /; do rm -rf \"$f\"; done","reason":"同名の代入が先にあっても反復リストの値を判定する"}
+{"name":"rm-for-loop-then-assign","expect":"block","command":"for f in /; do rm -rf $f; done; f=a","reason":"ループの後の同名代入でも反復リストの値を判定する"}
+{"name":"rm-var-reassign","expect":"block","command":"f=a; f=/; rm -rf $f","reason":"同名の再代入は全候補の値を判定する"}
+{"name":"rm-for-loop-subshell","expect":"block","command":"(for f in /; do rm -rf $f; done)","reason":"サブシェル内の for"}
+{"name":"rm-for-loop-cmdsubst","expect":"block","command":"echo $(for f in /; do rm -rf $f; done)","reason":"コマンド置換内の for"}
+{"name":"rm-for-loop-group","expect":"block","command":"{ for f in /; do rm -rf $f; done; }","reason":"{ } グループ内の for (境界は { の後の空白)"}
+{"name":"git-reset-for-loop","expect":"block","command":"for c in reset; do git $c --hard; done","reason":"反復変数でサブコマンドを組み立て"}
+{"name":"sudo-for-loop","expect":"block","command":"for c in sudo; do $c ls; done","reason":"反復変数でコマンド名を組み立て"}
+{"name":"for-loop-echo","expect":"allow","command":"for f in a b; do echo $f; done","reason":"無害な反復"}
+{"name":"for-loop-rm-relative","expect":"allow","command":"for f in build dist; do rm -rf $f; done","reason":"相対ディレクトリの削除"}
+{"name":"for-loop-rm-glob","expect":"allow","command":"for f in *.log; do rm -rf $f; done","reason":"glob の反復で個別削除"}
+{"name":"fp-accepted-for-glob","expect":"block","command":"for d in */; do rm -rf \"$d\"; done","reason":"反復リストの素の * はリテラルの rm -rf */ や代入 d=*/ と同じ glob 判定で block (許容した FP)"}
+{"name":"var-reassign-relative","expect":"allow","command":"for f in a b; do rm -rf $f; done; f=c; rm -rf $f","reason":"同名の値がすべて相対パスなら通す"}
+{"name":"for-loop-arith","expect":"allow","command":"for ((i=0;i<3;i++)); do echo $i; done","reason":"算術 for は対象外"}
+{"name":"for-loop-rm-tmpdir","expect":"allow","command":"for f in a b; do rm -rf $TMPDIR/$f; done","reason":"TMPDIR 配下の削除"}
 {"name":"ansic-escape-rm","expect":"block","command":"$'\\x72\\x6d' -rf /","reason":"ANSI-C エスケープは全面ブロック"}
 # --- コマンド名の動的構築 (block) ---
 {"name":"git-dynamic-printf","expect":"block","command":"$(printf git) reset --hard","reason":"コマンド名の動的構築"}

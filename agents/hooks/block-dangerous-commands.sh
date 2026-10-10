@@ -52,14 +52,26 @@ fi
 # command 側と command_for_tilde 側で同じロジックを使うため関数化している（後者は
 # シングルクォート内 ~ をリテラル保持する事情で別途抽出が必要 → 代入展開以外の
 # 部分は本関数では扱わず、呼び出し前に view を作っておく）。
+# for / select の反復リストを別関数で展開せず VAR=LIST 行として代入に混ぜるのは、
+# p=/; for f in $p のような代入との連鎖を同じ反復の中で収束させるため。
+# 同名の値を先勝ちにせず空白で連結して全候補を判定に掛けるのは、f=a; for f in / の
+# ように実行時にどの値が効くかを静的に決められないため。
 expand_assignments() {
   local _var=$1 _prev _iter=0 _cur=${!1} assignments asgn name val esc_name esc_val
   while [[ $_iter -lt 8 ]]; do
     _prev=$_cur
     _iter=$((_iter + 1))
-    assignments=$(printf '%s' "$_cur" \
-      | grep -oE '(^|[[:space:];&|])[A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*' \
-      | sed -E 's/^[[:space:];&|]+//')
+    assignments=$({
+      printf '%s' "$_cur" \
+        | grep -oE '(^|[[:space:];&|])[A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*' \
+        | sed -E 's/^[[:space:];&|]+//'
+      [[ "$_cur" == *for* || "$_cur" == *select* ]] && printf '%s' "$_cur" \
+        | grep -oE '(^|[[:space:];&|()])(for|select)[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]+in([[:space:]][^;&|]*|$)' \
+        | sed -E 's/^[[:space:];&|()]*(for|select)[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]+in[[:space:]]*/\2=/'
+    } | awk '{
+      i = index($0, "="); n = substr($0, 1, i - 1); v = substr($0, i + 1)
+      if (!(n in vals)) { order[++k] = n; vals[n] = v } else vals[n] = vals[n] " " v
+    } END { for (j = 1; j <= k; j++) print order[j] "=" vals[order[j]] }')
     [[ -z "$assignments" ]] && break
     while IFS= read -r asgn; do
       [[ -z "$asgn" ]] && continue
