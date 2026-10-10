@@ -72,8 +72,9 @@ fi
 # 変数と in の間の改行 (`for f⏎in …`)。改行をすべて消した 1 行の view にしないのは、
 # リストの終端が消えて後続のコマンドまでリストに吸い込むのと、grep が巨大な 1 行を
 # 走査して入力長の 2 乗で遅くなるため (for を 100 個並べた入力で 2.1s → 11s を 2026-10-10 に実測)。
-# `for NAME…` で終わる行にだけ次の 1 行をつなぐ。つないだ行を再検査して繰り返さないのは、
-# sed の N ループが伸びた pattern space を毎回走査して行数の 2 乗になるため。
+# `for NAME…` で終わる行に、続く空行・変数名だけの行と次の 1 行をつなぐ。awk で照合するのを
+# 読んだ 1 行 ($0) に限るのは、つないだ行全体を照合し直すと (sed の N ループと同じく)
+# 行数の 2 乗になるため。
 # 追記 (`x+=…`) と配列 (`a=(…)`) は値を追わず、未解決の `$__unresolved` を割り当てる
 # (`x=; x+=/` を空に、`a=(/ b)` を `(/` に解決すると rm の fail-closed から外れるため)。
 # `$(mktemp …)` だけは空白を含んでも値ごと代入として拾う (rm の除外判定が mktemp の
@@ -95,9 +96,12 @@ expand_assignments() {
       if [[ "$_cur" =~ $_for_head ]]; then
         _fv=$_cur
         if [[ "$_fv" =~ $_for_eol_re ]]; then
-          _fv=$(printf '%s\n' "$_fv" | sed -E \
-            -e "/${_for_head}${_names}[[:space:]]*\$/{" \
-            -e '$!N' -e 's/\n/ /' -e '}')
+          _fv=$(printf '%s\n' "$_fv" | awk -v re="${_for_head}${_names}[[:space:]]*\$" '{
+            if (p != "" && $0 ~ /^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*[[:space:]]*)*$/) { p = p " " $0; next }
+            l = (p == "") ? $0 : p " " $0
+            if ($0 ~ re) { p = l; next }
+            p = ""; print l
+          } END { if (p != "") print p }')
         fi
         printf '%s\n' "$_fv" \
           | grep -oE -e "${_for_head}${_names}[[:space:]]+in([[:space:]][^;&|]*|\$)" \
@@ -438,7 +442,8 @@ command=$(printf '%s' "$command" | sed -E \
   -e 's/\$\{[^}]*[^A-Za-z0-9_](rm|git|sudo|chmod)\}/\1/Ig' \
   -e 's/\$\{(rm|git|sudo|chmod)[^A-Za-z0-9_}][^}]*\}/\1/Ig' \
   -e 's/\$\{(rm|git|sudo|chmod)\}/\1/Ig')
-command_literal=$command
+_literalized=0
+[[ "$command" != "$command_pre_literal" ]] && _literalized=1
 
 # 単純な変数代入 `var=value` を「コマンド中の $var / ${var}」に静的展開する。
 # 例: d=.codex; touch $d/foo → touch .codex/foo、
@@ -708,7 +713,11 @@ rm_rf_pattern+='|([^;&|]*[[:space:]])?-[a-zA-Z]*f[a-zA-Z]*[rR][a-zA-Z]*'
 rm_rf_pattern+='|([^;&|]*[[:space:]])?(--recursive|-[a-zA-Z]*[rR][a-zA-Z]*)[^;&|]*(--force|[[:space:]]-[a-zA-Z]*f[a-zA-Z]*)'
 rm_rf_pattern+='|([^;&|]*[[:space:]])?(--force|-[a-zA-Z]*f[a-zA-Z]*)[^;&|]*(--recursive|[[:space:]]-[a-zA-Z]*[rR][a-zA-Z]*)'
 rm_rf_pattern+=')'
-_rm_segs=$(printf '%s\n' "$command" | grep -oiE "${rm_rf_pattern}[^;&|]*")
+# $1 から rm -rf のセグメント (rm からセグメント終端まで) を 1 行ずつ取り出す。
+_rm_segs_of() {
+  printf '%s\n' "$1" | grep -oiE "${rm_rf_pattern}[^;&|]*"
+}
+_rm_segs=$(_rm_segs_of "$command")
 if [[ -n "$_rm_segs" ]]; then
   # tilde 判定用 view を遅延生成する。rm を含むコマンドのみ生成コストを払い、
   # git/sudo/chmod など rm 以外のコマンドに対する sed 起動を削減する。view の
@@ -760,7 +769,7 @@ if [[ -n "$_rm_segs" ]]; then
   _rm_brace=''
   if [[ "$_rm_segs" == *"{"*","*"}"* ]]; then
     _append_brace_view _rm_brace "$_rm_segs"
-    _append_brace_view command_for_tilde "$(printf '%s\n' "$command_for_tilde" | grep -oiE "${rm_rf_pattern}[^;&|]*")"
+    _append_brace_view command_for_tilde "$(_rm_segs_of "$command_for_tilde")"
   fi
   _rm_view=$command$_rm_brace
 
@@ -777,9 +786,10 @@ if [[ -n "$_rm_segs" ]]; then
   # 代入を展開しきった後も rm -rf の引数に展開 ($VAR / ${…} / $(…) / backtick) が残るなら、
   # 値を静的に決められないので安全側でブロックする。束縛を追う形 (for / zsh の for /
   # ${v:-x} …) を列挙で追いきれない分をここで閉じる。除外は一時領域の下を指す
-  # `$TMPDIR/<名前>` / `${TMPDIR}/<名前>` と、`;` や `$` を含まない `$(mktemp …)` だけ。
-  # `$TMPDIR` 単体や `$TMPDIR/` を除外しないのは、TMPDIR が未設定 (Linux で起こりうる) だと
-  # `/` になり、設定されていても sandbox では複数セッションが共有する領域ごと消すため。
+  # `$TMPDIR/<名前>` / `${TMPDIR}/<名前>` (名前は英数字・`_`・`-` で始まる) と、`;` や `$` を
+  # 含まない `$(mktemp …)` だけ。`$TMPDIR` 単体・`$TMPDIR/`・`$TMPDIR/[a-z]*` のような
+  # glob や `.` 始まりを除外しないのは、TMPDIR が未設定 (Linux で起こりうる) だと `/` 配下に
+  # なり、設定されていても sandbox では複数セッションが共有する領域をまとめて消すため。
   # `$XDG_*` を除外しないのも、未設定だと空に展開されて `$XDG_DATA_HOME/` が `/` になるため。
   # 除外した展開より後ろに `..` があれば除外しない (`$TMPDIR/../..`)。brace 展開後にだけ
   # 現れる `..` (`$TMPDIR/.{.,}/x`) も拾うため、展開後の行 (_rm_brace) にも掛ける。
@@ -789,15 +799,14 @@ if [[ -n "$_rm_segs" ]]; then
   # literal 化の前の view からも rm セグメントを取るのは、`$(git rev-parse …)` や
   # `${HOME:-git}` が literal 化で `git` に化け、展開が残っていないように見えるため。
   _rm_dyn_segs=$_rm_segs$_rm_brace
-  if [[ "$command_pre_literal" != "$command_literal" ]]; then
+  if [[ "$_literalized" = 1 ]]; then
     _lit_view=$command_pre_literal
     expand_assignments _lit_view
-    _rm_dyn_segs+=$'\n'$(printf '%s\n' "$_lit_view" | grep -oiE "${rm_rf_pattern}[^;&|]*")
+    _rm_dyn_segs+=$'\n'$(_rm_segs_of "$_lit_view")
   fi
   _rm_dyn_re='\$[A-Za-z_{(@*#0-9!?-]|`|'"${_sentinel}"'[^;&|]*\.\.'
   if [[ "$_rm_dyn_segs" == *[\$\`]* ]] && [[ "$(printf '%s\n' "$_rm_dyn_segs" | sed -E \
-      -e "s#\\\$\\{TMPDIR\\}(/[^/[:space:]])#${_sentinel}\\1#g" \
-      -e "s#\\\$TMPDIR(/[^/[:space:]])#${_sentinel}\\1#g" \
+      -e "s#\\\$(\\{TMPDIR\\}|TMPDIR)(/[A-Za-z0-9_-])#${_sentinel}\\2#g" \
       -e "s/${_mktemp_subst_re}/${_sentinel}/g")" =~ $_rm_dyn_re ]]; then
     echo "ブロック: rm -rf の引数に値を静的に決められない展開が含まれています。パスをリテラルで書くか、\$TMPDIR 配下を指定してください。" >&2
     exit 2
