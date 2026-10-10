@@ -504,6 +504,7 @@
 {"name": "bind-unresolved-marker-assign", "expect": "block", "command": "__unresolved=a; x=; x+=/; rm -rf $x", "reason": "未解決の印への束縛は捨てる"}
 {"name": "bind-unresolved-marker-for", "expect": "block", "command": "for __unresolved in a; do x+=/; rm -rf $x; done", "reason": "未解決の印を for で束縛しても捨てる"}
 {"name": "bind-for-newline-in-multiline-body", "expect": "block", "command": "for f\nin /\ndo\n  rm -rf \"$f\"\ndone", "reason": "改行つき in で、do も改行の後"}
+{"name": "bind-for-list-contains-in", "expect": "block", "command": "for c in reset in safe; do git $c --hard; done", "reason": "反復リストに in を含む (変数名は最初の in まで)"}
 {"name": "bind-for-multi-name-newline-in", "expect": "block", "command": "for a b\nin reset x; do git $a --hard; done", "reason": "複数変数と in の間の改行"}
 {"name": "bind-brace-nested-root", "expect": "block", "command": "rm -rf {build,{/,dist}}", "reason": "ネストした brace の内側に /"}
 {"name": "bind-brace-nested-abs", "expect": "block", "command": "rm -rf {build,{dist,}}/opt", "reason": "ネストした brace の空候補で絶対パスになる"}

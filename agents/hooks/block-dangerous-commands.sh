@@ -77,6 +77,8 @@ fi
 # 行数の 2 乗になるため。
 # 追記 (`x+=…`) と配列 (`a=(…)`) は値を追わず、未解決の `$__unresolved` を割り当てる
 # (`x=; x+=/` を空に、`a=(/ b)` を `(/` に解決すると rm の fail-closed から外れるため)。
+# 変数名の並びは最初の `in` で切り、その後ろは値に戻す (正規表現の最長一致は
+# `for c in reset in safe` の `c in reset` までを変数名として取るため)。
 # 入力側の `__unresolved` への束縛は捨てる (束縛されると印が値に解決されて外れるため)。
 # `read a` / `printf -v a` / `a[0]=` による再束縛は追っておらず、先行する `a=b` の値を信じる。
 # `$(mktemp …)` だけは空白を含んでも値ごと代入として拾う (rm の除外判定が mktemp の
@@ -117,6 +119,10 @@ expand_assignments() {
     } | awk '{
       i = index($0, "="); v = substr($0, i + 1)
       c = split(substr($0, 1, i - 1), ns, " ")
+      for (q = 2; q <= c; q++) if (ns[q] == "in") {
+        r = ""; for (t = q + 1; t <= c; t++) r = r ns[t] " "
+        v = r v; c = q - 1; break
+      }
       for (q = 1; q <= c; q++) {
         n = ns[q]
         if (n == "__unresolved") continue
