@@ -125,6 +125,29 @@ _for_bindings() {
 # クォートとコマンド置換は入れ子を積む (`"$(echo "…")"` の内側の `"` で外側が閉じたと誤読すると、
 # 置換の中の `;` が区切りに見えるため)。文字を 1 つずつ見て単語の開始位置だけを持ち、単語は
 # 区切りで substr するのは、awk の文字列連結を 1 文字ずつ重ねると単語長の 2 乗になるため。
+# 実行されないことがある代入は、その代入が必ず先に走ったと言える範囲の参照にだけ効かせる
+# (issue #425)。複合コマンドの本体 (then / else / do / `{ }` / case の項目 / foreach) の代入は
+# 本体を閉じた後、and-or リストの 2 番目以降の代入はリストの外と `||` の後で `cond` に落とし、
+# それ以降の参照を未解決にする。直前の演算子が `||` の代入はその場で `cond`。先に信じていた
+# 名前の再束縛は値が広い表の候補に加わるだけなので `cond` にしない。パイプの要素はサブシェル
+# なので信じず、`&` はそのリストの代入を遡って未解決にする。閉じた直後の複合コマンドや
+# 複合コマンドを含むリストがパイプ / `&` に入るときは、中の代入を遡れないので全体を信じない。
+# フレームを for / while ではなく do / then で開くのは、do を持たない zsh の短縮形
+# (`for f (a) cmd`) を閉じ語待ちのまま残して全体を信じなくなるため。代償として for の変数と
+# 条件部の代入はフレームの外として扱う (`for f in; do :; done` の後の `$f` は旧値のまま)。
+# 知っている開き語・閉じ語だけをフレームにし、釣り合わない (閉じ語だけがある / 閉じずに終わる)
+# ときは `broken` で全体を信じないのは、知らない構文 (zsh の `repeat` / `always` / `if [[ ]] { }`)
+# を列挙で追うと漏れた形がそのまま素通りになるため。知らない開き語の後ろはコマンドの引数の
+# 位置なので、中の代入は「代入以外の位置の出現」として既存の規則で未解決になる。
+# 名前を語として書かない再束縛 (`read $n` / `printf -v "$n"` / `declare -n` / eval / source) は
+# 上の「名前が語として現れたら未解決」で拾えないので、文字列を束縛できる builtin を列挙して
+# `$` 引数を見たら全体を信じない。`let` / `getopts` / `(( ))` を入れないのは、数値しか束縛
+# できず rm の危険値 (`/` `~` `..`) を作れないため。位置以降ではなく全体にするのは、関数本体の
+# 参照は字面では前にあっても実行は後になるため。全体を信じないときに `!` を出さず `+` を
+# 出さないだけにするのは、表に無い `$TMPDIR` まで未解決にして除外が外れるため。
+# 空白を含む値 (クォート内 / `\ `) を信じないのは、広い表が空白で値を切り、未クォートの展開で
+# 分かれた後ろの語 (`d="x /"` の `/`) が判定から外れるため。`$( )` の中では case のパターンの
+# `)` で置換を閉じず、heredoc は本文の `)` で早く閉じるので全体を信じない。
 _strict_lex() {
   printf '%s\n' "$1" | LC_ALL=C awk '
   function sus(n) { if (n != "") susp[n] = 1 }
@@ -147,38 +170,79 @@ _strict_lex() {
       n = substr(t, RSTART, RLENGTH); sub(/^\{/, "", n)
       used[n] = 1
       if (!(n in bound)) refd[n] = 1
-      if (t ~ /^\{[A-Za-z_][A-Za-z0-9_]*:?=/) sus(n)
+      if (n in cond) sus(n)
+      if (t ~ /^\{[A-Za-z_][A-Za-z0-9_]*:*=/) sus(n)
     }
   }
   function check(uw) { if (uw ~ /^[A-Za-z_][A-Za-z0-9_]*($|=|\+=|\[)/) sus(nameof(uw)) }
-  function bindhere(n) { if (dp > 0) sus(n); else bindname(n) }
-  function endseg(   j) {
+  function bindhere(n,   pt) {
+    if (dp > 0 || inpipe || curop == "|") { sus(n); return }
+    pt = (n in bound) && !(n in cond) && !(n in susp)
+    bindname(n); delete cond[n]
+    al[++aln] = n; bl[++bln] = n
+    if (ft > 0) { fbn[ft]++; fb[ft, fbn[ft]] = n; fp[ft, fbn[ft]] = pt }
+    if (prevop == "||") { if (!pt) cond[n] = 1 }
+    else if (prevop == "&&") { kk[++kn] = n; kp[kn] = pt }
+  }
+  function flushl(   j) { for (j = 1; j <= kn; j++) if (!kp[j]) cond[kk[j]] = 1; kn = 0 }
+  function flushf(f,   j) { for (j = 1; j <= fbn[f]; j++) if (!fp[f, j]) cond[fb[f, j]] = 1; fbn[f] = 0 }
+  function boundary() { flushl(); prevop = ""; aln = 0 }
+  function push(k) { boundary(); fk[++ft] = k; fbn[ft] = 0; cmpd = 1 }
+  function closef(k) {
+    boundary()
+    if (ft == 0 || fk[ft] != k) { broken = 1; return }
+    flushf(ft); ft--; justclosed = 1
+  }
+  function endseg(op,   j) {
+    curop = op
     if (mode == "start") for (j = 1; j <= np; j++) bindhere(pn[j])
-    np = 0; mode = "start"; redir = 0
+    if (op == "|") for (j = 1; j <= bln; j++) sus(bl[j])
+    np = 0; bln = 0; mode = "start"; redir = 0; curop = ""; cmdname = ""; cmdwait = 0; pvnext = 0
+  }
+  function setcmd(uw) {
+    cmdname = uw; cmdwait = (uw ~ /^(command|builtin|exec|noglob|nocorrect)$/)
+    if (uw == "eval" || uw == "source" || uw == ".") broken = 1
   }
   function handle(w,   uw, n, j) {
     refs(w)
     uw = w; gsub(/["\047\\]/, "", uw)
     if (redir) {
-      if (redir == 2) { hd = uw; hdash = (substr(hd, 1, 1) == "-"); sub(/^-/, "", hd) }
+      if (redir == 2) { hq[++hqn] = uw; hqd[hqn] = hdnext; hdnext = 0 }
       redir = 0; return
     }
+    justclosed = 0
+    if (wsp && w ~ /^[A-Za-z_][A-Za-z0-9_]*\+?=/) sus(nameof(w))
     if (w ~ /^[A-Za-z_][A-Za-z0-9_]*\+?=\(/) { sus(nameof(w)); if (mode != "forvars") return }
     if (mode == "start") {
-      if (uw ~ /^(then|do|else|elif|if|while|until|!|time|\{|\})$/) return
-      if (uw == "case") { cdp[++incase] = dp; mode = "args"; return }
-      if (uw == "esac") { if (incase) dp = cdp[incase--]; return }
+      if (uw ~ /^(if|while|until|!|time)$/) return
+      if (uw == "then") { if (elifpend) elifpend = 0; else push("I"); return }
+      if (uw == "do") { push("D"); return }
+      if (uw == "{") { push("G"); return }
+      if (uw == "elif" || uw == "else") {
+        boundary()
+        if (ft && fk[ft] == "I") flushf(ft); else broken = 1
+        if (uw == "elif") elifpend = 1
+        return
+      }
+      if (uw == "fi") { closef("I"); return }
+      if (uw == "done") { closef("D"); return }
+      if (uw == "}") { closef("G"); return }
+      if (uw == "end" && ft && fk[ft] == "F") { closef("F"); return }
+      if (uw == "case") { cdp[++incase] = dp; push("C"); mode = "args"; return }
+      if (uw == "esac") { if (incase) dp = cdp[incase--]; closef("C"); return }
       if (uw == "export" || uw == "readonly") { mode = "decl"; keep = 1; return }
       if (uw == "local" || uw == "declare" || uw == "typeset") { mode = "decl"; keep = 0; return }
-      if (uw == "for" || uw == "foreach" || uw == "select") { mode = "forvars"; return }
+      if (uw == "foreach") { push("F"); mode = "forvars"; return }
+      if (uw == "for" || uw == "select") { mode = "forvars"; return }
       if (w ~ /^[A-Za-z_][A-Za-z0-9_]*=/) { pn[++np] = nameof(w); return }
       if (w ~ /^[A-Za-z_][A-Za-z0-9_]*(\+=|\[)/) { sus(nameof(w)); return }
-      for (j = 1; j <= np; j++) if (!(pn[j] in bound)) sus(pn[j])
-      np = 0; mode = "args"; check(uw); return
+      for (j = 1; j <= np; j++) if (!(pn[j] in bound) || (pn[j] in cond)) sus(pn[j])
+      np = 0; mode = "args"; setcmd(uw); check(uw); return
     }
     if (mode == "decl") {
-      if (uw ~ /^-/) return
+      if (uw ~ /^-/) { if (uw ~ /^-[A-Za-z]*n/) broken = 1; return }
       if (w ~ /^[A-Za-z_][A-Za-z0-9_]*=/) { n = nameof(w); bindhere(n); return }
+      if (uw ~ /[$`]/) { broken = 1; return }
       if (keep && uw ~ /^[A-Za-z_][A-Za-z0-9_]*$/) return
       check(uw); return
     }
@@ -187,26 +251,49 @@ _strict_lex() {
       if (uw ~ /^[A-Za-z_][A-Za-z0-9_]*$/) { bindhere(uw); return }
       mode = "args"
     }
+    if (mode == "args") {
+      if (cmdwait && uw !~ /^-/) setcmd(uw)
+      else if (cmdname in bindcmd) { if (uw ~ /[$`]/) broken = 1 }
+      else if (cmdname == "printf") {
+        if (pvnext) { if (uw ~ /[$`]/) broken = 1; pvnext = 0 }
+        else if (uw ~ /^-v./) { if (uw ~ /[$`]/) broken = 1 }
+        else if (uw == "-v") pvnext = 1
+      }
+    }
     check(uw)
   }
-  function flush() { if (ws) { handle(substr(s, ws, i - ws)); ws = 0 } }
+  function flush() { if (ws) { handle(substr(s, ws, i - ws)); ws = 0; wsp = 0 } }
   function open(t) { if (!ws) ws = i; st[++top] = t }
-  BEGIN { RS = "\001" }
+  BEGIN {
+    RS = "\001"
+    split("read mapfile readarray unset vared", bc, " ")
+    for (j in bc) bindcmd[bc[j]] = 1
+  }
   { s = s $0 }
   END {
-    L = length(s); mode = "start"; np = 0; ws = 0; top = 0; redir = 0; hd = ""; hdash = 0; dp = 0; incase = 0; arith = 0
+    L = length(s); mode = "start"; np = 0; ws = 0; top = 0; redir = 0; dp = 0; incase = 0; arith = 0
     for (i = 1; i <= L; i++) {
       ch = substr(s, i, 1); c2 = substr(s, i + 1, 1)
       if (top) {
         t = st[top]
-        if (t == "S") { if (ch == "\047") top--; continue }
+        if (t == "S") {
+          if (ch == "\047") top--
+          else if (top == 1 && (ch == " " || ch == "\t" || ch == "\n")) wsp = 1
+          continue
+        }
         if (ch == "\\") { i++; continue }
+        if (ch == "<" && c2 == "<" && t != "Q" && t != "B" && substr(s, i + 2, 1) != "<" && substr(s, i - 1, 1) != "<") broken = 1
         if (t == "`") { if (ch == "`") top--; continue }
         if (t == "Q" && ch == "\"") { top--; continue }
         if (ch == "$" && c2 == "(") { st[++top] = "P"; i++; continue }
         if (ch == "$" && c2 == "{") { st[++top] = "B"; i++; continue }
         if (ch == "`") { st[++top] = "`"; continue }
-        if (t == "Q") continue
+        if (t == "Q") { if (top == 1 && (ch == " " || ch == "\t" || ch == "\n")) wsp = 1; continue }
+        if ((t == "P" || t == "C") && (ch == "c" || ch == "e") && substr(s, i - 1, 1) !~ /[A-Za-z0-9_]/) {
+          w4 = substr(s, i, 4); nx = substr(s, i + 4, 1)
+          if (w4 == "case" && (nx == " " || nx == "\t" || nx == "\n")) { st[++top] = "C"; i += 3; continue }
+          if (t == "C" && w4 == "esac" && nx !~ /[A-Za-z0-9_]/) { top--; i += 3; continue }
+        }
         if (ch == "\047") st[++top] = "S"
         else if (ch == "\"") st[++top] = "Q"
         else if (t == "P" && ch == "(") st[++top] = "P"
@@ -217,6 +304,7 @@ _strict_lex() {
       if (ch == "\\") {
         if (c2 == "\n") { i++; continue }
         if (!ws) ws = i
+        if (c2 == " " || c2 == "\t") wsp = 1
         i++; continue
       }
       if (ch == "\047") { open("S"); continue }
@@ -235,7 +323,8 @@ _strict_lex() {
         if (ws && substr(s, ws, i - ws) ~ /^[0-9]+$/) ws = 0; else flush()
         if (arith) { if (c2 == ch) i++; continue }
         if (ch == "<" && c2 == "<") {
-          if (substr(s, i + 2, 1) == "<") { i += 2; redir = 1 } else { i++; redir = 2 }
+          if (substr(s, i + 2, 1) == "<") { i += 2; redir = 1 }
+          else { i++; redir = 2; if (substr(s, i + 1, 1) == "-") { i++; hdnext = 1 } }
         } else {
           if (c2 == ">" || c2 == "&" || c2 == "|") i++
           redir = 1
@@ -243,27 +332,49 @@ _strict_lex() {
         continue
       }
       if (ch == "\n" || ch == ";" || ch == "&" || ch == "|" || ch == "(" || ch == ")") {
-        flush(); endseg()
+        op = ch
+        if (ch == "&" && c2 == "&") { op = "&&"; i++ }
+        else if (ch == "|" && c2 == "|") { op = "||"; i++ }
+        else if (ch == "|" && c2 == "&") i++
+        else if (ch == ";" && (c2 == ";" || c2 == "&" || c2 == "|")) {
+          op = ";;"; i++
+          if (c2 == ";" && substr(s, i + 1, 1) == "&") i++
+        }
+        flush(); endseg(op)
         if (ch == "(" && c2 == "(") arith = 1
         else if (ch == ")" && c2 == ")") arith = 0
         if (ch == "(") dp++
         else if (ch == ")" && dp > 0 && !incase) dp--
-        if (ch == "\n" && hd != "") {
-          while (i < L) {
-            e = i + 1
-            while (e <= L && substr(s, e, 1) != "\n") e++
-            ln = substr(s, i + 1, e - i - 1); i = e
-            if (hdash) sub(/^\t+/, "", ln)
-            if (ln == hd) break
+        if (op == "\n" || op == ";") { boundary(); inpipe = 0; if (!ft) cmpd = 0 }
+        else if (op == ";;") { boundary(); inpipe = 0; if (ft && fk[ft] == "C") flushf(ft); else broken = 1 }
+        else if (op == "&&") { prevop = "&&"; inpipe = 0 }
+        else if (op == "||") { flushl(); prevop = "||"; inpipe = 0 }
+        else if (op == "|") { if (justclosed) broken = 1; inpipe = 1 }
+        else if (op == "&") {
+          if (justclosed || cmpd) broken = 1
+          for (j = 1; j <= aln; j++) sus(al[j])
+          boundary(); inpipe = 0; if (!ft) cmpd = 0
+        }
+        justclosed = 0
+        if (op == "\n" && hqn > 0) {
+          for (k = 1; k <= hqn; k++) {
+            while (i < L) {
+              eol = i + 1
+              while (eol <= L && substr(s, eol, 1) != "\n") eol++
+              ln = substr(s, i + 1, eol - i - 1); i = eol
+              if (hqd[k]) sub(/^\t+/, "", ln)
+              if (ln == hq[k]) break
+            }
           }
-          hd = ""
+          hqn = 0
         }
         continue
       }
       if (!ws) ws = i
     }
-    flush(); endseg()
-    for (n in used) if (n in susp) print "!" n; else if (n in bound) print "+" n
+    flush(); endseg("")
+    if (ft > 0 || elifpend) broken = 1
+    for (n in used) if (n in susp) print "!" n; else if (!broken && (n in bound)) print "+" n
   }'
 }
 
@@ -307,7 +418,8 @@ _aggregate_bindings() {
 # `for c in x reset; do git $c --hard` が `git x reset --hard` になり、サブコマンドの位置で
 # 判定する git から外れるため。行全体ではなくセグメントだけを足すのは、行全体の複製は
 # 名前の数だけ倍々に増え、後段のセグメントごとの検査がその全部を歩くため。足す行が
-# 64 を超える分は足さない (その分の git は位置の判定から外れる)。
+# 64 を超える分は足さず exit 3 で知らせ、呼び出し側が git を含むコマンドを止める
+# (足さないまま通すと、その分の git が位置の判定から外れるため。issue #425)。
 # 候補を `-v` で渡さないのは、awk が `-v` の値のバックスラッシュを解釈するため。
 _substitute_multi() {
   printf '%s\n' "$1" | n="$2" cands="$3" LC_ALL=C awk '
@@ -329,11 +441,13 @@ _substitute_multi() {
     if (!has($0)) next
     k = split($0, S, /[;&|()]/)
     for (j = 1; j <= k; j++) {
-      if (!has(S[j]) || added + m > 64) continue
+      if (!has(S[j])) continue
+      if (added + m > 64) { capped = 1; continue }
       for (t = 1; t <= m; t++) emit(S[j], C[t])
       added += m
     }
-  }'
+  }
+  END { if (capped) exit 3 }'
 }
 
 # 広い表は、代入らしく見えるもの (`x+=…` と `a=(…)` は未解決の `$__unresolved`) と for の
@@ -363,7 +477,7 @@ expand_assignments() {
       val=${val%$'\002'}
       if [[ "$val" == *$'\001'* ]]; then
         [[ "$_cur" == *"\$$name"* || "$_cur" == *"\${$name}"* ]] \
-          && _cur=$(_substitute_multi "$_cur" "$name" "$val")
+          && { _cur=$(_substitute_multi "$_cur" "$name" "$val") || _multi_capped=1; }
         continue
       fi
       esc_name=$(printf '%s' "$name" | sed 's/[][\\.*^$/]/\\&/g')
@@ -696,6 +810,11 @@ _literalized=0
 # command_for_tilde 側の代入展開は tilde 判定の遅延生成と一緒に段階11 で行う。
 command_pre_expand=$command
 expand_assignments command
+if [[ "${_multi_capped:-0}" = 1 ]] \
+  && printf '%s\n' "$command" | grep -qE '(^|[^A-Za-z0-9_])git([^A-Za-z0-9_]|$)'; then
+  echo "ブロック: 値の候補が多すぎる変数を git と同じコマンドで使っています (サブコマンドの位置を判定できません)" >&2
+  exit 2
+fi
 
 # 動的展開（コマンド置換・バックティック・未追跡変数）が残っていて、かつ
 # .codex 文字列を含むコマンドは、展開後に .codex 配下を触る可能性があるため
