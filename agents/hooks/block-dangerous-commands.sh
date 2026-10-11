@@ -177,7 +177,7 @@ _strict_lex() {
       if (c == "\"") { q = (q == 2) ? 0 : 2; continue }
       if (c != "$") continue
       t = substr(w, j + 1, 64)
-      if (t ~ /^\{\([^)]*P/) broken = 1
+      if (t ~ /^\{\(/) broken = 1
       if (!match(t, /^\{?[A-Za-z_][A-Za-z0-9_]*/)) continue
       n = substr(t, RSTART, RLENGTH); sub(/^\{/, "", n)
       used[n] = 1
@@ -187,13 +187,14 @@ _strict_lex() {
     }
   }
   function check(uw) { if (uw ~ /^[A-Za-z_][A-Za-z0-9_]*($|=|\+=|\[)/) sus(nameof(uw)) }
-  function bindhere(n,   pt) {
+  function bindhere(n, defer,   pt) {
     if (dp > 0 || inpipe || inH) { sus(n); return }
     pt = (n in bound) && !(n in cond) && !(n in susp)
     bindname(n); delete cond[n]
     al[++aln] = n; bl[++bln] = n
     if (ft > 0) pend(ft, n, pt)
-    if (prevop == "||") { if (!pt) cond[n] = 1 }
+    if (defer) { fv[++fvn] = n; fvp[fvn] = pt }
+    else if (prevop == "||") { if (!pt) cond[n] = 1 }
     else if (prevop == "&&") pend(0, n, pt)
   }
   function pend(f, n, pt) { fbn[f]++; fb[f, fbn[f]] = n; fp[f, fbn[f]] = pt }
@@ -215,7 +216,7 @@ _strict_lex() {
     cmdname = uw; cmdwait = (uw ~ /^(command|builtin|exec|noglob|nocorrect)$/)
     if (uw == "eval" || uw == "source" || uw == ".") broken = 1
   }
-  function handle(w,   uw, n, j, pt) {
+  function handle(w,   uw, n, j) {
     refs(w)
     uw = w; gsub(/["\047\\]/, "", uw)
     if (redir) {
@@ -270,12 +271,7 @@ _strict_lex() {
     }
     if (mode == "forvars") {
       if (uw == "in") { mode = "args"; return }
-      if (uw ~ /^[A-Za-z_][A-Za-z0-9_]*$/) {
-        if (prevop == "" || dp > 0 || inpipe || inH) { bindhere(uw); return }
-        pt = (uw in bound) && !(uw in cond) && !(uw in susp)
-        bindname(uw); delete cond[uw]; al[++aln] = uw; bl[++bln] = uw
-        fv[++fvn] = uw; fvp[fvn] = pt; return
-      }
+      if (uw ~ /^[A-Za-z_][A-Za-z0-9_]*$/) { bindhere(uw, prevop != ""); return }
       mode = "args"
     }
     if (mode == "args") {
@@ -293,6 +289,7 @@ _strict_lex() {
     q = p - 1
     while (q > 0 && substr(s, q, 1) ~ /[ \t]/) q--
     if (substr(s, q, 1) ~ /[(;\n&|{]/) return 1
+    if (substr(s, q, 1) ~ /[)!]/) { broken = 1; return 0 }
     e = q
     while (q > 0 && e - q < 6 && substr(s, q, 1) ~ /[a-z]/) q--
     return substr(s, q + 1, e - q) ~ /^(then|do|else|elif|if|while|until|time)$/ && substr(s, q, 1) ~ /[ \t\n;(&|]/
@@ -375,7 +372,7 @@ _strict_lex() {
         }
         continue
       }
-      if (ch == "\n") { flush(); if (contop) { if (hqn > 0) skiphd(); continue } }
+      if (ch == "\n") { flush(); if (hqn > 0) skiphd(); if (contop) continue }
       if (inpat && (ch == "|" || ch == "(")) { flush(); continue }
       if (inpat && ch == ")") { flush(); endseg(")"); inpat = 0; continue }
       if (ch == "\n" || ch == ";" || ch == "&" || ch == "|" || ch == "(" || ch == ")") {
@@ -400,7 +397,6 @@ _strict_lex() {
         else if (op == "||") { flushf(0); prevop = "||" }
         else if (op == "|" && justclosed) broken = 1
         justclosed = 0; contop = (op == "&&" || op == "||" || op == "|")
-        if (op == "\n" && hqn > 0) skiphd()
         continue
       }
       if (!ws) ws = i
