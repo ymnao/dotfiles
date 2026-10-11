@@ -130,15 +130,24 @@ _strict_lex() {
   function sus(n) { if (n != "") susp[n] = 1 }
   function bindname(n) { if (n in refd) sus(n); bound[n] = 1 }
   function nameof(w,   n) { n = w; sub(/[^A-Za-z0-9_].*/, "", n); return n }
-  function refs(w,   k, P, j, n) {
-    k = split(w, P, "$")
-    for (j = 2; j <= k; j++) {
-      if (match(P[j], /^\{?[A-Za-z_][A-Za-z0-9_]*/)) {
-        n = substr(P[j], RSTART, RLENGTH); sub(/^\{/, "", n)
-        used[n] = 1
-        if (!(n in bound)) refd[n] = 1
-        if (P[j] ~ /^\{[A-Za-z_][A-Za-z0-9_]*:?=/) sus(n)
-      }
+  # シングルクォートの中とエスケープされた `$` は参照に数えない (数えると、後の代入を
+  # 「参照より後の束縛」として未解決に倒し、リテラルの $d を echo したあとの d=build を信じなくなるため)。
+  # 名前の照合を 64 文字に切った substr で行うのは、`$` ごとに残り全体を複製すると 2 乗になるため。
+  function refs(w,   L, j, c, q, t, n) {
+    L = length(w); q = 0
+    for (j = 1; j <= L; j++) {
+      c = substr(w, j, 1)
+      if (q == 1) { if (c == "\047") q = 0; continue }
+      if (c == "\\") { j++; continue }
+      if (c == "\047" && q == 0) { q = 1; continue }
+      if (c == "\"") { q = (q == 2) ? 0 : 2; continue }
+      if (c != "$") continue
+      t = substr(w, j + 1, 64)
+      if (!match(t, /^\{?[A-Za-z_][A-Za-z0-9_]*/)) continue
+      n = substr(t, RSTART, RLENGTH); sub(/^\{/, "", n)
+      used[n] = 1
+      if (!(n in bound)) refd[n] = 1
+      if (t ~ /^\{[A-Za-z_][A-Za-z0-9_]*:?=/) sus(n)
     }
   }
   function check(uw) { if (uw ~ /^[A-Za-z_][A-Za-z0-9_]*($|=|\+=|\[)/) sus(nameof(uw)) }
@@ -206,7 +215,7 @@ _strict_lex() {
         continue
       }
       if (ch == "\\") {
-        if (c2 == "\n") { flush(); i++; continue }
+        if (c2 == "\n") { i++; continue }
         if (!ws) ws = i
         i++; continue
       }

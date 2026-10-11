@@ -574,6 +574,8 @@
 {"name": "bind422-subshell-after-semicolon", "expect": "block", "command": "(cd x; HOME=x); rm -rf ${HOME}", "reason": "サブシェル内の ; の後の代入も外側に効かない"}
 {"name": "bind422-subshell-space", "expect": "block", "command": "( HOME=x ); rm -rf ${HOME}", "reason": "( の直後の代入は外側に効かない"}
 {"name": "bind422-subshell-case-pattern", "expect": "block", "command": "(case x in a) true;; esac; HOME=x); rm -rf ${HOME}", "reason": "case のパターンの ) でサブシェルを閉じたとみなさない"}
+{"name": "bind422-git-brace-multi", "expect": "block", "command": "for c in x reset; do git ${c} --hard; done", "reason": "${c} 形も候補ごとに判定する"}
+{"name": "bind422-git-two-multi", "expect": "block", "command": "for c in status reset; do for o in --soft --hard; do git $c $o; done; done", "reason": "多値の名前が 2 つあっても危険な組み合わせが残る"}
 {"name": "bind422-case-body-subshell", "expect": "block", "command": "case x in a) (cd y; HOME=x);; esac; rm -rf ${HOME}", "reason": "case 本文のサブシェル内の代入も外側に効かない"}
 # main では block していた形。狭い表に値を作らせると、広い表が拾わない位置 (`(` の直後) で
 # 外れた (code-reviewer の指摘)。
@@ -582,6 +584,10 @@
 {"name": "bind422-subshell-home-brace", "expect": "block", "command": "(HOME=x); rm -rf ${HOME}", "reason": "サブシェル内の代入は外側に効かない"}
 {"name": "bind422-procsub-pwd", "expect": "block", "command": "cat <(PWD=x); rm -rf $PWD", "reason": "プロセス置換内の代入は外側に効かない"}
 # 狭い表に絞ったことで誤検出しないことの pin。
+{"name": "bind422-allow-continuation-in-word", "expect": "allow", "command": "d=bu\\\nild; rm -rf \"$d\"", "reason": "語の途中の行継続で語を分けない"}
+{"name": "bind422-allow-sq-dollar-before", "expect": "allow", "command": "echo '$d'; d=build; rm -rf $d", "reason": "シングルクォート内の $d は参照ではない"}
+{"name": "bind422-allow-esc-dollar-before", "expect": "allow", "command": "echo \\$d; d=build; rm -rf $d", "reason": "エスケープされた $d は参照ではない"}
+{"name": "bind422-allow-git-name-boundary", "expect": "allow", "command": "c=reset; cmd=status; git $cmd --hard", "reason": "$cmd を $c と取り違えない"}
 {"name": "bind422-allow-fd-redirect", "expect": "allow", "command": "d=build 2>/dev/null; rm -rf $d", "reason": "fd 番号つきリダイレクトの数字はコマンド語ではない"}
 {"name": "bind422-allow-arith-shift", "expect": "allow", "command": "d=build\n(( x = 1 << 2 ))\nrm -rf $d", "reason": "(( )) の中の << は heredoc ではない"}
 {"name": "bind422-allow-case-paren-pattern", "expect": "allow", "command": "case x in (a) true;; esac; d=build; rm -rf $d", "reason": "case の ( 付きパターンの後も深さが戻る"}
