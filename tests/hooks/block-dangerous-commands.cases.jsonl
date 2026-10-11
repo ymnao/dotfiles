@@ -542,8 +542,8 @@
 {"name": "fp-accepted-rm-mktemp-inline", "expect": "block", "command": "rm -rf \"$(mktemp -d)\"", "reason": "mktemp の出力は入力側で差し替えられるので信じない"}
 {"name": "bind-allow-date-subst", "expect": "allow", "command": "echo \"$(date) $x\"", "reason": "rm を含まないコマンド置換"}
 # issue #422: rm 判定は狭い束縛表 (セグメント先頭の代入だけを採用し、名前が他の位置に
-# 現れたら未解決) で解決する。以下の block はいずれも 2026-10-11 に main の hook で exit=0
-# を実測した形。
+# 現れたら未解決) で解決する。次のコメント行までの block はいずれも 2026-10-11 に main の hook で
+# exit=0 を実測した形。
 {"name": "bind422-echo-assign", "expect": "block", "command": "echo HOME=a; rm -rf $HOME", "reason": "echo の引数は代入ではない"}
 {"name": "bind422-env-assign", "expect": "block", "command": "env HOME=a rm -rf $HOME", "reason": "env の引数は同じコマンドの $HOME に効かない"}
 {"name": "bind422-comment-assign", "expect": "block", "command": "# HOME=a\nrm -rf $HOME", "reason": "コメント内は代入ではない"}
@@ -574,12 +574,17 @@
 {"name": "bind422-subshell-after-semicolon", "expect": "block", "command": "(cd x; HOME=x); rm -rf ${HOME}", "reason": "サブシェル内の ; の後の代入も外側に効かない"}
 {"name": "bind422-subshell-space", "expect": "block", "command": "( HOME=x ); rm -rf ${HOME}", "reason": "( の直後の代入は外側に効かない"}
 {"name": "bind422-subshell-case-pattern", "expect": "block", "command": "(case x in a) true;; esac; HOME=x); rm -rf ${HOME}", "reason": "case のパターンの ) でサブシェルを閉じたとみなさない"}
-# 狭い表に値を作らせると、広い表が拾わない位置 (`(` の直後) で main より外れた形 (code-reviewer の指摘)。
+{"name": "bind422-case-body-subshell", "expect": "block", "command": "case x in a) (cd y; HOME=x);; esac; rm -rf ${HOME}", "reason": "case 本文のサブシェル内の代入も外側に効かない"}
+# main では block していた形。狭い表に値を作らせると、広い表が拾わない位置 (`(` の直後) で
+# 外れた (code-reviewer の指摘)。
 {"name": "bind422-subshell-dq-root", "expect": "block", "command": "(d=\"/\"; rm -rf $d)", "reason": "サブシェル内の代入は信じない"}
 {"name": "bind422-subshell-tilde", "expect": "block", "command": "(d=~; rm -rf $d)", "reason": "サブシェル内の代入は信じない (~)"}
 {"name": "bind422-subshell-home-brace", "expect": "block", "command": "(HOME=x); rm -rf ${HOME}", "reason": "サブシェル内の代入は外側に効かない"}
 {"name": "bind422-procsub-pwd", "expect": "block", "command": "cat <(PWD=x); rm -rf $PWD", "reason": "プロセス置換内の代入は外側に効かない"}
 # 狭い表に絞ったことで誤検出しないことの pin。
+{"name": "bind422-allow-fd-redirect", "expect": "allow", "command": "d=build 2>/dev/null; rm -rf $d", "reason": "fd 番号つきリダイレクトの数字はコマンド語ではない"}
+{"name": "bind422-allow-arith-shift", "expect": "allow", "command": "d=build\n(( x = 1 << 2 ))\nrm -rf $d", "reason": "(( )) の中の << は heredoc ではない"}
+{"name": "bind422-allow-case-paren-pattern", "expect": "allow", "command": "case x in (a) true;; esac; d=build; rm -rf $d", "reason": "case の ( 付きパターンの後も深さが戻る"}
 {"name": "bind422-allow-export-assign", "expect": "allow", "command": "export d=build; rm -rf $d", "reason": "export の後の代入"}
 {"name": "bind422-allow-local-assign", "expect": "allow", "command": "f() { local d=build; rm -rf $d; }", "reason": "local の後の代入"}
 {"name": "bind422-allow-and-chain", "expect": "allow", "command": "cd x && d=build && rm -rf $d", "reason": "&& の後のセグメント先頭"}

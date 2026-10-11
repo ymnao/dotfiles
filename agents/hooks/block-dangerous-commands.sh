@@ -114,8 +114,9 @@ _for_bindings() {
 # 出力は `+NAME` (信じてよい) と `!NAME` (未解決に倒す)。信じてよいのは、セグメント先頭
 # (予約語 / export・local 等の後を含む) に並ぶ代入か for の変数として束縛され、ほかに怪しい
 # 出現が無い名前だけ。`(` から対応する `)` まではサブシェルなので信じない。case の中では `)` で
-# 深さを戻さないのは、パターンの `)` とサブシェルの閉じを区別できず、戻しすぎるとサブシェル内の
-# 代入を信じることになるため。コマンド語が続く前置代入は同じ
+# 深さを戻さず esac で case の前の深さに戻すのは、パターンの `)` とサブシェルの閉じを区別できず、
+# 戻しすぎるとサブシェル内の代入を信じることになるため。`((` の中の `<<` は heredoc ではなく
+# シフト演算子として読む。コマンド語が続く前置代入は同じ
 # コマンドの `$NAME` には効かないが、関数や eval の中の展開には効くので、それより前に束縛が
 # 無ければ (環境の値が効くので) 未解決にする。`read a` / `printf -v a` / `unset a` / `a[0]=` /
 # `${a:=x}` 等の再束縛をコマンドごとに列挙せず、「名前が代入以外の位置に単語として現れたら
@@ -156,8 +157,8 @@ _strict_lex() {
     if (w ~ /^[A-Za-z_][A-Za-z0-9_]*\+?=\(/) { sus(nameof(w)); if (mode != "forvars") return }
     if (mode == "start") {
       if (uw ~ /^(then|do|else|elif|if|while|until|!|time|\{|\})$/) return
-      if (uw == "case") { incase++; mode = "args"; return }
-      if (uw == "esac") { if (incase) incase--; return }
+      if (uw == "case") { cdp[++incase] = dp; mode = "args"; return }
+      if (uw == "esac") { if (incase) dp = cdp[incase--]; return }
       if (uw == "export" || uw == "readonly") { mode = "decl"; keep = 1; return }
       if (uw == "local" || uw == "declare" || uw == "typeset") { mode = "decl"; keep = 0; return }
       if (uw == "for" || uw == "foreach" || uw == "select") { mode = "forvars"; return }
@@ -184,7 +185,7 @@ _strict_lex() {
   BEGIN { RS = "\001" }
   { s = s $0 }
   END {
-    L = length(s); mode = "start"; np = 0; ws = 0; top = 0; redir = 0; hd = ""; hdash = 0; dp = 0; incase = 0
+    L = length(s); mode = "start"; np = 0; ws = 0; top = 0; redir = 0; hd = ""; hdash = 0; dp = 0; incase = 0; arith = 0
     for (i = 1; i <= L; i++) {
       ch = substr(s, i, 1); c2 = substr(s, i + 1, 1)
       if (top) {
@@ -222,7 +223,8 @@ _strict_lex() {
       if (ch == " " || ch == "\t") { flush(); continue }
       if (ch == "&" && c2 == ">") { flush(); i++; if (substr(s, i + 1, 1) == ">") i++; redir = 1; continue }
       if (ch == "<" || ch == ">") {
-        flush()
+        if (ws && substr(s, ws, i - ws) ~ /^[0-9]+$/) ws = 0; else flush()
+        if (arith) { if (c2 == ch) i++; continue }
         if (ch == "<" && c2 == "<") {
           if (substr(s, i + 2, 1) == "<") { i += 2; redir = 1 } else { i++; redir = 2 }
         } else {
@@ -233,6 +235,8 @@ _strict_lex() {
       }
       if (ch == "\n" || ch == ";" || ch == "&" || ch == "|" || ch == "(" || ch == ")") {
         flush(); endseg()
+        if (ch == "(" && c2 == "(") arith = 1
+        else if (ch == ")" && c2 == ")") arith = 0
         if (ch == "(") dp++
         else if (ch == ")" && dp > 0 && !incase) dp--
         if (ch == "\n" && hd != "") {
