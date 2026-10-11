@@ -105,25 +105,27 @@ _for_bindings() {
       -e "s/^[[:space:];&|()]*(for|foreach|select)[[:space:]]+(${_names})[[:space:]]*\\((.*)\\)\$/\\2=\\4/"
 }
 
-# 狭い表の材料を、クォートとコマンド置換を保ったままの入力 (command_orig) から字句単位で
-# 取り出す。正規化後の view を使わないのは、`echo 'x; HOME=a'` のクォート除去や `x\;` の
-# エスケープ解除で、代入でない文字列がコマンド区切りの後ろに出てくるため。
-# 出力は `NAME=値` (採用した代入) と `!NAME` (未解決に倒す名前)。採用するのは
-# セグメント先頭 (予約語 / export・local 等の後を含む) に並ぶ代入だけ。コマンド語が続く
-# 前置代入は同じコマンドの `$NAME` には効かないが、関数や eval の中の展開には効くので、
-# 値を候補に加えたうえで、それより前に束縛が無ければ (環境の値が効くので) 未解決にする。
-# `read a` / `printf -v a` /
-# `unset a` / `a[0]=` / `${a:=x}` 等の再束縛をコマンドごとに列挙せず、「名前が代入以外の
-# 位置に単語として現れたら未解決」とするのは、列挙に漏れた形がそのまま古い値を信じて
-# 素通りになるため。参照 (`$NAME`) が採用より前にあるときも、その参照は環境の値を
-# 見るので未解決にする。
-# 文字を 1 つずつ見て単語の開始位置だけを持ち、単語は区切りで substr するのは、awk の
-# 文字列連結を 1 文字ずつ重ねると単語長の 2 乗になるため。
+# 狭い表で値を信じてよい名前を、クォートとコマンド置換を保ったままの入力 (command_orig) から
+# 字句単位で決める。値そのものは出さず、広い表の値 (main と同じ正規化後の view から取ったもの)
+# に未解決の印を足すかどうかだけを決める。値をここで作らないのは、生の値 (`"/"`) と広い表が
+# 拾わない位置 (`(d=…`) の解決が、広い表の view を前提にした危険パス判定から外れるため。
+# 正規化後の view で決めないのは、`echo 'x; HOME=a'` のクォート除去や `x\;` のエスケープ解除で、
+# 代入でない文字列がコマンド区切りの後ろに出てくるため。
+# 出力は `+NAME` (信じてよい) と `!NAME` (未解決に倒す)。信じてよいのは、セグメント先頭
+# (予約語 / export・local 等の後を含む) に並ぶ代入か for の変数として束縛され、ほかに怪しい
+# 出現が無い名前だけ。`(` の直後はサブシェルなので信じない。コマンド語が続く前置代入は同じ
+# コマンドの `$NAME` には効かないが、関数や eval の中の展開には効くので、それより前に束縛が
+# 無ければ (環境の値が効くので) 未解決にする。`read a` / `printf -v a` / `unset a` / `a[0]=` /
+# `${a:=x}` 等の再束縛をコマンドごとに列挙せず、「名前が代入以外の位置に単語として現れたら
+# 未解決」とするのは、列挙に漏れた形がそのまま古い値を信じて素通りになるため。参照 (`$NAME`)
+# が束縛より前にあるときも、その参照は環境の値を見るので未解決にする。
+# クォートとコマンド置換は入れ子を積む (`"$(echo "…")"` の内側の `"` で外側が閉じたと誤読すると、
+# 置換の中の `;` が区切りに見えるため)。文字を 1 つずつ見て単語の開始位置だけを持ち、単語は
+# 区切りで substr するのは、awk の文字列連結を 1 文字ずつ重ねると単語長の 2 乗になるため。
 _strict_lex() {
   printf '%s\n' "$1" | LC_ALL=C awk '
   function sus(n) { if (n != "") susp[n] = 1 }
   function bindname(n) { if (n in refd) sus(n); bound[n] = 1 }
-  function bind(n, v) { bindname(n); print n "=" v }
   function nameof(w,   n) { n = w; sub(/[^A-Za-z0-9_].*/, "", n); return n }
   function refs(w,   k, P, j, n) {
     k = split(w, P, "$")
@@ -138,10 +140,10 @@ _strict_lex() {
   }
   function check(uw) { if (uw ~ /^[A-Za-z_][A-Za-z0-9_]*($|=|\+=|\[)/) sus(nameof(uw)) }
   function endseg(   j) {
-    if (mode == "start") for (j = 1; j <= np; j++) bind(pn[j], pv[j])
-    np = 0; mode = "start"; redir = 0
+    if (mode == "start") for (j = 1; j <= np; j++) if (sub0) sus(pn[j]); else bindname(pn[j])
+    np = 0; mode = "start"; redir = 0; sub0 = 0
   }
-  function handle(w,   uw, n) {
+  function handle(w,   uw, n, j) {
     refs(w)
     uw = w; gsub(/["\047\\]/, "", uw)
     if (redir) {
@@ -154,68 +156,80 @@ _strict_lex() {
       if (uw == "export" || uw == "readonly") { mode = "decl"; keep = 1; return }
       if (uw == "local" || uw == "declare" || uw == "typeset") { mode = "decl"; keep = 0; return }
       if (uw == "for" || uw == "foreach" || uw == "select") { mode = "forvars"; return }
-      if (w ~ /^[A-Za-z_][A-Za-z0-9_]*=/) {
-        n = nameof(w); pn[++np] = n; pv[np] = substr(w, length(n) + 2); return
-      }
+      if (w ~ /^[A-Za-z_][A-Za-z0-9_]*=/) { pn[++np] = nameof(w); return }
       if (w ~ /^[A-Za-z_][A-Za-z0-9_]*(\+=|\[)/) { sus(nameof(w)); return }
-      for (j = 1; j <= np; j++) { if (!(pn[j] in bound)) sus(pn[j]); print pn[j] "=" pv[j] }
+      for (j = 1; j <= np; j++) if (!(pn[j] in bound)) sus(pn[j])
       np = 0; mode = "args"; check(uw); return
     }
     if (mode == "decl") {
       if (uw ~ /^-/) return
-      if (w ~ /^[A-Za-z_][A-Za-z0-9_]*=/) { n = nameof(w); bind(n, substr(w, length(n) + 2)); return }
+      if (w ~ /^[A-Za-z_][A-Za-z0-9_]*=/) { n = nameof(w); if (sub0) sus(n); else bindname(n); return }
       if (keep && uw ~ /^[A-Za-z_][A-Za-z0-9_]*$/) return
       check(uw); return
     }
     if (mode == "forvars") {
       if (uw == "in") { mode = "args"; return }
-      if (uw ~ /^[A-Za-z_][A-Za-z0-9_]*$/) { bindname(uw); return }
+      if (uw ~ /^[A-Za-z_][A-Za-z0-9_]*$/) { if (sub0) sus(uw); else bindname(uw); return }
       mode = "args"
     }
     check(uw)
   }
   function flush() { if (ws) { handle(substr(s, ws, i - ws)); ws = 0 } }
+  function open(t) { if (!ws) ws = i; st[++top] = t }
   BEGIN { RS = "\001" }
   { s = s $0 }
   END {
-    L = length(s); mode = "start"; np = 0; ws = 0; q = ""; dep = 0; redir = 0; hd = ""; hdash = 0
+    L = length(s); mode = "start"; np = 0; ws = 0; top = 0; redir = 0; hd = ""; hdash = 0; sub0 = 0
     for (i = 1; i <= L; i++) {
-      ch = substr(s, i, 1)
-      if (q != "") {
-        if (q == "\"" && ch == "\\") i++
-        else if (ch == q) q = ""
+      ch = substr(s, i, 1); c2 = substr(s, i + 1, 1)
+      if (top) {
+        t = st[top]
+        if (t == "S") { if (ch == "\047") top--; continue }
+        if (ch == "\\") { i++; continue }
+        if (t == "`") { if (ch == "`") top--; continue }
+        if (t == "Q" && ch == "\"") { top--; continue }
+        if (ch == "$" && c2 == "(") { st[++top] = "P"; i++; continue }
+        if (ch == "$" && c2 == "{") { st[++top] = "B"; i++; continue }
+        if (ch == "`") { st[++top] = "`"; continue }
+        if (t == "Q") continue
+        if (ch == "\047") st[++top] = "S"
+        else if (ch == "\"") st[++top] = "Q"
+        else if (t == "P" && ch == "(") st[++top] = "P"
+        else if (t == "P" && ch == ")") top--
+        else if (t == "B" && ch == "}") top--
         continue
       }
       if (ch == "\\") {
-        if (substr(s, i + 1, 1) == "\n") { flush(); i++; continue }
+        if (c2 == "\n") { flush(); i++; continue }
         if (!ws) ws = i
         i++; continue
       }
-      if (ch == "\047" || ch == "\"" || ch == "`") { if (!ws) ws = i; q = ch; continue }
-      if (dep > 0) {
-        if (ch == "(" || ch == "{") dep++
-        else if (ch == ")" || ch == "}") dep--
-        continue
-      }
-      if (ch == "(" && ws && substr(s, i - 1, 1) == "=") { dep = 1; continue }
-      if (ch == "$" && (substr(s, i + 1, 1) == "(" || substr(s, i + 1, 1) == "{")) {
-        if (!ws) ws = i
-        dep = 1; i++; continue
-      }
+      if (ch == "\047") { open("S"); continue }
+      if (ch == "\"") { open("Q"); continue }
+      if (ch == "`") { open("`"); continue }
+      if (ch == "$" && c2 == "(") { open("P"); i++; continue }
+      if (ch == "$" && c2 == "{") { open("B"); i++; continue }
+      if (ch == "(" && ws && substr(s, i - 1, 1) == "=") { open("P"); continue }
       if (ch == "#" && !ws) {
         while (i < L && substr(s, i + 1, 1) != "\n") i++
         continue
       }
       if (ch == " " || ch == "\t") { flush(); continue }
+      if (ch == "&" && c2 == ">") { flush(); i++; if (substr(s, i + 1, 1) == ">") i++; redir = 1; continue }
       if (ch == "<" || ch == ">") {
         flush()
-        if (ch == "<" && substr(s, i + 1, 1) == "<") {
+        if (ch == "<" && c2 == "<") {
           if (substr(s, i + 2, 1) == "<") { i += 2; redir = 1 } else { i++; redir = 2 }
-        } else redir = 1
+        } else {
+          if (c2 == ">" || c2 == "&" || c2 == "|") i++
+          redir = 1
+        }
         continue
       }
       if (ch == "\n" || ch == ";" || ch == "&" || ch == "|" || ch == "(" || ch == ")") {
         flush(); endseg()
+        if (ch == "(") { dp++; sub0 = 1 } else if (ch == ")" && dp > 0) { dp--; sub0 = (dp > 0) }
+        else if (dp > 0) sub0 = 1
         if (ch == "\n" && hd != "") {
           while (i < L) {
             e = i + 1
@@ -231,14 +245,14 @@ _strict_lex() {
       if (!ws) ws = i
     }
     flush(); endseg()
-    for (n in susp) if (n in used) print "!" n
+    for (n in used) if (n in susp) print "!" n; else if (n in bound) print "+" n
   }'
 }
 
-# 束縛の行 (`NAME=値` / `!NAME`) を `NAME=候補…` に集約する。候補は重複を除き、
+# 束縛の行 (`NAME=値` / `!NAME` / `+NAME`) を `NAME=候補…` に集約する。候補は重複を除き、
 # 広い表では \001 区切り、狭い表では空白区切りにする (狭い表は全候補を同じ行で判定に
 # 掛ければ足りる。広い表は git のサブコマンドのように位置で判定するものがあるので、
-# 候補ごとの行に分ける)。
+# 候補ごとの行に分ける)。狭い表では `+NAME` の無い名前に未解決の印を足す。
 # 入力側の `__unresolved` への束縛は捨てる (束縛されると印が値に解決されて外れるため)。
 _aggregate_bindings() {
   LC_ALL=C awk -v strict="$1" '
@@ -251,6 +265,7 @@ _aggregate_bindings() {
   }
   BEGIN { sep = strict ? " " : "\001" }
   /^!/ { add(substr($0, 2), "$__unresolved"); next }
+  /^\+/ { clean[substr($0, 2)] = 1; next }
   {
     i = index($0, "="); v = substr($0, i + 1)
     c = split(substr($0, 1, i - 1), ns, " ")
@@ -261,7 +276,12 @@ _aggregate_bindings() {
     m = split(v, cs, " ")
     if (m == 0) { m = 1; cs[1] = "" }
     for (q = 1; q <= c; q++) for (t = 1; t <= m; t++) add(ns[q], cs[t])
-  } END { for (j = 1; j <= k; j++) print order[j] "=" vals[order[j]] "\002" }'
+  } END {
+    for (j = 1; j <= k; j++) {
+      if (strict && !(order[j] in clean)) add(order[j], "$__unresolved")
+      print order[j] "=" vals[order[j]] "\002"
+    }
+  }'
 }
 
 # 広い表で値が複数ある名前は、空白で連結した値で置換した行に加えて、`$NAME` を含む
@@ -270,8 +290,9 @@ _aggregate_bindings() {
 # 判定する git から外れるため。行全体ではなくセグメントだけを足すのは、行全体の複製は
 # 名前の数だけ倍々に増え、後段のセグメントごとの検査がその全部を歩くため。足す行が
 # 64 を超える分は足さない (その分の git は位置の判定から外れる)。
+# 候補を `-v` で渡さないのは、awk が `-v` の値のバックスラッシュを解釈するため。
 _substitute_multi() {
-  printf '%s\n' "$1" | LC_ALL=C awk -v n="$2" -v cands="$3" '
+  printf '%s\n' "$1" | n="$2" cands="$3" LC_ALL=C awk '
   function has(s) { return index(s, "$" n) || index(s, "${" n "}") }
   function emit(s, c,   P, k, j, o) {
     k = split(s, P, "\\$\\{" n "\\}"); o = P[1]
@@ -281,7 +302,8 @@ _substitute_multi() {
     printf "\n"
   }
   BEGIN {
-    m = split(cands, C, "\001")
+    n = ENVIRON["n"]
+    m = split(ENVIRON["cands"], C, "\001")
     joined = C[1]; for (t = 2; t <= m; t++) joined = joined " " C[t]
   }
   {
@@ -296,24 +318,25 @@ _substitute_multi() {
   }'
 }
 
+# 広い表は、代入らしく見えるもの (`x+=…` と `a=(…)` は未解決の `$__unresolved`) と for の
+# リストを毎回の view から拾う。狭い表 (`strict`) は同じ値に、`_strict_table_names` (rm 分岐で
+# `_strict_lex` が作る) で信じてよいとされなかった名前の未解決の印を足す。
 expand_assignments() {
-  local _var=$1 _mode=${2:-} _prev _iter=0 _cur=${!1} assignments name val esc_name esc_val
+  local _var=$1 _strict=0 _prev _iter=0 _cur=${!1} assignments name val esc_name esc_val
+  [[ "${2:-}" = strict ]] && _strict=1
   while [[ $_iter -lt 8 ]]; do
     _prev=$_cur
     _iter=$((_iter + 1))
-    if [[ "$_mode" = strict ]]; then
-      assignments=$_strict_table
-    else
-      # 追記 (`x+=…`) と配列 (`a=(…)`) は値を追わず、未解決の `$__unresolved` を割り当てる
-      # (`x=; x+=/` を空に、`a=(/ b)` を `(/` に解決すると判定から外れるため)。
-      assignments=$({
-        printf '%s' "$_cur" \
-          | grep -oE '(^|[[:space:];&|])[A-Za-z_][A-Za-z0-9_]*\+?=[^[:space:];&|]*' \
-          | sed -E -e 's/^[[:space:];&|]+//' \
-            -e 's/^([A-Za-z_][A-Za-z0-9_]*)(\+=|=\().*/\1=$__unresolved/'
-        _for_bindings "$_cur"
-      } | _aggregate_bindings 0)
-    fi
+    # 追記 (`x+=…`) と配列 (`a=(…)`) は値を追わず、未解決の `$__unresolved` を割り当てる
+    # (`x=; x+=/` を空に、`a=(/ b)` を `(/` に解決すると判定から外れるため)。
+    assignments=$({
+      printf '%s' "$_cur" \
+        | grep -oE '(^|[[:space:];&|])[A-Za-z_][A-Za-z0-9_]*\+?=[^[:space:];&|]*' \
+        | sed -E -e 's/^[[:space:];&|]+//' \
+          -e 's/^([A-Za-z_][A-Za-z0-9_]*)(\+=|=\().*/\1=$__unresolved/'
+      _for_bindings "$_cur"
+      [[ "$_strict" = 1 ]] && printf '%s\n' "$_strict_table_names"
+    } | _aggregate_bindings "$_strict")
     [[ -z "$assignments" ]] && break
     # `${asgn%%=*}` で分けないのは、bash 3.2 ではパターン展開が長い行で 2 乗になるため。
     # 行末の \002 は、IFS='=' の read が値の末尾の `=` を 1 個落とすのを防ぐ番兵。
@@ -931,7 +954,7 @@ if [[ -n "$_rm_segs" ]]; then
   # view を危険パス判定にだけ足すのは、そちらは block を増やす側にしか効かないため。
   # fail-closed に足さないのは、広い表が `(d=build; …)` の `d` のように拾わなかった束縛の
   # `$d` が残り、狭い表で解決済みの形まで止めるため。
-  _strict_table=$({ _strict_lex "$command_orig"; _for_bindings "$command_orig"; } | _aggregate_bindings 1)
+  _strict_table_names=$(_strict_lex "$command_orig")
   command_rm=$command_pre_expand
   expand_assignments command_rm strict
   _rm_segs_strict=$(_rm_segs_of "$command_rm")
