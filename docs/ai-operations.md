@@ -27,9 +27,9 @@ fail-loud になる場所の版数固定はこの規約の対象外**(eval 実�
 | 役割 | モデル | effort | 用途 |
 |---|---|---|---|
 | メイン(統括・意思決定・実装) | Opus 世代 | high(難所は xhigh) | 全体制御・decisions・並列調整・実装・PR 作成 |
-| **plan 立案**(非自明タスク) | **Fable 世代** | - | `/dev` step 2 の変更ファイル・実装手順・考慮点の立案。self-preference bias 回避 + 推論深度確保のためメイン Opus からサブエージェント委譲 |
+| **plan 立案**(非自明タスク) | **Fable 世代** | high | `/dev` step 2 の変更ファイル・実装手順・考慮点の立案。self-preference bias 回避 + 推論深度確保のためメイン Opus からサブエージェント委譲 |
 | 並列 fan-out(中軽度並列) | Sonnet 世代 | high | /simplify の観点別 finder、多点調査 |
-| 独立第二意見(別モデル系統) | Fable 世代など | - | fresh context のレビュー、難しい設計判断 |
+| 独立第二意見(別モデル系統) | Fable 世代など | xhigh | fresh context のレビュー、難しい設計判断 |
 | 探索・情報収集 | Haiku 世代 | - | 軽い調査・ファイル探索 |
 
 **実測 (2026-09-26 / `claude` 2.1.282)**: メインは Opus 5.5 (`claude-opus-5-5`)、
@@ -99,6 +99,16 @@ agent の Bash sandbox 内で `codex-review` が回るかどうか、回すた�
 - 切り替え: `/model`、Agent ツールの `model` パラメータ
   (例: `Agent(subagent_type: "general-purpose", model: "sonnet", prompt: ...)`
   独立第二意見は `model: "fable"`)
+- effort の指定: Agent ツールの `effort` パラメータか、サブエージェント定義
+  (`claude/agents/*.md`) の frontmatter `effort:`。Agent ツールは user か
+  CLAUDE.md・skill が明示したときだけ `effort` を付けるので、委譲する skill の
+  本文にパラメータとして書く (code-reviewer は frontmatter で足りるので書かない)。
+  **どちらも無い subagent はセッションの effort を継ぐ**ので、表の値は指定した箇所
+  でしか保証されない。実測 (2026-10-12 / `claude` 2.1.295、subagent のログ
+  `~/.claude/projects/<proj>/<session>/subagents/agent-<id>.jsonl` の `"effort"`):
+  指定した subagent は指定値 (パラメータの `high`、frontmatter の `xhigh`)、未指定は
+  セッションの値 (`medium`) だった。`model` と違い、frontmatter の `effort` は
+  この方法でセッション内から確かめられる
 - 原則: **浅い推論を見たらプロンプトを工夫する前に effort を上げる**
   (公式推奨。モデル変更より effort が先のレバー)
 - レビュー系タスクで下位モデルを使うときは「重要度でフィルタせず全部

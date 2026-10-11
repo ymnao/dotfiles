@@ -151,6 +151,7 @@ fresh context なので、渡す事実が不足すると hallucination で埋ま
 Agent(
   subagent_type: "general-purpose",
   model: "fable",
+  effort: "high",
   description: "Plan for <task>",
   prompt: "<step 2a の成果物一式 (タスク要件 / 影響範囲 / 既存実装の
     該当箇所 / repo 制約 / 不確実性リスト) を渡し、変更ファイル・
