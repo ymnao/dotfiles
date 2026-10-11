@@ -113,7 +113,9 @@ _for_bindings() {
 # 代入でない文字列がコマンド区切りの後ろに出てくるため。
 # 出力は `+NAME` (信じてよい) と `!NAME` (未解決に倒す)。信じてよいのは、セグメント先頭
 # (予約語 / export・local 等の後を含む) に並ぶ代入か for の変数として束縛され、ほかに怪しい
-# 出現が無い名前だけ。`(` の直後はサブシェルなので信じない。コマンド語が続く前置代入は同じ
+# 出現が無い名前だけ。`(` から対応する `)` まではサブシェルなので信じない。case の中では `)` で
+# 深さを戻さないのは、パターンの `)` とサブシェルの閉じを区別できず、戻しすぎるとサブシェル内の
+# 代入を信じることになるため。コマンド語が続く前置代入は同じ
 # コマンドの `$NAME` には効かないが、関数や eval の中の展開には効くので、それより前に束縛が
 # 無ければ (環境の値が効くので) 未解決にする。`read a` / `printf -v a` / `unset a` / `a[0]=` /
 # `${a:=x}` 等の再束縛をコマンドごとに列挙せず、「名前が代入以外の位置に単語として現れたら
@@ -139,9 +141,10 @@ _strict_lex() {
     }
   }
   function check(uw) { if (uw ~ /^[A-Za-z_][A-Za-z0-9_]*($|=|\+=|\[)/) sus(nameof(uw)) }
+  function bindhere(n) { if (dp > 0) sus(n); else bindname(n) }
   function endseg(   j) {
-    if (mode == "start") for (j = 1; j <= np; j++) if (sub0) sus(pn[j]); else bindname(pn[j])
-    np = 0; mode = "start"; redir = 0; sub0 = 0
+    if (mode == "start") for (j = 1; j <= np; j++) bindhere(pn[j])
+    np = 0; mode = "start"; redir = 0
   }
   function handle(w,   uw, n, j) {
     refs(w)
@@ -153,6 +156,8 @@ _strict_lex() {
     if (w ~ /^[A-Za-z_][A-Za-z0-9_]*\+?=\(/) { sus(nameof(w)); if (mode != "forvars") return }
     if (mode == "start") {
       if (uw ~ /^(then|do|else|elif|if|while|until|!|time|\{|\})$/) return
+      if (uw == "case") { incase++; mode = "args"; return }
+      if (uw == "esac") { if (incase) incase--; return }
       if (uw == "export" || uw == "readonly") { mode = "decl"; keep = 1; return }
       if (uw == "local" || uw == "declare" || uw == "typeset") { mode = "decl"; keep = 0; return }
       if (uw == "for" || uw == "foreach" || uw == "select") { mode = "forvars"; return }
@@ -163,13 +168,13 @@ _strict_lex() {
     }
     if (mode == "decl") {
       if (uw ~ /^-/) return
-      if (w ~ /^[A-Za-z_][A-Za-z0-9_]*=/) { n = nameof(w); if (sub0) sus(n); else bindname(n); return }
+      if (w ~ /^[A-Za-z_][A-Za-z0-9_]*=/) { n = nameof(w); bindhere(n); return }
       if (keep && uw ~ /^[A-Za-z_][A-Za-z0-9_]*$/) return
       check(uw); return
     }
     if (mode == "forvars") {
       if (uw == "in") { mode = "args"; return }
-      if (uw ~ /^[A-Za-z_][A-Za-z0-9_]*$/) { if (sub0) sus(uw); else bindname(uw); return }
+      if (uw ~ /^[A-Za-z_][A-Za-z0-9_]*$/) { bindhere(uw); return }
       mode = "args"
     }
     check(uw)
@@ -179,7 +184,7 @@ _strict_lex() {
   BEGIN { RS = "\001" }
   { s = s $0 }
   END {
-    L = length(s); mode = "start"; np = 0; ws = 0; top = 0; redir = 0; hd = ""; hdash = 0; sub0 = 0
+    L = length(s); mode = "start"; np = 0; ws = 0; top = 0; redir = 0; hd = ""; hdash = 0; dp = 0; incase = 0
     for (i = 1; i <= L; i++) {
       ch = substr(s, i, 1); c2 = substr(s, i + 1, 1)
       if (top) {
@@ -228,8 +233,8 @@ _strict_lex() {
       }
       if (ch == "\n" || ch == ";" || ch == "&" || ch == "|" || ch == "(" || ch == ")") {
         flush(); endseg()
-        if (ch == "(") { dp++; sub0 = 1 } else if (ch == ")" && dp > 0) { dp--; sub0 = (dp > 0) }
-        else if (dp > 0) sub0 = 1
+        if (ch == "(") dp++
+        else if (ch == ")" && dp > 0 && !incase) dp--
         if (ch == "\n" && hd != "") {
           while (i < L) {
             e = i + 1
