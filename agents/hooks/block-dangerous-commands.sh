@@ -132,26 +132,37 @@ _for_bindings() {
 # 名前の再束縛は値が広い表の候補に加わるだけなので `cond` にしない。パイプの要素はサブシェル
 # なので信じず、`&` はそのリストの代入を遡って未解決にする。閉じた直後の複合コマンドや
 # 複合コマンドを含むリストがパイプ / `&` に入るときは、中の代入を遡れないので全体を信じない。
+# `&&` / `||` / `|` の直後の改行はリストの区切りではなく続きとして読む。case のパターンの
+# `|` / `(` / `)` は演算子として読まない。`function NAME { }` の本体の代入は本体の中でも
+# 信じない (main が本体の中を引数の位置として扱っていた範囲を越えて受理を広げないため)。
 # フレームを for / while ではなく do / then で開くのは、do を持たない zsh の短縮形
 # (`for f (a) cmd`) を閉じ語待ちのまま残して全体を信じなくなるため。代償として for の変数と
 # 条件部の代入はフレームの外として扱う (`for f in; do :; done` の後の `$f` は旧値のまま)。
+# ただし and-or リストの 2 番目以降の for の変数は、続く do のフレームに入れる (リストの
+# 区切りの `;` で落とすと本体の中の参照まで未解決になるため)。
 # 知っている開き語・閉じ語だけをフレームにし、釣り合わない (閉じ語だけがある / 閉じずに終わる)
 # ときは `broken` で全体を信じないのは、知らない構文 (zsh の `repeat` / `always` / `if [[ ]] { }`)
 # を列挙で追うと漏れた形がそのまま素通りになるため。知らない開き語の後ろはコマンドの引数の
 # 位置なので、中の代入は「代入以外の位置の出現」として既存の規則で未解決になる。
 # 名前を語として書かない再束縛 (`read $n` / `printf -v "$n"` / `declare -n` / eval / source) は
 # 上の「名前が語として現れたら未解決」で拾えないので、文字列を束縛できる builtin を列挙して
-# `$` 引数を見たら全体を信じない。`let` / `getopts` / `(( ))` を入れないのは、数値しか束縛
-# できず rm の危険値 (`/` `~` `..`) を作れないため。位置以降ではなく全体にするのは、関数本体の
+# `$` 引数を見たら全体を信じない。`let` / `(( ))` を入れないのは、数値しか束縛できず rm の
+# 危険値 (`/` `~` `..`) を作れないため。シェルが暗黙に束縛する変数 (`REPLY` / `OPTARG` / `PWD` /
+# `_` 等) は束縛を書かずに値が変わるので信じない。位置以降ではなく全体にするのは、関数本体の
 # 参照は字面では前にあっても実行は後になるため。全体を信じないときに `!` を出さず `+` を
 # 出さないだけにするのは、表に無い `$TMPDIR` まで未解決にして除外が外れるため。
-# 空白を含む値 (クォート内 / `\ `) を信じないのは、広い表が空白で値を切り、未クォートの展開で
-# 分かれた後ろの語 (`d="x /"` の `/`) が判定から外れるため。`$( )` の中では case のパターンの
-# `)` で置換を閉じず、heredoc は本文の `)` で早く閉じるので全体を信じない。
+# 空白を含む値 (クォート内 / `\ ` / `${IFS}`) を信じないのは、広い表が空白で値を切り、未クォートの
+# 展開で分かれた後ろの語 (`d="x /"` の `/`) が判定から外れるため。`$( )` の中ではコマンドの位置の
+# case のパターンの `)` で置換を閉じず、heredoc は本文の `)` で早く閉じるので全体を信じない。
+# 引数の `case` (`$(grep case f)`) まで数えないのは、esac が来ないまま後ろ全部を置換の中として
+# 読み、その中の再束縛 (`read d`) を見落とすため。`$(( ))` は算術式なので `<<` を heredoc にしない。
 _strict_lex() {
   printf '%s\n' "$1" | LC_ALL=C awk '
   function sus(n) { if (n != "") susp[n] = 1 }
-  function bindname(n) { if (n in refd) sus(n); bound[n] = 1 }
+  function bindname(n) {
+    if ((n in refd) || n ~ /^(_|REPLY|reply|OPTARG|OPTIND|PWD|OLDPWD|MATCH|match|MBEGIN|MEND|RANDOM|SRANDOM|SECONDS|LINENO|BASHPID|HISTCMD|EPOCHSECONDS|EPOCHREALTIME)$/) sus(n)
+    bound[n] = 1
+  }
   function nameof(w,   n) { n = w; sub(/[^A-Za-z0-9_].*/, "", n); return n }
   # シングルクォートの中とエスケープされた `$` は参照に数えない (数えると、後の代入を
   # 「参照より後の束縛」として未解決に倒し、リテラルの $d を echo したあとの d=build を信じなくなるため)。
@@ -166,6 +177,7 @@ _strict_lex() {
       if (c == "\"") { q = (q == 2) ? 0 : 2; continue }
       if (c != "$") continue
       t = substr(w, j + 1, 64)
+      if (t ~ /^\{\([^)]*P/) broken = 1
       if (!match(t, /^\{?[A-Za-z_][A-Za-z0-9_]*/)) continue
       n = substr(t, RSTART, RLENGTH); sub(/^\{/, "", n)
       used[n] = 1
@@ -176,7 +188,7 @@ _strict_lex() {
   }
   function check(uw) { if (uw ~ /^[A-Za-z_][A-Za-z0-9_]*($|=|\+=|\[)/) sus(nameof(uw)) }
   function bindhere(n,   pt) {
-    if (dp > 0 || inpipe) { sus(n); return }
+    if (dp > 0 || inpipe || inH) { sus(n); return }
     pt = (n in bound) && !(n in cond) && !(n in susp)
     bindname(n); delete cond[n]
     al[++aln] = n; bl[++bln] = n
@@ -187,6 +199,7 @@ _strict_lex() {
   function pend(f, n, pt) { fbn[f]++; fb[f, fbn[f]] = n; fp[f, fbn[f]] = pt }
   function flushf(f,   j) { for (j = 1; j <= fbn[f]; j++) if (!fp[f, j]) cond[fb[f, j]] = 1; fbn[f] = 0 }
   function boundary() { flushf(0); prevop = ""; aln = 0 }
+  function flushfv(   j) { for (j = 1; j <= fvn; j++) if (!fvp[j]) cond[fv[j]] = 1; fvn = 0 }
   function push(k) { boundary(); fk[++ft] = k; fbn[ft] = 0; cmpd = 1 }
   function closef(k) {
     boundary()
@@ -202,21 +215,31 @@ _strict_lex() {
     cmdname = uw; cmdwait = (uw ~ /^(command|builtin|exec|noglob|nocorrect)$/)
     if (uw == "eval" || uw == "source" || uw == ".") broken = 1
   }
-  function handle(w,   uw, n, j) {
+  function handle(w,   uw, n, j, pt) {
     refs(w)
     uw = w; gsub(/["\047\\]/, "", uw)
     if (redir) {
       if (redir == 2) { hq[++hqn] = uw; hqd[hqn] = hdnext; hdnext = 0 }
       redir = 0; return
     }
-    justclosed = 0
-    if (wsp && w ~ /^[A-Za-z_][A-Za-z0-9_]*\+?=/) sus(nameof(w))
+    justclosed = 0; contop = 0
+    if (casehead && uw == "in") { casehead = 0; inpat = 1; return }
+    if (inpat) { if (uw != "esac") return; inpat = 0 }
+    if (fvn && mode == "start" && uw != "do") flushfv()
+    if (mode == "fname") { mode = "start"; fnkw = 1; return }
+    if (fnkw && !(mode == "start" && uw == "{")) fnkw = 0
+    if ((wsp || w ~ /\$\{?IFS/) && w ~ /^[A-Za-z_][A-Za-z0-9_]*\+?=/) sus(nameof(w))
     if (w ~ /^[A-Za-z_][A-Za-z0-9_]*\+?=\(/) { sus(nameof(w)); if (mode != "forvars") return }
     if (mode == "start") {
       if (uw ~ /^(if|while|until|!|time)$/) return
       if (uw == "then") { if (elifpend) elifpend = 0; else push("I"); return }
-      if (uw == "do") { push("D"); return }
-      if (uw == "{") { push("G"); return }
+      if (uw == "do") {
+        push("D")
+        for (j = 1; j <= fvn; j++) pend(ft, fv[j], fvp[j])
+        fvn = 0; return
+      }
+      if (uw == "{") { if (fnkw) { fnkw = 0; push("H"); inH++ } else push("G"); return }
+      if (uw == "function") { mode = "fname"; return }
       if (uw == "elif" || uw == "else") {
         boundary()
         if (ft && fk[ft] == "I") flushf(ft); else broken = 1
@@ -225,9 +248,9 @@ _strict_lex() {
       }
       if (uw == "fi") { closef("I"); return }
       if (uw == "done") { closef("D"); return }
-      if (uw == "}") { closef("G"); return }
+      if (uw == "}") { if (ft && fk[ft] == "H") { closef("H"); inH-- } else closef("G"); return }
       if (uw == "end" && ft && fk[ft] == "F") { closef("F"); return }
-      if (uw == "case") { cdp[++incase] = dp; push("C"); mode = "args"; return }
+      if (uw == "case") { cdp[++incase] = dp; push("C"); mode = "args"; casehead = 1; return }
       if (uw == "esac") { if (incase) dp = cdp[incase--]; closef("C"); return }
       if (uw == "export" || uw == "readonly") { mode = "decl"; keep = 1; return }
       if (uw == "local" || uw == "declare" || uw == "typeset") { mode = "decl"; keep = 0; return }
@@ -247,12 +270,17 @@ _strict_lex() {
     }
     if (mode == "forvars") {
       if (uw == "in") { mode = "args"; return }
-      if (uw ~ /^[A-Za-z_][A-Za-z0-9_]*$/) { bindhere(uw); return }
+      if (uw ~ /^[A-Za-z_][A-Za-z0-9_]*$/) {
+        if (prevop == "" || dp > 0 || inpipe || inH) { bindhere(uw); return }
+        pt = (uw in bound) && !(uw in cond) && !(uw in susp)
+        bindname(uw); delete cond[uw]; al[++aln] = uw; bl[++bln] = uw
+        fv[++fvn] = uw; fvp[fvn] = pt; return
+      }
       mode = "args"
     }
     if (mode == "args") {
       if (cmdwait && uw !~ /^-/) setcmd(uw)
-      else if (cmdname ~ /^(read|mapfile|readarray|unset|vared)$/) { if (uw ~ /[$`]/) broken = 1 }
+      else if (cmdname ~ /^(read|mapfile|readarray|unset|vared|getopts)$/) { if (uw ~ /[$`]/) broken = 1 }
       else if (cmdname == "printf") {
         if (pvnext) { if (uw ~ /[$`]/) broken = 1; pvnext = 0 }
         else if (uw ~ /^-v./) { if (uw ~ /[$`]/) broken = 1 }
@@ -260,6 +288,14 @@ _strict_lex() {
       }
     }
     check(uw)
+  }
+  function cmdpos(p,   q, e) {
+    q = p - 1
+    while (q > 0 && substr(s, q, 1) ~ /[ \t]/) q--
+    if (substr(s, q, 1) ~ /[(;\n&|{]/) return 1
+    e = q
+    while (q > 0 && e - q < 6 && substr(s, q, 1) ~ /[a-z]/) q--
+    return substr(s, q + 1, e - q) ~ /^(then|do|else|elif|if|while|until|time)$/ && substr(s, q, 1) ~ /[ \t\n;(&|]/
   }
   function flush() { if (ws) { handle(substr(s, ws, i - ws)); ws = 0; wsp = 0 } }
   function open(t) { if (!ws) ws = i; st[++top] = t }
@@ -286,22 +322,25 @@ _strict_lex() {
         if (top == 1 && (t == "S" || t == "Q") && (ch == " " || ch == "\t" || ch == "\n")) wsp = 1
         if (t == "S") { if (ch == "\047") top--; continue }
         if (ch == "\\") { i++; continue }
-        if (ch == "<" && c2 == "<" && t != "Q" && t != "B" && substr(s, i + 2, 1) != "<" && substr(s, i - 1, 1) != "<") broken = 1
+        if (ch == "<" && c2 == "<" && t != "Q" && t != "B" && t != "A" && substr(s, i + 2, 1) != "<" && substr(s, i - 1, 1) != "<") broken = 1
         if (t == "`") { if (ch == "`") top--; continue }
         if (t == "Q" && ch == "\"") { top--; continue }
+        if (ch == "$" && c2 == "(" && substr(s, i + 2, 1) == "(") { st[++top] = "A"; i += 2; continue }
         if (ch == "$" && c2 == "(") { st[++top] = "P"; i++; continue }
         if (ch == "$" && c2 == "{") { st[++top] = "B"; i++; continue }
         if (ch == "`") { st[++top] = "`"; continue }
         if (t == "Q") continue
         if ((t == "P" || t == "C") && (ch == "c" || ch == "e") && substr(s, i - 1, 1) !~ /[A-Za-z0-9_]/) {
           w4 = substr(s, i, 4); nx = substr(s, i + 4, 1)
-          if (w4 == "case" && (nx == " " || nx == "\t" || nx == "\n")) { st[++top] = "C"; i += 3; continue }
+          if (w4 == "case" && (nx == " " || nx == "\t" || nx == "\n") && cmdpos(i)) { st[++top] = "C"; i += 3; continue }
           if (t == "C" && w4 == "esac" && nx !~ /[A-Za-z0-9_]/) { top--; i += 3; continue }
         }
         if (ch == "\047") st[++top] = "S"
         else if (ch == "\"") st[++top] = "Q"
         else if (t == "P" && ch == "(") st[++top] = "P"
         else if (t == "P" && ch == ")") top--
+        else if (t == "A" && ch == "(") st[++top] = "P"
+        else if (t == "A" && ch == ")" && c2 == ")") { top--; i++ }
         else if (t == "B" && ch == "}") top--
         continue
       }
@@ -314,6 +353,7 @@ _strict_lex() {
       if (ch == "\047") { open("S"); continue }
       if (ch == "\"") { open("Q"); continue }
       if (ch == "`") { open("`"); continue }
+      if (ch == "$" && c2 == "(" && substr(s, i + 2, 1) == "(") { open("A"); i += 2; continue }
       if (ch == "$" && c2 == "(") { open("P"); i++; continue }
       if (ch == "$" && c2 == "{") { open("B"); i++; continue }
       if (ch == "(" && ws && substr(s, i - 1, 1) == "=") { open("P"); continue }
@@ -335,6 +375,9 @@ _strict_lex() {
         }
         continue
       }
+      if (ch == "\n") { flush(); if (contop) { if (hqn > 0) skiphd(); continue } }
+      if (inpat && (ch == "|" || ch == "(")) { flush(); continue }
+      if (inpat && ch == ")") { flush(); endseg(")"); inpat = 0; continue }
       if (ch == "\n" || ch == ";" || ch == "&" || ch == "|" || ch == "(" || ch == ")") {
         op = ch
         if (ch == "&" && c2 == "&") { op = "&&"; i++ }
@@ -352,11 +395,11 @@ _strict_lex() {
         if (op != "(" && op != ")") inpipe = (op == "|")
         if (op == "&") { if (cmpd) broken = 1; for (j = 1; j <= aln; j++) sus(al[j]) }
         if (op == "\n" || op == ";" || op == "&") { boundary(); if (!ft) cmpd = 0 }
-        else if (op == ";;") { boundary(); if (ft && fk[ft] == "C") flushf(ft); else broken = 1 }
+        else if (op == ";;") { boundary(); if (ft && fk[ft] == "C") { flushf(ft); inpat = 1 } else broken = 1 }
         else if (op == "&&") prevop = "&&"
         else if (op == "||") { flushf(0); prevop = "||" }
         else if (op == "|" && justclosed) broken = 1
-        justclosed = 0
+        justclosed = 0; contop = (op == "&&" || op == "||" || op == "|")
         if (op == "\n" && hqn > 0) skiphd()
         continue
       }

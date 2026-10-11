@@ -673,3 +673,23 @@
 {"name": "scope425-allow-oror-first", "expect": "allow", "command": "d=build || true; rm -rf $d", "reason": "|| の前の代入は常に走る"}
 {"name": "scope425-allow-zsh-foreach-inside", "expect": "allow", "command": "foreach f (a b)\nd=$f\nrm -rf $d\nend", "reason": "foreach 本体の中の参照"}
 {"name": "scope425-git-65-candidates", "expect": "block", "command": "for c in a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 a16 a17 a18 a19 a20 a21 a22 a23 a24 a25 a26 a27 a28 a29 a30 a31 a32 a33 a34 a35 a36 a37 a38 a39 a40 a41 a42 a43 a44 a45 a46 a47 a48 a49 a50 a51 a52 a53 a54 a55 a56 a57 a58 a59 a60 a61 a62 a63 a64 reset; do git $c --hard; done", "reason": "候補が上限を超えたら位置で判定できないので止める"}
+{"name": "scope425-csub-case-arg-read", "expect": "block", "command": "d=build; x=$(grep case f); read d; rm -rf $d", "reason": "$( ) 内の引数の case で置換の閉じを見失わない"}
+{"name": "scope425-oror-newline", "expect": "block", "command": "true ||\nd=build; rm -rf $d", "reason": "|| の直後の改行はリストの続き"}
+{"name": "scope425-andand-newline", "expect": "block", "command": "false &&\nHOME=build; rm -rf $HOME", "reason": "&& の直後の改行はリストの続き"}
+{"name": "scope425-pipe-newline", "expect": "block", "command": "true |\nHOME=build; rm -rf $HOME", "reason": "| の直後の改行はパイプの続き"}
+{"name": "scope425-implicit-reply", "expect": "block", "command": "REPLY=build; read; rm -rf $REPLY", "reason": "read は名前無しで REPLY を束縛する"}
+{"name": "scope425-implicit-optarg", "expect": "block", "command": "OPTARG=build; getopts a: o -a /; rm -rf $OPTARG", "reason": "getopts は OPTARG に文字列を束縛する"}
+{"name": "scope425-implicit-pwd", "expect": "block", "command": "PWD=build; cd /; rm -rf $PWD", "reason": "cd は PWD を束縛する"}
+{"name": "scope425-implicit-underscore", "expect": "block", "command": "_=build; echo /; rm -rf $_", "reason": "$_ は直前のコマンドの最後の引数"}
+{"name": "scope425-ifs-value", "expect": "block", "command": "d=x${IFS}/; rm -rf $d", "reason": "${IFS} は未クォートの展開で語を分ける"}
+{"name": "scope425-zsh-p-flag-assign", "expect": "block", "command": "d=build; n=d; : ${(P)n::=/}; rm -rf $d", "reason": "zsh の (P) は名前を語に書かない再束縛"}
+{"name": "scope425-function-kw-inside", "expect": "block", "command": "function f { HOME=x; rm -rf $HOME; }", "reason": "function キーワードの本体の代入は信じない (main と同じ)"}
+{"name": "scope425-andand-for-closed", "expect": "block", "command": "false && for HOME in a; do :; done; rm -rf $HOME", "reason": "条件つきの for の変数は done の後に効かない"}
+{"name": "scope425-getopts-indirect", "expect": "block", "command": "d=build; n=d; getopts a $n; rm -rf $d", "reason": "getopts の間接束縛"}
+{"name": "scope425-allow-csub-case-arg", "expect": "allow", "command": "x=$(grep case f); d=build; rm -rf $d", "reason": "$( ) 内の引数の case はキーワードではない"}
+{"name": "scope425-allow-andand-newline-chain", "expect": "allow", "command": "true &&\nd=build && rm -rf $d", "reason": "改行をはさむ && の鎖"}
+{"name": "scope425-allow-function-kw-after", "expect": "allow", "command": "function f { :; }; d=build; rm -rf $d", "reason": "function キーワードの関数の後の代入"}
+{"name": "scope425-allow-arith-shift-csub", "expect": "allow", "command": "d=build; x=$((1 << 2)); rm -rf $d", "reason": "$(( )) の中の << は heredoc ではない"}
+{"name": "scope425-allow-case-alt-pattern", "expect": "allow", "command": "case x in a|b) d=build; rm -rf $d;; esac", "reason": "case のパターンの | はパイプではない"}
+{"name": "scope425-allow-andand-for-body", "expect": "allow", "command": "true && for f in a b; do rm -rf $f; done", "reason": "条件つきの for の変数は本体の中で効く"}
+{"name": "scope425-allow-csub-case-cmdpos", "expect": "allow", "command": "x=$(case y in a) echo z;; esac); d=build; rm -rf $d", "reason": "$( ) 内のコマンドの位置の case の後も深さが戻る"}
