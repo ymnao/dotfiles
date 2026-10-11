@@ -250,8 +250,8 @@ if ! parsed=$(printf '%s' "$command" | awk '
   }
   END { if (in_s || in_d || heredoc) printf "%s", orig; else printf "%s", out }
 '); then
-  # awk が落ちたら判定を持たない。exit 1 のまま抜けると PreToolUse は
-  # 「非ブロックのエラー」として扱う = 許可側に倒れるので、明示的に 2 を返す。
+  # awk が落ちたら判定を持たない。0 / 2 以外で抜けると、settings 側の onFailure が
+  # 既定の continue なら許可側に倒れるので、settings に依存せず明示的に 2 を返す。
   echo "ブロック: コマンド行の解析に失敗したため混在を確認できません" >&2
   exit 2
 fi
