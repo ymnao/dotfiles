@@ -122,23 +122,28 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$HOME/.claude/hooks/block-dangerous-commands.sh\""
+            "command": "bash \"$HOME/.claude/hooks/block-dangerous-commands.sh\"",
+            "onFailure": "block"
           },
           {
             "type": "command",
-            "command": "bash \"$HOME/.claude/hooks/guard-pkg-install.sh\""
+            "command": "bash \"$HOME/.claude/hooks/guard-pkg-install.sh\"",
+            "onFailure": "block"
           },
           {
             "type": "command",
-            "command": "bash \"$HOME/.claude/hooks/verify-ci-before-pr.sh\""
+            "command": "bash \"$HOME/.claude/hooks/verify-ci-before-pr.sh\"",
+            "onFailure": "block"
           },
           {
             "type": "command",
-            "command": "bash \"$HOME/.claude/hooks/guard-codex-dir.sh\""
+            "command": "bash \"$HOME/.claude/hooks/guard-codex-dir.sh\"",
+            "onFailure": "block"
           },
           {
             "type": "command",
-            "command": "bash \"$HOME/.claude/hooks/guard-sandbox-exclusions.sh\""
+            "command": "bash \"$HOME/.claude/hooks/guard-sandbox-exclusions.sh\"",
+            "onFailure": "block"
           }
         ]
       },
@@ -147,7 +152,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$HOME/.claude/hooks/guard-codex-dir.sh\""
+            "command": "bash \"$HOME/.claude/hooks/guard-codex-dir.sh\"",
+            "onFailure": "block"
           }
         ]
       }
