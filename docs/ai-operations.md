@@ -102,16 +102,13 @@ agent の Bash sandbox 内で `codex-review` が回るかどうか、回すた�
 - effort の指定: Agent ツールの `effort` パラメータか、サブエージェント定義
   (`claude/agents/*.md`) の frontmatter `effort:`。Agent ツールは user か
   CLAUDE.md・skill が明示したときだけ `effort` を付けるので、委譲する skill の
-  本文にパラメータとして書く (`/dev` step 2b・`/pr` の codex 不能時フォールバック・
-  `/paper-review` step 2)。code-reviewer は frontmatter の `xhigh` が効くので
-  呼び出し側には書かない。**どちらも無い subagent はセッションの effort を継ぐ**ので、
-  表の値は指定した箇所でしか保証されない。
-  実測 (2026-10-12 / `claude` 2.1.295、subagent のログ
+  本文にパラメータとして書く (code-reviewer は frontmatter で足りるので書かない)。
+  **どちらも無い subagent はセッションの effort を継ぐ**ので、表の値は指定した箇所
+  でしか保証されない。実測 (2026-10-12 / `claude` 2.1.295、subagent のログ
   `~/.claude/projects/<proj>/<session>/subagents/agent-<id>.jsonl` の `"effort"`):
-  `effort: "high"` を渡した subagent は `high`。同じセッション自体は `medium` で、
-  PR #433 のセッションで effort 未指定のまま起動した subagent 6 本はすべて `medium`、
-  frontmatter `effort: xhigh` の code-reviewer 2 本は `xhigh`。`model` と違い、
-  frontmatter の `effort` はこの方法でセッション内から確かめられる
+  指定した subagent は指定値 (パラメータの `high`、frontmatter の `xhigh`)、未指定は
+  セッションの値 (`medium`) だった。`model` と違い、frontmatter の `effort` は
+  この方法でセッション内から確かめられる
 - 原則: **浅い推論を見たらプロンプトを工夫する前に effort を上げる**
   (公式推奨。モデル変更より effort が先のレバー)
 - レビュー系タスクで下位モデルを使うときは「重要度でフィルタせず全部
