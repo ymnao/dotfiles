@@ -44,6 +44,7 @@ command=$(printf '%s\n' "$input" | jq -r '.tool_input.command // empty')
 if [[ -z "$command" ]]; then
   exit 0
 fi
+command_orig=$command
 
 # 行継続 `\⏎` を消して前後をつないだ view を末尾に足す (`rm -rf \⏎/` / `git reset \⏎--hard`)。
 # 元の行を置き換えずに足すのは、`echo a\\⏎rm -rf /` の `\\⏎` (エスケープされた `\` +
@@ -55,18 +56,20 @@ if [[ "$command" == *$'\\\n'* ]]; then
   command="$command"$'\n'"$(printf '%s\n' "$command" | awk '{ if (sub(/\\$/, "")) printf "%s", $0; else print }')"
 fi
 
-# 単純代入 var=value を「コマンド中の $var / ${var}」へ静的展開する。引数で渡した
-# 変数名の現在値を読み、展開済み値を同じ変数に書き戻す（bash 3.2: ${!1} の indirect
-# expand + printf -v で nameref を代用）。代入連鎖（p=~; q=$p; rm -rf $q のような
-# 多段参照）を解決するため収束まで最大 8 回反復する。1 パスだと val が最初の抽出
-# 時点の $p のまま保存され $q 置換で展開済み値に解決されないため反復が必須。
-# command 側と command_for_tilde 側で同じロジックを使うため関数化している（後者は
-# シングルクォート内 ~ をリテラル保持する事情で別途抽出が必要 → 代入展開以外の
-# 部分は本関数では扱わず、呼び出し前に view を作っておく）。
+# 単純代入 var=value を「コマンド中の $var / ${var}」へ静的展開する。束縛表は 2 種類あり、
+# 問いが違うので共有しない (issue #422):
+#   - 広い表 (既定): git / sudo / .codex 判定用。解決は検出を増やす側にしか効かないので、
+#     代入らしく見えるものはすべて候補にする (`echo c=reset` の値も候補に入る)
+#   - 狭い表 (`strict`): rm -rf 判定用。rm は引数に展開が残れば block する (fail-closed) ので、
+#     解決は誤検出を減らす側にしか効かず、誤った値への解決はそのまま素通りになる。確実に
+#     その値になる束縛だけを採用し、それ以外は未解決 (`$__unresolved`) に倒す
+# 引数で渡した変数名の現在値を読み、展開済み値を同じ変数に書き戻す（bash 3.2: ${!1} の
+# indirect expand + printf -v で nameref を代用）。代入連鎖（p=~; q=$p; rm -rf $q のような
+# 多段参照）を解決するため収束まで最大 8 回反復する。
 # for / select の反復リストを別関数で展開せず VAR=LIST 行として代入に混ぜるのは、
 # p=/; for f in $p のような代入との連鎖を同じ反復の中で収束させるため。
-# 同名の値を先勝ちにせず空白で連結して全候補を判定に掛けるのは、f=a; for f in / の
-# ように実行時にどの値が効くかを静的に決められないため。
+# 同名の値を先勝ちにせず全候補を判定に掛けるのは、f=a; for f in / のように実行時に
+# どの値が効くかを静的に決められないため。
 # for 系は zsh の形も追う: 括弧リスト (`for f (a b)` / `foreach f (a b)`)、複数変数
 # (`for a b in …` は各変数がリストの値を順にとるので、どの変数にもリスト全体を割り当てる)、
 # 変数と in の間の改行 (`for f⏎in …`)。改行をすべて消した 1 行の view にしないのは、
@@ -75,63 +78,294 @@ fi
 # `for NAME…` で終わる行に、続く空行・変数名だけの行と次の 1 行をつなぐ。awk で照合するのを
 # 読んだ 1 行 ($0) に限るのは、つないだ行全体を照合し直すと (sed の N ループと同じく)
 # 行数の 2 乗になるため。
-# 追記 (`x+=…`) と配列 (`a=(…)`) は値を追わず、未解決の `$__unresolved` を割り当てる
-# (`x=; x+=/` を空に、`a=(/ b)` を `(/` に解決すると rm の fail-closed から外れるため)。
 # 変数名の並びは最初の `in` で切り、その後ろは値に戻す (正規表現の最長一致は
 # `for c in reset in safe` の `c in reset` までを変数名として取るため)。
-# 入力側の `__unresolved` への束縛は捨てる (束縛されると印が値に解決されて外れるため)。
-# `read a` / `printf -v a` / `a[0]=` による再束縛は追っておらず、先行する `a=b` の値を信じる。
-expand_assignments() {
-  local _var=$1 _prev _iter=0 _cur=${!1} assignments asgn name val esc_name esc_val _fv
+_for_bindings() {
+  local _fv=$1
   local _for_head='(^|[[:space:];&|()])(for|foreach|select)[[:space:]]+'
   local _names='[A-Za-z_][A-Za-z0-9_]*([[:space:]]+[A-Za-z_][A-Za-z0-9_]*)*'
   local _for_eol_re="${_for_head}${_names}[[:blank:]]*"$'\n'
+  [[ "$_fv" =~ $_for_head ]] || return 0
+  if [[ "$_fv" =~ $_for_eol_re ]]; then
+    _fv=$(printf '%s\n' "$_fv" | awk -v re="${_for_head}${_names}[[:space:]]*\$" \
+      -v inre='(^|[[:space:]])in([[:space:]]|$)' '{
+      if (p != "" && $0 ~ /^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*[[:space:]]*)*$/) {
+        if ($0 ~ inre) { print p " " $0; p = "" } else p = p " " $0
+        next
+      }
+      l = (p == "") ? $0 : p " " $0
+      if (match($0, re) && substr($0, RSTART) !~ inre) { p = l; next }
+      p = ""; print l
+    } END { if (p != "") print p }')
+  fi
+  printf '%s\n' "$_fv" \
+    | grep -oE -e "${_for_head}${_names}[[:space:]]+in([[:space:]][^;&|]*|\$)" \
+      -e "${_for_head}${_names}[[:space:]]*\\([^)]*\\)" \
+    | sed -E -e "s/^[[:space:];&|()]*(for|foreach|select)[[:space:]]+(${_names})[[:space:]]+in[[:space:]]*/\\2=/" \
+      -e "s/^[[:space:];&|()]*(for|foreach|select)[[:space:]]+(${_names})[[:space:]]*\\((.*)\\)\$/\\2=\\4/"
+}
+
+# 狭い表で値を信じてよい名前を、クォートとコマンド置換を保ったままの入力 (command_orig) から
+# 字句単位で決める。値そのものは出さず、広い表の値 (main と同じ正規化後の view から取ったもの)
+# に未解決の印を足すかどうかだけを決める。値をここで作らないのは、生の値 (`"/"`) と広い表が
+# 拾わない位置 (`(d=…`) の解決が、広い表の view を前提にした危険パス判定から外れるため。
+# 正規化後の view で決めないのは、`echo 'x; HOME=a'` のクォート除去や `x\;` のエスケープ解除で、
+# 代入でない文字列がコマンド区切りの後ろに出てくるため。
+# 出力は `+NAME` (信じてよい) と `!NAME` (未解決に倒す)。信じてよいのは、セグメント先頭
+# (予約語 / export・local 等の後を含む) に並ぶ代入か for の変数として束縛され、ほかに怪しい
+# 出現が無い名前だけ。`(` から対応する `)` まではサブシェルなので信じない。case の中では `)` で
+# 深さを戻さず esac で case の前の深さに戻すのは、パターンの `)` とサブシェルの閉じを区別できず、
+# 戻しすぎるとサブシェル内の代入を信じることになるため。`((` の中の `<<` は heredoc ではなく
+# シフト演算子として読む。コマンド語が続く前置代入は同じ
+# コマンドの `$NAME` には効かないが、関数や eval の中の展開には効くので、それより前に束縛が
+# 無ければ (環境の値が効くので) 未解決にする。`read a` / `printf -v a` / `unset a` / `a[0]=` /
+# `${a:=x}` 等の再束縛をコマンドごとに列挙せず、「名前が代入以外の位置に単語として現れたら
+# 未解決」とするのは、列挙に漏れた形がそのまま古い値を信じて素通りになるため。参照 (`$NAME`)
+# が束縛より前にあるときも、その参照は環境の値を見るので未解決にする。
+# クォートとコマンド置換は入れ子を積む (`"$(echo "…")"` の内側の `"` で外側が閉じたと誤読すると、
+# 置換の中の `;` が区切りに見えるため)。文字を 1 つずつ見て単語の開始位置だけを持ち、単語は
+# 区切りで substr するのは、awk の文字列連結を 1 文字ずつ重ねると単語長の 2 乗になるため。
+_strict_lex() {
+  printf '%s\n' "$1" | LC_ALL=C awk '
+  function sus(n) { if (n != "") susp[n] = 1 }
+  function bindname(n) { if (n in refd) sus(n); bound[n] = 1 }
+  function nameof(w,   n) { n = w; sub(/[^A-Za-z0-9_].*/, "", n); return n }
+  # シングルクォートの中とエスケープされた `$` は参照に数えない (数えると、後の代入を
+  # 「参照より後の束縛」として未解決に倒し、リテラルの $d を echo したあとの d=build を信じなくなるため)。
+  # 名前の照合を 64 文字に切った substr で行うのは、`$` ごとに残り全体を複製すると 2 乗になるため。
+  function refs(w,   L, j, c, q, t, n) {
+    L = length(w); q = 0
+    for (j = 1; j <= L; j++) {
+      c = substr(w, j, 1)
+      if (q == 1) { if (c == "\047") q = 0; continue }
+      if (c == "\\") { j++; continue }
+      if (c == "\047" && q == 0) { q = 1; continue }
+      if (c == "\"") { q = (q == 2) ? 0 : 2; continue }
+      if (c != "$") continue
+      t = substr(w, j + 1, 64)
+      if (!match(t, /^\{?[A-Za-z_][A-Za-z0-9_]*/)) continue
+      n = substr(t, RSTART, RLENGTH); sub(/^\{/, "", n)
+      used[n] = 1
+      if (!(n in bound)) refd[n] = 1
+      if (t ~ /^\{[A-Za-z_][A-Za-z0-9_]*:?=/) sus(n)
+    }
+  }
+  function check(uw) { if (uw ~ /^[A-Za-z_][A-Za-z0-9_]*($|=|\+=|\[)/) sus(nameof(uw)) }
+  function bindhere(n) { if (dp > 0) sus(n); else bindname(n) }
+  function endseg(   j) {
+    if (mode == "start") for (j = 1; j <= np; j++) bindhere(pn[j])
+    np = 0; mode = "start"; redir = 0
+  }
+  function handle(w,   uw, n, j) {
+    refs(w)
+    uw = w; gsub(/["\047\\]/, "", uw)
+    if (redir) {
+      if (redir == 2) { hd = uw; hdash = (substr(hd, 1, 1) == "-"); sub(/^-/, "", hd) }
+      redir = 0; return
+    }
+    if (w ~ /^[A-Za-z_][A-Za-z0-9_]*\+?=\(/) { sus(nameof(w)); if (mode != "forvars") return }
+    if (mode == "start") {
+      if (uw ~ /^(then|do|else|elif|if|while|until|!|time|\{|\})$/) return
+      if (uw == "case") { cdp[++incase] = dp; mode = "args"; return }
+      if (uw == "esac") { if (incase) dp = cdp[incase--]; return }
+      if (uw == "export" || uw == "readonly") { mode = "decl"; keep = 1; return }
+      if (uw == "local" || uw == "declare" || uw == "typeset") { mode = "decl"; keep = 0; return }
+      if (uw == "for" || uw == "foreach" || uw == "select") { mode = "forvars"; return }
+      if (w ~ /^[A-Za-z_][A-Za-z0-9_]*=/) { pn[++np] = nameof(w); return }
+      if (w ~ /^[A-Za-z_][A-Za-z0-9_]*(\+=|\[)/) { sus(nameof(w)); return }
+      for (j = 1; j <= np; j++) if (!(pn[j] in bound)) sus(pn[j])
+      np = 0; mode = "args"; check(uw); return
+    }
+    if (mode == "decl") {
+      if (uw ~ /^-/) return
+      if (w ~ /^[A-Za-z_][A-Za-z0-9_]*=/) { n = nameof(w); bindhere(n); return }
+      if (keep && uw ~ /^[A-Za-z_][A-Za-z0-9_]*$/) return
+      check(uw); return
+    }
+    if (mode == "forvars") {
+      if (uw == "in") { mode = "args"; return }
+      if (uw ~ /^[A-Za-z_][A-Za-z0-9_]*$/) { bindhere(uw); return }
+      mode = "args"
+    }
+    check(uw)
+  }
+  function flush() { if (ws) { handle(substr(s, ws, i - ws)); ws = 0 } }
+  function open(t) { if (!ws) ws = i; st[++top] = t }
+  BEGIN { RS = "\001" }
+  { s = s $0 }
+  END {
+    L = length(s); mode = "start"; np = 0; ws = 0; top = 0; redir = 0; hd = ""; hdash = 0; dp = 0; incase = 0; arith = 0
+    for (i = 1; i <= L; i++) {
+      ch = substr(s, i, 1); c2 = substr(s, i + 1, 1)
+      if (top) {
+        t = st[top]
+        if (t == "S") { if (ch == "\047") top--; continue }
+        if (ch == "\\") { i++; continue }
+        if (t == "`") { if (ch == "`") top--; continue }
+        if (t == "Q" && ch == "\"") { top--; continue }
+        if (ch == "$" && c2 == "(") { st[++top] = "P"; i++; continue }
+        if (ch == "$" && c2 == "{") { st[++top] = "B"; i++; continue }
+        if (ch == "`") { st[++top] = "`"; continue }
+        if (t == "Q") continue
+        if (ch == "\047") st[++top] = "S"
+        else if (ch == "\"") st[++top] = "Q"
+        else if (t == "P" && ch == "(") st[++top] = "P"
+        else if (t == "P" && ch == ")") top--
+        else if (t == "B" && ch == "}") top--
+        continue
+      }
+      if (ch == "\\") {
+        if (c2 == "\n") { i++; continue }
+        if (!ws) ws = i
+        i++; continue
+      }
+      if (ch == "\047") { open("S"); continue }
+      if (ch == "\"") { open("Q"); continue }
+      if (ch == "`") { open("`"); continue }
+      if (ch == "$" && c2 == "(") { open("P"); i++; continue }
+      if (ch == "$" && c2 == "{") { open("B"); i++; continue }
+      if (ch == "(" && ws && substr(s, i - 1, 1) == "=") { open("P"); continue }
+      if (ch == "#" && !ws) {
+        while (i < L && substr(s, i + 1, 1) != "\n") i++
+        continue
+      }
+      if (ch == " " || ch == "\t") { flush(); continue }
+      if (ch == "&" && c2 == ">") { flush(); i++; if (substr(s, i + 1, 1) == ">") i++; redir = 1; continue }
+      if (ch == "<" || ch == ">") {
+        if (ws && substr(s, ws, i - ws) ~ /^[0-9]+$/) ws = 0; else flush()
+        if (arith) { if (c2 == ch) i++; continue }
+        if (ch == "<" && c2 == "<") {
+          if (substr(s, i + 2, 1) == "<") { i += 2; redir = 1 } else { i++; redir = 2 }
+        } else {
+          if (c2 == ">" || c2 == "&" || c2 == "|") i++
+          redir = 1
+        }
+        continue
+      }
+      if (ch == "\n" || ch == ";" || ch == "&" || ch == "|" || ch == "(" || ch == ")") {
+        flush(); endseg()
+        if (ch == "(" && c2 == "(") arith = 1
+        else if (ch == ")" && c2 == ")") arith = 0
+        if (ch == "(") dp++
+        else if (ch == ")" && dp > 0 && !incase) dp--
+        if (ch == "\n" && hd != "") {
+          while (i < L) {
+            e = i + 1
+            while (e <= L && substr(s, e, 1) != "\n") e++
+            ln = substr(s, i + 1, e - i - 1); i = e
+            if (hdash) sub(/^\t+/, "", ln)
+            if (ln == hd) break
+          }
+          hd = ""
+        }
+        continue
+      }
+      if (!ws) ws = i
+    }
+    flush(); endseg()
+    for (n in used) if (n in susp) print "!" n; else if (n in bound) print "+" n
+  }'
+}
+
+# 束縛の行 (`NAME=値` / `!NAME` / `+NAME`) を `NAME=候補…` に集約する。候補は重複を除き、
+# 広い表では \001 区切り、狭い表では空白区切りにする (狭い表は全候補を同じ行で判定に
+# 掛ければ足りる。広い表は git のサブコマンドのように位置で判定するものがあるので、
+# 候補ごとの行に分ける)。狭い表では `+NAME` の無い名前に未解決の印を足す。
+# 入力側の `__unresolved` への束縛は捨てる (束縛されると印が値に解決されて外れるため)。
+_aggregate_bindings() {
+  LC_ALL=C awk -v strict="$1" '
+  function add(n, c) {
+    if (n == "__unresolved") return
+    if (!(n in cnt)) { order[++k] = n; cnt[n] = 0 }
+    if ((n SUBSEP c) in have) return
+    have[n SUBSEP c] = 1
+    vals[n] = (cnt[n]++ ? vals[n] sep : "") c
+  }
+  BEGIN { sep = strict ? " " : "\001" }
+  /^!/ { add(substr($0, 2), "$__unresolved"); next }
+  /^\+/ { clean[substr($0, 2)] = 1; next }
+  {
+    i = index($0, "="); v = substr($0, i + 1)
+    c = split(substr($0, 1, i - 1), ns, " ")
+    for (q = 2; q <= c; q++) if (ns[q] == "in") {
+      r = ""; for (t = q + 1; t <= c; t++) r = r ns[t] " "
+      v = r v; c = q - 1; break
+    }
+    m = split(v, cs, " ")
+    if (m == 0) { m = 1; cs[1] = "" }
+    for (q = 1; q <= c; q++) for (t = 1; t <= m; t++) add(ns[q], cs[t])
+  } END {
+    for (j = 1; j <= k; j++) {
+      if (strict && !(order[j] in clean)) add(order[j], "$__unresolved")
+      print order[j] "=" vals[order[j]] "\002"
+    }
+  }'
+}
+
+# 広い表で値が複数ある名前は、空白で連結した値で置換した行に加えて、`$NAME` を含む
+# セグメントを候補ごとに 1 行ずつ置換して末尾に足す。連結だけにしないのは、
+# `for c in x reset; do git $c --hard` が `git x reset --hard` になり、サブコマンドの位置で
+# 判定する git から外れるため。行全体ではなくセグメントだけを足すのは、行全体の複製は
+# 名前の数だけ倍々に増え、後段のセグメントごとの検査がその全部を歩くため。足す行が
+# 64 を超える分は足さない (その分の git は位置の判定から外れる)。
+# 候補を `-v` で渡さないのは、awk が `-v` の値のバックスラッシュを解釈するため。
+_substitute_multi() {
+  printf '%s\n' "$1" | n="$2" cands="$3" LC_ALL=C awk '
+  function has(s) { return index(s, "$" n) || index(s, "${" n "}") }
+  function emit(s, c,   P, k, j, o) {
+    k = split(s, P, "\\$\\{" n "\\}"); o = P[1]
+    for (j = 2; j <= k; j++) o = o c P[j]
+    k = split(o, P, "\\$" n); printf "%s", P[1]
+    for (j = 2; j <= k; j++) printf "%s%s", (substr(P[j], 1, 1) ~ /[A-Za-z0-9_]/ ? "$" n : c), P[j]
+    printf "\n"
+  }
+  BEGIN {
+    n = ENVIRON["n"]
+    m = split(ENVIRON["cands"], C, "\001")
+    joined = C[1]; for (t = 2; t <= m; t++) joined = joined " " C[t]
+  }
+  {
+    emit($0, joined)
+    if (!has($0)) next
+    k = split($0, S, /[;&|()]/)
+    for (j = 1; j <= k; j++) {
+      if (!has(S[j]) || added + m > 64) continue
+      for (t = 1; t <= m; t++) emit(S[j], C[t])
+      added += m
+    }
+  }'
+}
+
+# 広い表は、代入らしく見えるもの (`x+=…` と `a=(…)` は未解決の `$__unresolved`) と for の
+# リストを毎回の view から拾う。狭い表 (`strict`) は同じ値に、`_strict_table_names` (rm 分岐で
+# `_strict_lex` が作る) で信じてよいとされなかった名前の未解決の印を足す。
+expand_assignments() {
+  local _var=$1 _strict=0 _prev _iter=0 _cur=${!1} assignments name val esc_name esc_val
+  [[ "${2:-}" = strict ]] && _strict=1
   while [[ $_iter -lt 8 ]]; do
     _prev=$_cur
     _iter=$((_iter + 1))
+    # 追記 (`x+=…`) と配列 (`a=(…)`) は値を追わず、未解決の `$__unresolved` を割り当てる
+    # (`x=; x+=/` を空に、`a=(/ b)` を `(/` に解決すると判定から外れるため)。
     assignments=$({
       printf '%s' "$_cur" \
         | grep -oE '(^|[[:space:];&|])[A-Za-z_][A-Za-z0-9_]*\+?=[^[:space:];&|]*' \
         | sed -E -e 's/^[[:space:];&|]+//' \
           -e 's/^([A-Za-z_][A-Za-z0-9_]*)(\+=|=\().*/\1=$__unresolved/'
-      if [[ "$_cur" =~ $_for_head ]]; then
-        _fv=$_cur
-        if [[ "$_fv" =~ $_for_eol_re ]]; then
-          _fv=$(printf '%s\n' "$_fv" | awk -v re="${_for_head}${_names}[[:space:]]*\$" \
-            -v inre='(^|[[:space:]])in([[:space:]]|$)' '{
-            if (p != "" && $0 ~ /^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*[[:space:]]*)*$/) {
-              if ($0 ~ inre) { print p " " $0; p = "" } else p = p " " $0
-              next
-            }
-            l = (p == "") ? $0 : p " " $0
-            if (match($0, re) && substr($0, RSTART) !~ inre) { p = l; next }
-            p = ""; print l
-          } END { if (p != "") print p }')
-        fi
-        printf '%s\n' "$_fv" \
-          | grep -oE -e "${_for_head}${_names}[[:space:]]+in([[:space:]][^;&|]*|\$)" \
-            -e "${_for_head}${_names}[[:space:]]*\\([^)]*\\)" \
-          | sed -E -e "s/^[[:space:];&|()]*(for|foreach|select)[[:space:]]+(${_names})[[:space:]]+in[[:space:]]*/\\2=/" \
-            -e "s/^[[:space:];&|()]*(for|foreach|select)[[:space:]]+(${_names})[[:space:]]*\\((.*)\\)\$/\\2=\\4/"
-      fi
-    } | awk '{
-      i = index($0, "="); v = substr($0, i + 1)
-      c = split(substr($0, 1, i - 1), ns, " ")
-      for (q = 2; q <= c; q++) if (ns[q] == "in") {
-        r = ""; for (t = q + 1; t <= c; t++) r = r ns[t] " "
-        v = r v; c = q - 1; break
-      }
-      for (q = 1; q <= c; q++) {
-        n = ns[q]
-        if (n == "__unresolved") continue
-        if (!(n in vals)) { order[++k] = n; vals[n] = v } else vals[n] = vals[n] " " v
-      }
-    } END { for (j = 1; j <= k; j++) print order[j] "=" vals[order[j]] }')
+      _for_bindings "$_cur"
+      [[ "$_strict" = 1 ]] && printf '%s\n' "$_strict_table_names"
+    } | _aggregate_bindings "$_strict")
     [[ -z "$assignments" ]] && break
-    while IFS= read -r asgn; do
-      [[ -z "$asgn" ]] && continue
-      name="${asgn%%=*}"
-      val="${asgn#*=}"
+    # `${asgn%%=*}` で分けないのは、bash 3.2 ではパターン展開が長い行で 2 乗になるため。
+    # 行末の \002 は、IFS='=' の read が値の末尾の `=` を 1 個落とすのを防ぐ番兵。
+    while IFS='=' read -r name val; do
+      [[ -z "$name" ]] && continue
+      val=${val%$'\002'}
+      if [[ "$val" == *$'\001'* ]]; then
+        [[ "$_cur" == *"\$$name"* || "$_cur" == *"\${$name}"* ]] \
+          && _cur=$(_substitute_multi "$_cur" "$name" "$val")
+        continue
+      fi
       esc_name=$(printf '%s' "$name" | sed 's/[][\\.*^$/]/\\&/g')
       esc_val=$(printf '%s' "$val" | sed 's/[\\&/]/\\&/g')
       _cur=$(printf '%s' "$_cur" | sed -E \
@@ -459,8 +693,8 @@ _literalized=0
 # 例: d=.codex; touch $d/foo → touch .codex/foo、
 # 　　 a=.co; b=dex; touch $a$b/foo → touch .codex/foo（連結も解決される）。
 # 代入連鎖（p=~; q=$p; ...）も expand_assignments の収束反復で解決される。
-# bash の通常代入と異なるケース（export FOO=bar / function ローカル等）は対象外。
 # command_for_tilde 側の代入展開は tilde 判定の遅延生成と一緒に段階11 で行う。
+command_pre_expand=$command
 expand_assignments command
 
 # 動的展開（コマンド置換・バックティック・未追跡変数）が残っていて、かつ
@@ -734,6 +968,14 @@ _rm_segs_of() {
 }
 _rm_segs=$(_rm_segs_of "$command")
 if [[ -n "$_rm_segs" ]]; then
+  # rm の判定は狭い表で解決した view で行う (理由は expand_assignments の冒頭)。広い表の
+  # view を危険パス判定にだけ足すのは、そちらは block を増やす側にしか効かないため。
+  # fail-closed に足さないのは、広い表が `(d=build; …)` の `d` のように拾わなかった束縛の
+  # `$d` が残り、狭い表で解決済みの形まで止めるため。
+  _strict_table_names=$(_strict_lex "$command_orig")
+  command_rm=$command_pre_expand
+  expand_assignments command_rm strict
+  _rm_segs_strict=$(_rm_segs_of "$command_rm")
   # tilde 判定用 view を遅延生成する。rm を含むコマンドのみ生成コストを払い、
   # git/sudo/chmod など rm 以外のコマンドに対する sed 起動を削減する。view の
   # クオート除去方針はシングル/ダブルで非対称:
@@ -782,11 +1024,13 @@ if [[ -n "$_rm_segs" ]]; then
   # brace 展開 (`rm -rf {/,a}` / `{~,a}`) は展開後の各行を view の末尾に足して、下の
   # 危険パス判定に掛ける。brace は tilde 展開より先に起きるので tilde 側の view にも足す。
   _rm_brace=''
-  if [[ "$_rm_segs" == *"{"*","*"}"* ]]; then
+  _rm_brace_strict=''
+  if [[ "$_rm_segs$_rm_segs_strict" == *"{"*","*"}"* ]]; then
     _append_brace_view _rm_brace "$_rm_segs"
+    _append_brace_view _rm_brace_strict "$_rm_segs_strict"
     _append_brace_view command_for_tilde "$(_rm_segs_of "$command_for_tilde")"
   fi
-  _rm_view=$command$_rm_brace
+  _rm_view=$command$'\n'$command_rm$_rm_brace$_rm_brace_strict
 
   # tilde-prefix（~ / ~+ / ~- / ~user / ~user/path）は command_for_tilde で
   # 判定し、シングルクォート tilde リテラルや 'rm' 等の分割クオートを正しく
@@ -815,10 +1059,10 @@ if [[ -n "$_rm_segs" ]]; then
   # あちらは「cwd 外か」、こちらは「空や任意の値に展開されないか」を問うため。
   # literal 化の前の view からも rm セグメントを取るのは、`$(git rev-parse …)` や
   # `${HOME:-git}` が literal 化で `git` に化け、展開が残っていないように見えるため。
-  _rm_dyn_segs=$_rm_segs$_rm_brace
+  _rm_dyn_segs=$_rm_segs_strict$_rm_brace_strict
   if [[ "$_literalized" = 1 ]]; then
     _lit_view=$command_pre_literal
-    expand_assignments _lit_view
+    expand_assignments _lit_view strict
     _rm_dyn_segs+=$'\n'$(_rm_segs_of "$_lit_view")
   fi
   # `$` の後に来うる文字を列挙せず、空白と引用符以外が続く `$` をすべて展開として数えるのは、

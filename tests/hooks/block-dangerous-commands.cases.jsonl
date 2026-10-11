@@ -541,3 +541,77 @@
 {"name": "bind-allow-brace-nested-rel", "expect": "allow", "command": "rm -rf {a,{b,c}}", "reason": "ネストした brace で候補がすべて相対パス"}
 {"name": "fp-accepted-rm-mktemp-inline", "expect": "block", "command": "rm -rf \"$(mktemp -d)\"", "reason": "mktemp の出力は入力側で差し替えられるので信じない"}
 {"name": "bind-allow-date-subst", "expect": "allow", "command": "echo \"$(date) $x\"", "reason": "rm を含まないコマンド置換"}
+# issue #422: rm 判定は狭い束縛表 (セグメント先頭の代入だけを採用し、名前が他の位置に
+# 現れたら未解決) で解決する。次のコメント行までの block はいずれも 2026-10-11 に main の hook で
+# exit=0 を実測した形。
+{"name": "bind422-echo-assign", "expect": "block", "command": "echo HOME=a; rm -rf $HOME", "reason": "echo の引数は代入ではない"}
+{"name": "bind422-env-assign", "expect": "block", "command": "env HOME=a rm -rf $HOME", "reason": "env の引数は同じコマンドの $HOME に効かない"}
+{"name": "bind422-comment-assign", "expect": "block", "command": "# HOME=a\nrm -rf $HOME", "reason": "コメント内は代入ではない"}
+{"name": "bind422-prefix-assign", "expect": "block", "command": "HOME=a rm -rf $HOME", "reason": "前置代入は同じコマンドの展開に効かない"}
+{"name": "bind422-echo-assign-command-rm", "expect": "block", "command": "echo HOME=a; command rm -rf $HOME", "reason": "command 経由の rm"}
+{"name": "bind422-read", "expect": "block", "command": "a=b; read a <<< /; rm -rf $a", "reason": "read による再束縛"}
+{"name": "bind422-printf-v", "expect": "block", "command": "a=b; printf -v a /; rm -rf $a", "reason": "printf -v による再束縛"}
+{"name": "bind422-array-elem", "expect": "block", "command": "a=b; a[0]=/; rm -rf $a", "reason": "配列要素の代入は $a に効く"}
+{"name": "bind422-mapfile", "expect": "block", "command": "a=b; mapfile -t a <<< /; rm -rf $a", "reason": "mapfile による再束縛"}
+{"name": "bind422-unset-tmpdir", "expect": "block", "command": "unset TMPDIR; rm -rf \"$TMPDIR/Users\"", "reason": "unset した TMPDIR は除外しない"}
+{"name": "bind422-unset-tmpdir-brace", "expect": "block", "command": "unset TMPDIR; rm -rf \"${TMPDIR}/x\"", "reason": "unset した TMPDIR は除外しない (波括弧形)"}
+{"name": "bind422-colon-default-assign", "expect": "block", "command": "a=b; : ${a:=/}; rm -rf $a", "reason": "${a:=x} による再束縛"}
+{"name": "bind422-getopts", "expect": "block", "command": "d=build; getopts ab d; rm -rf $d", "reason": "getopts による再束縛"}
+{"name": "bind422-arith", "expect": "block", "command": "d=build; (( d = 1 )); rm -rf $d", "reason": "算術式による再束縛"}
+{"name": "bind422-ref-before-assign", "expect": "block", "command": "rm -rf $HOME; HOME=build", "reason": "代入より前の参照は環境の値を見る"}
+{"name": "bind422-heredoc-body", "expect": "block", "command": "cat <<EOF\nHOME=x\nEOF\nrm -rf $HOME", "reason": "heredoc の本文は代入ではない"}
+{"name": "bind422-heredoc-dash-quoted", "expect": "block", "command": "cat <<-'EOF'\n\tHOME=x\n\tEOF\nrm -rf $HOME", "reason": "<<- と引用符つき区切りの heredoc 本文"}
+{"name": "bind422-sq-hides-separator", "expect": "block", "command": "echo 'x; HOME=a'; rm -rf $HOME", "reason": "クォート内の ; は区切りではない"}
+{"name": "bind422-escaped-separator", "expect": "block", "command": "echo x\\; HOME=a; rm -rf $HOME", "reason": "エスケープされた ; は区切りではない"}
+{"name": "bind422-csub-assign", "expect": "block", "command": "x=$(HOME=a); rm -rf $HOME", "reason": "コマンド置換内の代入は外側に効かない"}
+{"name": "bind422-git-for-multi", "expect": "block", "command": "for c in x reset; do git $c --hard; done", "reason": "値が複数でも候補ごとに git の位置で判定する"}
+{"name": "bind422-git-reassign-multi", "expect": "block", "command": "c=x; c=reset; git $c --hard", "reason": "同名の代入が複数"}
+{"name": "bind422-git-for-push-multi", "expect": "block", "command": "for c in x push; do git $c --force; done", "reason": "push 側"}
+{"name": "bind422-amp-redirect", "expect": "block", "command": "echo &>/dev/null HOME=safe; rm -rf $HOME", "reason": "&> はリダイレクトで、後ろの語はセグメント先頭ではない"}
+{"name": "bind422-for-in-comment", "expect": "block", "command": "# for HOME in safe\nrm -rf $HOME", "reason": "コメント内の for は束縛ではない"}
+{"name": "bind422-for-in-sq", "expect": "block", "command": "echo 'x for HOME in safe'; rm -rf $HOME", "reason": "クォート内の for は束縛ではない"}
+{"name": "bind422-dq-csub-nested", "expect": "block", "command": "echo \"$(echo \"; HOME=safe\")\"; rm -rf ${HOME}", "reason": "\"$(…\"…\")\" の内側のクォートで外側が閉じない"}
+{"name": "bind422-subshell-after-semicolon", "expect": "block", "command": "(cd x; HOME=x); rm -rf ${HOME}", "reason": "サブシェル内の ; の後の代入も外側に効かない"}
+{"name": "bind422-subshell-space", "expect": "block", "command": "( HOME=x ); rm -rf ${HOME}", "reason": "( の直後の代入は外側に効かない"}
+{"name": "bind422-subshell-case-pattern", "expect": "block", "command": "(case x in a) true;; esac; HOME=x); rm -rf ${HOME}", "reason": "case のパターンの ) でサブシェルを閉じたとみなさない"}
+{"name": "bind422-git-brace-multi", "expect": "block", "command": "for c in x reset; do git ${c} --hard; done", "reason": "${c} 形も候補ごとに判定する"}
+{"name": "bind422-git-two-multi", "expect": "block", "command": "for c in status reset; do for o in --soft --hard; do git $c $o; done; done", "reason": "多値の名前が 2 つあっても危険な組み合わせが残る"}
+{"name": "bind422-case-body-subshell", "expect": "block", "command": "case x in a) (cd y; HOME=x);; esac; rm -rf ${HOME}", "reason": "case 本文のサブシェル内の代入も外側に効かない"}
+# main では block していた形。狭い表に値を作らせると、広い表が拾わない位置 (`(` の直後) で
+# 外れた (code-reviewer の指摘)。
+{"name": "bind422-subshell-dq-root", "expect": "block", "command": "(d=\"/\"; rm -rf $d)", "reason": "サブシェル内の代入は信じない"}
+{"name": "bind422-subshell-tilde", "expect": "block", "command": "(d=~; rm -rf $d)", "reason": "サブシェル内の代入は信じない (~)"}
+{"name": "bind422-subshell-home-brace", "expect": "block", "command": "(HOME=x); rm -rf ${HOME}", "reason": "サブシェル内の代入は外側に効かない"}
+{"name": "bind422-procsub-pwd", "expect": "block", "command": "cat <(PWD=x); rm -rf $PWD", "reason": "プロセス置換内の代入は外側に効かない"}
+# 狭い表に絞ったことで誤検出しないことの pin。
+{"name": "bind422-allow-continuation-in-word", "expect": "allow", "command": "d=bu\\\nild; rm -rf \"$d\"", "reason": "語の途中の行継続で語を分けない"}
+{"name": "bind422-allow-sq-dollar-before", "expect": "allow", "command": "echo '$d'; d=build; rm -rf $d", "reason": "シングルクォート内の $d は参照ではない"}
+{"name": "bind422-allow-esc-dollar-before", "expect": "allow", "command": "echo \\$d; d=build; rm -rf $d", "reason": "エスケープされた $d は参照ではない"}
+{"name": "bind422-allow-git-name-boundary", "expect": "allow", "command": "c=reset; cmd=status; git $cmd --hard", "reason": "$cmd を $c と取り違えない"}
+{"name": "bind422-allow-fd-redirect", "expect": "allow", "command": "d=build 2>/dev/null; rm -rf $d", "reason": "fd 番号つきリダイレクトの数字はコマンド語ではない"}
+{"name": "bind422-allow-arith-shift", "expect": "allow", "command": "d=build\n(( x = 1 << 2 ))\nrm -rf $d", "reason": "(( )) の中の << は heredoc ではない"}
+{"name": "bind422-allow-case-paren-pattern", "expect": "allow", "command": "case x in (a) true;; esac; d=build; rm -rf $d", "reason": "case の ( 付きパターンの後も深さが戻る"}
+{"name": "bind422-allow-export-assign", "expect": "allow", "command": "export d=build; rm -rf $d", "reason": "export の後の代入"}
+{"name": "bind422-allow-local-assign", "expect": "allow", "command": "f() { local d=build; rm -rf $d; }", "reason": "local の後の代入"}
+{"name": "bind422-allow-and-chain", "expect": "allow", "command": "cd x && d=build && rm -rf $d", "reason": "&& の後のセグメント先頭"}
+{"name": "bind422-allow-newline", "expect": "allow", "command": "d=build\nrm -rf $d", "reason": "改行区切り"}
+{"name": "bind422-allow-for-do-assign", "expect": "allow", "command": "for f in a b; do d=$f; rm -rf $d; done", "reason": "do の後の代入"}
+{"name": "bind422-allow-then-assign", "expect": "allow", "command": "if true; then d=build; rm -rf $d; fi", "reason": "then の後の代入"}
+{"name": "bind422-allow-multi-assign", "expect": "allow", "command": "a=x b=build; rm -rf $b", "reason": "コマンド語の続かない連続代入"}
+{"name": "bind422-allow-dq-value", "expect": "allow", "command": "d=\"build\"; rm -rf \"$d\"", "reason": "クォートつきの値"}
+{"name": "bind422-allow-group-assign", "expect": "allow", "command": "{ d=build; rm -rf $d; }", "reason": "{ の後の代入"}
+{"name": "bind422-allow-test-f", "expect": "allow", "command": "f=build; [ -f \"$f\" ] && rm -rf \"$f\"", "reason": "-f の f は名前の出現として数えない"}
+{"name": "bind422-allow-continuation", "expect": "allow", "command": "d=build; rm -rf $d \\\n  && echo ok", "reason": "行継続をはさむ"}
+{"name": "bind422-allow-export-bare", "expect": "allow", "command": "d=build; export d; rm -rf $d", "reason": "値を変えない export NAME"}
+{"name": "bind422-allow-sq-tilde", "expect": "allow", "command": "d='~'; rm -rf $d", "reason": "シングルクォートの ~ はリテラル名"}
+{"name": "bind422-allow-dq-tmpdir", "expect": "allow", "command": "d=\"$TMPDIR/work\"; rm -rf \"$d\"", "reason": "TMPDIR 配下を値にした代入"}
+{"name": "bind422-allow-chain", "expect": "allow", "command": "p=build; q=$p/out; rm -rf $q", "reason": "代入の連鎖"}
+{"name": "bind422-allow-heredoc-ref", "expect": "allow", "command": "d=build\ncat <<EOF\nd is $d\nEOF\nrm -rf $d", "reason": "heredoc 本文の語は名前の出現として数えない"}
+{"name": "bind422-allow-comment-after", "expect": "allow", "command": "d=build # cleanup\nrm -rf $d", "reason": "代入の後ろのコメント"}
+{"name": "bind422-allow-reassign-home", "expect": "allow", "command": "HOME=a; rm -rf $HOME", "reason": "セグメント先頭の再代入は採用する"}
+{"name": "bind422-allow-git-for-multi-safe", "expect": "allow", "command": "for c in status log; do git $c --oneline; done", "reason": "候補ごとの行がどれも危険でない"}
+{"name": "bind422-allow-git-reassign-safe", "expect": "allow", "command": "c=status; c=log; git $c --oneline", "reason": "同名の代入が複数でも危険でない"}
+{"name": "bind422-allow-prefix-other-cmd", "expect": "allow", "command": "d=build; d=x true; rm -rf $d", "reason": "前置代入の値は候補に加えるだけで、先行の束縛があれば未解決にしない"}
+# main でも正しく判定していた形のうち、束縛表を 2 つに分けたことで外れうるもの。
+{"name": "bind422-git-echo-assign", "expect": "block", "command": "echo c=reset; git $c --hard", "reason": "git 判定の束縛表は代入らしく見えるものをすべて候補にする"}
+{"name": "bind422-prefix-func-unresolved", "expect": "block", "command": "d=build; f() { rm -rf $d; }; d=$X f", "reason": "前置代入は関数の中の展開に効くので、値を候補に加える"}
