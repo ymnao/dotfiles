@@ -175,7 +175,8 @@ _strict_lex() {
     check(uw)
   }
   function flush() { if (ws) { handle(substr(s, ws, i - ws)); ws = 0 } }
-  { s = s $0 "\n" }
+  BEGIN { RS = "\001" }
+  { s = s $0 }
   END {
     L = length(s); mode = "start"; np = 0; ws = 0; q = ""; dep = 0; redir = 0; hd = ""; hdash = 0
     for (i = 1; i <= L; i++) {
@@ -295,14 +296,8 @@ _substitute_multi() {
   }'
 }
 
-_strict_table=''
-_strict_table_done=0
 expand_assignments() {
   local _var=$1 _mode=${2:-} _prev _iter=0 _cur=${!1} assignments name val esc_name esc_val
-  if [[ "$_mode" = strict && "$_strict_table_done" = 0 ]]; then
-    _strict_table=$({ _strict_lex "$command_orig"; _for_bindings "$command_orig"; } | _aggregate_bindings 1)
-    _strict_table_done=1
-  fi
   while [[ $_iter -lt 8 ]]; do
     _prev=$_cur
     _iter=$((_iter + 1))
@@ -936,6 +931,7 @@ if [[ -n "$_rm_segs" ]]; then
   # view を危険パス判定にだけ足すのは、そちらは block を増やす側にしか効かないため。
   # fail-closed に足さないのは、広い表が `(d=build; …)` の `d` のように拾わなかった束縛の
   # `$d` が残り、狭い表で解決済みの形まで止めるため。
+  _strict_table=$({ _strict_lex "$command_orig"; _for_bindings "$command_orig"; } | _aggregate_bindings 1)
   command_rm=$command_pre_expand
   expand_assignments command_rm strict
   _rm_segs_strict=$(_rm_segs_of "$command_rm")
