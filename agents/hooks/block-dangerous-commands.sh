@@ -176,17 +176,17 @@ _strict_lex() {
   }
   function check(uw) { if (uw ~ /^[A-Za-z_][A-Za-z0-9_]*($|=|\+=|\[)/) sus(nameof(uw)) }
   function bindhere(n,   pt) {
-    if (dp > 0 || inpipe || curop == "|") { sus(n); return }
+    if (dp > 0 || inpipe) { sus(n); return }
     pt = (n in bound) && !(n in cond) && !(n in susp)
     bindname(n); delete cond[n]
     al[++aln] = n; bl[++bln] = n
-    if (ft > 0) { fbn[ft]++; fb[ft, fbn[ft]] = n; fp[ft, fbn[ft]] = pt }
+    if (ft > 0) pend(ft, n, pt)
     if (prevop == "||") { if (!pt) cond[n] = 1 }
-    else if (prevop == "&&") { kk[++kn] = n; kp[kn] = pt }
+    else if (prevop == "&&") pend(0, n, pt)
   }
-  function flushl(   j) { for (j = 1; j <= kn; j++) if (!kp[j]) cond[kk[j]] = 1; kn = 0 }
+  function pend(f, n, pt) { fbn[f]++; fb[f, fbn[f]] = n; fp[f, fbn[f]] = pt }
   function flushf(f,   j) { for (j = 1; j <= fbn[f]; j++) if (!fp[f, j]) cond[fb[f, j]] = 1; fbn[f] = 0 }
-  function boundary() { flushl(); prevop = ""; aln = 0 }
+  function boundary() { flushf(0); prevop = ""; aln = 0 }
   function push(k) { boundary(); fk[++ft] = k; fbn[ft] = 0; cmpd = 1 }
   function closef(k) {
     boundary()
@@ -194,10 +194,9 @@ _strict_lex() {
     flushf(ft); ft--; justclosed = 1
   }
   function endseg(op,   j) {
-    curop = op
     if (mode == "start") for (j = 1; j <= np; j++) bindhere(pn[j])
     if (op == "|") for (j = 1; j <= bln; j++) sus(bl[j])
-    np = 0; bln = 0; mode = "start"; redir = 0; curop = ""; cmdname = ""; cmdwait = 0; pvnext = 0
+    np = 0; bln = 0; mode = "start"; redir = 0; cmdname = ""; cmdwait = 0; pvnext = 0
   }
   function setcmd(uw) {
     cmdname = uw; cmdwait = (uw ~ /^(command|builtin|exec|noglob|nocorrect)$/)
@@ -253,7 +252,7 @@ _strict_lex() {
     }
     if (mode == "args") {
       if (cmdwait && uw !~ /^-/) setcmd(uw)
-      else if (cmdname in bindcmd) { if (uw ~ /[$`]/) broken = 1 }
+      else if (cmdname ~ /^(read|mapfile|readarray|unset|vared)$/) { if (uw ~ /[$`]/) broken = 1 }
       else if (cmdname == "printf") {
         if (pvnext) { if (uw ~ /[$`]/) broken = 1; pvnext = 0 }
         else if (uw ~ /^-v./) { if (uw ~ /[$`]/) broken = 1 }
@@ -264,11 +263,19 @@ _strict_lex() {
   }
   function flush() { if (ws) { handle(substr(s, ws, i - ws)); ws = 0; wsp = 0 } }
   function open(t) { if (!ws) ws = i; st[++top] = t }
-  BEGIN {
-    RS = "\001"
-    split("read mapfile readarray unset vared", bc, " ")
-    for (j in bc) bindcmd[bc[j]] = 1
+  function skiphd(   k, eol, ln) {
+    for (k = 1; k <= hqn; k++) {
+      while (i < L) {
+        eol = i + 1
+        while (eol <= L && substr(s, eol, 1) != "\n") eol++
+        ln = substr(s, i + 1, eol - i - 1); i = eol
+        if (hqd[k]) sub(/^\t+/, "", ln)
+        if (ln == hq[k]) break
+      }
+    }
+    hqn = 0
   }
+  BEGIN { RS = "\001" }
   { s = s $0 }
   END {
     L = length(s); mode = "start"; np = 0; ws = 0; top = 0; redir = 0; dp = 0; incase = 0; arith = 0
@@ -276,11 +283,8 @@ _strict_lex() {
       ch = substr(s, i, 1); c2 = substr(s, i + 1, 1)
       if (top) {
         t = st[top]
-        if (t == "S") {
-          if (ch == "\047") top--
-          else if (top == 1 && (ch == " " || ch == "\t" || ch == "\n")) wsp = 1
-          continue
-        }
+        if (top == 1 && (t == "S" || t == "Q") && (ch == " " || ch == "\t" || ch == "\n")) wsp = 1
+        if (t == "S") { if (ch == "\047") top--; continue }
         if (ch == "\\") { i++; continue }
         if (ch == "<" && c2 == "<" && t != "Q" && t != "B" && substr(s, i + 2, 1) != "<" && substr(s, i - 1, 1) != "<") broken = 1
         if (t == "`") { if (ch == "`") top--; continue }
@@ -288,7 +292,7 @@ _strict_lex() {
         if (ch == "$" && c2 == "(") { st[++top] = "P"; i++; continue }
         if (ch == "$" && c2 == "{") { st[++top] = "B"; i++; continue }
         if (ch == "`") { st[++top] = "`"; continue }
-        if (t == "Q") { if (top == 1 && (ch == " " || ch == "\t" || ch == "\n")) wsp = 1; continue }
+        if (t == "Q") continue
         if ((t == "P" || t == "C") && (ch == "c" || ch == "e") && substr(s, i - 1, 1) !~ /[A-Za-z0-9_]/) {
           w4 = substr(s, i, 4); nx = substr(s, i + 4, 1)
           if (w4 == "case" && (nx == " " || nx == "\t" || nx == "\n")) { st[++top] = "C"; i += 3; continue }
@@ -345,29 +349,15 @@ _strict_lex() {
         else if (ch == ")" && c2 == ")") arith = 0
         if (ch == "(") dp++
         else if (ch == ")" && dp > 0 && !incase) dp--
-        if (op == "\n" || op == ";") { boundary(); inpipe = 0; if (!ft) cmpd = 0 }
-        else if (op == ";;") { boundary(); inpipe = 0; if (ft && fk[ft] == "C") flushf(ft); else broken = 1 }
-        else if (op == "&&") { prevop = "&&"; inpipe = 0 }
-        else if (op == "||") { flushl(); prevop = "||"; inpipe = 0 }
-        else if (op == "|") { if (justclosed) broken = 1; inpipe = 1 }
-        else if (op == "&") {
-          if (justclosed || cmpd) broken = 1
-          for (j = 1; j <= aln; j++) sus(al[j])
-          boundary(); inpipe = 0; if (!ft) cmpd = 0
-        }
+        if (op != "(" && op != ")") inpipe = (op == "|")
+        if (op == "&") { if (cmpd) broken = 1; for (j = 1; j <= aln; j++) sus(al[j]) }
+        if (op == "\n" || op == ";" || op == "&") { boundary(); if (!ft) cmpd = 0 }
+        else if (op == ";;") { boundary(); if (ft && fk[ft] == "C") flushf(ft); else broken = 1 }
+        else if (op == "&&") prevop = "&&"
+        else if (op == "||") { flushf(0); prevop = "||" }
+        else if (op == "|" && justclosed) broken = 1
         justclosed = 0
-        if (op == "\n" && hqn > 0) {
-          for (k = 1; k <= hqn; k++) {
-            while (i < L) {
-              eol = i + 1
-              while (eol <= L && substr(s, eol, 1) != "\n") eol++
-              ln = substr(s, i + 1, eol - i - 1); i = eol
-              if (hqd[k]) sub(/^\t+/, "", ln)
-              if (ln == hq[k]) break
-            }
-          }
-          hqn = 0
-        }
+        if (op == "\n" && hqn > 0) skiphd()
         continue
       }
       if (!ws) ws = i
