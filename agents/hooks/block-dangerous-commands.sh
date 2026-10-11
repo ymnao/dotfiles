@@ -318,7 +318,7 @@ _strict_lex() {
         t = st[top]
         if (top == 1 && (t == "S" || t == "Q") && (ch == " " || ch == "\t" || ch == "\n")) wsp = 1
         if (t == "S") { if (ch == "\047") top--; continue }
-        if (ch == "\\") { i++; continue }
+        if (ch == "\\") { if (top == 1 && t == "Q" && (c2 == " " || c2 == "\t")) wsp = 1; i++; continue }
         if (ch == "<" && c2 == "<" && t != "Q" && t != "B" && t != "A" && substr(s, i + 2, 1) != "<" && substr(s, i - 1, 1) != "<") broken = 1
         if (t == "`") { if (ch == "`") top--; continue }
         if (t == "Q" && ch == "\"") { top--; continue }

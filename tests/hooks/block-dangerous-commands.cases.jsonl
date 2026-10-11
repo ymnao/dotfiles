@@ -695,3 +695,4 @@
 {"name": "scope425-allow-csub-case-cmdpos", "expect": "allow", "command": "x=$(case y in a) echo z;; esac); d=build; rm -rf $d", "reason": "$( ) 内のコマンドの位置の case の後も深さが戻る"}
 {"name": "scope425-zsh-flag-expansion", "expect": "block", "command": "d=build; n='d=/'; : ${(e)n}; rm -rf $d", "reason": "zsh のフラグつき展開は名前を語に書かずに評価しうる"}
 {"name": "scope425-csub-bang-case", "expect": "block", "command": "x=$(! case y in a) HOME=safe;; esac); rm -rf $HOME", "reason": "コマンドの位置か判別できない $( ) 内の case は全体を信じない"}
+{"name": "scope425-dq-escaped-space-value", "expect": "block", "command": "d=\"x\\ /Users\"; rm -rf $d", "reason": "二重引用符の中の \\ と空白は値に残り、未クォートの展開で分かれる"}
