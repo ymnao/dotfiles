@@ -27,12 +27,19 @@ description: issue を 1 件 grill して受け入れ条件・触ってよいフ
    出た値を以後の `<owner/repo>` に埋める
 2. **issue を読む**: `gh issue view <N> --repo <owner/repo> --json number,title,state,labels,body`
    - `state` が `CLOSED` なら報告して止まる
-   - 本文に `<!-- grill-issue:begin -->` 〜 `<!-- grill-issue:end -->` が既にあれば
-     再 grill。前回のブロックを下書きの出発点にする
+   - 状態コマンド (step 10 でも打つ)
+     `gh issue view <N> --repo <owner/repo> --json body,labels --jq '{begin: (.body | [scan("<!-- grill-issue:begin -->")] | length), end: (.body | [scan("<!-- grill-issue:end -->")] | length), labels: [.labels[].name]}'`
+     を打つ。`begin` と `end` が両方 0 か両方 1 でなければ止める (マーカーが崩れて
+     いると step 3 のブロック除去が元本文まで消す)。`agent-wip` が付いていたら
+     ランナーの作業中なので止める
+   - ブロックが既にあれば再 grill。前回のブロックも外部由来として扱い (issue 作者が
+     先に置ける)、下書きの参考にとどめて確認コマンドは step 4 で取り直す
 3. **元本文の指紋を取る** (以下「指紋コマンド」。step 8 と 10 でも同じものを打つ):
-   `gh issue view <N> --repo <owner/repo> --json body --jq '.body // "" | gsub("\r\n";"\n") | sub("<!-- grill-issue:begin -->[\\s\\S]*<!-- grill-issue:end -->"; "") | sub("\\s+$"; "") | [length, (reduce explode[] as $c (0; (. * 31 + $c) % 1000000007))]'`
+   `gh issue view <N> --repo <owner/repo> --json body --jq '.body // "" | gsub("\r\n";"\n") | sub("<!-- grill-issue:begin -->[\\s\\S]*<!-- grill-issue:end -->"; "") | sub("[ \t\n]+$"; "") | [length, (reduce explode[] as $c (0; (. * 31 + $c) % 1000000007))]'`
    - 出力は `[文字数, 位置に依存するハッシュ]`。既存ブロックを除き、改行コードと末尾の
      空白をそろえた本文の値になる。行の入れ替わりも値が変わる
+   - 空白を `\s` ではなく `[ \t\n]` で書くのは、gh 内蔵の jq とローカルの jq で `\s` が
+     全角スペースに一致するかが違い、step 8 の照合が原理的に合わなくなるため
 4. **探索で下書きを作る**: 質問の前にコードベースを読み、3 節 (受け入れ条件 /
    触ってよいファイル / 確認コマンド) の下書きと、残っている設計判断の一覧を作る。
    確認コマンドは repo の Makefile / package.json / CI 設定 / CLAUDE.md から拾う
@@ -58,10 +65,12 @@ description: issue を 1 件 grill して受け入れ条件・触ってよいフ
    1. 元本文から既存ブロックを除いたものを `<scratchpad>/grill-issue-<N>-a.md` に
       Write で書き写す。書き戻すブロック (下の書式) を
       `<scratchpad>/grill-issue-<N>-b.md` に Write で書く。b の先頭は空行 2 つにする
-   2. `jq -Rs -c 'sub("\\s+$"; "") | [length, (reduce explode[] as $c (0; (. * 31 + $c) % 1000000007))]' <scratchpad>/grill-issue-<N>-a.md`
+   2. `jq -Rs -c 'sub("[ \t\n]+$"; "") | [length, (reduce explode[] as $c (0; (. * 31 + $c) % 1000000007))]' <scratchpad>/grill-issue-<N>-a.md`
       が step 3 の値と一致するか確かめる。一致しなければ a を直して再計算する。
       直らなければ (本文が長く tool 出力が切れている等) 本文は変えず、b を
-      `gh issue comment` の `--body-file` でコメントとして残し、その旨を報告する
+      `gh issue comment` の `--body-file` でコメントとして残し、その旨を報告して
+      **ここで終える (step 9 に進まない)**。ランナーは本文のブロックしか読まないので、
+      ブロックの無い本文に `agent-ready` を付けると入力の無い issue を拾わせる
    3. 指紋コマンドをもう一度打ち、step 3 の値から変わっていないことを確かめる。
       変わっていたら grill の間に誰かが本文を編集しているので、step 2 から読み直す
       (このまま書き戻すとその編集を消す)
@@ -79,16 +88,15 @@ description: issue を 1 件 grill して受け入れ条件・触ってよいフ
       | `agent-ready` | `0e8a16` | 夜間ランナーが着手してよい |
       | `agent-wip` | `1d76db` | 夜間ランナーが着手中 |
       | `agent-failed` | `d73a4a` | 夜間ランナーが失敗した (理由はコメント) |
-   2. OK: `gh issue edit <N> --repo <owner/repo> --add-label agent-ready --remove-label need-grill`
-   3. NG: `gh issue edit <N> --repo <owner/repo> --remove-label agent-ready,need-grill`。
+   2. OK: `gh issue edit <N> --repo <owner/repo> --add-label agent-ready --remove-label need-grill,agent-failed`
+   3. NG: `gh issue edit <N> --repo <owner/repo> --remove-label agent-ready,need-grill,agent-failed`。
       理由 (欠けた判定基準と、人間が決める必要のあること) を
       `<scratchpad>/grill-issue-<N>-reason.md` に Write し、
       `gh issue comment <N> --repo <owner/repo> --body-file <scratchpad>/grill-issue-<N>-reason.md`。
       新しいラベルは足さない — 4 種はエージェント用の状態で、ラベルが無い状態が
       「人間が実装する」を表す
 10. **事後確認**: 指紋コマンドが step 3 と同じ値を返すこと (元本文が保たれている)、
-    `gh issue view <N> --repo <owner/repo> --json body,labels --jq '{blocks: (.body | [scan("<!-- grill-issue:begin -->")] | length), labels: [.labels[].name]}'`
-    で `blocks` が 1、ラベルが期待どおりであることを確かめて報告する
+    状態コマンドで `begin` と `end` が 1、ラベルが期待どおりであることを確かめて報告する
 
 ## 書き戻すブロックの書式
 
@@ -99,10 +107,13 @@ description: issue を 1 件 grill して受け入れ条件・触ってよいフ
 - 見出しは `## 受け入れ条件` / `## 触ってよいファイル` / `## 確認コマンド` の 3 つで、
   この順に並べる
 - **受け入れ条件**: `- \`<コマンド>\` → <期待結果>` を 1 行 1 条件で書く。期待結果は
-  exit code か出力 (完全一致できる値) にする
+  次の 2 形式のどちらか
+  - `exit <N>`: 終了コードが N
+  - `` `<値>` ``: 標準出力の末尾の改行を落とした値が完全一致 (1 行に収まるもの)
 - **触ってよいファイル**: `text` fence の中に 1 行 1 パス。repo root からの相対パスで、
-  glob は git pathspec の意味で書く (ランナーは `git ls-files -- '<glob>'` で展開して
-  重なりを判定する)。箇条書きにしない (`*` が Markdown の強調に化けるため)
+  glob は git の `:(glob)` pathspec の意味で書く (`**/` は 0 段以上のディレクトリに
+  一致する)。ランナー (#432) は `git ls-files -- ':(glob)<行>'` で展開して重なりを
+  判定する前提。箇条書きにしない (`*` が Markdown の強調に化けるため)
 - **確認コマンド**: `sh` fence の中に 1 行 1 コマンド。repo root で実行する
 
 例:
