@@ -19,12 +19,6 @@ if [ ! -f "$TARGET" ]; then
 fi
 command -v jq >/dev/null 2>&1 || { echo "ERROR: jq is required" >&2; exit 1; }
 
-# statusline.sh は初出のモデル id を XDG_STATE_HOME 配下に追記するので、
-# fixture の id を実際のログに入れないよう一時ディレクトリへ向ける
-STATE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/statusline-state.XXXXXX")
-trap 'rm -rf "$STATE_DIR"' EXIT
-export XDG_STATE_HOME="$STATE_DIR"
-
 pass=0
 fail=0
 

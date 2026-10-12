@@ -5,7 +5,6 @@
 #
 # 入力: stdin に Claude Code が渡す JSON (https://code.claude.com/docs/en/statusline)
 # 出力: 1 行のステータス文字列
-# 副作用: 初めて届いた model.id を XDG state のログへ 1 行追記する (末尾の節)
 # 依存: jq (無ければモデル名なしの固定文字列を出す)
 #
 # starship の `starship statusline claude-code` には寄せない (2026-08-04 実測、
@@ -29,13 +28,8 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 0
 fi
 
-nl=$'\n'
-
-# id を別の jq で取り直さないのは、描画のたびに起動されるのでプロセスを増やさないため。
-# 1 行目を id、2 行目を表示行として 1 回の jq から受け取る。
-out=$(printf '%s' "$input" | jq -r '
-  (.model.id // "" | tostring | gsub("[[:space:]]"; "")),
-  ([
+printf '%s' "$input" | jq -r '
+  [
     (.model.display_name // .model.id // "model?"),
     ("eff:" + (.effort.level // "-")),
     ("ctx:" + ((.context_window.used_percentage // 0) | round | tostring) + "%"),
@@ -45,22 +39,4 @@ out=$(printf '%s' "$input" | jq -r '
     (if (.rate_limits.seven_day.used_percentage // null) != null
      then "7d:" + (.rate_limits.seven_day.used_percentage | round | tostring) + "%"
      else empty end)
-  ] | join(" | "))' 2>/dev/null) || { printf 'claude'; exit 0; }
-
-id=${out%%"$nl"*}
-printf '%s\n' "${out#*"$nl"}"
-
-# 上流が既定モデルを黙って差し替えた日を残す (docs/ai-operations.md §2)。
-# 前回の値と比べないのは、/model での行き来のたびに行が増えて差し替えの 1 行が
-# 埋もれるため。初めて届いた id だけを書く。grep を使わないのも上と同じ理由。
-[ -n "$id" ] || exit 0
-log="${XDG_STATE_HOME:-${HOME:-}/.local/state}/claude/statusline-model-id.log"
-content=
-[ -r "$log" ] && content=$(<"$log")
-case "$nl$content$nl" in
-  *" $id$nl"*) ;;
-  # 2>/dev/null を >> より前に置くのは、後ろだとリダイレクト失敗のメッセージが残るため
-  *) mkdir -p "${log%/*}" 2>/dev/null &&
-       printf '%s %s\n' "$(date +%Y-%m-%d)" "$id" 2>/dev/null >>"$log" ;;
-esac
-exit 0
+  ] | join(" | ")' 2>/dev/null || printf 'claude'
