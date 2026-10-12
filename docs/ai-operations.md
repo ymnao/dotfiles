@@ -116,12 +116,13 @@ agent の Bash sandbox 内で `codex-review` が回るかどうか、回すた�
   (同 model-config)。そのため `modelSettings` にモデル ID をキーにして書く。
   **新しいモデルに移ったらそのモデルの ID のキーを足す** — 足さないと黙って既定
   effort に落ちる。セッション内で一時的に上げるときは `/effort` のスライダーで
-  `s` (そのセッションだけ) を使う。`Enter` で確定すると `modelSettings` に保存され、
-  symlink 先の `claude/settings.json` が書き換わる (同 model-config)。
+  `s` (そのセッションだけ) を使う。`Enter` で確定すると `modelSettings` に保存され
+  (同 model-config)、`~/.claude/settings.json` は symlink なので repo の
+  `claude/settings.json` が書き換わる。
   実測 (2026-10-12、セッションログの `"effort"`): `modelSettings` が無い間の端末の
   CLI セッション 6 件 (2026-09-26〜10-05 / 2.1.282〜2.1.289) はすべて `medium`。
-  追加後の新規セッションは CLI (2.1.296) が `high`、**デスクトップアプリ (同梱の
-  2.1.295) は `medium`** のまま (各 1 件。アプリのピッカーの表示も medium)。
+  追加後の新規セッションは CLI (2.1.296) が `high`、**デスクトップアプリ (アプリが
+  管理する 2.1.295) は `medium`** のまま (各 1 件。アプリのピッカーの表示も medium)。
   デスクトップはピッカーで選んだ値で動く — ピッカーで high にした portfolio の
   直近 3 セッションはログも `high` だった。デスクトップで上げるときはピッカーで選ぶ
 - 原則: **浅い推論を見たらプロンプトを工夫する前に effort を上げる**
