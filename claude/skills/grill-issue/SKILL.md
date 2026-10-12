@@ -126,27 +126,62 @@ description: issue を 1 件 grill して受け入れ条件・触ってよいフ
 - **決定事項**: grill で決めた設計を箇条書きの文章で書く (ランナーはパースせず、
   実装する agent が読む)。元本文に既に書いてあることは繰り返さない。無ければ `- なし`
 
-例:
+例は書式を示すためのもので、中身 (言語・コマンド・条件の数) は対象 repo に合わせる。
+受け入れ条件はファイルや文字列の有無ではなく、動作を確かめる形にする。
+
+<examples>
+<example>
+OK の例 (CLI の `status` コマンドに `--json` を足す issue):
 
 ````markdown
 <!-- grill-issue:begin -->
 ## 受け入れ条件
-- `make test` → exit 0
-- `grep -c 'herdr/config.toml' scripts/link.sh` → `1`
+- `node bin/cli.js status --json | jq -e '.version'` → exit 0
+- `node bin/cli.js status --json | jq -r '.state'` → `ok`
+- `node bin/cli.js status` → exit 0
+- `npm test` → exit 0
 
 ## 触ってよいファイル
 ```text
-scripts/link.sh
-tests/link/**
+src/commands/status.ts
+src/format/**
+test/commands/status.test.ts
+```
+
+## 確認コマンド
+```sh
+npm test
+npm run lint
+```
+
+## 決定事項
+- 既存のテキスト出力は変えず、`--json` を付けたときだけ JSON を出す
+- JSON のキーは camelCase にそろえる (既存の `config --json` に合わせる)
+<!-- grill-issue:end -->
+````
+</example>
+
+<example>
+NG の例 (デプロイ完了を Slack に通知する issue。届いたかは Slack 側でしか確かめられない):
+
+````markdown
+<!-- grill-issue:begin -->
+## 受け入れ条件
+(未確定: 通知が届いたことはローカルのコマンドで確かめられない)
+
+## 触ってよいファイル
+```text
+scripts/deploy.sh
 ```
 
 ## 確認コマンド
 ```sh
 make test
-make lint
 ```
 
 ## 決定事項
-- herdr の config はディレクトリごとではなくファイル単位で link する (socket が同じディレクトリに作られるため)
+- なし
 <!-- grill-issue:end -->
 ````
+</example>
+</examples>
