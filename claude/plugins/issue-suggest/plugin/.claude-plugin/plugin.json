@@ -1,0 +1,10 @@
+{
+  "name": "issue-suggest",
+  "version": "0.1.0",
+  "description": "Lists open issues of the session's GitHub repo above the prompt box while the word at the cursor starts with #; pressing one writes #N in its place.",
+  "author": {
+    "name": "ymnao"
+  },
+  "license": "MIT",
+  "types": "./types/index.d.ts"
+}

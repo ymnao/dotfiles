@@ -1,0 +1,17 @@
+{
+  "name": "issue-suggest",
+  "owner": {
+    "name": "ymnao"
+  },
+  "metadata": {
+    "description": "Suggests open GitHub issues above the prompt box while a #-word is typed."
+  },
+  "plugins": [
+    {
+      "name": "issue-suggest",
+      "source": "./plugin",
+      "description": "Lists open issues of the session's GitHub repo above the prompt box while the word at the cursor starts with #; pressing one writes #N in its place.",
+      "category": "productivity"
+    }
+  ]
+}
