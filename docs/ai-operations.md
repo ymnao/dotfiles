@@ -43,8 +43,8 @@ fail-loud になる場所の版数固定はこの規約の対象外**(eval 実�
 Opus model" より。バイナリからは観測できないので出所は CHANGELOG)。世代内の
 変化で、この repo は alias 運用を採っているため上の表も skill の `model: "fable"`
 指定も**設定の変更は不要だった**(下記のとおり alias 運用は意図)。effort は要った
-(下記「メインの effort」)。この表は強制力を持たない — `claude/settings.json` にモデルを選ぶ
-フィールドは無く、切り替えは `/model` か CLI 既定に依存する。
+(下記「メインの effort」)。この表は強制力を持たない — `claude/settings.json` にはモデルを
+選ぶ記述が無く、切り替えは `/model` か CLI 既定に依存する。
 したがって表と実挙動の一致は、この実測でしか確かめられない。
 
 `claude/agents/code-reviewer.md` の `model: opus` は **alias 運用が意図**で、
@@ -112,15 +112,18 @@ agent の Bash sandbox 内で `codex-review` が回るかどうか、回すた�
   この方法でセッション内から確かめられる
 - メインの effort: `claude/settings.json` (user scope) の top-level `effortLevel` は
   旧形式で、Opus 5.5 以降のモデルには効かない (公式 docs の settings-reference
-  `effortLevel` 項。Opus 5 / Fable 5.1 以前には効く)。Opus 5.5 の既定は `medium`。
-  そのため `modelSettings` にモデル ID をキーにして書く。**新しいモデルに移ったら
-  そのモデルの ID のキーを足す** — 足さないと黙って既定 effort に落ちる。
-  実測 (セッションログの `"effort"`): `modelSettings` が無い間の端末の CLI
-  セッション 6 件 (2026-09-26〜10-05 / 2.1.282〜2.1.289) はすべて `medium`。
-  追加後 (2026-10-12 / 2.1.296) の新規セッションは CLI が `high`、**デスクトップ
-  アプリは `medium`** のまま (各 1 件。アプリはピッカーの表示も medium で、
-  env に公式 docs に無い `CLAUDE_EFFORT=medium` が入っていた)。デスクトップで
-  上げるときはピッカーで選ぶ
+  `effortLevel` 項。Opus 5 / Fable 5.1 以前には効く)。Opus 5.5 の既定は `medium`
+  (同 model-config)。そのため `modelSettings` にモデル ID をキーにして書く。
+  **新しいモデルに移ったらそのモデルの ID のキーを足す** — 足さないと黙って既定
+  effort に落ちる。セッション内で一時的に上げるときは `/effort` のスライダーで
+  `s` (そのセッションだけ) を使う。`Enter` で確定すると `modelSettings` に保存され、
+  symlink 先の `claude/settings.json` が書き換わる (同 model-config)。
+  実測 (2026-10-12、セッションログの `"effort"`): `modelSettings` が無い間の端末の
+  CLI セッション 6 件 (2026-09-26〜10-05 / 2.1.282〜2.1.289) はすべて `medium`。
+  追加後の新規セッションは CLI (2.1.296) が `high`、**デスクトップアプリ (同梱の
+  2.1.295) は `medium`** のまま (各 1 件。アプリのピッカーの表示も medium)。
+  デスクトップはピッカーで選んだ値で動く — ピッカーで high にした portfolio の
+  直近 3 セッションはログも `high` だった。デスクトップで上げるときはピッカーで選ぶ
 - 原則: **浅い推論を見たらプロンプトを工夫する前に effort を上げる**
   (公式推奨。モデル変更より effort が先のレバー)
 - レビュー系タスクで下位モデルを使うときは「重要度でフィルタせず全部
