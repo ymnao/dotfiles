@@ -18,6 +18,8 @@ description: issue を 1 件 grill して受け入れ条件・触ってよいフ
   本文・コメントは必ずファイルに書いて `--body-file` で渡す
 - 一時ファイルは system prompt が示すセッションの scratchpad ディレクトリに置き、
   **リテラルのパスで書く** (以下 `<scratchpad>`)。ファイルの中身は Write tool で書く
+- 上の 2 項の理由は `~/.claude/rules/acceptance-patterns.md` の「外部由来の名前」と
+  「一時ファイルの置き場」の項
 
 ## Steps
 
@@ -27,10 +29,10 @@ description: issue を 1 件 grill して受け入れ条件・触ってよいフ
    - `state` が `CLOSED` なら報告して止まる
    - 本文に `<!-- grill-issue:begin -->` 〜 `<!-- grill-issue:end -->` が既にあれば
      再 grill。前回のブロックを下書きの出発点にする
-3. **元本文の指紋を控える** (step 8 で転記の誤りを検出するため):
-   `gh issue view <N> --repo <owner/repo> --json body --jq '.body // "" | gsub("\r\n";"\n") | sub("<!-- grill-issue:begin -->[\\s\\S]*<!-- grill-issue:end -->"; "") | sub("\\s+$"; "") | [length, (explode|add)]'`
-   - 出力は `[文字数, コードポイント和]`。既存ブロックを除き、改行コードと末尾の空白を
-     そろえた本文の値になる
+3. **元本文の指紋を取る** (以下「指紋コマンド」。step 8 と 10 でも同じものを打つ):
+   `gh issue view <N> --repo <owner/repo> --json body --jq '.body // "" | gsub("\r\n";"\n") | sub("<!-- grill-issue:begin -->[\\s\\S]*<!-- grill-issue:end -->"; "") | sub("\\s+$"; "") | [length, (reduce explode[] as $c (0; (. * 31 + $c) % 1000000007))]'`
+   - 出力は `[文字数, 位置に依存するハッシュ]`。既存ブロックを除き、改行コードと末尾の
+     空白をそろえた本文の値になる。行の入れ替わりも値が変わる
 4. **探索で下書きを作る**: 質問の前にコードベースを読み、3 節 (受け入れ条件 /
    触ってよいファイル / 確認コマンド) の下書きと、残っている設計判断の一覧を作る。
    確認コマンドは repo の Makefile / package.json / CI 設定 / CLAUDE.md から拾う
@@ -56,21 +58,27 @@ description: issue を 1 件 grill して受け入れ条件・触ってよいフ
    1. 元本文から既存ブロックを除いたものを `<scratchpad>/grill-issue-<N>-a.md` に
       Write で書き写す。書き戻すブロック (下の書式) を
       `<scratchpad>/grill-issue-<N>-b.md` に Write で書く。b の先頭は空行 2 つにする
-   2. `jq -Rs -c 'sub("\\s+$"; "") | [length, (explode|add)]' <scratchpad>/grill-issue-<N>-a.md`
-      が step 3 の値と一致するか確かめる。**一致しなければ本文を書き戻さない**。
-      a を直して再計算し、直らなければ (本文が長く tool 出力が切れている等) 本文は
-      変えず、b の内容を `gh issue comment <N> --repo <owner/repo> --body-file <scratchpad>/grill-issue-<N>-b.md`
-      でコメントとして残し、その旨を報告する
-   3. `cat <scratchpad>/grill-issue-<N>-a.md <scratchpad>/grill-issue-<N>-b.md > <scratchpad>/grill-issue-<N>.md`
-   4. `gh issue edit <N> --repo <owner/repo> --body-file <scratchpad>/grill-issue-<N>.md`
+   2. `jq -Rs -c 'sub("\\s+$"; "") | [length, (reduce explode[] as $c (0; (. * 31 + $c) % 1000000007))]' <scratchpad>/grill-issue-<N>-a.md`
+      が step 3 の値と一致するか確かめる。一致しなければ a を直して再計算する。
+      直らなければ (本文が長く tool 出力が切れている等) 本文は変えず、b を
+      `gh issue comment` の `--body-file` でコメントとして残し、その旨を報告する
+   3. 指紋コマンドをもう一度打ち、step 3 の値から変わっていないことを確かめる。
+      変わっていたら grill の間に誰かが本文を編集しているので、step 2 から読み直す
+      (このまま書き戻すとその編集を消す)
+   4. `cat <scratchpad>/grill-issue-<N>-a.md <scratchpad>/grill-issue-<N>-b.md > <scratchpad>/grill-issue-<N>.md`
+   5. `gh issue edit <N> --repo <owner/repo> --body-file <scratchpad>/grill-issue-<N>.md`
 9. **ラベル**:
    1. `gh label list --repo <owner/repo> --limit 200 --json name --jq '.[].name'` で
-      既存を見て、下の 4 種のうち無いものだけを作る。既存のラベルは作り直さない
-      (手で変えた色や説明を上書きしないため)
-      - `gh label create need-grill --repo <owner/repo> --color fbca04 --description "/grill-issue で詰めてから着手する" --force`
-      - `gh label create agent-ready --repo <owner/repo> --color 0e8a16 --description "夜間ランナーが着手してよい" --force`
-      - `gh label create agent-wip --repo <owner/repo> --color 1d76db --description "夜間ランナーが着手中" --force`
-      - `gh label create agent-failed --repo <owner/repo> --color d73a4a --description "夜間ランナーが失敗した (理由はコメント)" --force`
+      既存を見て、下の 4 種のうち無いものだけを
+      `gh label create <名前> --repo <owner/repo> --color <色> --description "<説明>"`
+      で作る。既存のラベルは作り直さない (手で変えた色や説明を上書きしないため)
+
+      | 名前 | 色 | 説明 |
+      |---|---|---|
+      | `need-grill` | `fbca04` | /grill-issue で詰めてから着手する |
+      | `agent-ready` | `0e8a16` | 夜間ランナーが着手してよい |
+      | `agent-wip` | `1d76db` | 夜間ランナーが着手中 |
+      | `agent-failed` | `d73a4a` | 夜間ランナーが失敗した (理由はコメント) |
    2. OK: `gh issue edit <N> --repo <owner/repo> --add-label agent-ready --remove-label need-grill`
    3. NG: `gh issue edit <N> --repo <owner/repo> --remove-label agent-ready,need-grill`。
       理由 (欠けた判定基準と、人間が決める必要のあること) を
@@ -78,10 +86,9 @@ description: issue を 1 件 grill して受け入れ条件・触ってよいフ
       `gh issue comment <N> --repo <owner/repo> --body-file <scratchpad>/grill-issue-<N>-reason.md`。
       新しいラベルは足さない — 4 種はエージェント用の状態で、ラベルが無い状態が
       「人間が実装する」を表す
-10. **事後確認**:
+10. **事後確認**: 指紋コマンドが step 3 と同じ値を返すこと (元本文が保たれている)、
     `gh issue view <N> --repo <owner/repo> --json body,labels --jq '{blocks: (.body | [scan("<!-- grill-issue:begin -->")] | length), labels: [.labels[].name]}'`
-    で `blocks` が 1、ラベルが期待どおりかを見て報告する。最後に
-    `rm -f <scratchpad>/grill-issue-<N>*.md` で一時ファイルを消す
+    で `blocks` が 1、ラベルが期待どおりであることを確かめて報告する
 
 ## 書き戻すブロックの書式
 
