@@ -258,7 +258,6 @@
     }
   },
   "alwaysThinkingEnabled": true,
-  "effortLevel": "high",
   "skipAutoPermissionPrompt": true,
   "skipWorkflowUsageWarning": true,
   "tui": "fullscreen",
