@@ -28,8 +28,13 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 0
 fi
 
-printf '%s' "$input" | jq -r '
-  [
+nl=$'\n'
+
+# id を別の jq で取り直さないのは、描画のたびに起動されるのでプロセスを増やさないため。
+# 1 行目を id、2 行目を表示行として 1 回の jq から受け取る。
+out=$(printf '%s' "$input" | jq -r '
+  (.model.id // "" | tostring | gsub("[[:space:]]"; "")),
+  ([
     (.model.display_name // .model.id // "model?"),
     ("eff:" + (.effort.level // "-")),
     ("ctx:" + ((.context_window.used_percentage // 0) | round | tostring) + "%"),
@@ -39,4 +44,21 @@ printf '%s' "$input" | jq -r '
     (if (.rate_limits.seven_day.used_percentage // null) != null
      then "7d:" + (.rate_limits.seven_day.used_percentage | round | tostring) + "%"
      else empty end)
-  ] | join(" | ")' 2>/dev/null || printf 'claude'
+  ] | join(" | "))' 2>/dev/null) || { printf 'claude'; exit 0; }
+
+id=${out%%"$nl"*}
+printf '%s\n' "${out#*"$nl"}"
+
+# 上流が既定モデルを黙って差し替えた日を残す (docs/ai-operations.md §2)。
+# 前回の値と比べないのは、/model での行き来のたびに行が増えて差し替えの 1 行が
+# 埋もれるため。初めて届いた id だけを書く。grep を使わないのも上と同じ理由。
+[ -n "$id" ] || exit 0
+log="${XDG_STATE_HOME:-${HOME:-}/.local/state}/claude/statusline-model-id.log"
+content=
+[ -r "$log" ] && content=$(<"$log")
+case "$nl$content$nl" in
+  *" $id$nl"*) ;;
+  *) mkdir -p "${log%/*}" 2>/dev/null &&
+       printf '%s %s\n' "$(date +%Y-%m-%d)" "$id" 2>/dev/null >>"$log" ;;
+esac
+exit 0
