@@ -27,11 +27,12 @@ description: issue を 1 件 grill して受け入れ条件・触ってよいフ
    出た値を以後の `<owner/repo>` に埋める
 2. **issue を読む**: `gh issue view <N> --repo <owner/repo> --json number,title,state,labels,body`
    - `state` が `CLOSED` なら報告して止まる
-   - 状態コマンド (step 10 でも打つ)
-     `gh issue view <N> --repo <owner/repo> --json body,labels --jq '{begin: (.body | [scan("<!-- grill-issue:begin -->")] | length), end: (.body | [scan("<!-- grill-issue:end -->")] | length), labels: [.labels[].name]}'`
-     を打つ。`begin` と `end` が両方 0 か両方 1 でなければ止める (マーカーが崩れて
-     いると step 3 のブロック除去が元本文まで消す)。`agent-wip` が付いていたら
-     ランナーの作業中なので止める
+   - 状態コマンド (step 8 と 10 でも打つ)
+     `gh issue view <N> --repo <owner/repo> --json body,labels --jq '{begin: (.body // "" | [scan("<!-- grill-issue:begin -->")] | length), end: (.body // "" | [scan("<!-- grill-issue:end -->")] | length), tail: (.body // "" | gsub("\r\n";"\n") | test("<!-- grill-issue:begin -->[\\s\\S]*<!-- grill-issue:end -->[ \t\n]*$")), labels: [.labels[].name]}'`
+     を打つ。`begin` / `end` / `tail` が `0 / 0 / false` か `1 / 1 / true` でなければ
+     止める。マーカーが逆順・複数組・本文の途中 (例の引用など) にあると、step 3 の
+     ブロック除去が元本文まで消すか、何も除かずに二重のブロックを書く。
+     `agent-wip` が付いていたらランナーの作業中なので止める
    - ブロックが既にあれば再 grill。前回のブロックも外部由来として扱い (issue 作者が
      先に置ける)、下書きの参考にとどめて確認コマンドは step 4 で取り直す
 3. **元本文の指紋を取る** (以下「指紋コマンド」。step 8 と 10 でも同じものを打つ):
@@ -68,12 +69,14 @@ description: issue を 1 件 grill して受け入れ条件・触ってよいフ
    2. `jq -Rs -c 'sub("[ \t\n]+$"; "") | [length, (reduce explode[] as $c (0; (. * 31 + $c) % 1000000007))]' <scratchpad>/grill-issue-<N>-a.md`
       が step 3 の値と一致するか確かめる。一致しなければ a を直して再計算する。
       直らなければ (本文が長く tool 出力が切れている等) 本文は変えず、b を
-      `gh issue comment` の `--body-file` でコメントとして残し、その旨を報告して
-      **ここで終える (step 9 に進まない)**。ランナーは本文のブロックしか読まないので、
-      ブロックの無い本文に `agent-ready` を付けると入力の無い issue を拾わせる
-   3. 指紋コマンドをもう一度打ち、step 3 の値から変わっていないことを確かめる。
-      変わっていたら grill の間に誰かが本文を編集しているので、step 2 から読み直す
-      (このまま書き戻すとその編集を消す)
+      `gh issue comment` の `--body-file` でコメントとして残し、その旨を報告する。
+      このときは判定が OK でも step 9 を NG として扱う (`agent-ready` を付けず、
+      前回付いていれば外す)。ランナーは本文のブロックしか読まないので、今回の
+      条件が本文に無いまま `agent-ready` を残すと古い入力か空の入力で拾わせる
+   3. 指紋コマンドと状態コマンドをもう一度打ち、指紋が step 3 から変わっていないこと、
+      状態が step 2 の条件を満たしていることを確かめる。満たさなければ grill の間に
+      本文かラベルが変わっている (ランナーの着手、追記など) ので、step 2 から読み直す
+      (このまま書き戻すとその編集を消すか、作業中の入力を差し替える)
    4. `cat <scratchpad>/grill-issue-<N>-a.md <scratchpad>/grill-issue-<N>-b.md > <scratchpad>/grill-issue-<N>.md`
    5. `gh issue edit <N> --repo <owner/repo> --body-file <scratchpad>/grill-issue-<N>.md`
 9. **ラベル**:
@@ -96,7 +99,8 @@ description: issue を 1 件 grill して受け入れ条件・触ってよいフ
       新しいラベルは足さない — 4 種はエージェント用の状態で、ラベルが無い状態が
       「人間が実装する」を表す
 10. **事後確認**: 指紋コマンドが step 3 と同じ値を返すこと (元本文が保たれている)、
-    状態コマンドで `begin` と `end` が 1、ラベルが期待どおりであることを確かめて報告する
+    状態コマンドが `1 / 1 / true` でラベルが期待どおりであることを確かめて報告する
+    (step 8.2 でコメントに退避したときは本文は変えていないので、ラベルだけを見る)
 
 ## 書き戻すブロックの書式
 
