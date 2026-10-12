@@ -14,7 +14,7 @@ type HashWord = { q: string; start: number; end: number }
 export function hashWordAt(text: string, cursor: number): HashWord | null {
   let start = cursor
   while (start > 0 && !/\s/.test(text[start - 1])) start -= 1
-  if (text[start] !== '#') return null
+  if (start === cursor || text[start] !== '#') return null
   const digitsAfter = /^\d*/.exec(text.slice(cursor))?.[0] ?? ''
   return { q: text.slice(start + 1, cursor), start, end: cursor + digitsAfter.length }
 }
@@ -62,6 +62,12 @@ export const register: Register = on => {
     if (q !== null && before === null) void refresh($)
     if (q !== before) await update($, query, () => q)
     return box
+  })
+
+  // Sending clears the box without a prompt.edit, so the #-word ends here too.
+  on('prompt.submit', async ($, e, next) => {
+    await update($, query, () => null)
+    return next(e)
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {

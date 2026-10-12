@@ -62,7 +62,8 @@ type World = ReturnType<typeof world>
 
 async function type($: Engine, w: World, inputText: string) {
   const { text, cursor } = w.box
-  await $.prompt.edit({ origin: { kind: 'composer' }, text, cursor, start: cursor, end: cursor, inputText })
+  const shown = await $.prompt.edit({ origin: { kind: 'composer' }, text, cursor, start: cursor, end: cursor, inputText })
+  expect(shown).toEqual(w.box)
   await w.settle()
 }
 
@@ -87,6 +88,11 @@ describe('hashWordAt', () => {
     expect(hashWordAt('C#', 2)).toBeNull()
     expect(hashWordAt('# 見出し', 2)).toBeNull()
     expect(hashWordAt('#4　4', 4)).toBeNull()
+  })
+
+  test('is null when the cursor stands before the #', () => {
+    expect(hashWordAt('/dev #42', 5)).toBeNull()
+    expect(hashWordAt('#', 0)).toBeNull()
   })
 })
 
@@ -153,6 +159,18 @@ describe('band', () => {
     for (let i = 0; i < 3; i += 1) await backspace($, w)
     await type($, w, '#')
     expect(w.ghRuns).toBe(2)
+  })
+
+  test('clears the band when the prompt is sent', async ($, on) => {
+    const w = world(on)
+    on('prompt.submit', ($, e) => ({ text: e.text }))
+    for (const ch of '/dev #4') await type($, w, ch)
+    await $.prompt.submit({ text: '/dev #4' })
+    await w.settle()
+
+    const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+    expect(await ui.findAll({ type: 'Button' })).toHaveLength(0)
+    await ui.unmount()
   })
 
   test('stays quiet when gh fails', async ($, on) => {

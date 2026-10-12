@@ -5,6 +5,5 @@
   "author": {
     "name": "ymnao"
   },
-  "license": "MIT",
   "types": "./types/index.d.ts"
 }
