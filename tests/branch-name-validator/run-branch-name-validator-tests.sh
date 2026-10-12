@@ -19,7 +19,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR" && git rev-parse --show-toplevel)"
 
 # SKILL.md に書かれているものと 1 文字も違わないこと。片方だけ直す drift を
 # 防ぐため、この文字列は下の grep -F でも使う。
-VALIDATOR='NR>1 || $0 !~ /^[abcdefghijklmnopqrstuvwxyz0123456789][abcdefghijklmnopqrstuvwxyz0123456789\/._#-]*$/ {bad=1} END{exit (bad || NR!=1)}'
+VALIDATOR='NR>1 || !/^[abcdefghijklmnopqrstuvwxyz0123456789][abcdefghijklmnopqrstuvwxyz0123456789\/._#-]*$/ {bad=1} END{exit (bad || NR!=1)}'
 
 WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/branch-name-validator.XXXXXX")"
 cleanup() { [ -n "${WORKDIR:-}" ] && rm -rf "$WORKDIR"; }
@@ -157,6 +157,16 @@ else
   fail=$((fail + 1))
   echo "FAIL: $SKILL に非表示文字ゲートのコマンドが見つからない" >&2
   echo "      期待するコマンド: $CTRL_GATE" >&2
+fi
+
+# Claude Code は skill 本文の `$<数字>` を skill 引数に置き換えてから agent に渡す。
+# 上の byte 一致は置き換え前の原文しか見ないので、置き換わる字句が無いことを別に見る
+# (issue #441: `$0` が `/dev 639` の `639` になり、1 行のファイルが全部通った)。
+if grep -nE '\$[0-9]' "$REPO_ROOT/$SKILL" >&2; then
+  fail=$((fail + 1))
+  echo "FAIL: $SKILL に skill 引数へ置き換わる \$<数字> がある (上の行)" >&2
+else
+  pass=$((pass + 1))
 fi
 
 echo "branch-name-validator tests: $pass passed, $fail failed"
