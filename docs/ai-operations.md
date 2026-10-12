@@ -26,7 +26,7 @@ fail-loud になる場所の版数固定はこの規約の対象外**(eval 実�
 
 | 役割 | モデル | effort | 用途 |
 |---|---|---|---|
-| メイン(統括・意思決定・実装) | Opus 世代 | high(難所は xhigh。デスクトップアプリはピッカーで選ぶ — 下記) | 全体制御・decisions・並列調整・実装・PR 作成 |
+| メイン(統括・意思決定・実装) | Opus 世代 | high(難所は xhigh) | 全体制御・decisions・並列調整・実装・PR 作成 |
 | **plan 立案**(非自明タスク) | **Fable 世代** | high | `/dev` step 2 の変更ファイル・実装手順・考慮点の立案。self-preference bias 回避 + 推論深度確保のためメイン Opus からサブエージェント委譲 |
 | 並列 fan-out(中軽度並列) | Sonnet 世代 | high | /simplify の観点別 finder、多点調査 |
 | 独立第二意見(別モデル系統) | Fable 世代など | xhigh | fresh context のレビュー、難しい設計判断 |
@@ -42,9 +42,9 @@ fail-loud になる場所の版数固定はこの規約の対象外**(eval 実�
 (公式 CHANGELOG の "Added Claude Opus 5.5 (`claude-opus-5-5`), now the default
 Opus model" より。バイナリからは観測できないので出所は CHANGELOG)。世代内の
 変化で、この repo は alias 運用を採っているため上の表も skill の `model: "fable"`
-指定も**設定の変更は不要だった**(下記のとおり alias 運用は意図。ただし effort は
-要った — 下記「メインの effort」)。この表は強制力を持たない — `claude/settings.json` にモデルを選ぶ
-フィールドは無く(あるのは effort の `effortLevel` / `modelSettings` だけ)、切り替えは `/model` か CLI 既定に依存する。
+指定も**設定の変更は不要だった**(下記のとおり alias 運用は意図)。effort は要った
+(下記「メインの effort」)。この表は強制力を持たない — `claude/settings.json` にモデルを選ぶ
+フィールドは無く、切り替えは `/model` か CLI 既定に依存する。
 したがって表と実挙動の一致は、この実測でしか確かめられない。
 
 `claude/agents/code-reviewer.md` の `model: opus` は **alias 運用が意図**で、
@@ -117,11 +117,9 @@ agent の Bash sandbox 内で `codex-review` が回るかどうか、回すた�
   そのモデルの ID のキーを足す** — 足さないと黙って既定 effort に落ちる。
   実測 (セッションログの `"effort"`): `modelSettings` が無い間の端末の CLI
   セッション 6 件 (2026-09-26〜10-05 / 2.1.282〜2.1.289) はすべて `medium`。
-  追加後 (2026-10-12 / 2.1.296) の CLI の新規セッションは `high`、**デスクトップ
-  アプリの新規セッションは `medium`** のままだった (ピッカーの表示も medium)。
-  アプリはセッションごとにピッカーの値を保存し、それを env `CLAUDE_EFFORT`
-  (公式 docs に無い env) で渡しているとみられる (1 セッションで env とアプリの
-  セッション記録の値が一致しただけで、経路は確かめていない)。デスクトップで
+  追加後 (2026-10-12 / 2.1.296) の新規セッションは CLI が `high`、**デスクトップ
+  アプリは `medium`** のまま (各 1 件。アプリはピッカーの表示も medium で、
+  env に公式 docs に無い `CLAUDE_EFFORT=medium` が入っていた)。デスクトップで
   上げるときはピッカーで選ぶ
 - 原則: **浅い推論を見たらプロンプトを工夫する前に effort を上げる**
   (公式推奨。モデル変更より effort が先のレバー)
@@ -154,9 +152,8 @@ vacuous pass する)。世代レベル記述にしたことで**ズレの発生�
 **根本原因は残っている**。実測注記の測定日が古いことだけが手がかり。
 
 - [ ] `claude/settings.json` の `modelSettings` に新モデルの ID のキーを足す
-      (足さないと top-level `effortLevel` が効かず既定 effort に落ちる — 上記
-      「メインの effort」)。値は現行 "high"。高難度タスクは xhigh が公式推奨。
-      まず high 維持 + 難所で引き上げの運用から始め、質が足りなければ既定を上げる
+      (上記「メインの effort」)。値はまず high 維持 + 難所で引き上げ、質が
+      足りなければ既定を上げる (高難度タスクは xhigh が公式推奨)
 - [ ] 現存する skill eval(事故 pin のみ。一覧は
       `claude/skills/codex-review/evals/README.md`)を実行し、壊れた skill を
       特定して修正する
