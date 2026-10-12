@@ -5,6 +5,7 @@
 #
 # 入力: stdin に Claude Code が渡す JSON (https://code.claude.com/docs/en/statusline)
 # 出力: 1 行のステータス文字列
+# 副作用: 初めて届いた model.id を XDG state のログへ 1 行追記する (末尾の節)
 # 依存: jq (無ければモデル名なしの固定文字列を出す)
 #
 # starship の `starship statusline claude-code` には寄せない (2026-08-04 実測、
@@ -58,6 +59,7 @@ content=
 [ -r "$log" ] && content=$(<"$log")
 case "$nl$content$nl" in
   *" $id$nl"*) ;;
+  # 2>/dev/null を >> より前に置くのは、後ろだとリダイレクト失敗のメッセージが残るため
   *) mkdir -p "${log%/*}" 2>/dev/null &&
        printf '%s %s\n' "$(date +%Y-%m-%d)" "$id" 2>/dev/null >>"$log" ;;
 esac
