@@ -247,13 +247,20 @@
   },
   "enabledPlugins": {
     "ruby-lsp@claude-plugins-official": true,
-    "idle-compactor@claude-idle-compactor": true
+    "idle-compactor@claude-idle-compactor": true,
+    "issue-suggest@issue-suggest": true
   },
   "extraKnownMarketplaces": {
     "claude-idle-compactor": {
       "source": {
         "source": "directory",
         "path": "/Users/nakiym/development/important/dotfiles/claude/plugins/idle-compactor"
+      }
+    },
+    "issue-suggest": {
+      "source": {
+        "source": "directory",
+        "path": "/Users/nakiym/development/important/dotfiles/claude/plugins/issue-suggest"
       }
     }
   },
