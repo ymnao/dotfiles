@@ -26,7 +26,7 @@ fail-loud になる場所の版数固定はこの規約の対象外**(eval 実�
 
 | 役割 | モデル | effort | 用途 |
 |---|---|---|---|
-| メイン(統括・意思決定・実装) | Opus 世代 | high(難所は xhigh) | 全体制御・decisions・並列調整・実装・PR 作成 |
+| メイン(統括・意思決定・実装) | Opus 世代 | モデル既定(Opus 5.5 は medium。難所は high / xhigh に上げる) | 全体制御・decisions・並列調整・実装・PR 作成 |
 | **plan 立案**(非自明タスク) | **Fable 世代** | high | `/dev` step 2 の変更ファイル・実装手順・考慮点の立案。self-preference bias 回避 + 推論深度確保のためメイン Opus からサブエージェント委譲 |
 | 並列 fan-out(中軽度並列) | Sonnet 世代 | high | /simplify の観点別 finder、多点調査 |
 | 独立第二意見(別モデル系統) | Fable 世代など | xhigh | fresh context のレビュー、難しい設計判断 |
@@ -42,8 +42,7 @@ fail-loud になる場所の版数固定はこの規約の対象外**(eval 実�
 (公式 CHANGELOG の "Added Claude Opus 5.5 (`claude-opus-5-5`), now the default
 Opus model" より。バイナリからは観測できないので出所は CHANGELOG)。世代内の
 変化で、この repo は alias 運用を採っているため上の表も skill の `model: "fable"`
-指定も**設定の変更は不要だった**(下記のとおり alias 運用は意図)。effort は要った
-(下記「メインの effort」)。この表は強制力を持たない — `claude/settings.json` にはモデルを
+指定も**設定の変更は不要だった**(下記のとおり alias 運用は意図)。この表は強制力を持たない — `claude/settings.json` にはモデルを
 選ぶ記述が無く、切り替えは `/model` か CLI 既定に依存する。
 したがって表と実挙動の一致は、この実測でしか確かめられない。
 
@@ -110,21 +109,24 @@ agent の Bash sandbox 内で `codex-review` が回るかどうか、回すた�
   指定した subagent は指定値 (パラメータの `high`、frontmatter の `xhigh`)、未指定は
   セッションの値 (`medium`) だった。`model` と違い、frontmatter の `effort` は
   この方法でセッション内から確かめられる
-- メインの effort: `claude/settings.json` (user scope) の top-level `effortLevel` は
-  旧形式で、Opus 5.5 以降のモデルには効かない (公式 docs の settings-reference
-  `effortLevel` 項。Opus 5 / Fable 5.1 以前には効く)。Opus 5.5 の既定は `medium`
-  (同 model-config)。そのため `modelSettings` にモデル ID をキーにして書く。
-  **新しいモデルに移ったらそのモデルの ID のキーを足す** — 足さないと黙って既定
-  effort に落ちる。セッション内で一時的に上げるときは `/effort` のスライダーで
-  `s` (そのセッションだけ) を使う。`Enter` で確定すると `modelSettings` に保存され
-  (同 model-config)、`~/.claude/settings.json` は symlink なので repo の
-  `claude/settings.json` が書き換わる。
-  実測 (2026-10-12、セッションログの `"effort"`): `modelSettings` が無い間の端末の
-  CLI セッション 6 件 (2026-09-26〜10-05 / 2.1.282〜2.1.289) はすべて `medium`。
-  追加後の新規セッションは CLI (2.1.296) が `high`、**デスクトップアプリ (アプリが
-  管理する 2.1.295) は `medium`** のまま (各 1 件。アプリのピッカーの表示も medium)。
-  デスクトップはピッカーで選んだ値で動く — ピッカーで high にした portfolio の
-  直近 3 セッションはログも `high` だった。デスクトップで上げるときはピッカーで選ぶ
+- メインの effort: **settings では指定せず、モデルの既定 (Opus 5.5 は `medium`、
+  公式 docs の model-config) で動かす**。effort が効く委譲 (plan 立案・レビュー) は
+  上のとおり呼び出し側で明示しているので、メインを上げなくても表の値で動く。
+  難所だけ上げる: CLI は `/effort` のスライダーで `s` (そのセッションだけ)、
+  デスクトップアプリはセッションのピッカー。`/effort` を `Enter` で確定すると
+  `modelSettings` に保存され (同 model-config)、`~/.claude/settings.json` は symlink
+  なので repo の `claude/settings.json` が書き換わる。
+  既定を変えたくなったら `modelSettings` にモデル ID をキーにして書く。user scope の
+  top-level `effortLevel` は旧形式で、Opus 5.5 以降のモデルには効かない (同
+  settings-reference の `effortLevel` 項)。以前ここに `"high"` を書いていたが、
+  Opus 5.5 では効いておらず、実態は `medium` だった。
+  実測 (2026-10-12、セッションログの `"effort"`): top-level `"high"` だけの間の
+  端末の CLI セッション 6 件 (2026-09-26〜10-05 / 2.1.282〜2.1.289) はすべて
+  `medium`。`modelSettings` で `claude-opus-5-5` を `high` にした間の新規セッションは
+  CLI (2.1.296) が `high`、デスクトップアプリ (アプリが管理する 2.1.295) は
+  `medium` (各 1 件。アプリのピッカーの表示も medium)。デスクトップは settings
+  ではなくピッカーの値で動く — ピッカーで high にした portfolio の直近 3 セッションは
+  ログも `high` だった
 - 原則: **浅い推論を見たらプロンプトを工夫する前に effort を上げる**
   (公式推奨。モデル変更より effort が先のレバー)
 - レビュー系タスクで下位モデルを使うときは「重要度でフィルタせず全部
@@ -155,9 +157,9 @@ vacuous pass する)。世代レベル記述にしたことで**ズレの発生�
 (1 世代の差では表現上ずれない)、上流差し替えを観測していないという
 **根本原因は残っている**。実測注記の測定日が古いことだけが手がかり。
 
-- [ ] `claude/settings.json` の `modelSettings` に新モデルの ID のキーを足す
-      (上記「メインの effort」)。値はまず high 維持 + 難所で引き上げ、質が
-      足りなければ既定を上げる (高難度タスクは xhigh が公式推奨)
+- [ ] 新モデルの既定 effort を確かめる (Opus 5.5 は `medium`)。まず既定のまま
+      難所で引き上げ、質が足りなければ `modelSettings` に新モデルの ID のキーで
+      既定を書く (上記「メインの effort」。高難度タスクは xhigh が公式推奨)
 - [ ] 現存する skill eval(事故 pin のみ。一覧は
       `claude/skills/codex-review/evals/README.md`)を実行し、壊れた skill を
       特定して修正する
