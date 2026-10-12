@@ -1541,6 +1541,36 @@ repo が足していても同じ)。正当なドメインが必要になった�
 の debug ログを確認する習慣を意識的に持ち、出てきた正当なドメインを
 `allowedDomains` に足す。
 
+### sandbox.failIfUnavailable — false のまま。Windows ネイティブで起動させるため(#417)
+
+`claude/settings.json` は `sandbox.failIfUnavailable: false`(既定値と同じ)。
+上流 docs([sandboxing](https://code.claude.com/docs/en/sandboxing)、2026-10-12 確認)
+によると:
+
+- sandbox が動くのは macOS / Linux / WSL2 だけ(Linux / WSL2 は `bubblewrap` と
+  `socat` が要り、WSL1 は非対応)。Windows ネイティブではコマンドは sandbox 無しで走る
+- 既定 (false) では、sandbox が立たないとき sandbox 無しで実行を続け、
+  sandbox 系の制限はまとめて効かない。true にすると起動時に終了し、
+  **Windows ネイティブでは必ずそうなる**と明記されている
+- docs は `allowUnsandboxedCommands: false`(この repo は設定済み)と
+  `failIfUnavailable` を組で設定するよう書いている
+
+true にしない理由: `scripts/link.ps1` が同じ `claude/settings.json` を Windows の
+`~/.claude/settings.json` に symlink し、user は Windows ネイティブでも
+Claude Code を使う(2026-10-12 に本人確認)。設定ファイルは 1 本で、OS ごとに値を
+変える仕組みは持っていない。false は 2026-05-07 の 5bf1835 で既定値のまま入った
+もので、上の理由は #417 で後から決めた。
+
+false の代償が macOS で小さい理由: docs が sandbox の立たない原因として挙げるのは
+「依存が足りない」と「OS が非対応」の 2 つで、macOS は Seatbelt が OS 標準なので
+どちらにも当たらない。代償を払うのは `bubblewrap` / `socat` を入れていない
+Linux / WSL2 で、**使い始めるときは先に `/sandbox` の Dependencies タブで依存が
+揃っているかを見る**(揃っていなくても sandbox 無しで動くため)。
+
+**再評価の条件**: Windows ネイティブで使わなくなったとき、または settings を
+OS ごとに配る形にしたとき(managed 層は使わない。
+「[managed 設定は原則触らない](#managed-設定は原則触らない--判断基準は復旧に-sudo-が要るか)」)。
+
 ### codex CLI 自身の config.toml 書き込みと deny の相互作用
 
 **codex CLI は config.toml を動的に書く**。`[projects.*]`(repo の
