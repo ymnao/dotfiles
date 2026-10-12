@@ -110,21 +110,22 @@ agent の Bash sandbox 内で `codex-review` が回るかどうか、回すた�
   セッションの値 (`medium`) だった。`model` と違い、frontmatter の `effort` は
   この方法でセッション内から確かめられる
 - メインの effort: **settings では指定せず、モデルの既定 (Opus 5.5 は `medium`、
-  公式 docs の model-config) で動かす**。effort が効く委譲 (plan 立案・レビュー) は
-  上のとおり呼び出し側で明示しているので、メインを上げなくても表の値で動く。
+  公式 docs の model-config) で動かす**。plan 立案と独立第二意見の委譲は上のとおり
+  呼び出し側で effort を明示しているので、メインを上げなくても表の値で動く (明示の
+  無い `/simplify` の finder などはセッションの値を継ぐ)。
   難所だけ上げる: CLI は `/effort` のスライダーで `s` (そのセッションだけ)、
   デスクトップアプリはセッションのピッカー。`/effort` を `Enter` で確定すると
   `modelSettings` に保存され (同 model-config)、`~/.claude/settings.json` は symlink
   なので repo の `claude/settings.json` が書き換わる。
   既定を変えたくなったら `modelSettings` にモデル ID をキーにして書く。user scope の
   top-level `effortLevel` は旧形式で、Opus 5.5 以降のモデルには効かない (同
-  settings-reference の `effortLevel` 項)。以前ここに `"high"` を書いていたが、
-  Opus 5.5 では効いておらず、実態は `medium` だった。
+  settings-reference の `effortLevel` 項。以前ここに `"high"` を書いていた)。
   実測 (2026-10-12、セッションログの `"effort"`): top-level `"high"` だけの間の
   端末の CLI セッション 6 件 (2026-09-26〜10-05 / 2.1.282〜2.1.289) はすべて
   `medium`。`modelSettings` で `claude-opus-5-5` を `high` にした間の新規セッションは
   CLI (2.1.296) が `high`、デスクトップアプリ (アプリが管理する 2.1.295) は
-  `medium` (各 1 件。アプリのピッカーの表示も medium)。デスクトップは settings
+  `medium` (各 1 件。デスクトップは `33f97b3e`、そのログは同日中に
+  無くなった。アプリのピッカーの表示も medium)。デスクトップは settings
   ではなくピッカーの値で動く — ピッカーで high にした portfolio の直近 3 セッションは
   ログも `high` だった
 - 原則: **浅い推論を見たらプロンプトを工夫する前に effort を上げる**
