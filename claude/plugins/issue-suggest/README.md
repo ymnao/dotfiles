@@ -5,20 +5,16 @@
 `/dev #42` を打つたびに issue 番号を GitHub で調べに行く手間をなくすためのもの (#427)。
 
 - `#` の後が数字なら番号の前方一致、それ以外ならタイトルの部分一致 (大文字小文字は無視) で絞る
-- 置き換えはカーソルの後ろに続く数字まで含める (`#4|2` で押しても `2` が残らない)。
-  日本語が空白なしで続く `#42の件` の「の件」は消さない
-- 一覧は `gh issue list --state open --limit 100` で、セッション開始時と `#` の語を打ち始めたときに取り直す。
+- 置き換えはカーソルの後ろに続く数字まで含める。`#42の件` のように空白なしで続く文字は消さない
+- 一覧は `#` の語を打ち始めたときに `gh issue list --state open --limit 100` で取り直す。
   キー入力ごとには叩かない。`gh` が無い・GitHub repo でない・失敗したときは何も出さない
 
 ## なぜ入力欄の補完 (`prompt.autocomplete`) ではないか
 
 skill の `/` 候補と同じ場所に出せる `prompt.autocomplete` は、Claude Desktop の Code タブの
-入力欄では発火しない (2026-10-12、CLI 2.1.295 で確認用 mod を読み込み、`#` を打っても hook が
-呼ばれず、同じ mod の `session.start` の記録は残った)。普段の利用は Desktop なので、
-Desktop でも描かれる入力欄の上の帯 (`AbovePrompt`) とキー入力ごとの `prompt.edit` で組んだ。
-同じ日に Desktop で次も確かめた: `prompt.edit` の `text` / `cursor` / `start` / `end` / `inputText` と
-`next(e)` の戻りが編集の前後を正しく返す、`$.prompt.fill` で入力欄の中身を置き換えられる、
-mod から `gh` が動く (cwd は repo のルート)。
+入力欄では発火しない (2026-10-12、CLI 2.1.295。確認用 mod で `#` を打っても hook が呼ばれず、
+同じ mod の `session.start` の記録は残った)。普段の利用は Desktop なので、Desktop でも描かれる
+入力欄の上の帯 (`AbovePrompt`) と、Desktop でもキー入力ごとに発火する `prompt.edit` で組んだ。
 
 ## 制約
 
@@ -30,16 +26,14 @@ mod から `gh` が動く (cwd は repo のルート)。
 ## 有効化
 
 `claude/settings.json` の `env` にある `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` が要る
-(idle-compactor と共有)。`enabledPlugins` と `extraKnownMarketplaces` の entry は repo に入れてある。
+(idle-compactor と共有)。`enabledPlugins` と `extraKnownMarketplaces` の entry は repo に入れてあり、
+初回だけ次の 2 つを実行する。どちらも settings.json の整形を崩すので、後始末は
+[idle-compactor の README](../idle-compactor/README.md) の「有効化」節と同じ。
 
 ```fish
 claude plugin marketplace add ~/development/important/dotfiles/claude/plugins/issue-suggest --scope user
 claude plugin install issue-suggest@issue-suggest --scope user
 ```
-
-どちらも `~/.claude/settings.json` (= repo の `claude/settings.json`) を書き直してキー順と整形が
-崩れるので、実行後に `git diff claude/settings.json` を見て整形だけの差分なら
-`git restore claude/settings.json` で戻す (idle-compactor の README と同じ)。
 
 ## テスト
 

@@ -1,19 +1,22 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Issue, Query } from '../types'
+import type { Issue } from '../types'
 
 const LIMIT = 5
 
 const issues = atom({ plugin: 'issue-suggest', key: 'issues' } as const, [])
 const query = atom({ plugin: 'issue-suggest', key: 'query' } as const, null)
 
-export function hashWordAt(text: string, cursor: number): Query | null {
+type HashWord = { q: string; start: number; end: number }
+
+// `end` reaches over the digits after the cursor, so a press replaces the whole number.
+export function hashWordAt(text: string, cursor: number): HashWord | null {
   let start = cursor
   while (start > 0 && !/\s/.test(text[start - 1])) start -= 1
   if (text[start] !== '#') return null
   const digitsAfter = /^\d*/.exec(text.slice(cursor))?.[0] ?? ''
-  return { q: text.slice(start + 1, cursor), text, start, end: cursor + digitsAfter.length }
+  return { q: text.slice(start + 1, cursor), start, end: cursor + digitsAfter.length }
 }
 
 export function filterIssues(list: readonly Issue[], q: string): Issue[] {
@@ -24,7 +27,7 @@ export function filterIssues(list: readonly Issue[], q: string): Issue[] {
   return list.filter(hit).slice(0, LIMIT)
 }
 
-export function replaceWord({ text, start, end }: Query, number: number): string {
+export function replaceWord(text: string, { start, end }: HashWord, number: number): string {
   const rest = text.slice(end)
   return `${text.slice(0, start)}#${number}${/^\s/.test(rest) ? '' : ' '}${rest}`
 }
@@ -51,25 +54,20 @@ async function refresh($: EngineInterface) {
 }
 
 export const register: Register = on => {
-  on('session.start', async ($, e, next) => {
-    void refresh($)
-    return next(e)
-  })
-
   on('prompt.edit', async ($, e, next) => {
     // Returning anything but next's answer would swallow the person's edit.
     const box = await next(e)
-    const word = hashWordAt(box.text, box.cursor)
+    const q = hashWordAt(box.text, box.cursor)?.q ?? null
     const before = await read($, query)
-    if (word !== null && before === null) void refresh($)
-    if (word !== null || before !== null) await update($, query, () => word)
+    if (q !== null && before === null) void refresh($)
+    if (q !== before) await update($, query, () => q)
     return box
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const word = await read($, query)
-    if (e.props.hasSurvey || word === null) return next(e)
-    const hits = filterIssues(await read($, issues), word.q)
+    const q = await read($, query)
+    if (e.props.hasSurvey || q === null) return next(e)
+    const hits = filterIssues(await read($, issues), q)
     if (hits.length === 0) return next(e)
 
     const { Box, Button, Text } = $.ui.resolve(e)
@@ -80,8 +78,12 @@ export const register: Register = on => {
             key={`issue-${issue.number}`}
             plain
             onPress={async () => {
-              await $.prompt.fill({ text: replaceWord(word, issue.number), mode: 'replace' })
+              // A fill raises no prompt.edit, so the band is cleared here.
               await update($, query, () => null)
+              const box = await $.prompt.read()
+              const word = hashWordAt(box.text, box.cursor)
+              if (word === null) return
+              await $.prompt.fill({ text: replaceWord(box.text, word, issue.number), mode: 'replace' })
             }}
           >
             #{issue.number} <Text dimColor>{issue.title}</Text>
