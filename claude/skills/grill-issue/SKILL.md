@@ -127,7 +127,6 @@ description: issue を 1 件 grill して受け入れ条件・触ってよいフ
   実装する agent が読む)。元本文に既に書いてあることは繰り返さない。無ければ `- なし`
 
 例は書式を示すためのもので、中身 (言語・コマンド・条件の数) は対象 repo に合わせる。
-受け入れ条件はファイルや文字列の有無ではなく、動作を確かめる形にする。
 
 <examples>
 <example>
@@ -180,7 +179,7 @@ make test
 ```
 
 ## 決定事項
-- なし
+- 通知は既存の incoming webhook (環境変数 `SLACK_WEBHOOK_URL`) から送り、送信の失敗でデプロイは止めない
 <!-- grill-issue:end -->
 ````
 </example>
