@@ -46,9 +46,8 @@ simplify / codex-review / pr の個別指示と code-reviewer サブエージェ
 ブランチの扱い:
 
 - **issue 番号**: `/issue` の step 3-4 (uncommitted なら停止、default branch へ
-  checkout) とブランチ作成に従う。既存の作業ブランチで続きをやるときは
-  issue 番号ではなく引数なし (HANDOFF 継続) で起動する — `/issue` は
-  default branch へ移ってから、ブランチ名の衝突で止まるため
+  checkout) とブランチ作成に従う。既存の作業ブランチで続けるなら引数なしで
+  起動する (`/issue` は default branch へ移り、名前が一致しなければ別ブランチを切る)
 - **引数なし・自由文**: main 以外にいる・uncommitted changes がある場合は
   状況を報告して user の指示を待つ (勝手に stash / checkout しない)。
   main にいる場合は `feature/` `fix/` `refactor/` `docs/` + 英語小文字ハイフン
