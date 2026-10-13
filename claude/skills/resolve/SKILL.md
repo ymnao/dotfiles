@@ -12,11 +12,11 @@ Fetch unresolved review threads for the current PR and address each one.
    - Run `gh repo view --json owner --jq '.owner.login'` → `<owner>`
    - Run `gh repo view --json name --jq '.name'` → `<repo>`
    - Run `gh pr view --json number --jq .number` (uses upstream tracking; may fail). If a number comes back, use it as `<pr_number>`.
-   - Otherwise fall back: get the branch with `git branch --show-current`, then run `gh pr list --state open --limit 100 --json number,baseRefName,headRefName,headRepositoryOwner` as a bare invocation and read the output, keeping the rows whose `headRefName` equals that branch and whose `headRepositoryOwner.login` equals `<owner>`. **Do not substitute the branch name into the command** — match on the output side instead (why: the 「外部由来の名前」 item in `claude/rules/acceptance-patterns.md`). This also keeps `gh` a bare invocation. `--limit` is spelled out because `gh pr list` defaults to 30 rows, and a repo with more open PRs than that would silently report "No PR found".
+   - Otherwise fall back: get the branch with `git branch --show-current`, then run `gh pr list --state open --limit 100 --json number,baseRefName,headRefName,headRepositoryOwner` as a bare invocation and read the output, keeping the rows whose `headRefName` equals that branch and whose `headRepositoryOwner.login` equals `<owner>`. **Do not substitute the branch name into the command** — match on the output side instead (why: the 「外部由来の名前」 item in dotfiles' `claude/rules/acceptance-patterns.md`). This also keeps `gh` a bare invocation. `--limit` is spelled out because `gh pr list` defaults to 30 rows, and a repo with more open PRs than that would silently report "No PR found".
      - 0 matches → report "No PR found for the current branch" and stop.
      - >1 matches → list `PR #<n> -> <baseRefName>` for each, ask the user which one, then proceed.
 2. Fetch unresolved review threads in one Bash invocation containing **only** `gh api graphql ...` — no pipe, no `&&`, no second command (the leading command must be `gh api graphql` for the allow-list to match, and mixing any other command in the same invocation is blocked by `guard-sandbox-exclusions.sh`; see issue #267). Use `gh`'s built-in `--jq` instead of piping to `jq`, and substitute `<owner>`, `<repo>`, `<pr_number>` literally from step 1.
-   Keep the query inline and on one line. `-F query=@"$HOME/..."` together with the `{` in `--jq` fails with `x509: OSStatus -26276` — the error `gh` gives inside the sandbox (docs/ai-operations.md §10), so the call presumably stops matching the `gh *` exclusion; why is unknown (issue #359). Splitting the query across lines gets blocked by `block-dangerous-commands.sh`: its quote stripping is per line, so the opening `query($owner` reads as a dynamic command name:
+   Keep the query inline and on one line. `-F query=@"$HOME/..."` together with the `{` in `--jq` fails with `x509: OSStatus -26276` — the error `gh` gives inside the sandbox (dotfiles' docs/ai-operations.md §10), so the call presumably stops matching the `gh *` exclusion; why is unknown (issue #359). Splitting the query across lines gets blocked by `block-dangerous-commands.sh`: its quote stripping is per line, so the opening `query($owner` reads as a dynamic command name:
    ```bash
    gh api graphql \
      -f query='query($owner: String!, $repo: String!, $number: Int!) { repository(owner: $owner, name: $repo) { pullRequest(number: $number) { reviewThreads(first: 100) { nodes { isResolved path line comments(first: 10) { nodes { body author { login } createdAt } } } } } } }' \
@@ -36,8 +36,7 @@ Fetch unresolved review threads for the current PR and address each one.
    - Evaluate whether the suggestion is valid
    - If valid, fix the code following the project's existing conventions
    - If unnecessary or inappropriate, prepare a clear reason
-5. If any fixes were made, run the project's verification steps that cover the changed files (lint, format, type check, build, tests — whichever exist and apply). A one-line doc fix does not need the E2E suite.
-   - Determine available commands from package.json, Makefile, pyproject.toml, Cargo.toml, etc.
+5. If any fixes were made, run the project's verification steps that cover the changed files (lint, format, type check, build, tests — whichever exist and apply; find them in package.json, Makefile, pyproject.toml, Cargo.toml, etc.). A one-line doc fix does not need the E2E suite.
 6. Commit and push
 7. Report all results in the format below
 

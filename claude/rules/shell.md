@@ -6,9 +6,9 @@ paths:
 
 # Shell スクリプト規約
 
-**受理パターンの広さ / 判定器の exit code の規約は `claude/rules/acceptance-patterns.md`
+**受理パターンの広さ / 判定器の exit code の規約は dotfiles の `claude/rules/acceptance-patterns.md`
 を参照**。
-コメントに書く事実の規約は `claude/rules/written-claims.md`。
+コメントに書く事実の規約は dotfiles の `claude/rules/written-claims.md`。
 
 - **bash 3.2 互換で書く**(macOS 標準)。連想配列(`declare -A`)、
   `${var,,}` / `${var^^}`、`readarray` は使わない。小文字化は
@@ -116,7 +116,7 @@ paths:
 - **codex に配線する hook の stdout は `{` / `[` で始めない**。codex は hook の
   stdout がその 2 文字で始まると JSON 出力とみなし、パースに失敗した時点で run を
   `Failed` にして**本文を model の context に入れない**(実測根拠は
-  docs/ai-operations.md §10)。Claude Code 側は素通しなので、**片方の harness でだけ
+  dotfiles の docs/ai-operations.md §10)。Claude Code 側は素通しなので、**片方の harness でだけ
   静かに壊れる**形になる。防御は 2 層で、**どちらも必要**(issue #240):
   - **静的**: `scripts/lint-hook-stdout.sh` が `agents/hooks/` `claude/hooks/`
     `codex/hooks/` を横断検査し、`make test` を fail させる。拾えるのは
@@ -178,7 +178,7 @@ paths:
   作業先がずれる (実例: issue #196)。
   **ただしこれはスクリプト内の話。agent が Bash tool から直接打つ手順
   (`SKILL.md` 等) では `mktemp -d` 自体が使えない** — 理由と代わりに書く形は
-  `claude/rules/acceptance-patterns.md` の「一時ファイルの置き場」を参照
+  dotfiles の `claude/rules/acceptance-patterns.md` の「一時ファイルの置き場」を参照
 - **一時ディレクトリのパスを「外部ツールが返す値」と文字列比較するテストでは、
   `${TMPDIR:-/tmp}` を連結する前に末尾スラッシュを落とす**。macOS の TMPDIR は
   末尾がスラッシュなので連結すると `//` が入り、`//` を潰した値を返す相手側

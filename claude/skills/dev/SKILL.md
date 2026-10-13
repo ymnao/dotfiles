@@ -3,10 +3,10 @@ name: dev
 description: 1 開発サイクル (タスク着手 → 実装 → レビューループ → PR 作成) を 1 コマンドで実行する umbrella skill。issue 番号・自由文・引数なし (HANDOFF 継続) のいずれでも起動できる
 ---
 
-タスクの受付から PR 作成までを 1 コマンドで実行する。人間のゲートは
+タスクの受付から PR 作成までを 1 コマンドで実行する。主な人間のゲートは
 「非自明タスクの plan 承認」・「/pr の finding 分類承認 ((b)/(c) が
-1 件でもあるとき、/pr skill が発火)」・「PR の merge」の 3 点が主で、
-ほかに学びの昇格 (5b) とレビュー上限の延長 (4-0) で承認を取る。その間の
+1 件でもあるとき、/pr skill が発火)」・「PR の merge」の 3 点 (条件付きで
+5b の昇格と 4-0 の上限延長でも承認を取る)。その間の
 simplify / codex-review / pr の個別指示と code-reviewer サブエージェント
 呼び出しを不要にする。
 
@@ -43,11 +43,16 @@ simplify / codex-review / pr の個別指示と code-reviewer サブエージェ
   曖昧な場合はタスク内容を user に確認して停止する
 - **自由文** (`/dev <タスク記述>`): 記述内容をそのままタスクとする
 
-引数なし・自由文の場合、main 以外にいる・uncommitted changes がある場合は
-状況を報告して user の指示を待つ (勝手に stash / checkout しない)。
-issue 番号の場合は `/issue` の step 3-4 (uncommitted なら停止、default
-branch へ checkout) に従う。main にいる場合は `feature/` `fix/` `refactor/` `docs/` + 英語小文字ハイフン
-のブランチを作成する。
+ブランチの扱い:
+
+- **issue 番号**: `/issue` の step 3-4 (uncommitted なら停止、default branch へ
+  checkout) とブランチ作成に従う。既存の作業ブランチで続きをやるときは
+  issue 番号ではなく引数なし (HANDOFF 継続) で起動する — `/issue` は
+  default branch へ移ってから、ブランチ名の衝突で止まるため
+- **引数なし・自由文**: main 以外にいる・uncommitted changes がある場合は
+  状況を報告して user の指示を待つ (勝手に stash / checkout しない)。
+  main にいる場合は `feature/` `fix/` `refactor/` `docs/` + 英語小文字ハイフン
+  のブランチを作成する
 
 #### 1a. backlog の煙探知 (opt-in・repo ごと・停止しない)
 
@@ -252,7 +257,7 @@ alias / plugin / 設定で user 側が増やせる) を丸ごと追う羽目に�
     という意味ではない。加えて `claude/skills/` `codex/skills/` 配下でも、
     **agent がそのまま実行するもの (SKILL.md の中のコマンド形、
     `scripts/` 配下の判定器・分類器) を変える変更**は例外側に入れる
-    (理由は `~/.claude/rules/acceptance-patterns.md` 冒頭。同じ前提で
+    (理由は dotfiles の `claude/rules/acceptance-patterns.md` 冒頭。同じ前提で
     `**/SKILL.md` と `**/*.sh` を paths に含めている)。実例 (PR #337):
     `claude/skills/` のみの変更で厚くした code-reviewer が空文字の fail-open を
     出した (`dependabot-bulk/SKILL.md` step 7)。
@@ -265,7 +270,7 @@ alias / plugin / 設定で user 側が増やせる) を丸ごと追う羽目に�
   `scripts/link.sh` のような配置ロジック): 下記のフル隊列
 
 以下を順に実行する。**修正が入ったら再度 1 周目から回す (上限 2 周)**。
-2 周目で出た新規指摘も 4-0 で分類する。3 周目には進まず (発散防止)、
+2 周目で出た新規指摘も 4-0 で分類する。既定では 3 周目に進まず (発散防止。延長は 4-0 の経路のみ)、
 Tier1 と自分が持ち込んだものはその場で fix し、残る Tier2 は step 5 の /pr の
 fix-or-issue-or-dismiss ポリシーに委ねる。
 

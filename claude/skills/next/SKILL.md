@@ -19,7 +19,7 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
    - あわせて `git rev-parse HEAD` を打ち、作業ブランチの SHA を控える。
      step 3 でこの値を使う。ブランチ名をコマンドに埋め込んで
      `git rev-parse <branch>` とはしない (理由は
-     `~/.claude/rules/acceptance-patterns.md` の「外部由来の名前」の項)。
+     dotfiles の `claude/rules/acceptance-patterns.md` の「外部由来の名前」の項)。
      ここでまだ作業ブランチ上にいる (step 2 の checkout はこの後) ので、
      `HEAD` で足りる
    - step 3 のブランチ削除だけは名前が要る (`git branch -d` に `HEAD` は
@@ -32,9 +32,9 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
        書くので、`cat` と `git branch -D` の間に中身が入れ替わりうる。読んだ
        時点で突き合わせてもその後の書き換えは塞げない (TOCTOU) ので、
        衝突しないパスを選ぶ方で閉じる (正本は
-       `~/.claude/rules/acceptance-patterns.md` の一時ファイル置き場の項)
+       dotfiles の `claude/rules/acceptance-patterns.md` の一時ファイル置き場の項)
      - step 3 では `"$(cat <scratchpad>/merged-branch.txt)"` として渡し、
-       名前を agent がタイプし直さない (`~/.claude/rules/acceptance-patterns.md`
+       名前を agent がタイプし直さない (dotfiles の `claude/rules/acceptance-patterns.md`
        の「外部由来の名前」の項)
      - **この 2 コマンドは別々の Bash 呼び出しで打つこと**。同じ呼び出しに
        redirect と `$(cat ...)` を同居させると `block-dangerous-commands.sh` が

@@ -4,7 +4,7 @@ description: Fetch and address unresolved PR review comments. Use when the user 
 ---
 
 Fetch unresolved review threads for the current PR and address each one.
-Execute these steps in order without skipping any. Judgment belongs in step 4 (whether each suggestion is valid), not in the order of the steps.
+Execute these steps in order without skipping any. Judgment belongs inside the steps (whether a suggestion is valid, which checks apply), not in their order.
 
 ## Steps
 
@@ -12,7 +12,7 @@ Execute these steps in order without skipping any. Judgment belongs in step 4 (w
    - Run `gh repo view --json owner --jq '.owner.login'` → `<owner>`
    - Run `gh repo view --json name --jq '.name'` → `<repo>`
    - Run `gh pr view --json number --jq .number` (uses upstream tracking; may fail). If a number comes back, use it as `<pr_number>`.
-   - Otherwise fall back: get the branch with `git branch --show-current`, then run `gh pr list --state open --limit 100 --json number,baseRefName,headRefName,headRepositoryOwner` as a bare invocation and read the output, keeping the rows whose `headRefName` equals that branch and whose `headRepositoryOwner.login` equals `<owner>`. **Do not substitute the branch name into the command** — match on the output side instead (why: the 「外部由来の名前」 item in `claude/rules/acceptance-patterns.md`). `--limit` is spelled out because `gh pr list` defaults to 30 rows, and a repo with more open PRs than that would silently report "No PR found".
+   - Otherwise fall back: get the branch with `git branch --show-current`, then run `gh pr list --state open --limit 100 --json number,baseRefName,headRefName,headRepositoryOwner` as a bare invocation and read the output, keeping the rows whose `headRefName` equals that branch and whose `headRepositoryOwner.login` equals `<owner>`. **Do not substitute the branch name into the command** — match on the output side instead (why: the 「外部由来の名前」 item in dotfiles' `claude/rules/acceptance-patterns.md`). `--limit` is spelled out because `gh pr list` defaults to 30 rows, and a repo with more open PRs than that would silently report "No PR found".
      - 0 matches → report "No PR found for the current branch" and stop.
      - >1 matches → list `PR #<n> -> <baseRefName>` for each, ask the user which one, then proceed.
 2. Fetch unresolved review threads:
@@ -36,8 +36,7 @@ Execute these steps in order without skipping any. Judgment belongs in step 4 (w
    - Evaluate whether the suggestion is valid
    - If valid, fix the code following the project's existing conventions
    - If unnecessary or inappropriate, prepare a clear reason
-5. If any fixes were made, run the project's verification steps that cover the changed files (lint, format, type check, build, tests — whichever exist and apply). A one-line doc fix does not need the E2E suite.
-   - Determine available commands from package.json, Makefile, pyproject.toml, Cargo.toml, etc.
+5. If any fixes were made, run the project's verification steps that cover the changed files (lint, format, type check, build, tests — whichever exist and apply; find them in package.json, Makefile, pyproject.toml, Cargo.toml, etc.). A one-line doc fix does not need the E2E suite.
 6. Commit and push
 7. Report all results in the format below
 
