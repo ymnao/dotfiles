@@ -108,7 +108,12 @@ check_deleted() {
 check_path "auth-code"    '(^|/)(auth|login|session|oauth|token|secret|password|crypt|credential)[^/]*(/|$)'
 check_path "ci-config"    '^\.github/workflows/|^\.github/scripts/|Jenkinsfile|\.gitlab-ci|^\.circleci/'
 check_path "dependency"   'package\.json$|package-lock\.json$|pnpm-lock\.yaml$|yarn\.lock$|bun\.lockb?$|pyproject\.toml$|uv\.lock$|poetry\.lock$|requirements[^/]*\.txt$|go\.(mod|sum)$|Cargo\.(toml|lock)$|Gemfile(\.lock)?$|Brewfile$'
-check_path "agent-config" 'settings[^/]*\.json$|(^|/)hooks/|hooks\.json$|AGENTS\.md$|CLAUDE\.md$|\.mcp\.json$'
+# hooks/ は agent hook の置き場だけを列挙する。素の `(^|/)hooks/` はアプリの
+# `src/hooks/` (React フック) にも当たり、他 repo で毎回 high になった (issue #442)。
+# アプリ側の祖先を除外する形にしないのは、ERE に否定先読みが無く、除外すべき
+# 祖先が repo ごとに違って閉じないため。プラグインの hook は .ts/.tsx なので
+# 拡張子では区別できず、`plugins?/<名前>/(plugin/)hooks/` を親ごと列挙する
+check_path "agent-config" 'settings[^/]*\.json$|(^|/)(\.?(claude|codex)|agents|tests|plugins?(/[^/]+){0,2})/hooks/|^hooks/|(^|/)\.(husky|githooks)/|hooks\.json$|AGENTS\.md$|CLAUDE\.md$|\.mcp\.json$'
 check_path "env-files"    '(^|/)\.env|\.npmrc$|config\.toml$'
 check_path "infra"        'Dockerfile|docker-compose|\.tf$|\.tfvars$'
 # exec-pattern の `eval` は、シェルの実行構文として読める形だけを検出する
