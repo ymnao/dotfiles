@@ -151,7 +151,7 @@ scenario agent-config high <<EOF
 EOF
 
 # agent-config の hooks/ は置き場の列挙で判定する (issue #442)。
-# 列挙した各置き場が high のままであること
+# 列挙した各置き場が high になること
 scenario agent-hooks-dot-claude high <<EOF
 .claude/hooks/guard.sh${T}# noop
 EOF
@@ -168,9 +168,19 @@ scenario agent-hooks-agents high <<EOF
 agents/hooks/block.sh${T}# noop
 EOF
 
+scenario agent-hooks-dot-agents high <<EOF
+.agents/hooks/block.sh${T}# noop
+EOF
+
 # プラグインの hook 実装は .ts/.tsx で、hooks.json を触らない変更もある
 scenario agent-hooks-plugin-ts high <<EOF
 claude/plugins/idle-compactor/plugin/hooks/idle-compactor.ts${T}export const x = 1
+EOF
+
+# 上のケースは末尾の `plugin/hooks/` だけで当たるので、`plugins/<名前>/hooks/`
+# (marketplace の標準形) は別に固定する
+scenario agent-hooks-plugin-named high <<EOF
+plugins/foo/hooks/run.sh${T}# noop
 EOF
 
 # プラグイン単体 repo のルート直下 (hooks.json 分岐に頼らないよう .sh で)
@@ -182,6 +192,7 @@ scenario agent-hooks-tests high <<EOF
 tests/hooks/guard.cases.jsonl${T}{}
 EOF
 
+# git hook の置き場は #442 で新たに high に加えた (旧 pattern では当たらない)
 scenario agent-hooks-husky high <<EOF
 .husky/pre-commit${T}# noop
 EOF
@@ -196,7 +207,7 @@ src/hooks/useGitSync.ts${T}export const x = 1
 EOF
 
 scenario app-hooks-monorepo medium <<EOF
-packages/web/src/hooks/useAuth.tsx${T}export const x = 1
+packages/web/src/hooks/useTheme.tsx${T}export const x = 1
 EOF
 
 scenario exec-pattern high <<EOF
