@@ -160,8 +160,7 @@ else
 fi
 
 # Claude Code は skill 本文の `$<数字>` を skill 引数に置き換えてから agent に渡す。
-# 上の byte 一致は置き換え前の原文しか見ないので、置き換わる字句が無いことを別に見る
-# (issue #441: `$0` が `/dev 639` の `639` になり、1 行のファイルが全部通った)。
+# 上の byte 一致は置き換え前の原文しか見ないので、置き換わる字句が無いことを別に見る (issue #441)。
 if grep -nE '\$[0-9]' "$REPO_ROOT/$SKILL" >&2; then
   fail=$((fail + 1))
   echo "FAIL: $SKILL に skill 引数へ置き換わる \$<数字> がある (上の行)" >&2
