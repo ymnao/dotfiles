@@ -1,10 +1,10 @@
 ---
 name: resolve
-description: Fetch and address unresolved PR review comments
+description: Fetch and address unresolved PR review comments. Use when the user asks to handle review feedback on the current branch's PR.
 ---
 
 Fetch unresolved review threads for the current PR and address each one.
-Execute these steps faithfully in order. Do not skip steps or make independent judgments about the process.
+Execute these steps in order without skipping any. Judgment belongs in step 4 (whether each suggestion is valid), not in the order of the steps.
 
 ## Steps
 
@@ -36,14 +36,7 @@ Execute these steps faithfully in order. Do not skip steps or make independent j
    - Evaluate whether the suggestion is valid
    - If valid, fix the code following the project's existing conventions
    - If unnecessary or inappropriate, prepare a clear reason
-5. If any fixes were made, run all applicable verification steps for the project:
-   - Lint / static analysis
-   - Format check
-   - Type check
-   - Build
-   - Unit tests
-   - Integration tests
-   - E2E tests
+5. If any fixes were made, run the project's verification steps that cover the changed files (lint, format, type check, build, tests — whichever exist and apply). A one-line doc fix does not need the E2E suite.
    - Determine available commands from package.json, Makefile, pyproject.toml, Cargo.toml, etc.
 6. Commit and push
 7. Report all results in the format below

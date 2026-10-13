@@ -23,4 +23,4 @@ paths:
 - repo 内の `codex/config.toml` が正本。設定変更はこちらを編集し、
   反映はユーザーの手動実行に委ねる
 - 防御層の全体像と regression test の所在は
-  [docs/ai-operations.md](../../docs/ai-operations.md) §10 を参照
+  dotfiles の `docs/ai-operations.md` §10 を参照

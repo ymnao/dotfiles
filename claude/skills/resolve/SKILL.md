@@ -36,14 +36,7 @@ Fetch unresolved review threads for the current PR and address each one.
    - Evaluate whether the suggestion is valid
    - If valid, fix the code following the project's existing conventions
    - If unnecessary or inappropriate, prepare a clear reason
-5. If any fixes were made, run all applicable verification steps for the project:
-   - Lint / static analysis
-   - Format check
-   - Type check
-   - Build
-   - Unit tests
-   - Integration tests
-   - E2E tests
+5. If any fixes were made, run the project's verification steps that cover the changed files (lint, format, type check, build, tests — whichever exist and apply). A one-line doc fix does not need the E2E suite.
    - Determine available commands from package.json, Makefile, pyproject.toml, Cargo.toml, etc.
 6. Commit and push
 7. Report all results in the format below

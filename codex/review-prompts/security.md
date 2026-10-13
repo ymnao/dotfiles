@@ -33,8 +33,8 @@ or, when you find issues:
   "verdict": "findings",
   "findings": [
     {
-      "severity": "HIGH",
-      "confidence": 85,
+      "severity": "<HIGH|MEDIUM|LOW>",
+      "confidence": <integer 0-100>,
       "file": "scripts/foo.sh",
       "line": 42,
       "issue": "<one-sentence description>",

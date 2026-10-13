@@ -5,7 +5,8 @@ description: 1 開発サイクル (タスク着手 → 実装 → レビュー�
 
 タスクの受付から PR 作成までを 1 コマンドで実行する。人間のゲートは
 「非自明タスクの plan 承認」・「/pr の finding 分類承認 ((b)/(c) が
-1 件でもあるとき、/pr skill が発火)」・「PR の merge」の 3 点。その間の
+1 件でもあるとき、/pr skill が発火)」・「PR の merge」の 3 点が主で、
+ほかに学びの昇格 (5b) とレビュー上限の延長 (4-0) で承認を取る。その間の
 simplify / codex-review / pr の個別指示と code-reviewer サブエージェント
 呼び出しを不要にする。
 
@@ -42,9 +43,10 @@ simplify / codex-review / pr の個別指示と code-reviewer サブエージェ
   曖昧な場合はタスク内容を user に確認して停止する
 - **自由文** (`/dev <タスク記述>`): 記述内容をそのままタスクとする
 
-いずれの場合も、main 以外にいる・uncommitted changes がある場合は
+引数なし・自由文の場合、main 以外にいる・uncommitted changes がある場合は
 状況を報告して user の指示を待つ (勝手に stash / checkout しない)。
-main にいる場合は `feature/` `fix/` `refactor/` `docs/` + 英語小文字ハイフン
+issue 番号の場合は `/issue` の step 3-4 (uncommitted なら停止、default
+branch へ checkout) に従う。main にいる場合は `feature/` `fix/` `refactor/` `docs/` + 英語小文字ハイフン
 のブランチを作成する。
 
 #### 1a. backlog の煙探知 (opt-in・repo ごと・停止しない)
@@ -250,7 +252,7 @@ alias / plugin / 設定で user 側が増やせる) を丸ごと追う羽目に�
     という意味ではない。加えて `claude/skills/` `codex/skills/` 配下でも、
     **agent がそのまま実行するもの (SKILL.md の中のコマンド形、
     `scripts/` 配下の判定器・分類器) を変える変更**は例外側に入れる
-    (理由は `claude/rules/acceptance-patterns.md` 冒頭。同じ前提で
+    (理由は `~/.claude/rules/acceptance-patterns.md` 冒頭。同じ前提で
     `**/SKILL.md` と `**/*.sh` を paths に含めている)。実例 (PR #337):
     `claude/skills/` のみの変更で厚くした code-reviewer が空文字の fail-open を
     出した (`dependabot-bulk/SKILL.md` step 7)。
@@ -263,8 +265,9 @@ alias / plugin / 設定で user 側が増やせる) を丸ごと追う羽目に�
   `scripts/link.sh` のような配置ロジック): 下記のフル隊列
 
 以下を順に実行する。**修正が入ったら再度 1 周目から回す (上限 2 周)**。
-2 周目でも新規指摘が出た場合は残りを fix せず記録し、step 5 の /pr の
-fix-or-issue-or-dismiss ポリシーに委ねる (発散防止)。
+2 周目で出た新規指摘も 4-0 で分類する。3 周目には進まず (発散防止)、
+Tier1 と自分が持ち込んだものはその場で fix し、残る Tier2 は step 5 の /pr の
+fix-or-issue-or-dismiss ポリシーに委ねる。
 
 1. `/simplify` — 指摘を apply (skip 判断は理由を記録)
 2. `code-reviewer` サブエージェントを Agent tool (`subagent_type:
@@ -274,7 +277,7 @@ fix-or-issue-or-dismiss ポリシーに委ねる (発散防止)。
    (step 5 の /pr の fix-or-issue-or-dismiss ポリシー対象になる)。
    `model` を明示するのはメイン (Opus 世代) と別系統に寄せるため
    — 規約と、frontmatter ではなく呼び出し側で指定する理由は
-   `docs/ai-operations.md` §1
+   dotfiles の `docs/ai-operations.md` §1
 3. プロジェクトのテストスイート (`make test` 等) — fail したら直す
 4. コミット (レビュー修正分)
 
