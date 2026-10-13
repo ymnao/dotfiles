@@ -177,7 +177,7 @@ scenario agent-hooks-plugin-ts high <<EOF
 claude/plugins/idle-compactor/plugin/hooks/idle-compactor.ts${T}export const x = 1
 EOF
 
-# 上のケースは末尾の `plugin/hooks/` だけで当たるので、`plugins/<名前>/hooks/`
+# 上のケースは末尾の `plugin/hooks/` だけでも当たるので、`plugins/<名前>/hooks/`
 # (marketplace の標準形) は別に固定する
 scenario agent-hooks-plugin-named high <<EOF
 plugins/foo/hooks/run.sh${T}# noop

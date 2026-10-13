@@ -108,8 +108,8 @@ check_deleted() {
 check_path "auth-code"    '(^|/)(auth|login|session|oauth|token|secret|password|crypt|credential)[^/]*(/|$)'
 check_path "ci-config"    '^\.github/workflows/|^\.github/scripts/|Jenkinsfile|\.gitlab-ci|^\.circleci/'
 check_path "dependency"   'package\.json$|package-lock\.json$|pnpm-lock\.yaml$|yarn\.lock$|bun\.lockb?$|pyproject\.toml$|uv\.lock$|poetry\.lock$|requirements[^/]*\.txt$|go\.(mod|sum)$|Cargo\.(toml|lock)$|Gemfile(\.lock)?$|Brewfile$'
-# hooks/ は agent hook と git hook (`.husky/` `.githooks/`) の置き場だけを
-# 列挙する。素の `(^|/)hooks/` はアプリの `src/hooks/` (React フック) にも当たり、
+# hooks/ は agent hook と git hook (`.husky/` `.githooks/`)、hook の回帰テスト
+# (`tests/hooks/`) の置き場だけを列挙する。素の `(^|/)hooks/` はアプリの `src/hooks/` (React フック) にも当たり、
 # 他 repo で毎回 high になった (issue #442)。アプリ側の祖先を除外する形に
 # しないのは、ERE に否定先読みが無く、除外すべき祖先が repo ごとに違って
 # 閉じないため。プラグインの hook は .ts/.tsx なので拡張子では区別できず、
@@ -117,8 +117,8 @@ check_path "dependency"   'package\.json$|package-lock\.json$|pnpm-lock\.yaml$|y
 # のようなアプリ側も high になるが、FP 側なので許容)。
 # 既知の非検出 (旧 pattern では high、列挙の外にある置き場): `.cursor/hooks/`
 # `.gemini/hooks/` `.github/hooks/`、chezmoi の `dot_claude/hooks/`、
-# `plugins/` 以外の親に置いたプラグイン、`core.hooksPath` で任意の場所に置いた
-# git hook、単数形の `test/hooks/`
+# `plugins/` 以外の親に置いたプラグイン、`core.hooksPath` で `scripts/hooks/`
+# のような `hooks/` ディレクトリに置いた git hook、単数形の `test/hooks/`
 check_path "agent-config" 'settings[^/]*\.json$|(^|/)(\.?(claude|codex|agents)|tests|plugins?(/[^/]+){0,2})/hooks/|^hooks/|(^|/)\.(husky|githooks)/|hooks\.json$|AGENTS\.md$|CLAUDE\.md$|\.mcp\.json$'
 check_path "env-files"    '(^|/)\.env|\.npmrc$|config\.toml$'
 check_path "infra"        'Dockerfile|docker-compose|\.tf$|\.tfvars$'
