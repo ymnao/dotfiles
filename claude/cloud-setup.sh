@@ -7,5 +7,11 @@
 # claude/skills/ を丸ごと届けないのは、write-issue 以外の skill がクラウドに無い hook やローカル環境に依存するため。
 set -euo pipefail
 
+target="$HOME/.claude/skills/write-issue"
+# ln -sfn は既存の実ディレクトリを置き換えず、その中にリンクを作って正常終了するので先に止める
+if [ -e "$target" ] && [ ! -L "$target" ]; then
+  echo "cloud-setup: $target が symlink でない実体として既にあるため置き換えない" >&2
+  exit 1
+fi
 mkdir -p "$HOME/.claude/skills"
-ln -sfn /opt/dotfiles/claude/skills/write-issue "$HOME/.claude/skills/write-issue"
+ln -sfn /opt/dotfiles/claude/skills/write-issue "$target"
