@@ -36,8 +36,8 @@ fail-loud になる場所の版数固定はこの規約の対象外**(eval 実�
 根拠は 2 つ: user が実際の `/dev` で見た plan の質と、委譲すると事前調査の事実を
 prompt に詰め直す段で抜けが出ること。「新しい Opus の方が推論が深い」は根拠に
 しない — 公式の Models overview (2026-10-15 取得) は Fable 5.1 を「demanding
-reasoning」向けとしている。生成者とレビュアーの系統分離は、code-reviewer を
-Fable で呼ぶ側 (下記) で保たれる。
+reasoning」向けとしている。系統分離 (`agents/AGENTS.md`「モデル分担ルール」) は
+code-reviewer 側で保つ (下記)。
 
 **実測 (2026-09-26 / `claude` 2.1.282)**: メインは Opus 5.5 (`claude-opus-5-5`)、
 `code-reviewer` サブエージェント(frontmatter は `model: opus`、呼び出し側で
@@ -119,8 +119,7 @@ agent の Bash sandbox 内で `codex-review` が回るかどうか、回すた�
 - メインの effort: **settings では指定せず、モデルの既定 (Opus 5.5 は `medium`、
   公式 docs の model-config) で動かす**。独立第二意見の委譲は上のとおり
   呼び出し側で effort を明示しているので、メインを上げなくても表の値で動く (明示の
-  無い `/simplify` の finder などはセッションの値を継ぐ)。plan 立案はメインが書くので
-  セッションの値で動く。
+  無い `/simplify` の finder などはセッションの値を継ぐ)。
   難所だけ上げる: CLI は `/effort` のスライダーで `s` (そのセッションだけ)、
   デスクトップアプリはセッションのピッカー。`/effort` を `Enter` で確定すると
   `modelSettings` に保存され (同 model-config)、`~/.claude/settings.json` は symlink
