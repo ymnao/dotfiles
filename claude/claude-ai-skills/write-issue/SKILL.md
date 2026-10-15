@@ -1,16 +1,12 @@
 ---
 name: write-issue
-description: GitHub issue の本文の既定の書式 (問題 / やること / やらないこと / 背景)。issue を起票・作成するとき、`gh issue create` や GitHub MCP の issue 作成を呼ぶ前に必ず読む。「issue にして」「起票して」と頼まれたときも使う
+description: GitHub issue 本文の既定の書式 (問題 / やること / やらないこと / 背景)。issue の起票・作成 (`gh issue create` や GitHub MCP) の前に読む。「issue にして」「起票して」と頼まれたときも使う
 ---
 
 # issue の書式
 
-## 1. repo のテンプレートを先に見る
-
-起票先の repo に `.github/ISSUE_TEMPLATE/` (または `.github/ISSUE_TEMPLATE.md`) があれば、そちらに従う。
-以下の書式は、テンプレートが無いときの既定。
-
-## 2. 本文は次の 4 節で書く
+起票先の repo に `.github/ISSUE_TEMPLATE/` (または `.github/ISSUE_TEMPLATE.md`) があればそちらに従う。
+無ければ本文を次の 4 節で書く:
 
 ```markdown
 ## 問題
@@ -28,7 +24,4 @@ description: GitHub issue の本文の既定の書式 (問題 / やること / �
 - **背景** — 起票のきっかけ・経緯・検討して捨てた案と捨てた理由
 
 節に書くことが無ければ、節を消さずに「なし」と書く。
-
-## 3. タイトル
-
-何をするか / 何が問題かが 1 行で分かる平文にする。本文の言語に合わせる。
+タイトルは何をするか / 何が問題かが 1 行で分かる平文にし、本文と同じ言語で書く。
