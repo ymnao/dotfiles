@@ -763,8 +763,12 @@ run_home_path_verifier() {
   INTEGRITY_SETTINGS="$f" bash "$HOME_PATH_VERIFIER" >/dev/null 2>&1 || rc=$?
   printf '%s' "$rc"
 }
-check "home-path-tilde-ok" 0 "$(run_home_path_verifier "~/dev/plugin")"
+# `"~/dev"` と書くと SC2088 (make test の shellcheck) に当たるので `~` を単独で持つ
+tilde='~'
+check "home-path-tilde-ok" 0 "$(run_home_path_verifier "$tilde/dev/plugin")"
 check "home-path-macos-detected" 1 "$(run_home_path_verifier "/Users/u/dev/plugin")"
+check "home-path-home-itself-detected" 1 "$(run_home_path_verifier "/Users/u")"
+check "home-path-windows-detected" 1 "$(run_home_path_verifier 'C:\Users\u\dev\plugin')"
 check "home-path-linux-detected" 1 "$(run_home_path_verifier "/home/u/dev/plugin")"
 check "home-path-permission-rule-detected" 1 "$(run_home_path_verifier "Read(//Users/u/dev/**)")"
 

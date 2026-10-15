@@ -56,7 +56,7 @@ process")。以後プラグインを足すときは `hooks/hooks.json` の `modu
 
 初回は新しいセッションを 1 度起動してから下のコマンドを打つ。これも
 `~/.claude/settings.json` (= repo の `claude/settings.json`) を書き直すので
-**キー順と整形が崩れる** (2.1.280 で実測)。実行後は `git diff claude/settings.json` を見て、
+**キー順と整形が崩れる** (2.1.280 で実測。2.1.299 では `~` の path は `~` のまま残った)。実行後は `git diff claude/settings.json` を見て、
 整形だけの差分なら `git restore claude/settings.json` で戻す。symlink は切れない
 (`readlink` で確認済み)。
 
