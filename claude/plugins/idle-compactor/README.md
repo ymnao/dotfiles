@@ -50,13 +50,15 @@ process")。以後プラグインを足すときは `hooks/hooks.json` の `modu
 
 `enabledPlugins` と `extraKnownMarketplaces` の entry は repo に入れてある。
 `extraKnownMarketplaces` の path は `~/development/...` で書いてあり、セッション起動時に
-`$HOME` へ展開されて marketplace が登録される (2.1.299 で実測。公式 docs には記述が無い)。
-`claude plugin marketplace add` は打たない — path を絶対パスで書き戻し、home の違うマシンで
-読めなくなる (#449)。
+`$HOME` へ展開されて marketplace が登録される (2.1.299 で実測。2026-10-15 時点の
+Marketplace reference には `~` の扱いの記述が無い)。
+`claude plugin marketplace add` は打たない — shell が展開した絶対パスで path が書き換わり、
+home の違うマシンで読めなくなる (#449)。
 
 初回は新しいセッションを 1 度起動してから下のコマンドを打つ。これも
 `~/.claude/settings.json` (= repo の `claude/settings.json`) を書き直すので
-**キー順と整形が崩れる** (2.1.280 で実測。2.1.299 では `~` の path は `~` のまま残った)。実行後は `git diff claude/settings.json` を見て、
+**キー順と整形が崩れる** (2.1.280 / 2.1.299 で実測)。2.1.299 では `~` の path は
+`~` のまま残った。実行後は `git diff claude/settings.json` を見て、
 整形だけの差分なら `git restore claude/settings.json` で戻す。symlink は切れない
 (`readlink` で確認済み)。
 
