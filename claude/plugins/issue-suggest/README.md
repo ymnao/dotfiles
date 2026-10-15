@@ -31,11 +31,12 @@ skill の `/` 候補と同じ場所に出せる `prompt.autocomplete` は、Clau
 
 `claude/settings.json` の `env` にある `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` が要る
 (idle-compactor と共有)。`enabledPlugins` と `extraKnownMarketplaces` の entry は repo に入れてあり、
-初回だけ次の 2 つを実行する。どちらも settings.json の整形を崩すので、後始末は
+marketplace はセッション起動時に登録される。`marketplace add` を打たない理由と、
+下のコマンドが崩す settings.json の整形の後始末は
 [idle-compactor の README](../idle-compactor/README.md) の「有効化」節と同じ。
+初回は新しいセッションを 1 度起動してから次を実行する。
 
 ```fish
-claude plugin marketplace add ~/development/important/dotfiles/claude/plugins/issue-suggest --scope user
 claude plugin install issue-suggest@issue-suggest --scope user
 ```
 
