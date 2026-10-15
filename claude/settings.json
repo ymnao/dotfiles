@@ -254,13 +254,13 @@
     "claude-idle-compactor": {
       "source": {
         "source": "directory",
-        "path": "/Users/nakiym/development/important/dotfiles/claude/plugins/idle-compactor"
+        "path": "~/development/important/dotfiles/claude/plugins/idle-compactor"
       }
     },
     "issue-suggest": {
       "source": {
         "source": "directory",
-        "path": "/Users/nakiym/development/important/dotfiles/claude/plugins/issue-suggest"
+        "path": "~/development/important/dotfiles/claude/plugins/issue-suggest"
       }
     }
   },

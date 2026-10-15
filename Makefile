@@ -114,6 +114,7 @@ test: lint-locale-pin ## Verify shell scripts (shellcheck), JSON files (jq), and
 	@bash tests/integrity/run-integrity-selftest.sh
 	@bash tests/integrity/verify-guard-codex-wiring.sh
 	@bash tests/integrity/verify-settings-codex-domains.sh
+	@bash tests/integrity/verify-settings-no-home-path.sh
 	@bash tests/integrity/verify-sandbox-exclusion-guard.sh
 	@bash tests/integrity/verify-sandbox-codex-enforcement.sh
 	@bash tests/session-compact/run-session-compact-tests.sh

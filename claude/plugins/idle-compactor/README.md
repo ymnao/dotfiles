@@ -48,19 +48,24 @@ upstream を追従するときはこの 1 箇所だけ手で戻す。
 (2.1.280 の本体の文言: "hooks modules are not turned on for installed plugins in this
 process")。以後プラグインを足すときは `hooks/hooks.json` の `modules` の有無も審査に含める。
 
-下の 2 コマンドはどちらも `~/.claude/settings.json` (= repo の `claude/settings.json`) に
-書き込む (2.1.280 で実測)。書かれる `enabledPlugins` と `extraKnownMarketplaces` の entry は
-repo に入れてあるので中身の差分は出ないが、**ファイル全体を書き直すのでキー順と整形が
-崩れる**。実行後は `git diff claude/settings.json` を見て、整形だけの差分なら
-`git restore claude/settings.json` で戻す。symlink は切れない (`readlink` で確認済み)。
-`extraKnownMarketplaces` の path は `marketplace add` が書いた絶対パスのままで、
-home のレイアウトが違うマシンでは書き換えが要る。
+`enabledPlugins` と `extraKnownMarketplaces` の entry は repo に入れてある。
+`extraKnownMarketplaces` の path は `~/development/...` で書いてあり、セッション起動時に
+`$HOME` へ展開されて marketplace が登録される (2.1.299 で実測。2026-10-15 時点の
+Marketplace reference には `~` の扱いの記述が無い)。
+`claude plugin marketplace add` は打たない — shell が展開した絶対パスで path が書き換わり、
+home の違うマシンで読めなくなる (#449)。
+
+初回は新しいセッションを 1 度起動してから下のコマンドを打つ。これも
+`~/.claude/settings.json` (= repo の `claude/settings.json`) を書き直すので
+**キー順と整形が崩れる** (2.1.280 / 2.1.299 で実測)。2.1.299 では `~` の path は
+`~` のまま残った。実行後は `git diff claude/settings.json` を見て、
+整形だけの差分なら `git restore claude/settings.json` で戻す。symlink は切れない
+(`readlink` で確認済み)。
 
 install すると plugin は `~/.claude/plugins/cache/claude-idle-compactor/idle-compactor/unknown/`
 に**コピーされる** (repo を直接読むのではない)。repo 側を変えたら install し直す。
 
 ```fish
-claude plugin marketplace add ~/development/important/dotfiles/claude/plugins/idle-compactor --scope user
 claude plugin install idle-compactor@claude-idle-compactor --scope user
 ```
 

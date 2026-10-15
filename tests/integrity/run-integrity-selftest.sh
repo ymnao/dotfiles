@@ -5,9 +5,11 @@ set -uo pipefail
 # 偽の dotfiles / 偽の HOME / 偽の settings.json を組み立て、正常構成で PASS・
 # 改ざん各種で FAIL になることを検証する (検知器が壊れて常に OK を返す退行の防止)。
 # 対象: run-integrity-check.sh, verify-settings-codex-domains.sh,
-# verify-codex-hook-trust.sh, verify-sandbox-exclusion-guard.sh
+# verify-codex-hook-trust.sh, verify-sandbox-exclusion-guard.sh,
+# verify-settings-no-home-path.sh
 # (issue #189 で 3 項目分、issue #190 で denyWrite 項目分、issue #239 で
-#  codex hook の承認状態検査分、issue #214 で trusted_hash の値検証分を追加)。
+#  codex hook の承認状態検査分、issue #214 で trusted_hash の値検証分、
+#  issue #449 で home の絶対パス検査分を追加)。
 # verify-guard-codex-wiring.sh の selftest は未実装 (別 issue で対応予定)。
 #
 # 依存: bash 3.2+ / jq / git / sha256sum または shasum
@@ -751,6 +753,24 @@ check "excl-cases-missing-detected" 1 "$(run_excl_verifier "$EXCL_SETTINGS" "$EX
 LC_ALL=C grep -vE '^[[:space:]]*(#|@#)' "$EXCL_REPO_ROOT/Makefile" \
   | LC_ALL=C grep -q 'bash tests/integrity/verify-sandbox-exclusion-guard.sh'
 check "excl-wired-in-makefile" 0 "$?"
+
+# ---- verify-settings-no-home-path.sh の selftest (issue #449) ----
+HOME_PATH_VERIFIER="${HOME_PATH_VERIFIER_PATH:-$SCRIPT_DIR/verify-settings-no-home-path.sh}"
+run_home_path_verifier() {
+  # $1=検査させる文字列値。exit code を echo
+  local rc=0 f="$BASE/settings-home-path.json"
+  jq -n --arg v "$1" '{extraKnownMarketplaces: {m: {source: {source: "directory", path: $v}}}}' >"$f"
+  INTEGRITY_SETTINGS="$f" bash "$HOME_PATH_VERIFIER" >/dev/null 2>&1 || rc=$?
+  printf '%s' "$rc"
+}
+# `"~/dev"` と書くと SC2088 (make test の shellcheck) に当たるので `~` を単独で持つ
+tilde='~'
+check "home-path-tilde-ok" 0 "$(run_home_path_verifier "$tilde/dev/plugin")"
+check "home-path-macos-detected" 1 "$(run_home_path_verifier "/Users/u/dev/plugin")"
+check "home-path-home-itself-detected" 1 "$(run_home_path_verifier "/Users/u")"
+check "home-path-windows-detected" 1 "$(run_home_path_verifier 'C:\Users\u\dev\plugin')"
+check "home-path-linux-detected" 1 "$(run_home_path_verifier "/home/u/dev/plugin")"
+check "home-path-permission-rule-detected" 1 "$(run_home_path_verifier "Read(//Users/u/dev/**)")"
 
 echo "----"
 echo "integrity selftest: $pass passed, $fail failed"
