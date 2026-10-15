@@ -66,7 +66,7 @@ Run each `gh` command as a bare invocation and substitute prior output literally
      - **上記に該当しない**(fix 不要のみ / 追跡 URL 記載済 / 残件なし): **normal** で作成。件数の多寡を draft 判定に使わない。追跡 URL がある場合は evidence に必ず記載する
 5. Explain-the-diff walkthrough (tier=high only):
    - Split the diff into meaningful units. For each unit present: what changed / why / what could break.
-   - walkthrough は user の言語 (このユーザーは日本語) で書く。この skill 本文が英語なので、直後の出力が英語に引きずられる
+   - walkthrough は user の言語で書く。この skill 本文が英語なので、直後の出力が英語に引きずられる
    - Wait for the user's response. 3 分岐で処理する:
      - (a) **明示的承認**(「進めて」「OK」等、直前の walkthrough を受けた応答): normal で作成
      - (b) **明示的却下 / 修正要求**: `gh pr create` せず中止し、user と対話
