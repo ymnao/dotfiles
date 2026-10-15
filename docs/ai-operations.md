@@ -27,10 +27,17 @@ fail-loud になる場所の版数固定はこの規約の対象外**(eval 実�
 | 役割 | モデル | effort | 用途 |
 |---|---|---|---|
 | メイン(統括・意思決定・実装) | Opus 世代 | モデル既定(Opus 5.5 は medium。難所は high / xhigh に上げる) | 全体制御・decisions・並列調整・実装・PR 作成 |
-| **plan 立案**(非自明タスク) | **Fable 世代** | high | `/dev` step 2 の変更ファイル・実装手順・考慮点の立案。self-preference bias 回避 + 推論深度確保のためメイン Opus からサブエージェント委譲 |
+| **plan 立案**(非自明タスク) | **Opus 世代(メイン)** | メインと同じ(難所は上げる) | `/dev` step 2 の変更ファイル・実装手順・考慮点の立案。事前調査をしたメインが委譲せずに書く(下記) |
 | 並列 fan-out(中軽度並列) | Sonnet 世代 | high | /simplify の観点別 finder、多点調査 |
 | 独立第二意見(別モデル系統) | Fable 世代など | xhigh | fresh context のレビュー、難しい設計判断 |
 | 探索・情報収集 | Haiku 世代 | - | 軽い調査・ファイル探索 |
+
+**plan 立案を Fable 委譲からメインに切り替えた (2026-10-15、issue #456、user 判断)**。
+根拠は 2 つ: user が実際の `/dev` で見た plan の質と、委譲すると事前調査の事実を
+prompt に詰め直す段で抜けが出ること。「新しい Opus の方が推論が深い」は根拠に
+しない — 公式の Models overview (2026-10-15 取得) は Fable 5.1 を「demanding
+reasoning」向けとしている。生成者とレビュアーの系統分離は、code-reviewer を
+Fable で呼ぶ側 (下記) で保たれる。
 
 **実測 (2026-09-26 / `claude` 2.1.282)**: メインは Opus 5.5 (`claude-opus-5-5`)、
 `code-reviewer` サブエージェント(frontmatter は `model: opus`、呼び出し側で
@@ -110,9 +117,10 @@ agent の Bash sandbox 内で `codex-review` が回るかどうか、回すた�
   セッションの値 (`medium`) だった。`model` と違い、frontmatter の `effort` は
   この方法でセッション内から確かめられる
 - メインの effort: **settings では指定せず、モデルの既定 (Opus 5.5 は `medium`、
-  公式 docs の model-config) で動かす**。plan 立案と独立第二意見の委譲は上のとおり
+  公式 docs の model-config) で動かす**。独立第二意見の委譲は上のとおり
   呼び出し側で effort を明示しているので、メインを上げなくても表の値で動く (明示の
-  無い `/simplify` の finder などはセッションの値を継ぐ)。
+  無い `/simplify` の finder などはセッションの値を継ぐ)。plan 立案はメインが書くので
+  セッションの値で動く。
   難所だけ上げる: CLI は `/effort` のスライダーで `s` (そのセッションだけ)、
   デスクトップアプリはセッションのピッカー。`/effort` を `Enter` で確定すると
   `modelSettings` に保存され (同 model-config)、`~/.claude/settings.json` は symlink
