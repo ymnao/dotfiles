@@ -19,7 +19,7 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
    - あわせて `git rev-parse HEAD` を打ち、作業ブランチの SHA を控える。
      step 3 でこの値を使う。ブランチ名をコマンドに埋め込んで
      `git rev-parse <branch>` とはしない (理由は
-     `claude/rules/acceptance-patterns.md` の「外部由来の名前」の項)。
+     dotfiles の `claude/rules/acceptance-patterns.md` の「外部由来の名前」の項)。
      ここでまだ作業ブランチ上にいる (step 2 の checkout はこの後) ので、
      `HEAD` で足りる
    - step 3 のブランチ削除だけは名前が要る (`git branch -d` に `HEAD` は
@@ -32,9 +32,9 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
        書くので、`cat` と `git branch -D` の間に中身が入れ替わりうる。読んだ
        時点で突き合わせてもその後の書き換えは塞げない (TOCTOU) ので、
        衝突しないパスを選ぶ方で閉じる (正本は
-       `claude/rules/acceptance-patterns.md` の一時ファイル置き場の項)
+       dotfiles の `claude/rules/acceptance-patterns.md` の一時ファイル置き場の項)
      - step 3 では `"$(cat <scratchpad>/merged-branch.txt)"` として渡し、
-       名前を agent がタイプし直さない (`claude/rules/acceptance-patterns.md`
+       名前を agent がタイプし直さない (dotfiles の `claude/rules/acceptance-patterns.md`
        の「外部由来の名前」の項)
      - **この 2 コマンドは別々の Bash 呼び出しで打つこと**。同じ呼び出しに
        redirect と `$(cat ...)` を同居させると `block-dangerous-commands.sh` が
@@ -53,7 +53,7 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
        stale 化も起きない
 2. **main 更新**: `git checkout main` → `git pull origin main --ff-only`。
    sandbox が削除を拒否するパス (settings 系・skills 系・hooks 系など。
-   説明は `docs/sandbox-git.md` の「削除を拒否するパス」節) に触る PR
+   説明は dotfiles の `docs/sandbox-git.md` の「削除を拒否するパス」節) に触る PR
    では unlink 制限で checkout / pull / reset --hard が失敗する。状況別 workaround:
    - **feature ブランチ checkout 中**:
      `git fetch origin main:main` (non-fast-forward は refspec が自動拒否
@@ -62,7 +62,7 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      打たない) → 空、または locked path を含まなければ
      `git checkout main`。この fetch は `fatal: failed to store: 100001` を
      出しながら ref の更新には成功する (proxy の資格情報を credential
-     helper に保存できないため。`docs/sandbox-git.md`)。**`fatal:` で中断しない**。ただし成否をエラー文言で判定
+     helper に保存できないため。dotfiles の `docs/sandbox-git.md`)。**`fatal:` で中断しない**。ただし成否をエラー文言で判定
      するのも誤り (通信 / 認証 / remote 不在でも別の文言が出る) なので、
      `git ls-remote origin refs/heads/main` と `git rev-parse main` の
      SHA が一致することを fetch の成功条件にする。
@@ -151,9 +151,7 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      handoff にその 1 行を書く手間ごと無駄になる
    - 反映結果 (どこに何を書いたか / ブランチ名 / PR URL) を step 5 の
      handoff に引き継ぐ
-5. **handoff**: `/handoff` skill を実行して HANDOFF.md を更新する。
-   HANDOFF.md に「次セッション持ち越しメモ」等の恒久メモ節がある場合は
-   消さずに引き継ぐ
+5. **handoff**: `/handoff` skill を実行して HANDOFF.md を更新する
 6. **次タスク候補の提示**: HANDOFF.md の残タスクと open issues
    (`gh issue list --state open --limit 10`) から次の候補を優先順で並べて
    **停止する**。次サイクルは user が `/clear` → `/dev` で開始する

@@ -26,4 +26,4 @@ paths:
   それがこの変更のせいか元からかを切り分けられないため。
   この順は被害を小さくするだけで、着手判断の誤りは取り消せない
 - 配置手順 (`sudo` 4 コマンド)・symlink しない理由・ロックアウトからの復旧経路は
-  [docs/ai-operations.md](../../docs/ai-operations.md) §10 を参照
+  dotfiles の `docs/ai-operations.md` §10 を参照

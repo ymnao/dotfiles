@@ -1,6 +1,6 @@
 ---
 name: codex-review
-description: Run codex CLI as a second-opinion reviewer of the current diff vs the repo's default branch. Three perspectives (shell-senior / security / qa-fixture); findings are verified against the actual code before any fix is applied.
+description: Run codex CLI as a second-opinion reviewer of the current diff vs the repo's default branch. Three perspectives (shell-senior / security / qa-fixture); findings are verified against the actual code before any fix is applied. Use when /pr calls for a codex review by risk tier, or when the user asks for a second opinion on the diff.
 ---
 
 Use the `codex` CLI (independent LLM family) for a second-opinion review of the current branch's diff against the base branch (auto-detected from `origin/HEAD`, default `main`). For each perspective: detect → verify each finding against the real code → apply only confirmed findings that meet the threshold → re-run once to confirm.
@@ -57,7 +57,7 @@ detect→apply の途中で勝手に commit しない — fix は working tree �
 
 ### 4. Confirm (only if fixes were applied)
 
-**先に fix を commit してから**、step 1 を同じ観点でちょうど 1 回だけ再実行する。run-review.sh は `git diff <base>...HEAD` (= **commit 済みの diff**) を codex に渡すため、working tree に置いたままの修正は confirm run から見えない。commit せずに再実行すると、**直したはずの指摘がそのまま返ってきて UNRESOLVED と誤読する** (逆に、直っていないのに緑になる方向にも倒れる)。step 3 の「Do not commit」は detect→apply の途中で勝手に commit しないという意味で、confirm の前段はその例外。
+**先に fix を commit してから**、step 1 を同じ観点でちょうど 1 回だけ再実行する。run-review.sh は `git diff <base>...HEAD` (= **commit 済みの diff**) を codex に渡すため、working tree に置いたままの修正は confirm run から見えない。commit せずに再実行すると、**直したはずの指摘がそのまま返ってきて UNRESOLVED と誤読する** (逆に、直っていないのに緑になる方向にも倒れる)。
 
 再実行してもまだ findings が出るなら、そこで fix を重ねない — 残りを UNRESOLVED として記録して次へ進む。Max runs per perspective: 2 (one detect + one confirm)。
 
@@ -95,7 +95,6 @@ Then per-perspective details, one line per finding:
 - **生成ファイルの除外**: base ブランチの `.gitattributes` で `linguist-generated` が付いたファイルは diff から外し (run-review.sh は `GIT_ATTR_SOURCE` に base を渡し、レビュー対象のブランチが付けた属性を使わない。branch 自身が `linguist-generated` や `-diff` で任意のファイルをレビューから隠せないようにするため)、prompt には `--stat` だけを載せる (codex には「レビューしていない」と明示する)。codex exec の入力上限は 1,048,576 文字で、生成 CSV 1 本で超えて全観点が ERROR になった (issue #410)。それでも上限を超えたときは exit 5 になる。超えた原因が属性の付いていない生成物なら、その repo の `.gitattributes` に属性を足すと除外の対象になる。除外したファイルは run-review.sh が stderr に `[WARN] ... excluded from review` として出すので、Report format の表の下に「レビュー対象外 (linguist-generated)」として列挙する (PASS がそのファイルを見ていないことを呼び側に残すため)。lockfile に `linguist-generated` を付けている repo では lockfile の変更も security 観点から外れる点に注意する。変更がすべて除外対象のときは exit 1 で止まる。
 - **Model selection**: run-review.sh はモデルを指定しない — `codex/config.toml` の global 設定 (`model` / `model_reasoning_effort`) が唯一の選択点。観点別・リスク tier 別の切り替えは意図的に持たない (計測なしの最適化はしない)。必要になったら `codex exec -c model=... -c model_reasoning_effort=...` の per-call override で実現できる。
 - **Why verify-then-fix**: cross-vendor reviewers have non-overlapping blind spots but also produce false positives; verification against the actual code filters them before they cost edit time. Detection is instructed to over-report ("report everything") and this skill filters downstream — do not skip verification because findings "look obviously right".
-- **Do not commit** fixes from this skill — ただし confirm run (step 4) の直前だけは commit する。run-review.sh が渡すのは `<base>...HEAD` の commit 済み diff なので、commit しないと confirm が古い状態を見る。
 - **Cost**: max 2 codex calls per perspective (detect + confirm), so max 6 calls for a full run. Confirm with the user before running on very large diffs.
 - **Design: split file layout**: this skill's scripts live in `claude/skills/codex-review/scripts/`; the perspective prompts live in `codex/review-prompts/` (codex-facing content). The split is intentional — to tweak a perspective, edit the `.md` under `codex/review-prompts/`.
 - **Running under a shell sandbox** (Claude Code の Bash sandbox 等): 失敗モードは 3 つある。(A) (B) は run-review.sh が exit 3 (SKIP) にし (ERROR ではなく明示的 skip)、(C) は run-review.sh が起動前に CA バンドルを渡して塞ぐ。

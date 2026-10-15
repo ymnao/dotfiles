@@ -37,8 +37,8 @@ or, when you find issues:
   "verdict": "findings",
   "findings": [
     {
-      "severity": "MEDIUM",
-      "confidence": 60,
+      "severity": "<HIGH|MEDIUM|LOW>",
+      "confidence": <integer 0-100>,
       "file": "tests/foo_test.sh",
       "line": 30,
       "issue": "<missing scenario or fixture issue>",

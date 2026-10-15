@@ -1,6 +1,6 @@
 ---
 name: dependabot-bulk
-description: Consolidate open Dependabot PRs into one integration branch to compress CI runs from N to 1
+description: Consolidate open Dependabot PRs into one integration branch to compress CI runs from N to 1. Use when several Dependabot PRs are open at once and should be merged together.
 ---
 
 open な Dependabot PR を 1 branch に統合し、push を 1 回にして CI 実行を N 回 → 原則 1 回に圧縮する。個別 PR ごとに `.github/workflows/test.yml` (push トリガー) が走ることによる GitHub Actions 分数の消費を抑える。
@@ -18,9 +18,9 @@ open な Dependabot PR を 1 branch に統合し、push を 1 回にして CI �
    - 現在ブランチがデフォルトブランチでなければ、デフォルトブランチに移動する
 2. **列挙 + 分類**
    - 作業用 tmp dir を作る: `mkdir -p "$TMPDIR/dependabot-bulk"` (skill flow の全 tmp ファイルはこの下に置く)
-     - **`WORK=$(mktemp -d ...)` は使わない**。Bash tool 呼び出し間で shell 変数が persist しないことに加え、`> "$WORK/..."` は `block-dangerous-commands.sh` の「動的展開を含む書き込み系リダイレクト」でブロックされる。**リダイレクト先に書ける変数は `$TMPDIR` / `$HOME` / `$XDG_*` (と同名の `${...}` 形) だけ**で、既定値つきの `${TMPDIR:-/tmp}` は落ちる (2026-09-02 実測。`claude/rules/acceptance-patterns.md` も参照)
+     - **`WORK=$(mktemp -d ...)` は使わない**。Bash tool 呼び出し間で shell 変数が persist しないことに加え、`> "$WORK/..."` は `block-dangerous-commands.sh` の「動的展開を含む書き込み系リダイレクト」でブロックされる。**リダイレクト先に書ける変数は `$TMPDIR` / `$HOME` / `$XDG_*` (と同名の `${...}` 形) だけ**で、既定値つきの `${TMPDIR:-/tmp}` は落ちる (2026-09-02 実測。dotfiles の `claude/rules/acceptance-patterns.md` も参照)
      - `$TMPDIR` は uid スコープの固定パス (実測: `/tmp/claude-501`) で、前回の別 repo / 別 run のファイルが残りうる。step 2 が毎回 `classified.json` を上書きするので通常は問題にならないが、**step 2 を飛ばして step 7 以降だけを再開しない**
-     - **`gh` の行にリダイレクトを付けない**。ファイルへのリダイレクト (`>` / `<`) が付くと除外コマンドの単独行でも sandbox 内で走り、`gh` が TLS 検証で落ちる (Claude Code 2.1.281 で実測。`docs/ai-operations.md` §10「リダイレクト付きの単独行」)。代わりに Bash tool の `run_in_background: true` が書く出力ファイルを経由する
+     - **`gh` の行にリダイレクトを付けない**。ファイルへのリダイレクト (`>` / `<`) が付くと除外コマンドの単独行でも sandbox 内で走り、`gh` が TLS 検証で落ちる (Claude Code 2.1.281 で実測。dotfiles の `docs/ai-operations.md` §10「リダイレクト付きの単独行」)。代わりに Bash tool の `run_in_background: true` が書く出力ファイルを経由する
      - 以下の `gh` の手順は Claude Code 向け。codex には `run_in_background` が無く、codex での `gh` の挙動は測っていない
    - `gh pr list --author app/dependabot --state open --json number,title,headRefName,url,body,labels` を **`run_in_background: true` で**起動する (リダイレクトは付けない)。結果の `Output is being written to: <path>` の `<path>` を控える
    - **完了通知で exit code 0 を確認してから**次へ進む。非 0 なら `<path>` を読んで原因を報告して停止する。出力ファイルは stdout と stderr が混ざり、末尾に harness が `[exited with code N]` を追記するので、ファイルの中身で成否を判定しない
@@ -48,7 +48,7 @@ open な Dependabot PR を 1 branch に統合し、push を 1 回にして CI �
    - 既存の場合 (同日リトライ / 朝夕 2 回運用) は `deps/bulk-<YYYY-MM-DD>-2` `-3` と suffix を付けて空きを探す
    - 決めた名前で `git checkout -b <名前>`
 7. **依存ごとに 1 commit を積む** (ecosystem で取り込み方が違う)
-   - **PR の headRefName / title / package 名をコマンド文字列にタイプし直さない**。下記のとおり `classified.json` から `"$(jq ...)"` で引数として渡す (理屈は `claude/rules/acceptance-patterns.md` の「外部由来の名前」の項)。このスキル固有の事情は、`extract_package` が title から `[^ ]+` で名前を抜くため `Bump $(id) from 1.0.0 to 1.0.1` のような title がそのまま package 名として通ること
+   - **PR の headRefName / title / package 名をコマンド文字列にタイプし直さない**。下記のとおり `classified.json` から `"$(jq ...)"` で引数として渡す (理屈は dotfiles の `claude/rules/acceptance-patterns.md` の「外部由来の名前」の項)。このスキル固有の事情は、`extract_package` が title から `[^ ]+` で名前を抜くため `Bump $(id) from 1.0.0 to 1.0.1` のような title がそのまま package 名として通ること
    - **`$(...)` が空文字を返す経路を fail-closed にする**。jq は「番号に一致する要素が無い」ときだけでなく、`classified.json` が空 / 不在 / 壊れているときも**何も出力せず exit 0** を返す。`$(...)` の exit code はコマンドの成否に影響しないので `&&` でも捕まらない。したがって空文字が渡っても止まる形にしておく:
      - `git fetch origin ""` は失敗せず remote の HEAD を `FETCH_HEAD` に入れて **exit 0** を返す (実測)。そのまま cherry-pick するとデフォルトブランチの HEAD を積む。**`refs/heads/` を前置**すると空のとき `fatal: invalid refspec 'refs/heads/'` で止まる
      - `git commit` は subject 用の `-m` を **1 つだけ**渡す (trailer も同じ jq 式で作る)。空文字なら `Aborting commit due to empty commit message` で止まる。`-m "" -m "統合元: #<N>"` の 2 段だと 2 つ目が subject に繰り上がって**通ってしまう** (実測)
@@ -70,7 +70,7 @@ open な Dependabot PR を 1 branch に統合し、push を 1 回にして CI �
 8. **ローカル検証**: CI の workflow が打っているコマンドを手元で打つ。この repo では `make test && make lint`。Makefile が無い repo は `.github/workflows/*.yml` の `run:` をそのまま打つ (例: uv の repo なら `uv run --locked ruff check` / `uv run --locked ruff format --check` / `uv run --locked python -m unittest discover`)
 9. **push は 1 回だけ**: `git push origin <step 6 で決めた branch 名>` (collision で `-2`/`-3` を付けた場合はその名前で push する。literal `deps/bulk-<YYYY-MM-DD>` を貼らない。`-u` を付けない理由は `/pr` skill の step 7 参照)
 10. **CI 完走待ち** — 待ち方は CI のトリガーで決まるので、先に `grep -n "^on:" -A3 .github/workflows/*.yml` で確かめる
-    - **`on: push` がある repo** (この repo を含む): push 直後は GitHub 側で run が作成されるまで数秒〜十数秒のラグがある。まず `git rev-parse HEAD` を単独で打って SHA を読む (**変数に代入しない** — Bash tool 呼び出し間で shell 変数は persist しない。理由は step 2 と同じ) → `gh run list --branch <branch名> --limit 5 --json databaseId,status,headSha` で、上で読んだ SHA と `headSha` が一致する run を探す → 無ければ数秒スリープして再問い合わせ (最大 30 秒程度) → 出現したら `gh run watch <databaseId> --exit-status` で完走待ち
+    - **`on: push` がある repo** (この repo を含む): push 直後は GitHub 側で run が作成されるまで数秒〜十数秒のラグがある。まず `git rev-parse HEAD` を単独で打って SHA を読む (**変数に代入しない** — Bash tool 呼び出し間で shell 変数は persist しない。理由は step 2 と同じ) → `gh run list --branch <branch名> --limit 5 --json databaseId,status,headSha` で、上で読んだ SHA と `headSha` が一致する run を探す → 無ければ step 11 の PR body のうち CI 行以外を書いてから再問い合わせする (CI 行は run の完走後に埋める。Claude Code の Bash tool は foreground の `sleep` をブロックするので待つ間に別の作業を挟む。codex では数秒待ってよい。数回問い合わせても出なければ `gh run list` の結果を添えて user に報告して停止する) → 出現したら `gh run watch <databaseId> --exit-status` で完走待ち
     - **`on: pull_request` のみの repo**: push では run が立たないので step 11 (PR 作成) を先に行い、`gh pr checks <PR番号> --watch --fail-fast` で完走を待つ。evidence に書く run-id は `gh pr checks <PR番号> --json link` の `link` (`.../actions/runs/<run-id>/job/<job-id>`) から読む。verify-ci-before-pr hook は「HEAD に紐づく check が無い」状態をこのケースとして許可する (`claude/hooks/verify-ci-before-pr.sh` の最終 `*)` 分岐) ので PR 作成は止まらない
     - どちらでも verify-ci-before-pr hook が最終ゲート。`--draft` bypass は使わない
 11. **統合 PR 作成**: `gh pr create --title <title> --body-file "$TMPDIR/dependabot-bulk/pr-body.md"` (本文は Claude Code なら Write tool、codex なら `apply_patch` で書く)
@@ -104,7 +104,7 @@ step 7 の cherry-pick / lockfile 更新 / `make test` などが失敗した状�
 
 - cherry-pick 中の conflict: `git cherry-pick --abort` で作業を打ち切る
 - lockfile 更新中のエラー: `git restore package.json pnpm-lock.yaml`
-- 統合 branch そのものを捨てる場合: 元ブランチ (default branch) へ `git checkout main` → `git branch -D <統合branch名>`
+- 統合 branch そのものを捨てる場合: 元ブランチ (default branch) へ `git checkout <default branch>` → `git branch -D <統合branch名>`
 - `$TMPDIR/dependabot-bulk/` は残しておくと partial state のデバッグに使える (stale の扱いは step 2 参照)。片付けるなら `rm -f` でファイルを名指しする — `rm -rf` は `claude/settings.json` の deny 対象
 
 ### やらないこと

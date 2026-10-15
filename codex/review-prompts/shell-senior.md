@@ -32,8 +32,8 @@ or, when you find issues:
   "verdict": "findings",
   "findings": [
     {
-      "severity": "MEDIUM",
-      "confidence": 70,
+      "severity": "<HIGH|MEDIUM|LOW>",
+      "confidence": <integer 0-100>,
       "file": "scripts/foo.sh",
       "line": 12,
       "issue": "<one-sentence description>",
