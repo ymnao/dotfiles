@@ -138,6 +138,20 @@ configure_repo "$REVIEW_BRANCH_REPO"
 printf 'REVIEW_BRANCH_MARKER\n' >"$REVIEW_BRANCH_REPO/REVIEW.md"
 git -C "$REVIEW_BRANCH_REPO" add -A
 git -C "$REVIEW_BRANCH_REPO" commit -qm review
+# REVIEW_BROKEN_REPO: base の REVIEW.md の tree entry はあるが blob が読めない
+# (loose object を消す。clone 後に足した commit なので object は clone 側にだけある)
+REVIEW_BROKEN_REPO="$WORKDIR/review-broken-repo"
+git clone -q -b main "$FAKE_REPO" "$REVIEW_BROKEN_REPO"
+configure_repo "$REVIEW_BROKEN_REPO"
+printf 'REVIEW_BASE_MARKER\n' >"$REVIEW_BROKEN_REPO/REVIEW.md"
+git -C "$REVIEW_BROKEN_REPO" add -A
+git -C "$REVIEW_BROKEN_REPO" commit -qm review
+git -C "$REVIEW_BROKEN_REPO" checkout -qb feature
+printf 'b\n' >>"$REVIEW_BROKEN_REPO/f.txt"
+git -C "$REVIEW_BROKEN_REPO" add -A
+git -C "$REVIEW_BROKEN_REPO" commit -qm change
+review_blob="$(git -C "$REVIEW_BROKEN_REPO" rev-parse main:REVIEW.md)"
+rm -f "$REVIEW_BROKEN_REPO/.git/objects/${review_blob:0:2}/${review_blob:2}"
 
 pass=0
 fail=0
@@ -274,6 +288,27 @@ run_review_md_case review-md-from-base       "$REVIEW_BASE_REPO"     REVIEW_BASE
 run_review_md_case review-md-from-base-sub   "$REVIEW_BASE_REPO/sub" REVIEW_BASE_MARKER
 run_review_md_case review-md-added-on-branch "$REVIEW_BRANCH_REPO"   ''
 run_review_md_case review-md-absent          "$FAKE_REPO"            ''
+
+# base に REVIEW.md があるのに読めないときは、前提なしのレビューへ黙って
+# 戻らず止まること (存在確認を cat-file -e にした形はここを素通りした)
+broken_rc=0
+broken_marker="$WORKDIR/codex-called-broken"
+broken_err="$WORKDIR/broken-stderr"
+rm -f "$broken_marker"
+(cd "$REVIEW_BROKEN_REPO" \
+  && HTTPS_PROXY='' https_proxy='' \
+     PATH="$WORKDIR/bin:$PATH" CODEX_CALLED_MARKER="$broken_marker" \
+     bash "$TARGET" security >/dev/null 2>"$broken_err") || broken_rc=$?
+# 文言も見るのは、REVIEW.md より前の失敗でも同じ (非ゼロ・未起動) になるため
+if [ "$broken_rc" != 0 ] && [ ! -f "$broken_marker" ] \
+  && grep -qF 'bad object main:REVIEW.md' "$broken_err"; then
+  pass=$((pass + 1))
+else
+  broken_called=no
+  [ -f "$broken_marker" ] && broken_called=yes
+  echo "FAIL review-md-unreadable: expected=(nonzero, called no) got=(exit $broken_rc, called $broken_called)"
+  fail=$((fail + 1))
+fi
 
 # 変更が生成ファイルだけなら codex を呼ばずに ERROR。空の diff を渡すと、
 # 何も見ていないのに pass が返りうる。
