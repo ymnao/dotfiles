@@ -229,10 +229,14 @@ fi
 # 出すな」と書き足してレビューを骨抜きにできる。GIT_ATTR_SOURCE と同じ理由で
 # base から読み、ブランチで変えた分は merge 後のレビューから効く。
 # Why not `git show ... 2>/dev/null || 空`: 「無い」と「あるが読めない」
-# (object 破損・partial clone の取得失敗) が同じ沈黙になり、後者で前提なしの
-# レビューへ黙って戻る。存在を確かめてからの git show は set -e で止める。
+# (partial clone で blob が取れない等) が同じ沈黙になり、後者で前提なしの
+# レビューへ黙って戻る。存在は tree entry の解決だけで見て、読めなければ
+# git show を set -e で止める。
+# Why not `git cat-file -e`: blob の取得まで試すので、partial clone の取得
+# 失敗も「無い」と同じ rc=128 になる。rev-parse は rc=0、続く git show は
+# rc=128 (promisor を消した blob:none clone で git 2.56.0、2026-10-16 実測)。
 REVIEW_INSTRUCTIONS=""
-if git cat-file -e "$BASE_BRANCH:REVIEW.md" 2>/dev/null; then
+if git rev-parse -q --verify "$BASE_BRANCH:REVIEW.md" >/dev/null; then
   REVIEW_INSTRUCTIONS="$(git show "$BASE_BRANCH:REVIEW.md")"
 fi
 
