@@ -53,22 +53,6 @@ paths:
   実例: issue #308 — apply_patch ヘッダーを `$0` のまま照合したが、codex は行末 CR を
   落として前後を trim してから path を取るため (2026-08-10 に
   `codex-rs/apply-patch/src/streaming_parser.rs` で確認)、完全一致の経路で素通りした
-- **`agents/hooks/` (と `claude/hooks/` `codex/hooks/` の実体) は編集中の状態がそのまま
-  live に効く** (`~/.claude/hooks/` 等からの symlink 経由)。途中で hook が壊れると
-  Bash / Edit / Write がすべて block され、agent 自身では戻せない。編集は scratchpad に
-  コピーして行い、`HOOK_DIR=<コピー先の絶対パス> bash tests/run-hook-tests.sh …` と
-  通常の payload の smoke test を通してから、`cp` で 1 回で正本に置き換える。壊れたときの
-  復旧は Terminal パネル (`run_in_terminal`) か user の手で `git restore <hook>`。
-  実例: issue #381 (未定義の関数を呼ぶ行を先に入れ、全ツールが止まった)
-- **hook 自身を調べるとき、guard に阻まれても回避形を組み立てない**。この repo の
-  hook は自分が打つ Bash コマンドも検査するので、テストに使いたい入力がそのまま
-  自分の guard に引っ掛かる。文字列を分割・連結して通すと、目的が正当でも防御機構の
-  回避で、「回避できた」観測だけが残る。測りたい入力は `tests/run-hook-tests.sh`
-  経由か、payload をファイルに書いてから hook に流す。それでも測れないなら
-  「この形は測れなかった」と報告する — **未測定の報告は無害だが、回避は防御
-  そのものを壊す**。`agents/hooks/` を触る PR のレビュー依頼には毎回この指示を含める
-  (`claude/agents/code-reviewer.md` からこの項を指している)。
-  実例: issue #308 のレビューで code-reviewer が payload を分割連結して guard を回避した
 - **判定の前処理で文字列を「削除」しない。検出と削除を分ける**。危険判定の前に
   文字列を削除・置換して正規化すると、境界の見誤りが「危険な形を無害な形に化かす」
   fail-open として出る。検出だけを行い元テキストを保てば、同じ見誤りは
@@ -113,21 +97,6 @@ paths:
   (`strings` / 固定文字列の grep) か実際の payload で確かめる。
   実例: PR #371 — 要約の `.error_type` を信じたが本体のフィールドは `.error` で、
   通知が常に `unknown` だった
-- **codex に配線する hook の stdout は `{` / `[` で始めない**。codex は hook の
-  stdout がその 2 文字で始まると JSON 出力とみなし、パースに失敗した時点で run を
-  `Failed` にして**本文を model の context に入れない**(実測根拠は
-  dotfiles の docs/ai-operations.md §10)。Claude Code 側は素通しなので、**片方の harness でだけ
-  静かに壊れる**形になる。防御は 2 層で、**どちらも必要**(issue #240):
-  - **静的**: `scripts/lint-hook-stdout.sh` が `agents/hooks/` `claude/hooks/`
-    `codex/hooks/` を横断検査し、`make test` を fail させる。拾えるのは
-    **リテラルとして書かれた出力**だけ
-  - **実行時**: 変数展開経由の出力は静的には見えないので、hook ごとに
-    **stdout 単独 (`2>&1` で取らない) で先頭行を全文 pin** する
-    (実例: `tests/session-compact/` `tests/hooks-integrity/`)。
-    **新しく stdout を出す hook を codex に配線するときは pin を足す** —
-    自動では強制されない
-  linter が取りこぼす形を見つけたら、`tests/lint-hook-stdout/` に `form_case` で
-  回帰ケースを足してから直す。取りこぼしの既知の形は linter 冒頭コメントにある
 - **「全部入り」を名乗る fixture は、対象が増えた瞬間に黙って古くなる**。
   「全 X を含む」fixture は、X が増えたときに更新を強制する仕組みが無いと
   新しい X だけが一度も検査されない。**fixture の要素数と対象側の実数が一致することを機械で測る**こと
@@ -145,18 +114,6 @@ paths:
   見たいときは床/ゲート側の入力だけ `--no-renames` で取り直す(既存の判定と入力を
   共有すると意味論まで変わるので共有しない)。
   実例: issue #255 — medium 床が `git mv claude/skills/foo/SKILL.md README.md` を tier=low で通した
-- **mutation 規約** (2 点目は本体を一括置換で編集するときも同じ):
-  - **1 回に 1 変数だけ変える**。複数変えた mutant が FAIL しても、どの変数が
-    検出されたのか特定できず誤った因果をコメントに残す
-    (実例: issue #218)
-  - **適用したら「実際に変わった行」を `git diff` で数える**。この repo は設計コメントが
-    厚く、置換がコメント行に当たって空振りすると「テストが検出できなかった」という
-    偽陰性になる。逆に同型ブロックが複数あるので**当たりすぎ**も起き、こちらは
-    別の理由でテストが緑になるぶん見つけにくい
-    (実例: issue #232 の空振り、issue #291 の過剰適用)
-  - **戻すのに `git checkout <file>` を使わない**。同居する未 commit の本編集も消える。
-    当てたときと同じ置換の逆向きで戻し、`git diff` が適用前と一致することで確認する。
-    本編集を先に commit してから当てれば衝突自体が起きない (実例: issue #288)
 - **過去の実測値を、新しい fixture の閾値の根拠に流用しない**。issue や commit
   message に残った数字は**そのとき動いていたコード**の上で測られたもので、退行を
   直した commit が別の高速化も同時に入れていると、退行だけを注入した mutant では
