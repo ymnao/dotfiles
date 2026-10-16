@@ -13,6 +13,7 @@ set -euo pipefail
 #     (SKIP 誤判定で ERROR が隠蔽されない)
 #   - 終了しない codex を watchdog が打ち切る → exit 3 (issue #335)
 #   - codex に CA バンドルをファイルで渡す / user 指定の CA は上書きしない
+#   - REVIEW.md は base のものだけを prompt に入れる (issue #455)
 #
 # isolation: codex を PATH 先頭の stub に差し替え、CODEX_STDERR の内容を
 # stderr に出して exit 1 する。git 前提条件 (base 超のコミット) は fake repo
@@ -118,6 +119,40 @@ printf 'f.txt -diff\n' >>"$BRANCH_NODIFF_REPO/.gitattributes"
 git -C "$BRANCH_NODIFF_REPO" add -A
 git -C "$BRANCH_NODIFF_REPO" commit -qm hide
 
+# REVIEW_BASE_REPO: base に REVIEW.md があり、feature がそれを書き換える
+# REVIEW_BRANCH_REPO: base に REVIEW.md が無く、feature が足す (issue #455)
+REVIEW_BASE_REPO="$WORKDIR/review-base-repo"
+git clone -q -b main "$FAKE_REPO" "$REVIEW_BASE_REPO"
+configure_repo "$REVIEW_BASE_REPO"
+printf 'REVIEW_BASE_MARKER\n' >"$REVIEW_BASE_REPO/REVIEW.md"
+git -C "$REVIEW_BASE_REPO" add -A
+git -C "$REVIEW_BASE_REPO" commit -qm review
+git -C "$REVIEW_BASE_REPO" checkout -qb feature
+printf 'REVIEW_BRANCH_MARKER\n' >"$REVIEW_BASE_REPO/REVIEW.md"
+printf 'b\n' >>"$REVIEW_BASE_REPO/f.txt"
+git -C "$REVIEW_BASE_REPO" add -A
+git -C "$REVIEW_BASE_REPO" commit -qm change
+REVIEW_BRANCH_REPO="$WORKDIR/review-branch-repo"
+git clone -q -b feature "$FAKE_REPO" "$REVIEW_BRANCH_REPO"
+configure_repo "$REVIEW_BRANCH_REPO"
+printf 'REVIEW_BRANCH_MARKER\n' >"$REVIEW_BRANCH_REPO/REVIEW.md"
+git -C "$REVIEW_BRANCH_REPO" add -A
+git -C "$REVIEW_BRANCH_REPO" commit -qm review
+# REVIEW_BROKEN_REPO: base の REVIEW.md の tree entry はあるが blob が読めない
+# (loose object を消す。clone 後に足した commit なので object は clone 側にだけある)
+REVIEW_BROKEN_REPO="$WORKDIR/review-broken-repo"
+git clone -q -b main "$FAKE_REPO" "$REVIEW_BROKEN_REPO"
+configure_repo "$REVIEW_BROKEN_REPO"
+printf 'REVIEW_BASE_MARKER\n' >"$REVIEW_BROKEN_REPO/REVIEW.md"
+git -C "$REVIEW_BROKEN_REPO" add -A
+git -C "$REVIEW_BROKEN_REPO" commit -qm review
+git -C "$REVIEW_BROKEN_REPO" checkout -qb feature
+printf 'b\n' >>"$REVIEW_BROKEN_REPO/f.txt"
+git -C "$REVIEW_BROKEN_REPO" add -A
+git -C "$REVIEW_BROKEN_REPO" commit -qm change
+review_blob="$(git -C "$REVIEW_BROKEN_REPO" rev-parse main:REVIEW.md)"
+rm -f "$REVIEW_BROKEN_REPO/.git/objects/${review_blob:0:2}/${review_blob:2}"
+
 pass=0
 fail=0
 
@@ -213,6 +248,68 @@ run_branch_attr_case() {
 
 run_branch_attr_case branch-generated-attr-ignored "$BRANCH_ATTR_REPO"
 run_branch_attr_case branch-nodiff-attr-ignored    "$BRANCH_NODIFF_REPO"
+
+# --- REVIEW.md (issue #455) ---
+#
+# REVIEW.md は base のものだけが prompt に入ること。ブランチで足した・
+# 書き換えた分を入れると、レビュー対象自身が指摘を抑える指示を書ける。
+# 無ければ見出しごと出ないこと。
+#
+# $1=名前, $2=run-review.sh を走らせるディレクトリ, $3=prompt にあるべき
+# マーカー (空なら見出しごと無いこと)
+run_review_md_case() {
+  local name="$1" dir="$2" want="$3" record="$WORKDIR/codex-stdin" problems=""
+  rm -f "$record"
+  (cd "$dir" \
+    && HTTPS_PROXY='' https_proxy='' \
+       PATH="$WORKDIR/bin:$PATH" CODEX_STDIN_RECORD="$record" \
+       bash "$TARGET" security >/dev/null 2>&1) || true
+  if [ ! -f "$record" ]; then
+    problems="codex not called"
+  else
+    # 行全体で見るのは、diff の中には `+REVIEW_BRANCH_MARKER` として正しく載るため
+    grep -qxF 'REVIEW_BRANCH_MARKER' "$record" && problems="$problems branch-review-md-in-prompt"
+    if [ -n "$want" ]; then
+      grep -qF '## Repository review instructions' "$record" || problems="$problems no-review-section"
+      grep -qxF "$want" "$record" || problems="$problems base-review-md-missing"
+    else
+      grep -qF '## Repository review instructions' "$record" && problems="$problems unexpected-review-section"
+    fi
+  fi
+  if [ -z "$problems" ]; then
+    pass=$((pass + 1))
+  else
+    echo "FAIL $name:$problems"
+    fail=$((fail + 1))
+  fi
+}
+
+run_review_md_case review-md-from-base       "$REVIEW_BASE_REPO"     REVIEW_BASE_MARKER
+run_review_md_case review-md-from-base-sub   "$REVIEW_BASE_REPO/sub" REVIEW_BASE_MARKER
+run_review_md_case review-md-added-on-branch "$REVIEW_BRANCH_REPO"   ''
+run_review_md_case review-md-absent          "$FAKE_REPO"            ''
+
+# base に REVIEW.md があるのに読めないときは、前提なしのレビューへ黙って
+# 戻らず止まること (存在確認を cat-file -e にした形はここを素通りした)
+broken_rc=0
+broken_marker="$WORKDIR/codex-called-broken"
+broken_err="$WORKDIR/broken-stderr"
+rm -f "$broken_marker"
+(cd "$REVIEW_BROKEN_REPO" \
+  && HTTPS_PROXY='' https_proxy='' \
+     PATH="$WORKDIR/bin:$PATH" CODEX_CALLED_MARKER="$broken_marker" \
+     LC_ALL=C bash "$TARGET" security >/dev/null 2>"$broken_err") || broken_rc=$?
+# 文言も見るのは、REVIEW.md より前の失敗でも同じ (非ゼロ・未起動) になるため。
+# LC_ALL=C は git の翻訳されたメッセージで grep が外れないように
+if [ "$broken_rc" != 0 ] && [ ! -f "$broken_marker" ] \
+  && grep -qF 'bad object main:REVIEW.md' "$broken_err"; then
+  pass=$((pass + 1))
+else
+  broken_called=no
+  [ -f "$broken_marker" ] && broken_called=yes
+  echo "FAIL review-md-unreadable: expected=(nonzero, called no) got=(exit $broken_rc, called $broken_called)"
+  fail=$((fail + 1))
+fi
 
 # 変更が生成ファイルだけなら codex を呼ばずに ERROR。空の diff を渡すと、
 # 何も見ていないのに pass が返りうる。

@@ -18,6 +18,8 @@ set -euo pipefail
 #                      neither it nor SSL_CERT_FILE is set (default: Homebrew's
 #                      ca-certificates bundle; skipped if not a readable file).
 #
+# Repository input: <base>:REVIEW.md, if present, is appended to the prompt.
+#
 # Output: validated review JSON on stdout (single line, schema-checked by
 # parse-review-output.sh).
 # Exit codes: 0 = verdict pass / 2 = findings / 1 = setup or parse error /
@@ -219,6 +221,25 @@ if [ -z "$DIFF_CONTENT" ] && [ -n "$EXCLUDED_STAT" ]; then
   error "no reviewable changes beyond $BASE_BRANCH: every changed file is linguist-generated (cwd: $CWD)"
 fi
 
+# repo 固有の前提 (対象のシェル・OS・テストの流儀) は観点プロンプトに書かず、
+# 対象 repo 直下の REVIEW.md から渡す (issue #455。名前は Claude Code の
+# Code Review が base ブランチから読むファイルに合わせた。
+# https://code.claude.com/docs/en/code-review-customize 、2026-10-16 確認)。
+# Why not working tree から読む: レビュー対象のブランチ自身が「この種の指摘は
+# 出すな」と書き足してレビューを骨抜きにできる。GIT_ATTR_SOURCE と同じ理由で
+# base から読み、ブランチで変えた分は merge 後のレビューから効く。
+# Why not `git show ... 2>/dev/null || 空`: 「無い」と「あるが読めない」
+# (partial clone で blob が取れない等) が同じ沈黙になり、後者で前提なしの
+# レビューへ黙って戻る。存在は tree entry の解決だけで見て、読めなければ
+# git show を set -e で止める。
+# Why not `git cat-file -e`: blob の取得まで試すので、partial clone の取得
+# 失敗も「無い」と同じ rc=128 になる。rev-parse は rc=0、続く git show は
+# rc=128 (promisor を消した blob:none clone で git 2.56.0、2026-10-16 実測)。
+REVIEW_INSTRUCTIONS=""
+if git rev-parse -q --verify "$BASE_BRANCH:REVIEW.md" >/dev/null; then
+  REVIEW_INSTRUCTIONS="$(git show "$BASE_BRANCH:REVIEW.md")"
+fi
+
 # codex review subcommand rejects --base + PROMPT in 0.142.3 (verified:
 # `error: the argument '--base <BRANCH>' cannot be used with '[PROMPT]'`).
 # Use codex exec instead with the diff embedded. Command names in the prompt
@@ -295,6 +316,10 @@ trap 'trap - EXIT; cleanup; exit 143' TERM
 # シグネチャ検出 (下の Sandbox skip 判定) と、通常失敗時の診断表示の両方で使う。
 {
   cat "$PROMPT_FILE"
+  if [ -n "$REVIEW_INSTRUCTIONS" ]; then
+    printf '\n\n## Repository review instructions\n\nREVIEW.md of this repository (as of %s) is below. Apply it on top of the focus areas above; where it states the target environment, use that instead of assuming one.\n\n%s\n' \
+      "$BASE_BRANCH" "$REVIEW_INSTRUCTIONS"
+  fi
   printf '\n\n## Target\n\nReview the diff below (produced by "git diff %s...HEAD" in %s). Do NOT modify any files. Output only the fenced JSON block per the Output contract above.\n' \
     "$BASE_BRANCH" "$CWD"
   if [ -n "$EXCLUDED_STAT" ]; then

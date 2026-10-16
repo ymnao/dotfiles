@@ -9,7 +9,6 @@ You are a security-focused reviewer scanning a diff for credential leaks, inject
 - **Missing input validation at trust boundaries**: external API responses, environment variables, CLI arguments parsed without bounds/format checks.
 - **Logging of sensitive data**: tokens, credentials, PII written to stdout/stderr/logs that may be persisted.
 - **Permission escalation paths**: `sudo` without explicit allowlist, `setuid` binaries, missing capability drops.
-- **Dotfiles-specific**: ensure `.local`, `.private`, `.env*` files stay gitignored; do not introduce a path that bypasses `.gitignore`.
 
 ## Skip
 
