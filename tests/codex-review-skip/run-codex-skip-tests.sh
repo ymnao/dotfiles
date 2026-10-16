@@ -298,8 +298,9 @@ rm -f "$broken_marker"
 (cd "$REVIEW_BROKEN_REPO" \
   && HTTPS_PROXY='' https_proxy='' \
      PATH="$WORKDIR/bin:$PATH" CODEX_CALLED_MARKER="$broken_marker" \
-     bash "$TARGET" security >/dev/null 2>"$broken_err") || broken_rc=$?
-# 文言も見るのは、REVIEW.md より前の失敗でも同じ (非ゼロ・未起動) になるため
+     LC_ALL=C bash "$TARGET" security >/dev/null 2>"$broken_err") || broken_rc=$?
+# 文言も見るのは、REVIEW.md より前の失敗でも同じ (非ゼロ・未起動) になるため。
+# LC_ALL=C は git の翻訳されたメッセージで grep が外れないように
 if [ "$broken_rc" != 0 ] && [ ! -f "$broken_marker" ] \
   && grep -qF 'bad object main:REVIEW.md' "$broken_err"; then
   pass=$((pass + 1))
