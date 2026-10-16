@@ -27,6 +27,7 @@ skill / hook / テスト / CI は、この目的を安全に達成するため�
 - `claude/cloud-setup.sh` は **symlink しない**（claude.ai/code のクラウド environment の setup script から呼び、`~/.claude/skills/` へ write-issue だけを届ける）
 - `claude/agents/` → `~/.claude/agents/` にシンボリックリンク（Claude Code サブエージェント定義）
 - `claude/rules/` → `~/.claude/rules/` にシンボリックリンク（path-scoped rules、frontmatter の `paths` glob にマッチしたときだけ lazy load）
+- `.claude/rules/` は **symlink しない**（この repo でだけロードする project rules。全 repo 共通の `claude/rules/` から dotfiles 固有の項目を分けた置き場）
 - `claude/plugins/` は **symlink しない**（第三者 Claude Code プラグインの vendoring と自作 mod の置き場。`~/.claude/plugins/` は Claude Code 自身が管理するため配線せず、`claude/settings.json` の `extraKnownMarketplaces` に `~/` 始まりの path で宣言し、セッション起動時に local marketplace として登録させる。`claude plugin marketplace add` は path をそのマシンの絶対パスに書き換えるので使わない。手順は各プラグインの README）
 - `claude/statusline.sh` → `~/.claude/statusline.sh` にシンボリックリンク（Claude Code の statusline スクリプト）
 - `starship/starship.toml` → `~/.config/starship.toml` にシンボリックリンク（Starship プロンプト設定、fish から init される）

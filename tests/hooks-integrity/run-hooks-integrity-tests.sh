@@ -685,7 +685,7 @@ check_cmd "codex/hooks.json の repo 参照 command が ${MIN_REPO_COMMANDS_CODE
 #
 # fixture は実 settings.json に jq で hook を 1 件だけ足したコピー。
 # mutation を適用したら「実際に 1 件だけ増えた」ことを確認してから判定する
-# (claude/rules/shell.md の mutation 規約。この repo は設計コメントが厚く、
+# (.claude/rules/dotfiles-shell.md の mutation 規約。この repo は設計コメントが厚く、
 # 置換が空振りして偽陰性の結論になった前歴が 2 回ある)。
 CASE15_DIR="$WORK/case15"
 mkdir -p "$CASE15_DIR"
