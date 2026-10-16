@@ -6,8 +6,8 @@ paths:
 
 # dotfiles 固有のシェル規約
 
-この repo のパスや道具を前提にする規約を含む項目 (項目単位で分ける)。実例だけが dotfiles 由来の項目は
-`claude/rules/shell.md` (全 repo 共通) に置く。
+この repo のパスや道具を前提にする規約を含む項目。実例だけが dotfiles 由来の項目は
+`claude/rules/shell.md` (全 repo 共通) に置く (分割は項目単位)。
 
 - **`agents/hooks/` (と `claude/hooks/` `codex/hooks/` の実体) は編集中の状態がそのまま
   live に効く** (`~/.claude/hooks/` 等からの symlink 経由)。途中で hook が壊れると
