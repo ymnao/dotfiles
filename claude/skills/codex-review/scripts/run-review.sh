@@ -225,10 +225,7 @@ fi
 # Why not working tree から読む: レビュー対象のブランチ自身が「この種の指摘は
 # 出すな」と書き足してレビューを骨抜きにできる。GIT_ATTR_SOURCE と同じ理由で
 # base から読み、ブランチで変えた分は merge 後のレビューから効く。
-REVIEW_INSTRUCTIONS=""
-if git cat-file -e "$BASE_BRANCH:REVIEW.md" 2>/dev/null; then
-  REVIEW_INSTRUCTIONS="$(git show "$BASE_BRANCH:REVIEW.md")"
-fi
+REVIEW_INSTRUCTIONS="$(git show "$BASE_BRANCH:REVIEW.md" 2>/dev/null)" || REVIEW_INSTRUCTIONS=""
 
 # codex review subcommand rejects --base + PROMPT in 0.142.3 (verified:
 # `error: the argument '--base <BRANCH>' cannot be used with '[PROMPT]'`).
