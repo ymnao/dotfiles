@@ -11,7 +11,7 @@ skill / hook / テスト / CI は、この目的を安全に達成するため�
 
 目的側のタスクは**踏んだその場で issue に落とす**（事前の棚卸しでは見つからないため）。手段側と比率で管理しない（経緯は `.claude/backlog.conf` のコメント）。
 
-リモート（クラウド）セッションでは実装を行わず、issue の起票だけ行う（`~/.claude` の skill・hook が届かないため）。書き方は、issue テンプレートがあればそれに従い、無ければ既存 issue の「問題 / やること / やらないこと / 背景」に合わせる。
+リモート（クラウド）セッションでは実装を行わず、issue の起票だけ行う（hook と大半の skill が届かないため。届けるものは `claude/cloud-setup.sh`）。書き方は write-issue skill に従う (未読なら `claude/skills/write-issue/SKILL.md` を Read)。
 
 ## 構造の要点
 
@@ -24,6 +24,7 @@ skill / hook / テスト / CI は、この目的を安全に達成するため�
 - `codex/skills/<name>` → `~/.agents/skills/<name>` に skill ごとのシンボリックリンク（Codex 公式の user scope。codex は旧配置 `~/.codex/skills` も読むため、そこに残る repo 向けリンクは `scripts/link.sh` が外す）
 - harness 間で内容が同一のスキルは `codex/skills/<name>` → `claude/skills/<name>` の repo 内ディレクトリシンボリックリンクで drift を防止（pr / resolve は独立ファイルのまま）。SKILL.md 単体を symlink にしないのは、Codex が skill 探索でファイル symlink を捨てるため（openai/codex#15756）
 - harness 共通の hook 実装は `agents/hooks/` に正本を置き、`claude/hooks/` と `codex/hooks/` からは相対 symlink で参照する（drift を構造的に防止）。codex 固有 hook（redact-secrets / notify-stop）は `codex/hooks/` に実体のまま置く。同じ理由で **Claude 固有 hook は `claude/hooks/` に実体のまま置く**（guard-sandbox-exclusions は Claude Code の `sandbox.excludedCommands` 専用で、codex には相当機構が無い）
+- `claude/cloud-setup.sh` は **symlink しない**（claude.ai/code のクラウド environment の setup script から呼び、`~/.claude/skills/` へ write-issue だけを届ける）
 - `claude/agents/` → `~/.claude/agents/` にシンボリックリンク（Claude Code サブエージェント定義）
 - `claude/rules/` → `~/.claude/rules/` にシンボリックリンク（path-scoped rules、frontmatter の `paths` glob にマッチしたときだけ lazy load）
 - `claude/plugins/` は **symlink しない**（第三者 Claude Code プラグインの vendoring と自作 mod の置き場。`~/.claude/plugins/` は Claude Code 自身が管理するため配線せず、`claude/settings.json` の `extraKnownMarketplaces` に `~/` 始まりの path で宣言し、セッション起動時に local marketplace として登録させる。`claude plugin marketplace add` は path をそのマシンの絶対パスに書き換えるので使わない。手順は各プラグインの README）
