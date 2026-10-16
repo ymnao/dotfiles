@@ -7,8 +7,8 @@
 
 - シェルスクリプトは macOS 標準の `/bin/bash` (3.2) でも動かす。bash 4+ の機能
   (`${var,,}` `${var^^}`、版確認の無い連想配列、`mapfile` / `readarray`、配列と `<<<`) は使わない
-- macOS (BSD) と Linux (GNU) の coreutils の両方で動かす (`sed -i ''`、`grep -P`、
-  `readlink -f`、`date -d` の差)
+- macOS (BSD) と Linux (GNU) の coreutils の両方で動かす。`sed -i` (引数仕様が非互換)、
+  `grep -P`、`readlink -f`、`date -d` / `stat -c` 等の GNU 拡張は使わない
 
 ## テスト
 

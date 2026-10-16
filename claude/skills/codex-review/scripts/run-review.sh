@@ -18,6 +18,8 @@ set -euo pipefail
 #                      neither it nor SSL_CERT_FILE is set (default: Homebrew's
 #                      ca-certificates bundle; skipped if not a readable file).
 #
+# Repository input: <base>:REVIEW.md, if present, is appended to the prompt.
+#
 # Output: validated review JSON on stdout (single line, schema-checked by
 # parse-review-output.sh).
 # Exit codes: 0 = verdict pass / 2 = findings / 1 = setup or parse error /
@@ -221,11 +223,18 @@ fi
 
 # repo 固有の前提 (対象のシェル・OS・テストの流儀) は観点プロンプトに書かず、
 # 対象 repo 直下の REVIEW.md から渡す (issue #455。名前は Claude Code の
-# Code Review が読むファイルに合わせた)。
+# Code Review が base ブランチから読むファイルに合わせた。
+# https://code.claude.com/docs/en/code-review-customize 、2026-10-16 確認)。
 # Why not working tree から読む: レビュー対象のブランチ自身が「この種の指摘は
 # 出すな」と書き足してレビューを骨抜きにできる。GIT_ATTR_SOURCE と同じ理由で
 # base から読み、ブランチで変えた分は merge 後のレビューから効く。
-REVIEW_INSTRUCTIONS="$(git show "$BASE_BRANCH:REVIEW.md" 2>/dev/null)" || REVIEW_INSTRUCTIONS=""
+# Why not `git show ... 2>/dev/null || 空`: 「無い」と「あるが読めない」
+# (object 破損・partial clone の取得失敗) が同じ沈黙になり、後者で前提なしの
+# レビューへ黙って戻る。存在を確かめてからの git show は set -e で止める。
+REVIEW_INSTRUCTIONS=""
+if git cat-file -e "$BASE_BRANCH:REVIEW.md" 2>/dev/null; then
+  REVIEW_INSTRUCTIONS="$(git show "$BASE_BRANCH:REVIEW.md")"
+fi
 
 # codex review subcommand rejects --base + PROMPT in 0.142.3 (verified:
 # `error: the argument '--base <BRANCH>' cannot be used with '[PROMPT]'`).
