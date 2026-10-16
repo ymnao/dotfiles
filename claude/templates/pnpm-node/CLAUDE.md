@@ -27,7 +27,7 @@
 
 ## CI (GitHub Actions)
 
-- 継続更新は Dependabot に任せ、pnpm 11.16+ の `pnpm update --include-github-actions` (fish abbr `pnua`) は **weekly を待たずに手元で上げたいときだけ**使う。npm 依存と lockfile も一緒に動く点に注意 (actions を「足す」フラグ)。常時有効化する `update.githubActions` は **この repo の `pnpm-workspace.yaml` にしか置けない** (グローバル設定では無視される)
+- action の継続更新は Dependabot に任せ、pnpm 11.16+ の `pnpm update --include-github-actions` (fish abbr `pnua`) は **weekly を待たずに手元で上げたいときだけ**使う。npm 依存と lockfile も一緒に動く点に注意 (actions を「足す」フラグ)。常時有効化する `update.githubActions` は **この repo の `pnpm-workspace.yaml` にしか置けない** (グローバル設定では無視される)
 
 ## プロジェクト固有の注意点
 
