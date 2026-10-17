@@ -36,6 +36,7 @@ cat >"$FAKE" <<EOF
 body=\$(cat)
 case "\$body" in
   *FATAL*) echo "fatal" >&2; exit 2 ;;
+  *NORULES*) echo "== No rules found, textlint hasn't done anything =="; exit 1 ;;
   *NG*) echo "body.md:1:1: fake violation [Error/fake-rule]"; exit 1 ;;
 esac
 exit 0
@@ -51,6 +52,7 @@ printf 'NG 相対\n' > "$WORK/rel.md"
 printf 'NG 空白\n' > "$WORK/dir with space/ng.md"
 printf '問題のない本文\n' > "$WORK/ok.md"
 printf 'FATAL\n' > "$WORK/fatal.md"
+printf 'NORULES\n' > "$WORK/norules.md"
 
 pass=0
 fail=0
@@ -68,16 +70,21 @@ record() {
   fi
 }
 
-# run_case <name> <expect_rc> <state_dir> <command> [cwd] [textlint]
+# 本番は ~/.claude/hooks や ~/.codex/hooks の dir symlink 越しに起動されるので、同じ形を作る
+mkdir -p "$BASE/home"
+ln -s "$(dirname "$HOOK")" "$BASE/home/hooks"
+LINKED_HOOK="$BASE/home/hooks/$(basename "$HOOK")"
+
+# run_case <name> <expect_rc> <state_dir> <command> [cwd] [textlint] [hook]
 run_case() {
-  local name="$1" expect="$2" state="$3" cmd="$4" cwd="${5-$WORK}" tl="${6-$FAKE}"
+  local name="$1" expect="$2" state="$3" cmd="$4" cwd="${5-$WORK}" tl="${6-$FAKE}" hook="${7-$HOOK}"
   local payload rc=0 out err
   payload=$(jq -n --arg c "$cmd" --arg cwd "$cwd" --arg s "test-session" \
     '{tool_name: "Bash", tool_input: {command: $c}, cwd: $cwd, session_id: $s}')
   rm -f "$CALLED"
   out=$(cd "$BASE" && printf '%s' "$payload" \
     | LINT_GH_BODY_TEXTLINT="$tl" LINT_GH_BODY_STATE_DIR="$BASE/state-$state" \
-      bash "$HOOK" 2>"$BASE/stderr") || rc=$?
+      bash "$hook" 2>"$BASE/stderr") || rc=$?
   err=$(cat "$BASE/stderr")
   record "$name (expected exit $expect, got $rc)" test "$rc" -eq "$expect" \
     || printf '%s\n' "$err" | sed 's/^/    /'
@@ -87,8 +94,9 @@ run_case() {
 
 # --- 止める -------------------------------------------------------------
 run_case "pr create --body-file で違反あり → block" 2 a "gh pr create --title t --body-file $WORK/ng.md"
-record "block 時の stderr に textlint の指摘が載る" grep -qF 'fake violation' <<< "$LAST_ERR"
-record "block 時の stderr に本文のパスが載る" grep -qF "$WORK/ng.md" <<< "$LAST_ERR"
+# LAST_ERR は日本語を含むので、バイト列として ASCII の固定文字列を探す
+record "block 時の stderr に textlint の指摘が載る" env LC_ALL=C grep -qF 'fake violation' <<< "$LAST_ERR"
+record "block 時の stderr に本文のパスが載る" env LC_ALL=C grep -qF "$WORK/ng.md" <<< "$LAST_ERR"
 # codex は stdout が { / [ で始まると本文を捨てる。何も出さないことを pin する
 record "block 時の stdout は空" test -z "$LAST_OUT"
 
@@ -102,6 +110,7 @@ run_case "直す前の本文 → block" 2 p "gh pr create --title t --body-file 
 printf 'NG 一部だけ直した\n' > "$WORK/edit.md"
 run_case "同じパスで内容を変えた 2 回目は通す" 0 p "gh pr create --title t --body-file $WORK/edit.md"
 
+run_case "dir symlink 越しの起動 → block" 2 sym "gh pr create --title t --body-file $WORK/ng.md" "$WORK" "$FAKE" "$LINKED_HOOK"
 run_case "issue create -F で違反あり → block" 2 b "gh issue create -t t -F $WORK/ng.md"
 run_case "--body-file=<path> の形 → block" 2 c "gh pr edit 1 --body-file=$WORK/ng.md"
 run_case "単一引用のパス → block" 2 d2 "gh pr comment 1 --body-file '$WORK/ng.md'"
@@ -111,6 +120,10 @@ run_case "2 つ目の gh 呼び出しも見る → block" 2 f "gh pr comment 1 -
 
 # --- 通す ---------------------------------------------------------------
 run_case "違反なし → allow" 0 g "gh pr create --title t --body-file $WORK/ok.md"
+run_case "指摘の行が無い exit 1 (ルール未読込) は通す" 0 h2 "gh pr create --title t --body-file $WORK/norules.md"
+# state dir の位置に普通のファイルを置いて mkdir を失敗させる
+: > "$BASE/state-ro"
+run_case "止めた記録を書けないなら通す" 0 ro "gh pr create --title t --body-file $WORK/ng.md"
 run_case "textlint の異常終了 (exit 2) は通す" 0 h "gh pr create --title t --body-file $WORK/fatal.md"
 run_case "gh api -F はフィールド指定なので見ない" 0 i "gh api repos/o/r/issues -F body=@$WORK/ng.md"
 record "gh api では textlint を呼ばない" test ! -e "$CALLED"

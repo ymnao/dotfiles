@@ -38,7 +38,10 @@ segments=$(printf '%s\n' "$command" \
   || true)
 [[ -z "$segments" ]] && exit 0
 
-repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd -P) || exit 0
+# 先に hooks/ の実体へ解決する。`<hooks>/../..` を一度に cd すると、~/.codex/hooks のような
+# dir symlink では `..` が文字列のまま畳まれて $HOME に着く
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P) || exit 0
+repo_root=$(cd "$script_dir/../.." 2>/dev/null && pwd -P) || exit 0
 textlint=${LINT_GH_BODY_TEXTLINT:-$repo_root/node_modules/.bin/textlint}
 config="$repo_root/agents/textlint/textlintrc.json"
 [[ -x "$textlint" && -f "$config" ]] || exit 0
@@ -55,7 +58,7 @@ extract_body_file() {
 }
 
 checksum() {
-  cksum | tr -d ' '
+  cksum | tr ' ' '-'
 }
 
 while IFS= read -r segment; do
@@ -72,10 +75,11 @@ while IFS= read -r segment; do
   [[ -e "$state_dir/$content_key" ]] && continue
 
   report=$("$textlint" --config "$config" --format unix --stdin --stdin-filename body.md < "$body_file" 2>/dev/null)
-  # 2 以上は設定やモジュールの不備なので通す
-  [[ $? -eq 1 ]] || continue
+  # textlint 15 はルールが 1 つも読めないときも exit 1 で終わるので、指摘の行の有無で見る
+  [[ $? -eq 1 && "$report" == *'[Error/'* ]] || continue
 
-  mkdir -p "$state_dir" 2>/dev/null && : > "$state_dir/$path_key" && : > "$state_dir/$content_key"
+  # 記録を残せないと 2 回目も止まり続けるので、そのときは止めない
+  { mkdir -p "$state_dir" && : > "$state_dir/$path_key" && : > "$state_dir/$content_key"; } 2>/dev/null || exit 0
   cat >&2 <<EOF
 [lint-gh-body] 本文 ($body_file) に AI の文章に多い書き方が見つかりました。
 指摘を参考に本文を直してから、同じコマンドを実行し直してください。
