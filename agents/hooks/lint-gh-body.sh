@@ -79,8 +79,9 @@ while IFS= read -r segment; do
   # textlint 15 はルールが 1 つも読めないときも exit 1 で終わるので、指摘の行の有無で見る
   [[ $? -eq 1 && "$report" == *'[Error/'* ]] || continue
 
-  # 記録を残せないと 2 回目も止まり続けるので、そのときは止めない
-  { mkdir -p "$state_dir" && : > "$state_dir/$path_key" && : > "$state_dir/$content_key"; } 2>/dev/null || exit 0
+  # 記録を残せないと 2 回目も止まり続けるので、そのときは止めない。印をファイルではなく
+  # mkdir で作るのは、TMPDIR の無い環境の共有 /tmp で他人が置いた symlink を辿って切り詰めないため
+  { mkdir -p "$state_dir" && mkdir "$state_dir/$path_key" "$state_dir/$content_key"; } 2>/dev/null || exit 0
   cat >&2 <<EOF
 [lint-gh-body] 本文 ($body_file) に AI の文章に多い書き方が見つかりました。
 指摘を参考に本文を直してから、同じコマンドを実行し直してください。
