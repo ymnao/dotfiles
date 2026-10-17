@@ -1,0 +1,10 @@
+{
+  "rules": {
+    "@textlint-ja/preset-ai-writing": true,
+    "preset-ai-words-ja": {
+      "no-ai-words": {
+        "allows": ["実測", "経路", "検査", "正本", "配線", "照合", "断定", "ゲート"]
+      }
+    }
+  }
+}

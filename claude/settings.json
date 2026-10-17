@@ -144,6 +144,10 @@
             "type": "command",
             "command": "bash \"$HOME/.claude/hooks/guard-sandbox-exclusions.sh\"",
             "onFailure": "block"
+          },
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/lint-gh-body.sh\""
           }
         ]
       },
