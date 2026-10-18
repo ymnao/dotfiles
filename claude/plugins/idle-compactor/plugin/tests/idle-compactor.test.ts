@@ -23,7 +23,7 @@ type World = {
   headless: boolean
   // What /compact does beneath the plugin, from 2.1.299: 'replaced' compacts
   // without the plugin's session.compact hook seeing it, 'noop' leaves the
-  // conversation as it was. Undefined runs it through the hooks.
+  // context as it was. Undefined runs it through the hooks.
   compactBeneath: 'replaced' | 'noop' | undefined
   // Set by such a /compact: completes its turn, which the test fires itself.
   completeCompactTurn: (() => Promise<unknown>) | undefined
@@ -34,8 +34,6 @@ type World = {
   logs: string[]
   compactions: number
   contextTokens: number | undefined
-  // How many rows `$.session.messages()` answers.
-  rows: number
   rateLimits: SessionRateLimit[]
   settings: Record<string, unknown>
 }
@@ -43,7 +41,7 @@ type World = {
 function world(on: On, env: Record<string, string> = {}) {
   const clock = mock.clock(on, { now: START })
   mock.env(on, env)
-  const w: World = { headless: false, compactBeneath: undefined, completeCompactTurn: undefined, engine: undefined, commandRuns: [], store: new Map(), logs: [], compactions: 0, contextTokens: 120_000, rows: 40, rateLimits: [], settings: {} }
+  const w: World = { headless: false, compactBeneath: undefined, completeCompactTurn: undefined, engine: undefined, commandRuns: [], store: new Map(), logs: [], compactions: 0, contextTokens: 120_000, rateLimits: [], settings: {} }
   on('ui.log', ($, e) => {
     w.logs.push(e.text)
     return { value: undefined }
@@ -70,7 +68,6 @@ function world(on: On, env: Record<string, string> = {}) {
       rateLimits: w.rateLimits,
     },
   }))
-  on('session.messages', () => ({ value: Array.from({ length: w.rows }, () => ({ role: 'user', text: 'hi', toolUses: [] })) }))
   on('turn.start', ($, e) => ({ turnId: e.turnId }))
   on('turn.complete', ($, e) => ({ text: e.answer, usage: e.usage }))
   // /compact, run by the plugin through $.command.run: in an SDK session it
@@ -81,13 +78,10 @@ function world(on: On, env: Record<string, string> = {}) {
     if (engine === undefined) throw new Error('set w.engine to run /compact')
     await engine.turn.start({ text: '/compact', turnId: 'compact-turn' })
     if (w.compactBeneath === 'replaced') {
-      // A summary and the kept tail, with no response yet to read context from.
+      // No response yet to read context from.
       w.compactions += 1
-      w.rows = 3
       w.contextTokens = undefined
-    } else if (w.compactBeneath === 'noop') {
-      w.rows += 1
-    } else {
+    } else if (w.compactBeneath === undefined) {
       await engine.session.compact({ trigger: 'manual', messages: [{ role: 'user', text: 'hi', toolUses: [] }] })
     }
     const completeTurn = () =>
@@ -262,7 +256,7 @@ describe('SDK sessions (desktop Code tab)', () => {
     expect(log[0]?.tokensBefore).toBe(120_000)
   })
 
-  test('records a /compact that left the conversation as it was as failed', async ($, on) => {
+  test('records a /compact that left the context as it was as failed', async ($, on) => {
     const { clock, w } = world(on)
     await startHeadless($, on, w)
     w.compactBeneath = 'noop'

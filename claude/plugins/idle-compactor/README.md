@@ -39,16 +39,18 @@ symlink なので、rename が symlink 自体を置き換えて dotfiles から�
 `/idle-compactor` の出力が `needs 50,000+ tokens` になっていることで確かめられる。
 
 - `plugin/hooks/idle-compactor.ts`: SDK セッションで `$.command.run` の `/compact` が
-  返ったあと、hook に届かなかった圧縮を `$.session.messages()` の行数が `/compact` の
-  前より減ったかで判定する。2.1.299 の Desktop では圧縮自体は走るが、プラグイン
+  返ったあと、hook に届かなかった圧縮を `$.session.usage()` の context tokens が
+  値なしになったかで判定する。2.1.299 の Desktop では圧縮自体は走るが、プラグイン
   自身の `session.compact` hook に届かず、upstream のままだと毎回 `failed` と記録される
   (2026-10-15〜10-17 UTC に `/compact ran without compacting: (no output)` で記録された
   24 件のうち、セッションログが残る 23 件すべてで記録の 1 秒以内に `compact_boundary` が
   書かれていた。記録と同時刻のセッションログの `version` で見ると、10-13〜10-15 の `compacted`
   は 2.1.295、この `failed` は 2.1.299 のセッションだった (どちらもログの無い分を除く))。
-  `$.session.usage()` の context は使えない — 2.1.302 のバイナリでは最後の assistant
-  メッセージの usage から計算する。圧縮直後の `/compact` の turn には応答メッセージが無いので、
-  `tokens` は無いか、残した末尾の assistant の圧縮前の値になる。
+  2026-10-18 に 2.1.299 の Desktop で診断値を記録した 4 件 (3 セッション) では、どれも
+  記録の 3.3〜3.5 秒前に `compact_boundary` が書かれ、`/compact` の前後で `$.session.messages()`
+  の行数は 4〜5 行増え (行数では判定できない)、context tokens は値なしになり、3 秒後も
+  同じだった。plugin API の型宣言 (`SessionContextUsage`) も、圧縮直後は次の応答まで
+  `tokens` が無いと書いている。何もしなかった `/compact` で値が前のまま残るかは実測していない。
   あわせて、`$.command.run` が返った後に完了する `/compact` の turn で idle の計時が
   再 arm されないよう、hook 経路と同じ `compactedTurnId` を立てる。テストは
   `plugin/tests/idle-compactor.test.ts` の SDK sessions に 3 件足した。

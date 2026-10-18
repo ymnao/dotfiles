@@ -227,16 +227,16 @@ async function check($: EngineInterface, state: State): Promise<void> {
     // An SDK session compacts inside a turn: run /compact as if typed. Up to
     // 2.1.295 the compaction passed through this plugin's own
     // `session.compact` hook, which records it.
-    const rowsBefore = (await $.session.messages()).length
     const output = await $.command.run({ command: 'compact', args: '' })
     // The /compact turn completes after this returns; its completion is no
     // new activity to wait out.
     if (state.turnRunning) state.compactedTurnId = state.currentTurnId
     if (state.compacting !== undefined) {
-      // From 2.1.299 that hook does not see it, and `$.session.usage()` has no
-      // context reading until the next response, so a compaction shows only
-      // as the conversation shrinking to its summary.
-      if ((await $.session.messages()).length < rowsBefore) {
+      // From 2.1.299 that hook does not see it, and `$.session.messages()`
+      // grew rather than shrank in the runs measured. `$.session.usage()` has
+      // no context reading after a compaction until the next response.
+      const tokensAfter = (await $.session.usage()).context.tokens
+      if (tokensAfter === undefined) {
         await finishCompaction($, state, { tokensBefore: contextTokens })
       } else {
         await record($, {
@@ -244,6 +244,7 @@ async function check($: EngineInterface, state: State): Promise<void> {
           reason: `/compact ran without compacting: ${output.text ?? '(no output)'}`.slice(0, 300),
           idleMinutes,
           contextTokens,
+          tokensAfter,
         })
       }
     }
