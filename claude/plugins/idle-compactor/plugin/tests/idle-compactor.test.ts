@@ -25,6 +25,8 @@ type World = {
   // without the plugin's session.compact hook seeing it, 'noop' leaves the
   // conversation as it was. Undefined runs it through the hooks.
   compactBeneath: 'replaced' | 'noop' | undefined
+  // Set by such a /compact: completes its turn, which the test fires itself.
+  completeCompactTurn: (() => Promise<unknown>) | undefined
   // The test's own engine, which the /compact stub drives.
   engine: Engine | undefined
   commandRuns: string[]
@@ -41,7 +43,7 @@ type World = {
 function world(on: On, env: Record<string, string> = {}) {
   const clock = mock.clock(on, { now: START })
   mock.env(on, env)
-  const w: World = { headless: false, compactBeneath: undefined, engine: undefined, commandRuns: [], store: new Map(), logs: [], compactions: 0, contextTokens: 120_000, rows: 40, rateLimits: [], settings: {} }
+  const w: World = { headless: false, compactBeneath: undefined, completeCompactTurn: undefined, engine: undefined, commandRuns: [], store: new Map(), logs: [], compactions: 0, contextTokens: 120_000, rows: 40, rateLimits: [], settings: {} }
   on('ui.log', ($, e) => {
     w.logs.push(e.text)
     return { value: undefined }
@@ -85,18 +87,25 @@ function world(on: On, env: Record<string, string> = {}) {
       w.contextTokens = undefined
     } else if (w.compactBeneath === 'noop') {
       w.rows += 1
-    } else if (w.compactBeneath === undefined) {
+    } else {
       await engine.session.compact({ trigger: 'manual', messages: [{ role: 'user', text: 'hi', toolUses: [] }] })
     }
-    await engine.turn.complete({
-      answer: '',
-      durationMs: 5_000,
-      isAborted: false,
-      turnId: 'compact-turn',
-      reason: 'answer',
-      usage: USAGE,
-    })
-    return w.compactBeneath === undefined ? { text: 'Compacted' } : {}
+    const completeTurn = () =>
+      engine.turn.complete({
+        answer: '',
+        durationMs: 5_000,
+        isAborted: false,
+        turnId: 'compact-turn',
+        reason: 'answer',
+        usage: USAGE,
+      })
+    if (w.compactBeneath !== undefined) {
+      // The engine completes the turn after /compact has returned.
+      w.completeCompactTurn = completeTurn
+      return {}
+    }
+    await completeTurn()
+    return { text: 'Compacted' }
   })
   on('session.compact', ($, e) => {
     if (w.headless && e.trigger !== 'manual') {
@@ -251,8 +260,6 @@ describe('SDK sessions (desktop Code tab)', () => {
     const log = w.store.get('log') as { outcome: string; tokensBefore?: number }[]
     expect(log.map(entry => entry.outcome)).toEqual(['compacted'])
     expect(log[0]?.tokensBefore).toBe(120_000)
-    await clock.advance(51 * MINUTE)
-    expect(w.commandRuns).toEqual(['compact'])
   })
 
   test('records a /compact that left the conversation as it was as failed', async ($, on) => {
@@ -263,6 +270,15 @@ describe('SDK sessions (desktop Code tab)', () => {
     await clock.advance(51 * MINUTE)
     const log = w.store.get('log') as { outcome: string }[]
     expect(log.map(entry => entry.outcome)).toEqual(['failed'])
+  })
+
+  test('the /compact turn completing after /compact returned does not re-arm', async ($, on) => {
+    const { clock, w } = world(on)
+    await startHeadless($, on, w)
+    w.compactBeneath = 'noop'
+    await completeTurn($)
+    await clock.advance(51 * MINUTE)
+    await w.completeCompactTurn?.()
     await clock.advance(51 * MINUTE)
     expect(w.commandRuns).toEqual(['compact'])
   })

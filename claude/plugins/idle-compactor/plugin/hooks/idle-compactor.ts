@@ -229,9 +229,9 @@ async function check($: EngineInterface, state: State): Promise<void> {
     // `session.compact` hook, which records it.
     const rowsBefore = (await $.session.messages()).length
     const output = await $.command.run({ command: 'compact', args: '' })
-    // The /compact turn's completion may have re-armed the idle clock.
-    state.armed = false
-    stopPolling(state)
+    // The /compact turn completes after this returns; its completion is no
+    // new activity to wait out.
+    if (state.turnRunning) state.compactedTurnId = state.currentTurnId
     if (state.compacting !== undefined) {
       // From 2.1.299 that hook does not see it, and `$.session.usage()` has no
       // context reading until the next response, so a compaction shows only
