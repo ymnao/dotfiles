@@ -38,7 +38,26 @@ symlink なので、rename が symlink 自体を置き換えて dotfiles から�
 通らず (2.1.280 で実測)、upstream との差分を 1 箇所に保つ方を取った。効いているかは
 `/idle-compactor` の出力が `needs 50,000+ tokens` になっていることで確かめられる。
 
-upstream を追従するときはこの 1 箇所だけ手で戻す。
+- `plugin/hooks/idle-compactor.ts`: SDK セッションで `$.command.run` の `/compact` が
+  返ったあと、hook に届かなかった圧縮を `$.session.usage()` の context の減り方
+  (圧縮前の半分未満) で判定する。2.1.299 の Desktop では圧縮自体は走るが、プラグイン
+  自身の `session.compact` hook に届かず、upstream のままだと毎回 `failed` と記録される
+  (2026-10-15〜10-17 の `failed` 27 件中 23 件は、記録の 1 秒以内にセッションログへ
+  `compact_boundary` が書かれていた。2.1.295 では同じ経路が `compacted` と記録されていた)。
+  テストは `plugin/tests/idle-compactor.test.ts` の SDK sessions に 2 件足した。
+
+upstream を追従するときは、1 つ目は手で戻し、2 つ目は upstream に同等の修正が
+入っているかを見る。
+
+## 本体の idleCompaction との関係
+
+Claude Code 本体にも放置中の自動圧縮 (`idleCompaction`、既定 on) があるが、
+`claude/settings.json` で `false` にしてこのプラグイン 1 本に寄せている。本体の方は
+公式 settings reference の発動条件に interactive terminal session が入っていて、
+Desktop の Code tab で動いた記録が無い (2026-10-18 時点の `~/.claude/projects` の
+セッションログ 653 本中 639 本が Desktop で、本体の `Compacted while idle` は 0 件)。
+Desktop で放置中の圧縮を担っているのはこのプラグインなので、terminal で二重に動く
+余地の方を閉じた。
 
 ## 有効化
 
@@ -73,8 +92,9 @@ claude plugin install idle-compactor@claude-idle-compactor --scope user
 
 desktop アプリの Code tab (SDK セッション) では `/compact` を turn として実行する。
 手打ちの `/compact` では Stop hook が発火しなかった (2026-09-25、Stop hook の通知が
-出ないことで確認)。プラグインが `$.command.run` で走らせる `/compact` は同じ経路の
-はずだが未測定。発火すると `stop-gate.conf` を置いた repo で `make gate` が無人で
+出ないことで確認)。プラグインが `$.command.run` で走らせる `/compact` はセッションログ上
+手打ちと同じ形 (`<command-name>/compact` の user 行と `trigger: manual` の
+`compact_boundary`) で残る (2026-10-17、2.1.299)。Stop hook の発火は未測定。発火すると `stop-gate.conf` を置いた repo で `make gate` が無人で
 走りうるので、放置後に「タスクが完了しました」通知が出ていたらこの前提を疑う。
 
 ## 前提の脆さ
