@@ -39,12 +39,17 @@ symlink なので、rename が symlink 自体を置き換えて dotfiles から�
 `/idle-compactor` の出力が `needs 50,000+ tokens` になっていることで確かめられる。
 
 - `plugin/hooks/idle-compactor.ts`: SDK セッションで `$.command.run` の `/compact` が
-  返ったあと、hook に届かなかった圧縮を `$.session.usage()` の context が圧縮前より
-  減ったかで判定する。2.1.299 の Desktop では圧縮自体は走るが、プラグイン
+  返ったあと、hook に届かなかった圧縮を `$.session.messages()` の行数が `/compact` の
+  前より減ったかで判定する。2.1.299 の Desktop では圧縮自体は走るが、プラグイン
   自身の `session.compact` hook に届かず、upstream のままだと毎回 `failed` と記録される
-  (2026-10-15〜10-17 の `failed` 27 件中 23 件は、記録の 1 秒以内にセッションログへ
-  `compact_boundary` が書かれていた。2.1.295 では同じ経路が `compacted` と記録されていた)。
-  テストは `plugin/tests/idle-compactor.test.ts` の SDK sessions に 2 件足した。
+  (2026-10-15〜10-17 UTC に `/compact ran without compacting: (no output)` で記録された
+  24 件のうち、セッションログが残る 23 件すべてで記録の 1 秒以内に `compact_boundary` が
+  書かれていた。2.1.295 では同じ経路が `compacted` と記録されていた)。
+  `$.session.usage()` の context は使えない — 2.1.302 のバイナリでは最後の assistant
+  メッセージの usage から計算し、無ければ `tokens` を返さない。圧縮直後の `/compact` の
+  turn には応答メッセージが無い。
+  あわせて、`/compact` の turn の完了で idle の計時が再 arm されないよう、`/compact` の後に
+  解除する。テストは `plugin/tests/idle-compactor.test.ts` の SDK sessions に 2 件足した。
 
 upstream を追従するときは、1 つ目は手で戻し、2 つ目は upstream に同等の修正が
 入っているかを見る。
@@ -52,12 +57,15 @@ upstream を追従するときは、1 つ目は手で戻し、2 つ目は upstre
 ## 本体の idleCompaction との関係
 
 Claude Code 本体にも放置中の自動圧縮 (`idleCompaction`、既定 on) があるが、
-`claude/settings.json` で `false` にしてこのプラグイン 1 本に寄せている。本体の方は
-公式 settings reference の発動条件に interactive terminal session が入っていて、
-Desktop の Code tab で動いた記録が無い (2026-10-18 時点の `~/.claude/projects` の
-セッションログ 653 本中 639 本が Desktop で、本体の `Compacted while idle` は 0 件)。
-Desktop で放置中の圧縮を担っているのはこのプラグインなので、terminal で二重に動く
-余地の方を閉じた。
+`claude/settings.json` で `false` にしてこのプラグイン 1 本に寄せている (#463)。
+本体の方は、公式 settings reference の発動条件に interactive terminal session が入っており、
+2.1.302 のバイナリではモードが feature flag 次第 (取れなければ off)、しきい値は既定
+200,000 tokens、発火は 1 時間の cache 期限の約 9 割 (約 54 分) になっている。50 分で
+圧縮するこのプラグインが先に走るので、両方が有効だと本体はプラグインの陰に入る。
+2026-10-18 時点の `~/.claude/projects` のセッションログ 654 本 (うち Desktop 640 本) に
+`compact_boundary` は 205 件あり、trigger は全件 `manual` だった (このプラグインの `/compact`
+もここに入る)。本体が単独で動くかは測っていない。Desktop で放置中の圧縮を担っている
+のはこのプラグインなので、二重に動く余地の方を閉じた。
 
 ## 有効化
 

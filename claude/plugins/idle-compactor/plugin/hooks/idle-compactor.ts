@@ -227,21 +227,23 @@ async function check($: EngineInterface, state: State): Promise<void> {
     // An SDK session compacts inside a turn: run /compact as if typed. Up to
     // 2.1.295 the compaction passed through this plugin's own
     // `session.compact` hook, which records it.
+    const rowsBefore = (await $.session.messages()).length
     const output = await $.command.run({ command: 'compact', args: '' })
+    // The /compact turn's completion may have re-armed the idle clock.
+    state.armed = false
+    stopPolling(state)
     if (state.compacting !== undefined) {
-      // From 2.1.299 that hook no longer sees it (likely the engine leaving a
-      // module's hooks out of events its own call raises), so judge by the
-      // context the compaction left behind.
-      const tokensAfter = (await $.session.usage()).context.tokens
-      if (tokensAfter !== undefined && tokensAfter < contextTokens) {
-        await finishCompaction($, state, { tokensBefore: contextTokens, tokensAfter })
+      // From 2.1.299 that hook does not see it, and `$.session.usage()` has no
+      // context reading until the next response, so a compaction shows only
+      // as the conversation shrinking to its summary.
+      if ((await $.session.messages()).length < rowsBefore) {
+        await finishCompaction($, state, { tokensBefore: contextTokens })
       } else {
         await record($, {
           outcome: 'failed',
           reason: `/compact ran without compacting: ${output.text ?? '(no output)'}`.slice(0, 300),
           idleMinutes,
           contextTokens,
-          tokensAfter,
         })
       }
     }
