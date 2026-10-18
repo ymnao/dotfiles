@@ -91,8 +91,11 @@ home の違うマシンで読めなくなる (#449)。
 整形だけの差分なら `git restore claude/settings.json` で戻す。symlink は切れない
 (`readlink` で確認済み)。
 
-install すると plugin は `~/.claude/plugins/cache/claude-idle-compactor/idle-compactor/unknown/`
-に**コピーされる** (repo を直接読むのではない)。repo 側を変えたら install し直す。
+install 済みの plugin は repo の `plugin/` から直接読まれる。repo 側の変更は次のセッション
+起動か `/reload-plugins` で効き、install し直す必要は無い (2026-10-18、2.1.302 の
+`claude plugin install` が "loads in place from …/claude/plugins/idle-compactor/plugin" と
+表示した。以前この README は `~/.claude/plugins/cache/` へコピーされると書いていた)。checkout している
+ブランチのコードがそのまま動く点に注意。
 
 ```fish
 claude plugin install idle-compactor@claude-idle-compactor --scope user
