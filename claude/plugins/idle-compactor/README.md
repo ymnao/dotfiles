@@ -39,8 +39,8 @@ symlink なので、rename が symlink 自体を置き換えて dotfiles から�
 `/idle-compactor` の出力が `needs 50,000+ tokens` になっていることで確かめられる。
 
 - `plugin/hooks/idle-compactor.ts`: SDK セッションで `$.command.run` の `/compact` が
-  返ったあと、hook に届かなかった圧縮を `$.session.usage()` の context の減り方
-  (圧縮前の半分未満) で判定する。2.1.299 の Desktop では圧縮自体は走るが、プラグイン
+  返ったあと、hook に届かなかった圧縮を `$.session.usage()` の context が圧縮前より
+  減ったかで判定する。2.1.299 の Desktop では圧縮自体は走るが、プラグイン
   自身の `session.compact` hook に届かず、upstream のままだと毎回 `failed` と記録される
   (2026-10-15〜10-17 の `failed` 27 件中 23 件は、記録の 1 秒以内にセッションログへ
   `compact_boundary` が書かれていた。2.1.295 では同じ経路が `compacted` と記録されていた)。

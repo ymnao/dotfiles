@@ -233,19 +233,17 @@ async function check($: EngineInterface, state: State): Promise<void> {
       // module's hooks out of events its own call raises), so judge by the
       // context the compaction left behind.
       const tokensAfter = (await $.session.usage()).context.tokens
-      if (tokensAfter !== undefined && tokensAfter < contextTokens / 2) {
+      if (tokensAfter !== undefined && tokensAfter < contextTokens) {
         await finishCompaction($, state, { tokensBefore: contextTokens, tokensAfter })
-        return
+      } else {
+        await record($, {
+          outcome: 'failed',
+          reason: `/compact ran without compacting: ${output.text ?? '(no output)'}`.slice(0, 300),
+          idleMinutes,
+          contextTokens,
+          tokensAfter,
+        })
       }
-      await record($, {
-        outcome: 'failed',
-        reason: (
-          `/compact ran without compacting: ${output.text ?? '(no output)'} ` +
-          `(context ${formatTokens(contextTokens)} → ${formatTokens(tokensAfter)} tokens)`
-        ).slice(0, 300),
-        idleMinutes,
-        contextTokens,
-      })
     }
   } catch (err) {
     // Rejects when a turn started in the meantime; the next idle period gets

@@ -253,9 +253,9 @@ describe('SDK sessions (desktop Code tab)', () => {
     w.compactBeneath = 'noop'
     await completeTurn($)
     await clock.advance(51 * MINUTE)
-    const log = w.store.get('log') as { outcome: string }[]
+    const log = w.store.get('log') as { outcome: string; tokensAfter?: number }[]
     expect(log.map(entry => entry.outcome)).toEqual(['failed'])
-    expect(lastReason(w)).toBe('/compact ran without compacting: (no output) (context 120,000 → 120,000 tokens)')
+    expect(log[0]?.tokensAfter).toBe(120_000)
   })
 
   test('the /compact turn does not re-arm an idle session', async ($, on) => {
