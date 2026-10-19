@@ -10,7 +10,8 @@ description: 個人開発を新しく始めるときに、調査 → GitHub repo
 
 - **起動場所**: 新しい repo を置く親ディレクトリ (例: `~/development`) で起動する。
   repo は cwd の下に clone する。`check` 以外で cwd が git の作業ツリーの中なら
-  (`git rev-parse --is-inside-work-tree` が成功したら) 止める — 既存 repo への後付けは対象外
+  (`git rev-parse --is-inside-work-tree` が成功したら) 止める — 既存 repo への後付けは対象外。
+  `check` は対象 repo の作業ツリーの中で起動する
 - `<repo-dir>` は新しい repo の作業ツリーの**絶対パス** (`pwd` で得た親ディレクトリ + `/<name>`。
   `check` 単独では `git rev-parse --show-toplevel` の値) で、以後はリテラルで埋める。相対パスに
   しないのは、Bash tool の cwd が呼び出しをまたいで残り、途中で `cd` すると指す先がずれるため
@@ -39,8 +40,10 @@ description: 個人開発を新しく始めるときに、調査 → GitHub repo
 まだ無いので、ここで決めないことは後のステップで推測に置き換わる。
 
 - 作るもの・使う人・最初に動かす範囲 (MVP)
-- 言語とパッケージマネージャ。`<dotfiles>/claude/templates/` のどれに当たるか
-  (当たらなければ step 3 で CLAUDE.md と `.claude/settings.json` を手で書く)
+- 言語とパッケージマネージャ。`<dotfiles>/claude/templates/` のどのディレクトリに当たるか
+  (以下 `<claude テンプレート>`。当たらなければ step 3 で CLAUDE.md と `.claude/settings.json` を
+  手で書く) と、https://github.com/github/gitignore のどの雛形を使うか (以下 `<gitignore 名>`。
+  ファイル名から `.gitignore` を落としたもの。例: `Node`, `Python`)
 - repo 名 (英小文字・数字・`-` `_` `.` だけ)、public / private (既定は private)、
   public なら LICENSE (推奨は MIT。private では置かない)
 - 類似 OSS / サービスを WebSearch で 3 件ほど挙げ、何を真似て何を変えるかを 1 行ずつ
@@ -50,19 +53,17 @@ description: 個人開発を新しく始めるときに、調査 → GitHub repo
 
 ### 2. repo 作成
 
-承認を取ってから打つ (`--private` は public を選んだら `--public` に替える。`--license` は
-public で LICENSE を付けるときだけ):
+承認を取ってから打つ (`--private` は public を選んだら `--public` に替える。LICENSE を付けるときは
+`--license mit` を足す。キーは `gh repo license list` の 1 列目):
 
-`gh repo create <name> --private --gitignore <テンプレート名> --clone`
+`gh repo create <name> --private --gitignore <gitignore 名> --clone`
 
-- `--gitignore` の名前は https://github.com/github/gitignore のファイル名から `.gitignore` を
-  落としたもの (例: `Node`, `Python`)
 - 出力された URL の `<owner>/<name>` を控える。default branch の名前 (以下 `<branch>`) は
   clone した直後の `git -C <repo-dir> branch --show-current` で控える
 
 ### 3. 初期ファイル (main への直接 push はこの 1 回だけ)
 
-1. `bash <dotfiles>/scripts/claude-init.sh --dir <repo-dir> --template <テンプレート名>` で
+1. `bash <dotfiles>/scripts/claude-init.sh --dir <repo-dir> --template <claude テンプレート>` で
    CLAUDE.md と `.claude/settings.json` (権限) をコピーし、`.gitignore` に
    `.claude/settings.local.json` を足す。テンプレートが無い言語なら、近いテンプレートの
    2 ファイルに倣って手で書き、`.gitignore` の行も手で足す
@@ -70,7 +71,8 @@ public で LICENSE を付けるときだけ):
    実際のコマンドに合わせて直す
 3. README を step 1 の下書きで書く
 4. `.github/workflows/ci.yml` を 1 本書く。中身は CLAUDE.md のコマンド表にある
-   lint / test を実行するだけにする。action の pin は `$HOME/.claude/rules/github-actions.md` を
+   lint / test を実行するだけにし、`on:` は `push` (branches: `<branch>`) と `pull_request` の
+   両方にする (step 3.7 は初回 push の run を待つ)。action の pin は `$HOME/.claude/rules/github-actions.md` を
    Read して従う (repo の外から書くので、path-scoped rule の自動ロードを当てにしない)。
    lint / test のコマンドがまだ無いなら、依存の install が通ることだけを見る job にする
 5. オプトイン設定を置くかを聞く。推奨は次のとおり
@@ -81,7 +83,8 @@ public で LICENSE を付けるときだけ):
    承認を取ってから `git -C <repo-dir> push origin HEAD`
 7. CI の結果を見る: `git -C <repo-dir> rev-parse HEAD` で SHA を取り、
    `gh run list --repo <owner>/<name> --commit <SHA> --limit 1 --json databaseId --jq '.[0].databaseId'`
-   で id を取る (`null` なら run がまだ登録されていないので、少し待って打ち直す)。
+   で id を取る。出力が空なら run がまだ登録されていないので、少し待って打ち直す
+   (`--jq` の結果が null だと gh は何も出さない)。3 回打っても空なら、ci.yml の `on:` を確かめて報告する。
    `gh run watch <id> --repo <owner>/<name> --exit-status` を単独で打つ。
    落ちたら直すのは step 4 の後 (ブランチ → PR) にして、ここでは main へ再 push しない
 
@@ -115,8 +118,9 @@ public で LICENSE を付けるときだけ):
 4. ローカル: `bash "$HOME/.claude/skills/new-project/check-ready.sh" <repo-dir>`
    → exit 0 なら OK。NG 行はそのまま報告に載せる
 
-2〜4 の結果を項目ごとに OK / NG で並べて報告し、NG には直し方を添える。step 7 は全件に
-`need-grill` を付けるので、3 が NG なら step 5 をやり直してから step 7 へ進む。
+対象の `<owner>/<name>` と、2〜4 の結果を項目ごとに OK / NG で並べて報告し、NG には直し方を
+添える。`check` 単独ではここで終わる (直すのは user の指示を待つ)。通しの流れでは、step 7 は
+全件に `need-grill` を付けるので、3 が NG なら step 5 をやり直してから step 7 へ進む。
 
 ### 7. 最初の issue
 
@@ -124,7 +128,8 @@ public で LICENSE を付けるときだけ):
    承認を取る。件数の上限は設けない
 2. 承認された分だけ、write-issue skill の書式で本文を `<scratchpad>/new-project-issue-<k>.md` に
    Write で書き、`gh issue create --repo <owner>/<name> --title "<title>" --body-file <scratchpad>/new-project-issue-<k>.md --label need-grill`
-   を 1 件ずつ打つ。`agent-ready` は付けない (着手できるかは後で `/grill-issue` が判定する)
+   を 1 件ずつ打つ。`agent-ready` は付けない (着手できるかは後で `/grill-issue` が判定する)。
+   title はシェルの二重引用符の中に入るので、`"` `` ` `` `$` `\` を含めない (コード名などは本文に書く)
 
 ### 8. 報告
 
