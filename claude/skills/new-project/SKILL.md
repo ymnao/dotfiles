@@ -10,7 +10,9 @@ description: 個人開発を新しく始めるときに、調査 → GitHub repo
 
 - **起動場所**: 新しい repo を置く親ディレクトリ (例: `~/development`) で起動する。
   repo は cwd の下に clone する。`check` 以外で cwd が git の作業ツリーの中なら
-  (`git rev-parse --is-inside-work-tree` が成功したら) 止める — 既存 repo への後付けは対象外
+  (`git rev-parse --is-inside-work-tree` が成功したら) 止める — 既存 repo への後付けは対象外。
+  最後まで cwd は親ディレクトリのまま `cd` しない (Bash tool の cwd は呼び出しをまたいで残るので、
+  一度 repo に入ると `--dir <name>` / `git -C <name>` が `<name>/<name>` を指す)
 - `gh` は 1 回の Bash 呼び出しに 1 コマンドだけ書き、`&&` / `;` / パイプ / コマンド置換 /
   リダイレクトに混ぜない。加工は `--jq`、対象 repo は `--repo <owner>/<name>` をリテラルで渡す。
   `gh` を bash スクリプトの中から呼ばない (Keychain の認証が切れて必ず失敗する。
@@ -23,8 +25,8 @@ description: 個人開発を新しく始めるときに、調査 → GitHub repo
   `$HOME/.claude/skills/<skill>/...` で参照する。skill の外の dotfiles (`scripts/` `claude/templates/`) は
   `<dotfiles>` で参照する。`<dotfiles>` は `readlink "$HOME/.claude/skills"` の出力から末尾の
   `/claude/skills` を落とした値で、以後はリテラルで埋める。`$HOME/.claude/skills/../../scripts` の形で
-  `claude-init.sh` を呼ばない (`claude-init.sh` は自分の場所を論理パスで求めるので、
-  `..` が字面で畳まれて `$HOME/scripts` を指す)
+  `claude-init.sh` を呼ばない (`claude-init.sh` は自分の場所を `cd` で求める。bash の `cd` は `..` を
+  字面で畳んだ先 (`$HOME/scripts`) が存在するとそちらへ着くので、そのディレクトリがある環境でだけ壊れる)
 
 ## Steps
 
@@ -37,7 +39,7 @@ description: 個人開発を新しく始めるときに、調査 → GitHub repo
 
 - 作るもの・使う人・最初に動かす範囲 (MVP)
 - 言語とパッケージマネージャ。`<dotfiles>/claude/templates/` のどれに当たるか
-  (当たらなければ step 3 で CLAUDE.md を手で書く)
+  (当たらなければ step 3 で CLAUDE.md と `.claude/settings.json` を手で書く)
 - repo 名 (英小文字・数字・`-` `_` `.` だけ)、public / private (既定は private)、
   public なら LICENSE (推奨は MIT。private では置かない)
 - 類似 OSS / サービスを WebSearch で 3 件ほど挙げ、何を真似て何を変えるかを 1 行ずつ
@@ -47,25 +49,28 @@ description: 個人開発を新しく始めるときに、調査 → GitHub repo
 
 ### 2. repo 作成
 
-承認を取ってから打つ (`--license` は public で LICENSE を付けるときだけ):
+承認を取ってから打つ (`--private` は public を選んだら `--public` に替える。`--license` は
+public で LICENSE を付けるときだけ):
 
 `gh repo create <name> --private --gitignore <テンプレート名> --clone`
 
 - `--gitignore` の名前は https://github.com/github/gitignore のファイル名から `.gitignore` を
   落としたもの (例: `Node`, `Python`)
-- 以降の `<owner>/<name>` と default branch の名前 (以下 `<branch>`) は、clone した
-  ディレクトリで step 6 の 1 と同じコマンドを打って控える
+- 出力された URL の `<owner>/<name>` を控え、default branch の名前 (以下 `<branch>`) は
+  step 6 の 1 を `gh repo view <owner>/<name> --json …` の形で打って控える
 
 ### 3. 初期ファイル (main への直接 push はこの 1 回だけ)
 
 1. `bash <dotfiles>/scripts/claude-init.sh --dir <name> --template <テンプレート名>` で
-   CLAUDE.md をコピーし、`.gitignore` に `.claude/settings.local.json` を足す。
-   テンプレートが無い言語なら、近いテンプレートの構成に倣って CLAUDE.md を手で書き、
-   `.gitignore` に `.claude/settings.local.json` の行を足す
-2. CLAUDE.md のコマンド表を、step 1 で決めた言語・PM の実際のコマンドに直す
+   CLAUDE.md と `.claude/settings.json` (権限) をコピーし、`.gitignore` に
+   `.claude/settings.local.json` を足す。テンプレートが無い言語なら、近いテンプレートの
+   2 ファイルに倣って手で書き、`.gitignore` に `.claude/settings.local.json` の行を足す
+2. CLAUDE.md のコマンド表と `.claude/settings.json` の権限を、step 1 で決めた言語・PM の
+   実際のコマンドに合わせて直す
 3. README を step 1 の下書きで書く
 4. `.github/workflows/ci.yml` を 1 本書く。中身は CLAUDE.md のコマンド表にある
-   lint / test を実行するだけにする (action の pin は `claude/rules/github-actions.md` に従う)。
+   lint / test を実行するだけにする。action の pin は `$HOME/.claude/rules/github-actions.md` を
+   Read して従う (repo の外から書くので、path-scoped rule の自動ロードを当てにしない)。
    lint / test のコマンドがまだ無いなら、依存の install が通ることだけを見る job にする
 5. オプトイン設定を置くかを聞く。推奨は次のとおり
    - `.claude/stop-gate.conf`: 数秒で終わる lint / test があれば、そのコマンドを 1 行で置く。
@@ -73,8 +78,10 @@ description: 個人開発を新しく始めるときに、調査 → GitHub repo
    - `.claude/backlog.conf`: 置かない (在庫が問題になってから入れる)
 6. `git -C <name> add -A` → `git -C <name> commit` (メッセージは `chore: 初期設定`) →
    承認を取ってから `git -C <name> push origin HEAD`
-7. CI の結果を見る: `gh run list --repo <owner>/<name> --limit 1 --json databaseId --jq '.[0].databaseId'`
-   で id を取り、`gh run watch <id> --repo <owner>/<name> --exit-status` を単独で打つ。
+7. CI の結果を見る: `git -C <name> rev-parse HEAD` で SHA を取り、
+   `gh run list --repo <owner>/<name> --commit <SHA> --limit 1 --json databaseId --jq '.[0].databaseId'`
+   で id を取る (`null` なら run がまだ登録されていないので、少し待って打ち直す)。
+   `gh run watch <id> --repo <owner>/<name> --exit-status` を単独で打つ。
    落ちたら直すのは step 4 の後 (ブランチ → PR) にして、ここでは main へ再 push しない
 
 ### 4. main 保護
@@ -97,19 +104,22 @@ description: 個人開発を新しく始めるときに、調査 → GitHub repo
 
 ### 6. check
 
-新しい repo の作業ツリー (step 2 で clone したディレクトリ。`check` 単独で起動したときは cwd) で行う。
+対象は step 2 で clone したディレクトリ (`<name>`)。`check` 単独で起動したときは cwd の repo を
+対象にし、以下の `<name>` (作業ツリーのパス) は `.` に読み替える。
 
 1. `gh repo view --json nameWithOwner,defaultBranchRef --jq '"\(.nameWithOwner) \(.defaultBranchRef.name)"'`
-   で `<owner>/<name>` と `<branch>` を取る (step 2 で控えてあれば省く)
+   で `<owner>/<name>` と `<branch>` を取る (step 2 で控えてあれば省く)。親ディレクトリから
+   打つときは `gh repo view <owner>/<name> --json …` と repo を渡す
 2. main 保護: `gh api repos/<owner>/<name>/rules/branches/<branch> --jq '[.[].type] | (["deletion","non_fast_forward","pull_request"] - .) | length'`
    → `0` なら OK。それ以外は足りないルールがある (step 4 をやり直す)
 3. ラベル: `gh label list --repo <owner>/<name> --limit 200 --json name --jq '[.[].name] | (["need-grill","agent-ready","agent-wip","agent-failed"] - .) | length'`
    → `0` なら OK。それ以外は step 5 をやり直す
-4. ローカル: `bash "$HOME/.claude/skills/new-project/check-ready.sh" <作業ツリーのパス>`
+4. ローカル: `bash "$HOME/.claude/skills/new-project/check-ready.sh" <name>`
    → exit 0 なら OK。NG 行はそのまま報告に載せる
 
-2〜4 の結果を項目ごとに OK / NG で並べて報告する。NG が残ったら直し方を添える
-(step 7 は進めてよい)。
+2〜4 の結果を項目ごとに OK / NG で並べて報告する。NG が残ったら直し方を添える。
+step 7 は進めてよいが、ラベルの NG だけは step 5 を直してから進む (step 7 は全件に
+`need-grill` を付ける)。
 
 ### 7. 最初の issue
 
