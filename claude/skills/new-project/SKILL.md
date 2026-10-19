@@ -10,9 +10,10 @@ description: 個人開発を新しく始めるときに、調査 → GitHub repo
 
 - **起動場所**: 新しい repo を置く親ディレクトリ (例: `~/development`) で起動する。
   repo は cwd の下に clone する。`check` 以外で cwd が git の作業ツリーの中なら
-  (`git rev-parse --is-inside-work-tree` が成功したら) 止める — 既存 repo への後付けは対象外。
-  最後まで cwd は親ディレクトリのまま `cd` しない (Bash tool の cwd は呼び出しをまたいで残るので、
-  一度 repo に入ると `--dir <name>` / `git -C <name>` が `<name>/<name>` を指す)
+  (`git rev-parse --is-inside-work-tree` が成功したら) 止める — 既存 repo への後付けは対象外
+- `<repo-dir>` は新しい repo の作業ツリーの**絶対パス** (`pwd` で得た親ディレクトリ + `/<name>`。
+  `check` 単独では `git rev-parse --show-toplevel` の値) で、以後はリテラルで埋める。相対パスに
+  しないのは、Bash tool の cwd が呼び出しをまたいで残り、途中で `cd` すると指す先がずれるため
 - `gh` は 1 回の Bash 呼び出しに 1 コマンドだけ書き、`&&` / `;` / パイプ / コマンド置換 /
   リダイレクトに混ぜない。加工は `--jq`、対象 repo は `--repo <owner>/<name>` をリテラルで渡す。
   `gh` を bash スクリプトの中から呼ばない (Keychain の認証が切れて必ず失敗する。
@@ -56,15 +57,15 @@ public で LICENSE を付けるときだけ):
 
 - `--gitignore` の名前は https://github.com/github/gitignore のファイル名から `.gitignore` を
   落としたもの (例: `Node`, `Python`)
-- 出力された URL の `<owner>/<name>` を控え、default branch の名前 (以下 `<branch>`) は
-  step 6 の 1 を `gh repo view <owner>/<name> --json …` の形で打って控える
+- 出力された URL の `<owner>/<name>` を控える。default branch の名前 (以下 `<branch>`) は
+  clone した直後の `git -C <repo-dir> branch --show-current` で控える
 
 ### 3. 初期ファイル (main への直接 push はこの 1 回だけ)
 
-1. `bash <dotfiles>/scripts/claude-init.sh --dir <name> --template <テンプレート名>` で
+1. `bash <dotfiles>/scripts/claude-init.sh --dir <repo-dir> --template <テンプレート名>` で
    CLAUDE.md と `.claude/settings.json` (権限) をコピーし、`.gitignore` に
    `.claude/settings.local.json` を足す。テンプレートが無い言語なら、近いテンプレートの
-   2 ファイルに倣って手で書き、`.gitignore` に `.claude/settings.local.json` の行を足す
+   2 ファイルに倣って手で書き、`.gitignore` の行も手で足す
 2. CLAUDE.md のコマンド表と `.claude/settings.json` の権限を、step 1 で決めた言語・PM の
    実際のコマンドに合わせて直す
 3. README を step 1 の下書きで書く
@@ -76,9 +77,9 @@ public で LICENSE を付けるときだけ):
    - `.claude/stop-gate.conf`: 数秒で終わる lint / test があれば、そのコマンドを 1 行で置く。
      無ければ置かない
    - `.claude/backlog.conf`: 置かない (在庫が問題になってから入れる)
-6. `git -C <name> add -A` → `git -C <name> commit` (メッセージは `chore: 初期設定`) →
-   承認を取ってから `git -C <name> push origin HEAD`
-7. CI の結果を見る: `git -C <name> rev-parse HEAD` で SHA を取り、
+6. `git -C <repo-dir> add -A` → `git -C <repo-dir> commit` (メッセージは `chore: 初期設定`) →
+   承認を取ってから `git -C <repo-dir> push origin HEAD`
+7. CI の結果を見る: `git -C <repo-dir> rev-parse HEAD` で SHA を取り、
    `gh run list --repo <owner>/<name> --commit <SHA> --limit 1 --json databaseId --jq '.[0].databaseId'`
    で id を取る (`null` なら run がまだ登録されていないので、少し待って打ち直す)。
    `gh run watch <id> --repo <owner>/<name> --exit-status` を単独で打つ。
@@ -104,22 +105,18 @@ public で LICENSE を付けるときだけ):
 
 ### 6. check
 
-対象は step 2 で clone したディレクトリ (`<name>`)。`check` 単独で起動したときは cwd の repo を
-対象にし、以下の `<name>` (作業ツリーのパス) は `.` に読み替える。
-
-1. `gh repo view --json nameWithOwner,defaultBranchRef --jq '"\(.nameWithOwner) \(.defaultBranchRef.name)"'`
-   で `<owner>/<name>` と `<branch>` を取る (step 2 で控えてあれば省く)。親ディレクトリから
-   打つときは `gh repo view <owner>/<name> --json …` と repo を渡す
+1. `check` 単独で起動したときだけ、repo の中で
+   `gh repo view --json nameWithOwner,defaultBranchRef --jq '"\(.nameWithOwner) \(.defaultBranchRef.name)"'`
+   を打って `<owner>/<name>` と `<branch>` を取る (通しの流れでは step 2 で控えてある)
 2. main 保護: `gh api repos/<owner>/<name>/rules/branches/<branch> --jq '[.[].type] | (["deletion","non_fast_forward","pull_request"] - .) | length'`
    → `0` なら OK。それ以外は足りないルールがある (step 4 をやり直す)
 3. ラベル: `gh label list --repo <owner>/<name> --limit 200 --json name --jq '[.[].name] | (["need-grill","agent-ready","agent-wip","agent-failed"] - .) | length'`
    → `0` なら OK。それ以外は step 5 をやり直す
-4. ローカル: `bash "$HOME/.claude/skills/new-project/check-ready.sh" <name>`
+4. ローカル: `bash "$HOME/.claude/skills/new-project/check-ready.sh" <repo-dir>`
    → exit 0 なら OK。NG 行はそのまま報告に載せる
 
-2〜4 の結果を項目ごとに OK / NG で並べて報告する。NG が残ったら直し方を添える。
-step 7 は進めてよいが、ラベルの NG だけは step 5 を直してから進む (step 7 は全件に
-`need-grill` を付ける)。
+2〜4 の結果を項目ごとに OK / NG で並べて報告し、NG には直し方を添える。step 7 は全件に
+`need-grill` を付けるので、3 が NG なら step 5 をやり直してから step 7 へ進む。
 
 ### 7. 最初の issue
 
