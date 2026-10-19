@@ -19,14 +19,16 @@ description: 個人開発を新しく始めるときに、調査 → GitHub repo
   打つコマンドを示して user の承認を取る。1 つの承認を次の操作に流用しない
 - 一時ファイルは system prompt が示すセッションの scratchpad ディレクトリに置き、
   リテラルのパスで書く (以下 `<scratchpad>`)。中身は Write tool で書く
-- `<dotfiles>` は `readlink "$HOME/.claude/skills"` の出力から末尾の `/claude/skills` を
-  落とした値で、以後はリテラルで埋める。`$HOME/.claude/skills/../../scripts` の形で
+- skill 内のファイル (`check-ready.sh` `ruleset.json` と他 skill の SKILL.md) は
+  `$HOME/.claude/skills/<skill>/...` で参照する。skill の外の dotfiles (`scripts/` `claude/templates/`) は
+  `<dotfiles>` で参照する。`<dotfiles>` は `readlink "$HOME/.claude/skills"` の出力から末尾の
+  `/claude/skills` を落とした値で、以後はリテラルで埋める。`$HOME/.claude/skills/../../scripts` の形で
   `claude-init.sh` を呼ばない (`claude-init.sh` は自分の場所を論理パスで求めるので、
   `..` が字面で畳まれて `$HOME/scripts` を指す)
 
 ## Steps
 
-引数が `check` なら「check」節だけを行って終わる。
+引数が `check` なら step 6 だけを行って終わる。
 
 ### 1. 調査
 
@@ -51,8 +53,8 @@ description: 個人開発を新しく始めるときに、調査 → GitHub repo
 
 - `--gitignore` の名前は https://github.com/github/gitignore のファイル名から `.gitignore` を
   落としたもの (例: `Node`, `Python`)
-- 以降の `<owner>/<name>` は `gh repo view <name> --json nameWithOwner,defaultBranchRef --jq '"\(.nameWithOwner) \(.defaultBranchRef.name)"'`
-  で取り、default branch の名前も控える (以下 `<branch>`)
+- 以降の `<owner>/<name>` と default branch の名前 (以下 `<branch>`) は、clone した
+  ディレクトリで step 6 の 1 と同じコマンドを打って控える
 
 ### 3. 初期ファイル (main への直接 push はこの 1 回だけ)
 
@@ -79,7 +81,7 @@ description: 個人開発を新しく始めるときに、調査 → GitHub repo
 
 承認を取ってから打つ:
 
-`gh api repos/<owner>/<name>/rulesets -X POST --input <dotfiles>/claude/skills/new-project/ruleset.json --jq .id`
+`gh api repos/<owner>/<name>/rulesets -X POST --input "$HOME/.claude/skills/new-project/ruleset.json" --jq .id`
 
 - 中身は `ruleset.json` のとおり (default branch の削除・force push の禁止と、PR 経由の
   merge の必須化。承認は 0 件で足りる)。CI の成功を merge 条件にする
@@ -89,13 +91,25 @@ description: 個人開発を新しく始めるときに、調査 → GitHub repo
 
 ### 5. ラベル
 
-`<dotfiles>/claude/skills/grill-issue/SKILL.md` の step 9.1 の手順と表 (名前・色・説明) の
+`$HOME/.claude/skills/grill-issue/SKILL.md` の step 9.1 の手順と表 (名前・色・説明) の
 とおりに、`need-grill` / `agent-ready` / `agent-wip` / `agent-failed` を作る。表はここに
 複製しない (夜間ランナーが読むラベルの正本は grill-issue 側)。
 
 ### 6. check
 
-下の「check」節を行う。NG が残ったら、直し方を添えて報告する (step 7 は進めてよい)。
+新しい repo の作業ツリー (step 2 で clone したディレクトリ。`check` 単独で起動したときは cwd) で行う。
+
+1. `gh repo view --json nameWithOwner,defaultBranchRef --jq '"\(.nameWithOwner) \(.defaultBranchRef.name)"'`
+   で `<owner>/<name>` と `<branch>` を取る (step 2 で控えてあれば省く)
+2. main 保護: `gh api repos/<owner>/<name>/rules/branches/<branch> --jq '[.[].type] | (["deletion","non_fast_forward","pull_request"] - .) | length'`
+   → `0` なら OK。それ以外は足りないルールがある (step 4 をやり直す)
+3. ラベル: `gh label list --repo <owner>/<name> --limit 200 --json name --jq '[.[].name] | (["need-grill","agent-ready","agent-wip","agent-failed"] - .) | length'`
+   → `0` なら OK。それ以外は step 5 をやり直す
+4. ローカル: `bash "$HOME/.claude/skills/new-project/check-ready.sh" <作業ツリーのパス>`
+   → exit 0 なら OK。NG 行はそのまま報告に載せる
+
+2〜4 の結果を項目ごとに OK / NG で並べて報告する。NG が残ったら直し方を添える
+(step 7 は進めてよい)。
 
 ### 7. 最初の issue
 
@@ -108,20 +122,3 @@ description: 個人開発を新しく始めるときに、調査 → GitHub repo
 ### 8. 報告
 
 repo の URL、check の結果 (項目ごとの OK / NG)、起票した issue の URL を報告する。
-
-## check
-
-新しい repo の作業ツリー (step 2 で clone したディレクトリ。`check` 単独で起動したときは cwd) で行う。
-
-1. `gh repo view --json nameWithOwner,defaultBranchRef --jq '"\(.nameWithOwner) \(.defaultBranchRef.name)"'`
-   で `<owner>/<name>` と `<branch>` を取る
-2. main 保護: `gh api repos/<owner>/<name>/rules/branches/<branch> --jq '[.[].type] | (["deletion","non_fast_forward","pull_request"] - .) | length'`
-   → `0` なら OK。それ以外は、足りないルールがある (step 4 をやり直す)
-3. ラベル: `gh label list --repo <owner>/<name> --limit 200 --json name --jq '[.[].name] | (["need-grill","agent-ready","agent-wip","agent-failed"] - .) | length'`
-   → `0` なら OK。それ以外は step 5 をやり直す
-4. ローカル: `bash "$HOME/.claude/skills/new-project/check-ready.sh" <作業ツリーのパス>`
-   → exit 0 なら OK。CLAUDE.md・`.github/workflows/` の workflow・`.gitignore` の
-   `.claude/settings.local.json` を見て、項目ごとに OK / NG を出す。オプトイン設定は
-   置かないのも正しい状態なので見ない
-
-2〜4 の結果を項目ごとに OK / NG で並べて報告する。

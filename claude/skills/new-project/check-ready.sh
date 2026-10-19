@@ -6,7 +6,7 @@ set -euo pipefail
 #
 # GitHub 側 (ruleset・ラベル) はここでは見ない。Claude Code の Bash tool から
 # bash 経由で GitHub CLI を呼ぶと Keychain の認証が切れて必ず失敗するため、
-# その確認は SKILL.md の check 節で単独のコマンドとして打つ。
+# その確認は SKILL.md の step 6 で単独のコマンドとして打つ。
 #
 # Usage: check-ready.sh [<dir>]   (既定はカレントディレクトリ)
 
@@ -18,9 +18,11 @@ fi
 
 ng=0
 
-report() {
-  local ok="$1" item="$2" hint="$3"
-  if [ "$ok" -eq 1 ]; then
+# Usage: check <項目> <NG のときの直し方> <コマンド...>
+check() {
+  local item="$1" hint="$2"
+  shift 2
+  if "$@"; then
     printf 'OK  %s\n' "$item"
   else
     printf 'NG  %s — %s\n' "$item" "$hint"
@@ -28,21 +30,20 @@ report() {
   fi
 }
 
-found=0
-[ -f "$dir/CLAUDE.md" ] && found=1
-report "$found" "CLAUDE.md" "claude-init.sh でテンプレートをコピーする"
+# *.yml という名前のディレクトリは workflow として数えない
+has_workflow() {
+  local f
+  for f in "$dir"/.github/workflows/*.yml "$dir"/.github/workflows/*.yaml; do
+    [ -f "$f" ] && return 0
+  done
+  return 1
+}
 
-found=0
-for f in "$dir"/.github/workflows/*.yml "$dir"/.github/workflows/*.yaml; do
-  if [ -f "$f" ]; then
-    found=1
-    break
-  fi
-done
-report "$found" ".github/workflows/ の workflow" "lint / test を実行する ci.yml を置く"
-
-found=0
-[ -f "$dir/.gitignore" ] && grep -Fxq '.claude/settings.local.json' "$dir/.gitignore" && found=1
-report "$found" ".gitignore の .claude/settings.local.json" "claude-init.sh が追記する行が無い"
+check "CLAUDE.md" "claude-init.sh でテンプレートをコピーする" \
+  test -f "$dir/CLAUDE.md"
+check ".github/workflows/ の workflow" "lint / test を実行する ci.yml を置く" \
+  has_workflow
+check ".gitignore の .claude/settings.local.json" "claude-init.sh が追記する行が無い" \
+  grep -Fxqs '.claude/settings.local.json' "$dir/.gitignore"
 
 exit "$ng"
