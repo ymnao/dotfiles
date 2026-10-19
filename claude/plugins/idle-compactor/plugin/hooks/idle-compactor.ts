@@ -224,17 +224,29 @@ async function check($: EngineInterface, state: State): Promise<void> {
         state.headless = true
       }
     }
-    // An SDK session compacts inside a turn: run /compact as if typed. The
-    // compaction passes through this plugin's own `session.compact` hook,
-    // which records it.
+    // An SDK session compacts inside a turn: run /compact as if typed. Up to
+    // 2.1.295 the compaction passed through this plugin's own
+    // `session.compact` hook, which records it.
     const output = await $.command.run({ command: 'compact', args: '' })
+    // The /compact turn completes after this returns; its completion is no
+    // new activity to wait out.
+    if (state.turnRunning) state.compactedTurnId = state.currentTurnId
     if (state.compacting !== undefined) {
-      await record($, {
-        outcome: 'failed',
-        reason: `/compact ran without compacting: ${output.text ?? '(no output)'}`.slice(0, 300),
-        idleMinutes,
-        contextTokens,
-      })
+      // From 2.1.299 that hook does not see it, and `$.session.messages()`
+      // grew rather than shrank in the runs measured. `$.session.usage()` has
+      // no context reading after a compaction until the next response.
+      const tokensAfter = (await $.session.usage()).context.tokens
+      if (tokensAfter === undefined) {
+        await finishCompaction($, state, { tokensBefore: contextTokens })
+      } else {
+        await record($, {
+          outcome: 'failed',
+          reason: `/compact ran without compacting: ${output.text ?? '(no output)'}`.slice(0, 300),
+          idleMinutes,
+          contextTokens,
+          tokensAfter,
+        })
+      }
     }
   } catch (err) {
     // Rejects when a turn started in the meantime; the next idle period gets

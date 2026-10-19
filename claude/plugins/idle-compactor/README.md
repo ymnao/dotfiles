@@ -38,7 +38,38 @@ symlink なので、rename が symlink 自体を置き換えて dotfiles から�
 通らず (2.1.280 で実測)、upstream との差分を 1 箇所に保つ方を取った。効いているかは
 `/idle-compactor` の出力が `needs 50,000+ tokens` になっていることで確かめられる。
 
-upstream を追従するときはこの 1 箇所だけ手で戻す。
+- `plugin/hooks/idle-compactor.ts`: SDK セッションで `$.command.run` の `/compact` が
+  返ったあと、hook に届かなかった圧縮を `$.session.usage()` の context tokens が
+  値なしになったかで判定する。2.1.299 の Desktop では圧縮自体は走るが、プラグイン
+  自身の `session.compact` hook に届かず、upstream のままだと毎回 `failed` と記録される
+  (2026-10-15〜10-17 UTC に `/compact ran without compacting: (no output)` で記録された
+  24 件のうち、セッションログが残る 23 件すべてで記録の 1 秒以内に `compact_boundary` が
+  書かれていた。記録と同時刻のセッションログの `version` で見ると、10-13〜10-15 の `compacted`
+  は 2.1.295、この `failed` は 2.1.299 のセッションだった (どちらもログの無い分を除く))。
+  2026-10-18 に 2.1.299 の Desktop で診断値を記録した 4 件 (3 セッション) では、どれも
+  記録の 3.3〜3.5 秒前に `compact_boundary` が書かれ、`/compact` の前後で `$.session.messages()`
+  の行数は 4〜5 行増え (行数では判定できない)、context tokens は値なしになり、3 秒後も
+  同じだった。plugin API の型宣言 (`SessionContextUsage`) も、圧縮直後は次の応答まで
+  `tokens` が無いと書いている。何もしなかった `/compact` で値が前のまま残るかは実測していない。
+  あわせて、`$.command.run` が返った後に完了する `/compact` の turn で idle の計時が
+  再 arm されないよう、hook 経路と同じ `compactedTurnId` を立てる。テストは
+  `plugin/tests/idle-compactor.test.ts` の SDK sessions に 3 件足した。
+
+upstream を追従するときは、1 つ目は手で戻し、2 つ目は upstream に同等の修正が
+入っているかを見る。
+
+## 本体の idleCompaction との関係
+
+Claude Code 本体にも放置中の自動圧縮 (`idleCompaction`、既定 on) があるが、
+`claude/settings.json` で `false` にしてこのプラグイン 1 本に寄せている (#463)。
+本体の方は、公式 settings reference の発動条件に interactive terminal session が入っており、
+2.1.302 のバイナリではモードが feature flag 次第 (取れなければ off)、しきい値は既定
+200,000 tokens、発火は 1 時間の cache 期限の約 9 割 (約 54 分) になっている。50 分で
+圧縮するこのプラグインが先に走るので、両方が有効だと本体はプラグインの陰に入る。
+2026-10-18 時点の `~/.claude/projects` のセッションログ 654 本 (うち Desktop 640 本) に
+`compact_boundary` は 205 件あり、trigger は全件 `manual` だった (このプラグインの `/compact`
+もここに入る)。本体が単独で動くかは測っていない。Desktop で放置中の圧縮を担っている
+のはこのプラグインなので、二重に動く余地の方を閉じた。
 
 ## 有効化
 
@@ -62,8 +93,11 @@ home の違うマシンで読めなくなる (#449)。
 整形だけの差分なら `git restore claude/settings.json` で戻す。symlink は切れない
 (`readlink` で確認済み)。
 
-install すると plugin は `~/.claude/plugins/cache/claude-idle-compactor/idle-compactor/unknown/`
-に**コピーされる** (repo を直接読むのではない)。repo 側を変えたら install し直す。
+install 済みの plugin は repo の `plugin/` から直接読まれる。repo 側の変更は次のセッション
+起動か `/reload-plugins` で効き、install し直す必要は無い (2026-10-18、2.1.302 の
+`claude plugin install` が "loads in place from …/claude/plugins/idle-compactor/plugin" と
+表示した。以前この README は `~/.claude/plugins/cache/` へコピーされると書いていた)。checkout している
+ブランチのコードがそのまま動く点に注意。
 
 ```fish
 claude plugin install idle-compactor@claude-idle-compactor --scope user
@@ -73,8 +107,9 @@ claude plugin install idle-compactor@claude-idle-compactor --scope user
 
 desktop アプリの Code tab (SDK セッション) では `/compact` を turn として実行する。
 手打ちの `/compact` では Stop hook が発火しなかった (2026-09-25、Stop hook の通知が
-出ないことで確認)。プラグインが `$.command.run` で走らせる `/compact` は同じ経路の
-はずだが未測定。発火すると `stop-gate.conf` を置いた repo で `make gate` が無人で
+出ないことで確認)。プラグインが `$.command.run` で走らせる `/compact` はセッションログ上
+手打ちと同じ形 (`<command-name>/compact` の user 行と `trigger: manual` の
+`compact_boundary`) で残る (2026-10-17、2.1.299)。Stop hook の発火は未測定。発火すると `stop-gate.conf` を置いた repo で `make gate` が無人で
 走りうるので、放置後に「タスクが完了しました」通知が出ていたらこの前提を疑う。
 
 ## 前提の脆さ
