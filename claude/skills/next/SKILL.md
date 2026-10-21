@@ -12,6 +12,12 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
    で現ブランチの PR 状態を確認する。merged でなければ (open /
    closed-unmerged / PR なし) 状態を報告して**停止する** (pull もブランチ
    削除もしない)
+   - **ワークツリー判定**: `git worktree list --porcelain` を打つ。先頭の
+     `worktree` 行が本体チェックアウトのパスで、`git rev-parse --show-toplevel`
+     がそれと異なれば linked worktree (Claude Code の `.claude/worktrees/<name>` 等)
+     で作業している。この場合は step 2・3 を下の「ワークツリーの場合」で読み替える。
+     本体のパスと、`branch refs/heads/main` 行がどのワークツリーに付いているか
+     (= main をどこで checkout 中か) をここで控える
    - `headRefOid` と `mergeCommit` は step 3 のブランチ削除判定で使う。
      merge 後は不変な値なのでここで 1 回だけ取り、step 3 で `gh` を
      打ち直さない (`gh` は単独 Bash 呼び出しを強制されるので、呼び直す
@@ -92,6 +98,28 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
         この確認を飛ばすと上記の禁止手順と同じ事故になる
      4. `git update-ref refs/heads/main <new>` → `git reset` (mixed)
      5. `git status --porcelain` が空になることを確認する
+   - **ワークツリーの場合** (step 1 の判定): 上の手順は使えない。main が
+     本体チェックアウトで checkout 中だと、ワークツリーからは
+     `git checkout main` も `git fetch origin main:main` も拒否される
+     (他のワークツリーで checkout 中のブランチには書けない)。本体の作業ツリーは
+     sandbox の書き込み範囲外なので、agent から本体で pull することもできない。
+     次のように進める:
+     1. user に本体チェックアウトでの更新を頼む。本体の**絶対パス**を埋め、
+        user の shell (fish) で打てる形で 1 コマンドずつ示す:
+        `cd <本体の絶対パス>` → `git pull origin main --ff-only`。
+        `git fetch origin` の後の
+        `git diff --name-only <step 1 の HEAD> origin/main` に lockfile
+        (`pnpm-lock.yaml` / `package-lock.json` / `uv.lock` 等) が含まれる repo
+        では、その repo の依存インストールコマンド (例: pnpm repo なら
+        `pnpm install --ignore-scripts`) も添える
+     2. user の完了報告を受けたら、`git -C <本体> fetch origin` の後に
+        `git -C <本体> rev-parse HEAD` と `git -C <本体> rev-parse origin/main`
+        が一致し、`git -C <本体> status -sb` が behind を示さないことを確かめる
+        (fetch の `fatal: failed to store` は上と同じく無視して SHA で判定する)
+     - main がどのワークツリーでも checkout されていなければ (本体が別ブランチ
+       にいる等)、本体での pull は頼まない。`git fetch origin main:main` で ref
+       だけ進め、`git ls-remote origin refs/heads/main` と `git rev-parse main`
+       の一致で確かめる
 3. **ブランチ削除**: merge 済みの作業ブランチを `git branch -d` で削除する。
    これも config lock の警告を出しながら削除には成功するので、
    `git branch -d -- "$(cat <scratchpad>/merged-branch.txt)"` と `git branch` を
@@ -134,6 +162,13 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      上の 2 点は後続 merge に影響されない
    - 上記 2 点を確認できていれば user に都度確認を取らない。squash merge は
      毎サイクル発生するため、確認を挟むと定型質問が毎回入る
+   - **ワークツリーの場合** (step 1 の判定): 作業ブランチは自分のワークツリーで
+     checkout 中なので `-d` / `-D` とも拒否される。削除は打たず、
+     ワークツリーの片付け (アプリのアーカイブや `git worktree remove`) のときに
+     消すものとして保留する。ここでは上の 2. だけ
+     (`git merge-base --is-ancestor <mergeCommit の oid> main`) を打ち、PR が
+     手元の main に届いていることを確かめて、ブランチを保留したことと合わせて
+     報告する。`<scratchpad>/merged-branch.txt` は通常どおり消す
 4. **学びの昇格チェック**: このセッションで CLAUDE.md / skill / memory に
    昇格すべき学び (同じ指摘を 2 回受けた・skill の手順が実態とズレていた等)
    がないか振り返り、あれば提案する (勝手に書き換えない)。
