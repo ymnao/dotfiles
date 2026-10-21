@@ -102,3 +102,23 @@ HEAD 不動で、`checkout -b` のような半端な状態は残らない)。
    verify-ci-before-pr hook が止める (cwd の HEAD の CI しか見られないため。#382)。
    回避は hook の stderr に従う。`--head` には自分で切ったブランチ名だけを渡す
    (理由は `claude/rules/acceptance-patterns.md` の「外部由来の名前」の項)
+
+## 別 repo のセッションから変更する: scratchpad に clone する
+
+別 repo を作業ディレクトリにしたセッションでは、この repo の `.git` が sandbox の
+書き込み範囲に入らない。`fetch` は `.git/FETCH_HEAD` を開けず、`git worktree add -b` も
+ref を作れずに止まる (2026-10-22 実測)。
+
+この場合は scratchpad に `git clone <本体のパス>` し、
+`git remote set-url origin https://github.com/ymnao/dotfiles.git` で origin を GitHub に
+向け直してから、`origin/main` で作業ブランチを切る。clone 側の作業は本体の作業ツリーにも
+`.git` にも触らない。
+
+- clone 側には本体の `.git/config` にある `user.email` が無い。本体の
+  `git config user.email` の値 (GitHub の noreply アドレス) を clone に設定してから
+  commit する。私用アドレスのまま push すると GitHub のメール保護 (GH007) で
+  拒否される (2026-10-22 実測)
+- PR 作成は worktree の 3 と同じく `gh pr create -R … --head <branch>` になり、
+  verify-ci-before-pr hook に止められる
+- merge しても本体の作業ツリーは変わらない。`~/.claude/` 配下に展開される資産
+  (skills 等) は本体を main に追従させるまで反映されない
