@@ -98,6 +98,9 @@
 {"name":"pnpm-install-fix-lockfile","expect":"block","command":"pnpm install --fix-lockfile","reason":"lockfile を書き換える"}
 {"name":"pnpm-install-install","expect":"block","command":"pnpm install install","reason":"2 個目の install は package 名"}
 {"name":"yarn-install-frozen","expect":"block","command":"yarn install --frozen-lockfile","reason":"yarn は版ごとにフラグが違うため許可フラグなし (#468)"}
+{"name":"pnpm-install-test-bare","expect":"allow","command":"pnpm install-test","reason":"素の形は復元 + test"}
+{"name":"pnpm-install-test-pkg","expect":"block","command":"pnpm install-test foo","reason":"pnpm install と同じ引数を受ける (pnpm help)"}
+{"name":"pnpm-it-pkg","expect":"block","command":"pnpm it foo","reason":"install-test の alias"}
 {"name":"pnpm-install-log-2to1","expect":"allow","command":"pnpm install >log.txt 2>&1","reason":"末尾の fd 番号付きリダイレクト (#468)"}
 {"name":"pnpm-install-fd-redirect-then-pkg","expect":"block","command":"pnpm install 1>x foo","reason":"bash では foo の install。後ろに語が続く fd 番号は落とさない"}
 {"name":"pnpm-install-2to1-then-pkg","expect":"block","command":"pnpm install 2>&1 foo","reason":"bash では foo の install。>& の & を区切りと読まない"}

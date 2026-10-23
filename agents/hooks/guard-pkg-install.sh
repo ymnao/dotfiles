@@ -459,7 +459,8 @@ while IFS= read -r segment; do
       for t in "${rest[@]}"; do
         [[ "$t" =~ ^(--frozen-lockfile|--offline|--prefer-offline|--ignore-scripts)$ ]] || kept+=("$t")
       done
-      pm_should_block 'add|dlx|create' 'install|i' "${kept[@]}" \
+      # install-test / it は `pnpm help` が「pnpm install と同じ引数を受ける」とするので install と同じ扱い。
+      pm_should_block 'add|dlx|create' 'install|i|install-test|it' "${kept[@]}" \
         && block "pnpm add/dlx/create / pnpm install <package> は禁止されています。パッケージの追加はユーザーに依頼してください"
       ;;
     yarn)
