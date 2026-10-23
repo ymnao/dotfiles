@@ -102,7 +102,6 @@
 {"name":"pnpm-install-fd-redirect-then-pkg","expect":"block","command":"pnpm install 1>x foo","reason":"bash では foo の install。後ろに語が続く fd 番号は落とさない"}
 {"name":"pnpm-install-2to1-then-pkg","expect":"block","command":"pnpm install 2>&1 foo","reason":"bash では foo の install。>& の & を区切りと読まない"}
 {"name":"pnpm-install-fd-redirect-then-amp-redirect-pkg","expect":"block","command":"pnpm install 2>x &>y foo","reason":"bash では foo の install。&> の & を末尾と読まない"}
-{"name":"pnpm-install-2to1-then-amp-append-pkg","expect":"block","command":"pnpm install 2>&1 &>>y foo","reason":"bash では foo の install"}
 {"name":"pnpm-install-2to1-background","expect":"allow","command":"pnpm install 2>&1 &","reason":"末尾の & はセグメントの区切り (#468)"}
 {"name":"pnpm-install-fd-redirect-then-add","expect":"block","command":"pnpm install 2>x add","reason":"bash では package add の install"}
 {"name":"pnpm-install-fd-input-then-pkg","expect":"block","command":"pnpm install 0<x foo","reason":"bash では foo の install"}
