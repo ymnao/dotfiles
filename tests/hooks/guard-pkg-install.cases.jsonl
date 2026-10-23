@@ -118,6 +118,7 @@
 {"name":"pnpm-redirect-mid-add","expect":"block","command":"pnpm >x add","reason":"bash では pnpm add (#474)"}
 {"name":"go-mod-2to1-tidy","expect":"block","command":"go mod 2>&1 tidy","reason":"bash では go mod tidy (#474)"}
 {"name":"pnpm-install-log-then-2to1","expect":"allow","command":"pnpm install 1>log 2>&1","reason":"fd 番号付きリダイレクトが続いても引数ではない (#474)"}
+{"name":"pnpm-install-four-fd-redirects","expect":"allow","command":"pnpm install 2>a 2>b 2>c 2>d","reason":"隣り合う fd 番号付きリダイレクトが続いても数字は引数ではない (#474)"}
 {"name":"pnpm-install-herestring-then-pkg","expect":"block","command":"pnpm install <<<x foo","reason":"bash では foo の install。ヒアストリングの後ろの語も引数 (#474)"}
 {"name":"bash-herestring-pnpm-add","expect":"block","command":"bash <<<'pnpm add foo'","reason":"ヒアストリングの中身を bash が実行する"}
 {"name":"leading-herestring-bash-herestring-pnpm-add","expect":"block","command":"<<<x bash <<<'pnpm add foo'","reason":"先頭のヒアストリングの語は実行対象ではない。後ろのヒアストリングを bash が実行する (#474)"}
