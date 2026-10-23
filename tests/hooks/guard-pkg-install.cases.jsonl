@@ -113,6 +113,10 @@
 {"name":"pnpm-install-redirect-then-pkg","expect":"block","command":"pnpm install >x foo","reason":"bash では foo の install。リダイレクト先の後ろの語は別セグメントではない (#474)"}
 {"name":"pnpm-install-spaced-redirect-then-pkg","expect":"block","command":"pnpm install > x foo","reason":"演算子と先の間に空白があっても同じ (#474)"}
 {"name":"pnpm-install-clobber-redirect-then-pkg","expect":"block","command":"pnpm install >|x foo","reason":">| も 1 つのリダイレクト演算子 (#474)"}
+{"name":"pnpm-install-append-redirect-then-pkg","expect":"block","command":"pnpm install >>x foo","reason":">> も 1 つの演算子として先ごと消す (#474)"}
+{"name":"pnpm-install-amp-append-redirect-then-pkg","expect":"block","command":"pnpm install &>>x foo","reason":"&>> も 1 つの演算子として先ごと消す (#474)"}
+{"name":"pnpm-install-readwrite-redirect-then-pkg","expect":"block","command":"pnpm install <>x foo","reason":"<> も 1 つの演算子として先ごと消す (#474)"}
+{"name":"pnpm-install-input-dup-then-pkg","expect":"block","command":"pnpm install 0<&3 foo","reason":"<& も 1 つの演算子として先ごと消す (#474)"}
 {"name":"leading-redirect-pnpm-add","expect":"block","command":">x pnpm add foo","reason":"先頭のリダイレクトの後ろが実行されるコマンド (#474)"}
 {"name":"leading-fd-redirect-pnpm-add","expect":"block","command":"2>x pnpm add foo","reason":"先頭の fd 番号付きリダイレクトの後ろが実行されるコマンド (#474)"}
 {"name":"pnpm-redirect-mid-add","expect":"block","command":"pnpm >x add","reason":"bash では pnpm add (#474)"}
