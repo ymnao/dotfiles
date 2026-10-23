@@ -123,7 +123,11 @@
 {"name":"bash-herestring-pnpm-add","expect":"block","command":"bash <<<'pnpm add foo'","reason":"ヒアストリングの中身を bash が実行する"}
 {"name":"leading-herestring-bash-herestring-pnpm-add","expect":"block","command":"<<<x bash <<<'pnpm add foo'","reason":"先頭のヒアストリングの語は実行対象ではない。後ろのヒアストリングを bash が実行する (#474)"}
 {"name":"process-subst-pnpm-add","expect":"block","command":"cat <(pnpm add foo)","reason":"プロセス置換の中身は実行される"}
-{"name":"cat-redirect-to-file-named-npx","expect":"allow","command":"cat >npx","reason":"リダイレクト先はファイル名で実行されない (#474)"}
+{"name":"cat-redirect-to-file-named-npx","expect":"block","command":"cat >npx","reason":"先の語は単独で判定する。コマンド置換が PM 名に解決された形と区別できないため (#474)"}
+{"name":"cat-input-from-subst-npx","expect":"block","command":"cat <$(npx foo)","reason":"リダイレクト先のコマンド置換は実行される (#474)"}
+{"name":"cat-output-to-subst-npx","expect":"block","command":"cat >$(npx foo)","reason":"リダイレクト先のコマンド置換は実行される (#474)"}
+{"name":"cat-output-to-backtick-npm","expect":"block","command":"cat >`npm install foo`","reason":"リダイレクト先のコマンド置換は実行される (#474)"}
+{"name":"pnpm-install-herestring-word","expect":"block","command":"pnpm install <<< y","reason":"ヒアストリングの語を引数に残す形で判定するため。`<<<x foo` の foo を漏らさない代償 (#474)"}
 {"name":"pnpm-run-lint","expect":"allow","command":"pnpm run lint","reason":"スクリプト実行"}
 {"name":"pnpm-exec-direct","expect":"allow","command":"pnpm exec secretlint --","reason":"exec 直接実行は許可 (実測)。make lint は make 経由なので影響なし"}
 {"name":"pnpm-exec-tsc","expect":"allow","command":"pnpm exec tsc --noEmit","reason":"exec 直接実行は許可 (実測)"}

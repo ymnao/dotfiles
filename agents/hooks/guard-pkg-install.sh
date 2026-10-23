@@ -295,15 +295,20 @@ resolve_binary() {
 
 # リダイレクトは先の 1 語ごと消す。`<>` で分割すると先の後ろの語
 # （`pnpm install >x foo` の foo）が別セグメントへ追い出され、判定から漏れるため。
-# コマンド置換は解決済みなので、ここで消しても中身は隠れない。
+# 消した先の語は単独のセグメントとして別に判定する。先にあったコマンド置換は
+# 上で PM 名 1 語に解決されており（`cat <$(npx foo)` → `cat <npx`）、消すだけだと
+# その実行を隠すため。
 # `<<<` の語は `bash <<<'pnpm add x'` のように実行され得るので消さず、引数に残す形と
 # 別セグメントにする形の両方を判定する（片方だけだと `<<<x bash <<<'pnpm add x'` か
 # `pnpm install <<<x foo` のどちらかが漏れる）。
 if [[ "$command" == *'<<<'* ]]; then
   command="$(printf '%s' "$command" | sed 's/<<</ /g')"$'\n'"$(printf '%s' "$command" | sed 's/<<</;/g')"
 fi
-command=$(printf '%s' "$command" \
-  | sed -E 's/(&>>|&>|>>|>[|]|>&|<&|<<-|<<|<>|>|<)[[:blank:]]*[^[:blank:];&|()<>]+/ /g')
+redir_re='(&>>|&>|>>|>[|]|>&|<&|<<-|<<|<>|>|<)[[:blank:]]*[^[:blank:];&|()<>]+'
+if [[ "$command" == *[\<\>]* ]]; then
+  redir_targets=$(printf '%s\n' "$command" | grep -oE "$redir_re" | sed -E 's/^[<>&|]+[[:blank:]]*//')
+  command="$(printf '%s' "$command" | sed -E "s/${redir_re}/ /g")"$'\n'"$redir_targets"
+fi
 
 # コマンドをシェル区切り文字でセグメントに分割（各区切りを改行へ置換）
 segments=$(printf '%s' "$command" | tr ';&|(){}<>`' $'\n\n\n\n\n\n\n\n\n\n')
