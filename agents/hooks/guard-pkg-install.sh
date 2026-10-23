@@ -6,7 +6,7 @@
 #
 # allowlist 方式: ロックファイルからの復元のみ許可し、依存の追加・実行時取得を
 # ブロックする。
-#   - pnpm install / pnpm i（引数なしの素の形と、lockfile を書き換えない
+#   - pnpm install / pnpm i / pnpm install-test / pnpm it（引数なしの素の形と、lockfile を書き換えない
 #     --frozen-lockfile / --offline / --prefer-offline / --ignore-scripts のみ）
 #   - yarn install（引数・オプションなしの素の形のみ）
 #   - npm / npx は pnpm への一本化のため全サブコマンド禁止
@@ -459,7 +459,6 @@ while IFS= read -r segment; do
       for t in "${rest[@]}"; do
         [[ "$t" =~ ^(--frozen-lockfile|--offline|--prefer-offline|--ignore-scripts)$ ]] || kept+=("$t")
       done
-      # install-test / it は `pnpm help` が「pnpm install と同じ引数を受ける」とするので install と同じ扱い。
       pm_should_block 'add|dlx|create' 'install|i|install-test|it' "${kept[@]}" \
         && block "pnpm add/dlx/create / pnpm install <package> は禁止されています。パッケージの追加はユーザーに依頼してください"
       ;;
