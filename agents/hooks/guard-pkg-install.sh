@@ -54,27 +54,23 @@ if [[ -z "$command" ]]; then
   exit 0
 fi
 
-# fd 番号付きリダイレクト（2>&1 / 2>/dev/null / 1>x）の数字を落とす。残すと後段の
-# セグメント分割で `pnpm install 2` のように引数として数えられる。
-# 落とすのはリダイレクトがセグメントの末尾にある形だけ。`pnpm install 1>x foo` の
-# ように後ろに語が続く形まで落とすと、セグメント分割がリダイレクト先ごと `x foo` を
-# 別セグメントへ追い出すため、たまたま数字で止まっていた install foo が通る。
-# リダイレクト先を 1 文字以上に限るのは、`2>&1 foo` の `>&` の `&` を
-# セグメント末尾の区切りと読ませないため。
-# 下の正規化より前に生の command に掛けるのは、`"2">x` / `\2>x`（bash ではどちらも
-# 引数 `2`）と、引用符の中の ` 2>x"` を落とさないため。
-command=$(printf '%s' "$command" \
-  | sed -E $'s/(^|[[:blank:]])[0-9]+((>>|>&|<&|>|<)[^][:blank:];&|()<>{}$`\'"\\\\]+[[:blank:]]*)($|[;&|])/\\1\\2\\4/g')
-
 # 解析より前にシェル意味論で正規化する（n""pm → npm / n\pm → npm 等の回避を
 # 解消）。シェルの単語分割と同じ順序で:
+#   0. セグメント末尾の fd 番号付きリダイレクト（2>&1 / 2>/dev/null）の数字を落とす
+#      （後段のセグメント分割で `pnpm install 2` と引数に数えられるのを防ぐ）
 #   1. \X → X（バックスラッシュエスケープ解除）
 #   2. ' " を全削除（トークン内クォート連結を解消）
+# 0 を後ろに語が続く形（`1>x foo`）に広げないのは、セグメント分割がリダイレクト先
+# ごと `x foo` を別セグメントへ追い出し、数字で止まっていた install foo が通るため。
+# リダイレクト先を 1 文字以上に限るのは `2>&1 foo` の `&` を末尾と読ませないため。
+# 0 を 1・2 より前に置くのは `"2">x` / `\2>x`（bash では引数 `2`）と、引用符の中の
+# ` 2>x"` を落とさないため。
 # その後、バイナリ名・サブコマンドの大文字表記（NPM INSTALL 等）を取りこぼさない
 # よう以降の解析はすべて小文字化した command に対して行う。パッケージ名やパスも
 # 小文字化されるが、判定に使うのはバイナリ名とサブコマンド名のみのため無害。
 command=$(printf '%s' "$command" \
-  | sed -E -e 's/\\(.)/\1/g' -e $'s/[\'"]//g' \
+  | sed -E -e $'s/(^|[[:blank:]])[0-9]+((>>|>&|<&|>|<)[^][:blank:];&|()<>{}$`\'"\\\\]+[[:blank:]]*)($|[;&|])/\\1\\2\\4/g' \
+    -e 's/\\(.)/\1/g' -e $'s/[\'"]//g' \
   | tr '[:upper:]' '[:lower:]')
 
 # 単純な変数代入 `var=value` を「コマンド中の $var / ${var}」に静的展開する。
@@ -198,17 +194,16 @@ strip_token() {
 # バイナリ以降のトークン列を解析し、ブロックすべきかを返す。
 #   $1: 「常に危険」サブコマンド（独立トークンとして含めばブロック）の ERE
 #   $2: 「引数なしなら許可」サブコマンド（復元用途）の ERE。空なら復元許可なし
-#   $3: 復元サブコマンドに付けてよいフラグの ERE（完全一致）。空なら素の形のみ
-#   $4-: バイナリ以降のトークン
+#   $3-: バイナリ以降のトークン
 # 戻り値: 0 = ブロックすべき, 1 = 許可
 # 危険サブコマンドは独立トークン一致で検出するため、`npm --global install` の
 # ように前置オプションを挟んでも、`--prefix /tmp` のように値付きオプションが
 # 挟まっても判定がぶれない（値トークンは既知サブコマンドに一致しないため無視）。
 pm_should_block() {
-  local always_deny="$1" restore_only="$2" restore_flags="$3"
-  shift 3
+  local always_deny="$1" restore_only="$2"
+  shift 2
   local -a toks=("$@")
-  local i t restore_idx=-1 extra=0
+  local i t restore_idx=-1
 
   for ((i = 0; i < ${#toks[@]}; i++)); do
     t="${toks[i]}"
@@ -219,17 +214,16 @@ pm_should_block() {
     fi
     if [[ "$restore_idx" -lt 0 && -n "$restore_only" && "$t" =~ ^($restore_only)$ ]]; then
       restore_idx=$i
-    elif [[ -z "$restore_flags" || ! "$t" =~ ^($restore_flags)$ ]]; then
-      extra=$((extra + 1))
     fi
   done
 
-  # 復元系サブコマンド（install/i 等）は「素の形」と許可フラグだけの形に限る。
-  # それ以外のトークン（グローバルオプション含む）が 1 つでも残ればブロックする。
-  # --global / --save-dev / --package-lock-only / --mode=update-lockfile 等は
-  # 「ロックファイルからの復元」を超える副作用（global install・lockfile 書き換え等）を
-  # 持ち得るため、許可フラグは値を取らないものを完全一致で列挙する。
-  if [[ "$restore_idx" -ge 0 && "$extra" -ne 0 ]]; then
+  # 復元系サブコマンド（install/i 等）は「素の形」のみ許可する。
+  # サブコマンドの前後にトークン（グローバルオプション含む）が 1 つでも残れば
+  # ブロックする。--global / --save-dev / --package-lock-only /
+  # --mode=update-lockfile 等は「ロックファイルからの復元」を超える副作用
+  # （global install・lockfile 書き換え等）を持ち得るため、復元したいときは
+  # `npm install` / `npm ci` のように素の形で実行させる。
+  if [[ "$restore_idx" -ge 0 && ${#toks[@]} -ne 1 ]]; then
     return 0
   fi
 
@@ -377,7 +371,7 @@ while IFS= read -r segment; do
   # コマンド置換/変数展開で組み立てた実行（バイナリが __dynbin__）は中身を静的に
   # 追えないため、パッケージ操作サブコマンドを伴うものを安全側でブロックする。
   if [[ "$bin" == __dynbin__ ]]; then
-    pm_should_block "$dyn_danger" '' '' "${rest[@]}" \
+    pm_should_block "$dyn_danger" '' "${rest[@]}" \
       && block "コマンド置換/変数展開経由のパッケージマネージャ実行は禁止されています。パッケージ操作はユーザーに依頼してください"
     # uv run --with* に相当する実行時取得フラグも検出する。固定バイナリ側の uv
     # 分岐と同じ判定を __dynbin__ 経由（$(which uv) run --with ... 等）にも適用。
@@ -457,29 +451,36 @@ while IFS= read -r segment; do
       block "npm は禁止されています。pnpm を使ってください (install→pnpm install, run→pnpm run, exec→pnpm exec, dlx→pnpm dlx)"
       ;;
     pnpm)
-      pm_should_block 'add|dlx|create' 'install|i' '--frozen-lockfile|--offline|--prefer-offline|--ignore-scripts' "${rest[@]}" \
+      # lockfile を書き換えない復元フラグだけを除いてから「素の形」判定に渡す。
+      # 値を取るフラグを入れず完全一致で比べるのは、`--frozen-lockfile=false` や
+      # フラグの値の位置に置かれた package 名まで読み飛ばさないため。
+      kept=()
+      for t in "${rest[@]}"; do
+        [[ "$t" =~ ^(--frozen-lockfile|--offline|--prefer-offline|--ignore-scripts)$ ]] || kept+=("$t")
+      done
+      pm_should_block 'add|dlx|create' 'install|i' "${kept[@]}" \
         && block "pnpm add/dlx/create / pnpm install <package> は禁止されています。パッケージの追加はユーザーに依頼してください"
       ;;
     yarn)
-      pm_should_block 'add|dlx|create' 'install' '' "${rest[@]}" \
+      pm_should_block 'add|dlx|create' 'install' "${rest[@]}" \
         && block "yarn add/dlx/create / yarn install <package> は禁止されています。パッケージの追加はユーザーに依頼してください"
       ;;
     bun)
-      pm_should_block 'add|a|install|i|x|create' '' '' "${rest[@]}" \
+      pm_should_block 'add|a|install|i|x|create' '' "${rest[@]}" \
         && block "bun add/install/x/create は許可リスト外です。パッケージ操作はユーザーに依頼してください"
       ;;
     pip|pip3)
-      pm_should_block 'install' '' '' "${rest[@]}" \
+      pm_should_block 'install' '' "${rest[@]}" \
         && block "pip install は禁止されています。パッケージの追加はユーザーに依頼してください"
       ;;
     pipx)
-      pm_should_block 'install|inject|run' '' '' "${rest[@]}" \
+      pm_should_block 'install|inject|run' '' "${rest[@]}" \
         && block "pipx install/inject/run はパッケージを取得し得るため禁止されています"
       ;;
     uv)
       # uv add / uv pip install / uv tool install/run をまとめてブロック
       # （uv sync・uv lock・uv run スクリプト単体等の復元/実行系は許可）。
-      pm_should_block 'add|pip|tool' '' '' "${rest[@]}" \
+      pm_should_block 'add|pip|tool' '' "${rest[@]}" \
         && block "uv add / uv pip / uv tool は禁止されています。パッケージの追加はユーザーに依頼してください"
       # uv run --with* / uv run --with-editable / uv run --with-requirements は
       # 実行時にパッケージを取得するため uvx と同じ扱いでブロック。--with は
@@ -494,18 +495,18 @@ while IFS= read -r segment; do
       done
       ;;
     poetry)
-      pm_should_block 'add' '' '' "${rest[@]}" \
+      pm_should_block 'add' '' "${rest[@]}" \
         && block "poetry add は禁止されています。パッケージの追加はユーザーに依頼してください"
       ;;
     cargo)
       # cargo build/test/check/fmt/clippy/fetch は許可、依存追加・バイナリ取得はブロック
-      pm_should_block 'add|install' '' '' "${rest[@]}" \
+      pm_should_block 'add|install' '' "${rest[@]}" \
         && block "cargo add / cargo install は禁止されています。パッケージの追加はユーザーに依頼してください"
       ;;
     go)
       # go build/test/vet/run と go mod download/verify は許可。
       # go get / go install は依存追加・バイナリ取得のためブロック。
-      pm_should_block 'get|install' '' '' "${rest[@]}" \
+      pm_should_block 'get|install' '' "${rest[@]}" \
         && block "go get / go install は禁止されています。パッケージの追加はユーザーに依頼してください"
       # go mod tidy は依存追加を伴い得るためブロック（download / verify / graph は許可）
       if [[ ${#rest[@]} -ge 2 ]]; then
@@ -519,12 +520,12 @@ while IFS= read -r segment; do
       fi
       ;;
     gem)
-      pm_should_block 'install' '' '' "${rest[@]}" \
+      pm_should_block 'install' '' "${rest[@]}" \
         && block "gem install は禁止されています。パッケージの追加はユーザーに依頼してください"
       ;;
     bundle|bundler)
       # bundle install / bundle exec は許可（ロックファイル復元・実行）
-      pm_should_block 'add' '' '' "${rest[@]}" \
+      pm_should_block 'add' '' "${rest[@]}" \
         && block "bundle add は禁止されています。パッケージの追加はユーザーに依頼してください"
       ;;
   esac
