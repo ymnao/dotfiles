@@ -74,6 +74,42 @@
 {"name":"pnpm-install","expect":"allow","command":"pnpm install","reason":"素の形は復元"}
 {"name":"pnpm-i-bare","expect":"allow","command":"pnpm i","reason":"素の形は復元"}
 {"name":"yarn-install","expect":"allow","command":"yarn install","reason":"素の形は復元"}
+{"name":"pnpm-install-2to1-tail","expect":"allow","command":"pnpm install 2>&1 | tail -30","reason":"fd 番号付きリダイレクトの 2 は引数ではない (#468)"}
+{"name":"pnpm-install-2devnull","expect":"allow","command":"pnpm install 2>/dev/null","reason":"fd 番号付きリダイレクトの 2 は引数ではない (#468)"}
+{"name":"pnpm-install-1-to-file","expect":"allow","command":"pnpm install 1>log.txt","reason":"fd 番号付きリダイレクトの 1 は引数ではない (#468)"}
+{"name":"pnpm-install-gt-log","expect":"allow","command":"pnpm install > log.txt","reason":"fd 番号なしのリダイレクト"}
+{"name":"cd-then-pnpm-install","expect":"allow","command":"cd /tmp && pnpm install","reason":"素の形は復元"}
+{"name":"pnpm-install-frozen","expect":"allow","command":"pnpm install --frozen-lockfile","reason":"lockfile を書き換えない復元フラグ (#468)"}
+{"name":"pnpm-i-frozen","expect":"allow","command":"pnpm i --frozen-lockfile","reason":"lockfile を書き換えない復元フラグ (#468)"}
+{"name":"pnpm-install-offline","expect":"allow","command":"pnpm install --offline","reason":"store のみを使う復元フラグ (#468)"}
+{"name":"pnpm-install-prefer-offline","expect":"allow","command":"pnpm install --prefer-offline","reason":"復元フラグ (#468)"}
+{"name":"pnpm-install-ignore-scripts","expect":"allow","command":"pnpm install --ignore-scripts","reason":"復元フラグ (#468)"}
+{"name":"pnpm-install-frozen-offline-2to1","expect":"allow","command":"pnpm install --frozen-lockfile --offline 2>&1","reason":"許可フラグの組み合わせと fd 番号 (#468)"}
+{"name":"yarn-install-2to1","expect":"allow","command":"yarn install 2>&1","reason":"fd 番号付きリダイレクトの 2 は引数ではない (#468)"}
+{"name":"pnpm-install-quoted-2-redirect","expect":"block","command":"pnpm install \"2\">x","reason":"bash では package 2 の install。引用符付きの 2 は fd 番号ではない"}
+{"name":"pnpm-install-escaped-2-redirect","expect":"block","command":"pnpm install \\2>x","reason":"bash では package 2 の install。エスケープした 2 は fd 番号ではない"}
+{"name":"pnpm-install-2-space-redirect","expect":"block","command":"pnpm install 2 >x","reason":"空白で離れた 2 は package 名"}
+{"name":"pnpm-install-pkg-2to1","expect":"block","command":"pnpm install foo 2>&1","reason":"fd 番号を落としても package 引数は残る"}
+{"name":"pnpm-add-2to1","expect":"block","command":"pnpm add x 2>&1","reason":"依存追加"}
+{"name":"pnpm-install-offline-pkg","expect":"block","command":"pnpm install --offline foo","reason":"許可フラグがあっても package 引数は不可"}
+{"name":"pnpm-install-frozen-false","expect":"block","command":"pnpm install --frozen-lockfile=false","reason":"許可フラグは完全一致のみ"}
+{"name":"pnpm-install-no-frozen","expect":"block","command":"pnpm install --no-frozen-lockfile","reason":"lockfile を書き換えうる"}
+{"name":"pnpm-install-lockfile-only","expect":"block","command":"pnpm install --lockfile-only","reason":"lockfile を書き換える"}
+{"name":"pnpm-install-fix-lockfile","expect":"block","command":"pnpm install --fix-lockfile","reason":"lockfile を書き換える"}
+{"name":"pnpm-install-install","expect":"block","command":"pnpm install install","reason":"2 個目の install は package 名"}
+{"name":"yarn-install-frozen","expect":"block","command":"yarn install --frozen-lockfile","reason":"yarn は版ごとにフラグが違うため許可フラグなし (#468)"}
+{"name":"pnpm-install-test-bare","expect":"allow","command":"pnpm install-test","reason":"素の形は復元 + test"}
+{"name":"pnpm-install-test-pkg","expect":"block","command":"pnpm install-test foo","reason":"pnpm install と同じ引数を受ける (pnpm help)"}
+{"name":"pnpm-it-pkg","expect":"block","command":"pnpm it foo","reason":"install-test の alias"}
+{"name":"pnpm-install-log-2to1","expect":"allow","command":"pnpm install >log.txt 2>&1","reason":"末尾の fd 番号付きリダイレクト (#468)"}
+{"name":"pnpm-install-fd-redirect-then-pkg","expect":"block","command":"pnpm install 1>x foo","reason":"bash では foo の install。後ろに語が続く fd 番号は落とさない"}
+{"name":"pnpm-install-2to1-then-pkg","expect":"block","command":"pnpm install 2>&1 foo","reason":"bash では foo の install。>& の & を区切りと読まない"}
+{"name":"pnpm-install-fd-redirect-then-amp-redirect-pkg","expect":"block","command":"pnpm install 2>x &>y foo","reason":"bash では foo の install。&> の & を末尾と読まない"}
+{"name":"pnpm-install-2to1-background","expect":"allow","command":"pnpm install 2>&1 &","reason":"末尾の & はセグメントの区切り (#468)"}
+{"name":"pnpm-install-fd-redirect-then-add","expect":"block","command":"pnpm install 2>x add","reason":"bash では package add の install"}
+{"name":"pnpm-install-fd-input-then-pkg","expect":"block","command":"pnpm install 0<x foo","reason":"bash では foo の install"}
+{"name":"pnpm-install-tab-fd-redirect-then-pkg","expect":"block","command":"pnpm install\t2>x foo","reason":"区切りがタブでも同じ"}
+{"name":"pnpm-install-quoted-space-2-redirect","expect":"block","command":"pnpm install \" 2>x\"","reason":"引用符の中の 2>x は package 名の一部"}
 {"name":"pnpm-run-lint","expect":"allow","command":"pnpm run lint","reason":"スクリプト実行"}
 {"name":"pnpm-exec-direct","expect":"allow","command":"pnpm exec secretlint --","reason":"exec 直接実行は許可 (実測)。make lint は make 経由なので影響なし"}
 {"name":"pnpm-exec-tsc","expect":"allow","command":"pnpm exec tsc --noEmit","reason":"exec 直接実行は許可 (実測)"}

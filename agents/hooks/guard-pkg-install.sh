@@ -6,8 +6,9 @@
 #
 # allowlist 方式: ロックファイルからの復元のみ許可し、依存の追加・実行時取得を
 # ブロックする。
-#   - pnpm install / pnpm i（オプション・引数なしの素の形のみ）
-#   - yarn install（同上）
+#   - pnpm install / pnpm i / pnpm install-test / pnpm it（引数なしの素の形と、lockfile を書き換えない
+#     --frozen-lockfile / --offline / --prefer-offline / --ignore-scripts のみ）
+#   - yarn install（引数・オプションなしの素の形のみ）
 #   - npm / npx は pnpm への一本化のため全サブコマンド禁止
 #
 # 各セグメント（`;`/`&&`/`|` 等で分割）について「実際に実行されるバイナリ」を
@@ -55,13 +56,22 @@ fi
 
 # 解析より前にシェル意味論で正規化する（n""pm → npm / n\pm → npm 等の回避を
 # 解消）。シェルの単語分割と同じ順序で:
+#   0. セグメント末尾の fd 番号付きリダイレクト（2>&1 / 2>/dev/null）の数字を落とす
+#      （後段のセグメント分割で `pnpm install 2` と引数に数えられるのを防ぐ）
 #   1. \X → X（バックスラッシュエスケープ解除）
 #   2. ' " を全削除（トークン内クォート連結を解消）
+# 0 を後ろに語が続く形（`1>x foo`）に広げないのは、セグメント分割がリダイレクト先
+# ごと `x foo` を別セグメントへ追い出し、数字で止まっていた install foo が通るため。
+# リダイレクト先を 1 文字以上に限り、`&` の直後の `>` を末尾から外すのは、
+# `2>&1 foo` / `2>x &>y foo` の `&` を末尾と読ませないため。
+# 0 を 1・2 より前に置くのは `"2">x` / `\2>x`（bash では引数 `2`）と、引用符の中の
+# ` 2>x"` を落とさないため。
 # その後、バイナリ名・サブコマンドの大文字表記（NPM INSTALL 等）を取りこぼさない
 # よう以降の解析はすべて小文字化した command に対して行う。パッケージ名やパスも
 # 小文字化されるが、判定に使うのはバイナリ名とサブコマンド名のみのため無害。
 command=$(printf '%s' "$command" \
-  | sed -E -e 's/\\(.)/\1/g' -e $'s/[\'"]//g' \
+  | sed -E -e $'s/(^|[[:blank:]])[0-9]+((>>|>&|<&|>|<)[^][:blank:];&|()<>{}$`\'"\\\\]+[[:blank:]]*)($|[;|]|&($|[^>]))/\\1\\2\\4/g' \
+    -e 's/\\(.)/\1/g' -e $'s/[\'"]//g' \
   | tr '[:upper:]' '[:lower:]')
 
 # 単純な変数代入 `var=value` を「コマンド中の $var / ${var}」に静的展開する。
@@ -442,7 +452,14 @@ while IFS= read -r segment; do
       block "npm は禁止されています。pnpm を使ってください (install→pnpm install, run→pnpm run, exec→pnpm exec, dlx→pnpm dlx)"
       ;;
     pnpm)
-      pm_should_block 'add|dlx|create' 'install|i' "${rest[@]}" \
+      # lockfile を書き換えない復元フラグだけを除いてから「素の形」判定に渡す。
+      # 値を取るフラグを入れず完全一致で比べるのは、`--frozen-lockfile=false` や
+      # フラグの値の位置に置かれた package 名まで読み飛ばさないため。
+      kept=()
+      for t in "${rest[@]}"; do
+        [[ "$t" =~ ^(--frozen-lockfile|--offline|--prefer-offline|--ignore-scripts)$ ]] || kept+=("$t")
+      done
+      pm_should_block 'add|dlx|create' 'install|i|install-test|it' "${kept[@]}" \
         && block "pnpm add/dlx/create / pnpm install <package> は禁止されています。パッケージの追加はユーザーに依頼してください"
       ;;
     yarn)
