@@ -48,6 +48,11 @@ if ! command -v jq &>/dev/null; then
   exit 2
 fi
 
+block() {
+  echo "ブロック: $1" >&2
+  exit 2
+}
+
 command=$(printf '%s\n' "$input" | jq -r '.tool_input.command // empty')
 
 if [[ -z "$command" ]]; then
@@ -59,12 +64,18 @@ fi
 # の次の行を前の行の引数に吸い込まないため。単一引用符の中でも結合するが、そこは実行され
 # ない文字列か、`bash -c` の内側で同じ結合を受ける文字列なので判定は変わらない。
 # コメント (`# x \⏎`) の `\` は行継続にならず次の行が実行されるので、`#` が語の先頭に
-# ある行は結合しない (引用符の中の ` #` でも結合しなくなるが、segment が増えるだけ)。
+# ある行は結合しない。その `#` が引用符の中 (`echo "#"; pnpm \⏎add foo`) なら結合が
+# 正しいので、結合を止めた行があったときは全部結合した版も末尾に足して両方を判定する。
 if [[ "$command" == *$'\\\n'* ]]; then
   command=$(printf '%s\n' "$command" | awk '{
     n = match($0, /\\+$/) ? RLENGTH : 0
-    if (n % 2 && $0 !~ /(^|[[:blank:];&|()])#/) { buf = buf substr($0, 1, length($0) - 1) } else { print buf $0; buf = "" }
-  } END { if (buf != "") print buf }')
+    body = substr($0, 1, length($0) - 1)
+    if (n % 2) { fbuf = fbuf body } else { full = full fbuf $0 "\n"; fbuf = "" }
+    if (n % 2 && $0 !~ /(^|[[:blank:];&|()])#/) { buf = buf body } else { if (n % 2) kept = 1; print buf $0; buf = "" }
+  } END {
+    if (buf != "") print buf
+    if (kept) printf "%s%s\n", full, fbuf
+  }')
 fi
 
 # リダイレクト先や代入の値の語が、引用符・バックスラッシュで空白を含む (`>"a b"` / `>a\ b` /
@@ -73,9 +84,11 @@ fi
 # PM 名からも判定する (block を足すだけの安全網)。空白を含まない引用 (`> "$TMPDIR/x"`) は
 # 外しても 1 語のままなので発火させない。`<<'EOF'` の区切り語は先ではないので除く。
 split_word=0
-quoted_blank='([^][:blank:];&|()<>"'"'"'\\]|"([^"\\]|\\.)*"|'"'"'[^'"'"']*'"'"'|\\.)*("([^"\\]|\\.)*[[:blank:]]|'"'"'[^'"'"']*[[:blank:]]|\\[[:blank:]])'
+dq_body='"([^"\\]|\\.)*'
+sq_body="'[^']*"
+quoted_blank="([^][:blank:];&|()<>\"'\\\\]|${dq_body}\"|${sq_body}'|\\\\.)*(${dq_body}[[:blank:]]|${sq_body}[[:blank:]]|\\\\[[:blank:]])"
 if [[ "$command" == *[\"\'\\]* && "$command" == *[\<\>=]* ]] \
-  && printf '%s' "$command" | grep -qE "((^|[^<])(&>>|&>|>>|>[|]|>&|<&|<>|>|<)[[:blank:]]*|(^|[[:blank:];&|()])[A-Za-z_][A-Za-z0-9_]*=)${quoted_blank}"; then
+  && printf '%s' "$command" | grep -qE "((^|[^<])(&>>|&>|>>|>[|]|>&|<&|<>|>|<)[[:blank:]]*|(^|[[:blank:];&|()])[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?[+]?=)${quoted_blank}"; then
   split_word=1
 fi
 
@@ -182,23 +195,21 @@ psub_re='[<>]\(([^()]*)\)'
 subst_inners=""
 subst_rounds=0
 while :; do
-  if ((++subst_rounds > 32)); then
-    echo "ブロック: プロセス置換・コマンド置換の入れ子が深すぎるため判定できません。コマンドを分けてください" >&2
-    exit 2
-  fi
+  ((++subst_rounds > 32)) && block "プロセス置換・コマンド置換の入れ子が深すぎるため判定できません。コマンドを分けてください"
   before="$command"
   if [[ "$command" =~ $psub_re ]]; then
     subst_inners+=$'\n'"$(printf '%s\n' "$command" | grep -oE "$psub_re" | sed -E 's/^[<>][(]//; s/[)]$//')"
     command=$(printf '%s' "$command" | sed -E "s/${psub_re}/__dynbin__/g")
-  fi
-  # 改行をまたぐもの (sed では一致せず何も変わらない) は 1 周に 1 個ずつ置き換える
-  # (while にすると入れ子をこの場で全段消化し、上の周回の上限が効かなくなる)
-  if [[ "$command" == "$before" && "$command" =~ $psub_re ]]; then
-    full="${BASH_REMATCH[0]}"
-    subst_inners+=$'\n'"${BASH_REMATCH[1]}"
-    prefix="${command%%"$full"*}"
-    suffix="${command#*"$full"}"
-    command="${prefix}__dynbin__${suffix}"
+    # 改行をまたぐもの (sed では一致せず何も変わらない) は 1 周に 1 個ずつ置き換える
+    # (while にすると入れ子をこの場で全段消化し、上の周回の上限が効かなくなる)
+    if [[ "$command" == "$before" && "$command" =~ $psub_re ]]; then
+      full="${BASH_REMATCH[0]}"
+      inner="${BASH_REMATCH[1]}"
+      subst_inners+=$'\n'"$inner"
+      prefix="${command%%"$full"*}"
+      suffix="${command#*"$full"}"
+      command="${prefix}__dynbin__${suffix}"
+    fi
   fi
   while [[ "$command" =~ \$\(([^()]*)\) || "$command" =~ \`([^\`]*)\` ]]; do
     full="${BASH_REMATCH[0]}"
@@ -225,11 +236,6 @@ command=$(printf '%s' "$command" | sed -E \
   -e 's/\$\{[a-z_][a-z0-9_]*\}/__dynbin__/g' \
   -e 's/\$[a-z_][a-z0-9_]*/__dynbin__/g' \
   -e 's/(__dynbin__)+/__dynbin__/g')
-
-block() {
-  echo "ブロック: $1" >&2
-  exit 2
-}
 
 # トークン先頭の alias 無効化バックスラッシュと引用符を剥がす（\npm / "npm" → npm）。
 # サブシェル fork を避けるため結果はグローバル変数 STRIPPED に格納する。

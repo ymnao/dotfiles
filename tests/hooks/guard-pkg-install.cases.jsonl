@@ -148,6 +148,8 @@
 {"name":"quoted-prefix-then-blank","expect":"block","command":">x\"y\"\" z\" pnpm add foo","reason":"語の途中の引用に空白があっても同じ (#476)"}
 {"name":"quoted-env-assign-pnpm-add","expect":"block","command":"FOO=\"a b\" pnpm add foo","reason":"代入の値も 1 語で、pnpm add が実行される (#476)"}
 {"name":"quoted-env-assign-node-options","expect":"block","command":"NODE_OPTIONS=\"--a b\" pnpm add foo","reason":"同上 (#476)"}
+{"name":"quoted-env-append-assign-pnpm-add","expect":"block","command":"FOO+=\"a b\" pnpm add foo","reason":"+= の代入も同じ (#476)"}
+{"name":"quoted-array-assign-pnpm-add","expect":"block","command":"a[0]=\"x y\" pnpm add foo","reason":"配列要素の代入も同じ (#476)"}
 {"name":"assign-quoted-no-blank-echo","expect":"allow","command":"FOO=\"a\" echo pnpm add","reason":"空白を含まない引用の値では安全網は発火しない (#476)"}
 {"name":"heredoc-case-to-quoted-tmpdir","expect":"allow","command":"cat > \"$TMPDIR/s.sh\" <<'EOF'\ncase \"$1\" in\n  a) echo a;;\nesac\nEOF","reason":"空白を含まない引用の先では安全網は発火しない (#476)"}
 {"name":"echo-run-to-quoted-tmpdir","expect":"allow","command":"echo \"$msg\" run > \"$TMPDIR/log\"","reason":"同上。__dynbin__ からの suffix (run) を作らない (#476)"}
@@ -163,6 +165,7 @@
 {"name":"comment-line-continuation","expect":"block","command":"# x \\\npnpm add foo","reason":"コメントの中の \\⏎ は行継続にならず、次の行が実行される (#476)"}
 {"name":"trailing-comment-line-continuation","expect":"block","command":"echo hi # \\\npnpm add foo","reason":"行末コメントの \\⏎ も同じ (#476)"}
 {"name":"heredoc-comment-line-continuation","expect":"block","command":"bash <<'EOF'\n# \\\npnpm add foo\nEOF","reason":"bash に渡す本文のコメントでも同じ (#476)"}
+{"name":"quoted-hash-line-continuation","expect":"block","command":"echo \"a #\"; pnpm \\\nadd foo","reason":"引用符の中の # はコメントではなく、行継続で pnpm add になる (#476)"}
 {"name":"line-continuation-pnpm-install-frozen","expect":"allow","command":"pnpm install \\\n  --frozen-lockfile","reason":"行継続をまたいでも復元フラグだけなら許可 (#476)"}
 {"name":"fd-var-redirect-then-pkg","expect":"block","command":"pnpm install {fd}>x foo","reason":"{fd}>x は fd 変数リダイレクトで、foo は install の引数 (#476)"}
 {"name":"fd-var-redirect-only","expect":"allow","command":"pnpm install {fd}>x","reason":"fd 変数リダイレクトだけなら引数は増えない (#476)"}
