@@ -96,8 +96,12 @@ sq_body="'[^']*"
 word_sep="[][:blank:];&|(){}<>\`]"
 quoted_sep="([^][:blank:];&|()<>\"'\\\\]|${dq_body}\"|${sq_body}'|\\\\.)*(${dq_body}${word_sep}|${sq_body}${word_sep}|\\\\${word_sep})"
 valued_wrapper='env|exec|nice|timeout|stdbuf|setsid|nohup|time|command|builtin'
+redir_head='((^|[^<])(&>>|&>|>>|>[|]|>&|<&|<>|>|<)|<<<)[[:blank:]]*'
+assign_head='(^|[[:blank:];&|()])[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?[+]?='
+wrapper_head="(^|[[:blank:];&|()])(${valued_wrapper})[[:blank:]]([^;&|()<>]*[[:blank:]])?(${value_opt})(=|[[:blank:]]*)"
+# 改行の置き換えを bash の `${command//...}` にしないのは、bash 3.2 では一致数の 2 乗になるため
 if [[ "$command" == *[\"\'\\]* && "$command" == *[\<\>=-]* ]] \
-  && printf '%s' "$command" | tr '\n' ';' | grep -qiE "(((^|[^<])(&>>|&>|>>|>[|]|>&|<&|<>|>|<)|<<<)[[:blank:]]*|(^|[[:blank:];&|()])[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?[+]?=|(^|[[:blank:];&|()])(${valued_wrapper})[[:blank:]]([^;&|()<>]*[[:blank:]])?(${value_opt})(=|[[:blank:]]*))${quoted_sep}"; then
+  && printf '%s' "$command" | tr '\n' ';' | LC_ALL=C grep -qiE "(${redir_head}|${assign_head}|${wrapper_head})${quoted_sep}"; then
   split_word=1
 fi
 
@@ -375,7 +379,7 @@ resolve_binary() {
 # `pnpm install <<<x foo` のどちらかが漏れる）。語が先頭にある (`<<<x pnpm add foo`) と
 # どちらの形でも語が実行対象に見えるので、語ごと消す形も足す。
 if [[ "$command" == *'<<<'* ]]; then
-  command="$(printf '%s' "$command" | sed 's/<<</ /g')"$'\n'"$(printf '%s' "$command" | sed 's/<<</;/g')"$'\n'"$(printf '%s' "$command" | sed -E 's/<<<[[:blank:]]*[^[:blank:];&|()<>]+/ /g')"
+  command=$(printf '%s\n' "$command" | sed -E -e 'h; s/<<</ /g; p; g; s/<<</;/g; p; g' -e 's/<<<[[:blank:]]*[^[:blank:];&|()<>]+/ /g')
 fi
 # 演算子の直前の `{name}` (bash / zsh の fd 変数リダイレクト `{fd}>x`) も演算子の一部として消す。
 fdvar_re='(\{[a-z_][a-z0-9_]*\})?'
