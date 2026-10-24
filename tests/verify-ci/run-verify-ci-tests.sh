@@ -335,9 +335,16 @@ out=$(run_hook_payload_cwd "$GH_REPO" "$BASE/no-such-dir" success "gh pr create 
 check "payload-cwd-missing-dir-defer" 2 "$(last_rc "$out")"
 out=$(run_hook_payload_cwd "$GH_REPO" "$BASE/no-such-dir" success 'gh pr create -R testowner/testrepo --title t --body b')
 check "payload-cwd-missing-dir-repo-flag" 2 "$(last_rc "$out")"
+out=$(run_hook_payload_cwd "$GH_REPO" "$BASE/no-such-dir" success "gh pr create --title t --body-file $BASE/clean-body.md")
+check "payload-cwd-missing-dir-abs-clean-body" 0 "$(last_rc "$out")"
 cp "$BASE/clean-body.md" "$GH_REPO/rel-clean.md"
 out=$(run_hook_payload_cwd "$GH_REPO" "$BASE/no-such-dir" success 'gh pr create --title t --body-file rel-clean.md')
-check "payload-cwd-missing-dir-relative-body" 2 "$(last_rc "$out")"
+if [ "$(last_rc "$out")" = 2 ] && printf '%s' "$out" | grep -q "絶対パスで渡してください"; then
+  pass=$((pass + 1))
+else
+  echo "FAIL payload-cwd-missing-dir-relative-body: cwd 不能の案内付きで止まっていない: $out"
+  fail=$((fail + 1))
+fi
 
 # 実際の worktree: 元のチェックアウトと worktree で HEAD が違う
 git -C "$GH_REPO" worktree add -q -b wt-471 "$BASE/wt"

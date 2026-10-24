@@ -98,6 +98,9 @@ if [[ -n "$body_file" || $gh_segment == *--body-file* ]] \
 fix-or-issue-or-dismiss ポリシー検査のため、変数展開や stdin (-) ではなくリテラルの実ファイルパスで渡してください。
 WIP として進めたい場合は --draft を付ければスキップします。
 EOF
+    if [[ -n "$cwd_unusable" ]]; then
+      echo "hook 入力の cwd ($payload_cwd) に移動できないため、相対パスは解決しません。絶対パスで渡してください。" >&2
+    fi
     exit 2
   fi
   # `grep -- `: `-` 始まりのファイル名がオプション解釈されるのを防ぐ
