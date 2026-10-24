@@ -90,6 +90,10 @@ value_opt='-u|-n|-a|-s|-k|-C|--unset|--signal|--kill-after|--chdir|--adjustment'
 # 発火させない。`<<'EOF'` の区切り語は先ではないので除く (`<<<` の語は除かない)。
 # 引用の中の改行も語を割るが grep は行単位なので、この判定に限り改行を `;` に変えて 1 行にする。
 # ラッパーを透過ラッパー全体にしないのは、`if [ -n "a b" ]` のような頻出の形で発火させないため。
+# ラッパーと値オプションの間をオプション・数値・代入・値付きオプションに限るのは、内側の
+# コマンドのオプション (`timeout 60 grep -c "pnpm add"`) で発火させないため。
+# `${...}` / `$(...)` / バックティックは判定の前に 1 語へ潰す。下で __dynbin__ にマスクされて
+# segment の区切りには届かないので、引用の中の `"${TMPDIR}/x"` の `{` で発火させないため。
 split_word=0
 dq_body='"([^"\\]|\\.)*'
 sq_body="'[^']*"
@@ -98,10 +102,12 @@ quoted_sep="([^][:blank:];&|()<>\"'\\\\]|${dq_body}\"|${sq_body}'|\\\\.)*(${dq_b
 valued_wrapper='env|exec|nice|timeout|stdbuf|setsid|nohup|time|command|builtin'
 redir_head='((^|[^<])(&>>|&>|>>|>[|]|>&|<&|<>|>|<)|<<<)[[:blank:]]*'
 assign_head='(^|[[:blank:];&|()])[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?[+]?='
-wrapper_head="(^|[[:blank:];&|()])(${valued_wrapper})[[:blank:]]([^;&|()<>]*[[:blank:]])?(${value_opt})(=|[[:blank:]]*)"
+plain_word='[^[:blank:];&|()<>]'
+wrapper_head="(^|[[:blank:];&|()])(${valued_wrapper})([[:blank:]]+(-${plain_word}*|[0-9]+[smhd]?|[A-Za-z_][A-Za-z0-9_]*=${plain_word}*|(${value_opt})[[:blank:]]+${plain_word}+))*[[:blank:]]+(${value_opt})(=|[[:blank:]]*)"
 # 改行の置き換えを bash の `${command//...}` にしないのは、bash 3.2 では一致数の 2 乗になるため
 if [[ "$command" == *[\"\'\\]* && "$command" == *[\<\>=-]* ]] \
-  && printf '%s' "$command" | tr '\n' ';' | LC_ALL=C grep -qiE "(${redir_head}|${assign_head}|${wrapper_head})${quoted_sep}"; then
+  && printf '%s\n' "$command" | sed -E -e 's/\$\{[^}]*\}/$x/g' -e 's/\$\([^()]*\)/$x/g' -e 's/`[^`]*`/x/g' \
+    | tr '\n' ';' | LC_ALL=C grep -qiE "(${redir_head}|${assign_head}|${wrapper_head})${quoted_sep}"; then
   split_word=1
 fi
 
@@ -203,7 +209,8 @@ resolve_cmd_subst() {
 # 互いに入れ子になり得るので、どちらも変わらなくなるまで交互に回す。sed は行単位で、
 # 改行をまたぐ置換は bash の =~ だけが一致するので、変化が無ければ打ち切る。
 # 周回ごとに fork するので、プロセス置換の入れ子が深すぎる入力は判定せず block する
-# (深さ 2000 で 18 秒かかった)。
+# (深さ 2000 で 18 秒かかった)。中身を次の周回に戻すので、周回の上限が数えるのは
+# プロセス置換・コマンド置換・バックティックが互いに入れ子になる段数 (+ 収束を確かめる 1 周)。
 psub_re='[<>]\(([^()]*)\)'
 subst_inners=""
 subst_rounds=0
@@ -377,7 +384,8 @@ resolve_binary() {
 # `<<<` の語は `bash <<<'pnpm add x'` のように実行され得るので消さず、引数に残す形と
 # 別セグメントにする形の両方を判定する（片方だけだと `<<<x bash <<<'pnpm add x'` か
 # `pnpm install <<<x foo` のどちらかが漏れる）。語が先頭にある (`<<<x pnpm add foo`) と
-# どちらの形でも語が実行対象に見えるので、語ごと消す形も足す。
+# どちらの形でも語が実行対象に見えるので、語ごと消す形も足す。末尾に改行を付けて sed に渡すのは、
+# BSD sed が改行の無い最終行では `p` の出力を改行で区切らず 3 形を 1 行につなげるため。
 if [[ "$command" == *'<<<'* ]]; then
   command=$(printf '%s\n' "$command" | sed -E -e 'h; s/<<</ /g; p; g; s/<<</;/g; p; g' -e 's/<<<[[:blank:]]*[^[:blank:];&|()<>]+/ /g')
 fi

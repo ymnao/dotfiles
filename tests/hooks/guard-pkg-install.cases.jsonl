@@ -234,6 +234,18 @@
 {"name":"leading-herestring-cat","expect":"allow","command":"<<<x cat","reason":"ヒアストリングの語を消す形を足しても PM 名がなければ許可 (#480)"}
 {"name":"noglob-ls","expect":"allow","command":"noglob ls *.txt","reason":"noglob を読み飛ばしても PM 名がなければ許可 (#480)"}
 {"name":"echo-subst-nested-backtick-date","expect":"allow","command":"echo $(echo `date`)","reason":"入れ子のバックティックを解いても PM 操作がなければ許可 (#480)"}
+{"name":"herestring-mid-segment-pnpm-add","expect":"block","command":"cat <<<x; <<<y pnpm add foo","reason":"2 つ目の segment の先頭のヒアストリング (#480)"}
+{"name":"subst-psub-backtick-pnpm-add","expect":"block","command":"echo $(cat <(echo `pnpm add foo`))","reason":"置換 > プロセス置換 > バックティックの 3 段 (#480)"}
+{"name":"fdvar-redir-dq-semi-pnpm-add","expect":"block","command":"{fd}>\"a;b\" pnpm add foo","reason":"fd 変数リダイレクトの先の引用の中の ; (#480)"}
+{"name":"assign-plus-dq-semi-pnpm-add","expect":"block","command":"FOO+=\"a;b\" pnpm add foo","reason":"+= 代入の値の引用の中の ; (#480)"}
+{"name":"env-u-dq-tab-pnpm-add","expect":"block","command":"env -u \"a\tb\" pnpm add foo","reason":"引用の中のタブ (#480)"}
+{"name":"env-u-value-then-u-pnpm-add","expect":"block","command":"env -u x -u \"a b\" pnpm add foo","reason":"値付きオプションの後の値オプション (#480)"}
+{"name":"coproc-upper-pnpm-add","expect":"block","command":"COPROC pnpm add foo","reason":"大文字の coproc (#480)"}
+{"name":"assign-dq-brace-var-grep-pnpm-add","expect":"allow","command":"OUT=\"${TMPDIR}/out\"; grep -n \"pnpm add\" HANDOFF.md","reason":"引用の中の ${} は __dynbin__ にマスクされ語を割らない (#480)"}
+{"name":"printf-redir-dq-brace-var","expect":"allow","command":"printf '%s\\n' 'pnpm add foo' > \"${TMPDIR}/cmd.txt\"","reason":"リダイレクト先の ${} (#480)"}
+{"name":"assign-dq-subst-grep-pnpm-add","expect":"allow","command":"OUT=\"$(mktemp)\"; grep -n \"pnpm add\" HANDOFF.md","reason":"引用の中の $() は解決済みで語を割らない (#480)"}
+{"name":"timeout-grep-c-quoted-pnpm-add","expect":"allow","command":"timeout 60 grep -c \"pnpm add\" HANDOFF.md","reason":"値オプションが内側のコマンドのもの (#480)"}
+{"name":"env-grep-n-quoted-pnpm-add","expect":"allow","command":"env grep -n \"pnpm add\" HANDOFF.md","reason":"ラッパーの後ろのコマンドの -n では発火させない (#480)"}
 {"name":"pnpm-run-lint","expect":"allow","command":"pnpm run lint","reason":"スクリプト実行"}
 {"name":"pnpm-exec-direct","expect":"allow","command":"pnpm exec secretlint --","reason":"exec 直接実行は許可 (実測)。make lint は make 経由なので影響なし"}
 {"name":"pnpm-exec-tsc","expect":"allow","command":"pnpm exec tsc --noEmit","reason":"exec 直接実行は許可 (実測)"}
