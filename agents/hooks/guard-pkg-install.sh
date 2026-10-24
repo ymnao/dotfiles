@@ -58,17 +58,20 @@ fi
 # 行末の `\` が奇数個のときだけ結合するのは、`\\⏎` (リテラルの `\` + 改行 = コマンド区切り)
 # の次の行を前の行の引数に吸い込まないため。単一引用符の中でも結合するが、そこは実行され
 # ない文字列か、`bash -c` の内側で同じ結合を受ける文字列なので判定は変わらない。
-command=$(printf '%s\n' "$command" | awk '{
-  n = match($0, /\\+$/) ? RLENGTH : 0
-  if (n % 2) { buf = buf substr($0, 1, length($0) - 1) } else { print buf $0; buf = "" }
-} END { if (buf != "") print buf }')
+if [[ "$command" == *$'\\\n'* ]]; then
+  command=$(printf '%s\n' "$command" | awk '{
+    n = match($0, /\\+$/) ? RLENGTH : 0
+    if (n % 2) { buf = buf substr($0, 1, length($0) - 1) } else { print buf $0; buf = "" }
+  } END { if (buf != "") print buf }')
+fi
 
 # リダイレクト先の語が引用符・バックスラッシュを含む (`>"a b"` / `>a\ b`) と、下の正規化で
 # 引用符を外した後に先の語の境界が失われ、先の後半が実行対象に見える。引用符を意識した
 # 字句解析を持たない代わりに、この形があれば segment 中のどの位置の PM 名からも判定する
 # (block を足すだけの安全網)。`<<'EOF'` の区切り語は先ではないので除く。
 quoted_redir=0
-if printf '%s' "$command" | grep -qE "(^|[^<])(&>>|&>|>>|>[|]|>&|<&|<>|>|<)[[:blank:]]*[^][:blank:];&|()<>]*[\"'\\\\]"; then
+if [[ "$command" == *[\<\>]* && "$command" == *[\"\'\\]* ]] \
+  && printf '%s' "$command" | grep -qE "(^|[^<])(&>>|&>|>>|>[|]|>&|<&|<>|>|<)[[:blank:]]*[^][:blank:];&|()<>]*[\"'\\\\]"; then
   quoted_redir=1
 fi
 
@@ -177,7 +180,7 @@ while :; do
     subst_inners+=$'\n'"$(printf '%s\n' "$command" | grep -oE "$psub_re" | sed -E 's/^[<>][(]//; s/[)]$//')"
     command=$(printf '%s' "$command" | sed -E "s/${psub_re}/__dynbin__/g")
   fi
-  while [[ "$command" =~ \$\(([^()]*)\) ]]; do
+  while [[ "$command" =~ \$\(([^()]*)\) || "$command" =~ \`([^\`]*)\` ]]; do
     full="${BASH_REMATCH[0]}"
     inner="${BASH_REMATCH[1]}"
     replacement=$(resolve_cmd_subst "$inner")
@@ -187,16 +190,6 @@ while :; do
     command="${prefix}${replacement}${suffix}"
   done
   [[ "$command" == "$before" ]] && break
-done
-
-while [[ "$command" =~ \`([^\`]*)\` ]]; do
-  full="${BASH_REMATCH[0]}"
-  inner="${BASH_REMATCH[1]}"
-  replacement=$(resolve_cmd_subst "$inner")
-  subst_inners+=$'\n'"$inner"
-  prefix="${command%%"$full"*}"
-  suffix="${command#*"$full"}"
-  command="${prefix}${replacement}${suffix}"
 done
 command+="$subst_inners"
 
@@ -344,9 +337,10 @@ if [[ "$command" == *'<<<'* ]]; then
   command="$(printf '%s' "$command" | sed 's/<<</ /g')"$'\n'"$(printf '%s' "$command" | sed 's/<<</;/g')"
 fi
 # 演算子の直前の `{name}` (bash / zsh の fd 変数リダイレクト `{fd}>x`) も演算子の一部として消す。
-redir_re='(\{[a-z_][a-z0-9_]*\})?(&>>|&>|>>|>[|]|>&|<&|<<-|<<|<>|>|<)[[:blank:]]*[^[:blank:];&|()<>]+'
+fdvar_re='(\{[a-z_][a-z0-9_]*\})?'
+redir_re="${fdvar_re}"'(&>>|&>|>>|>[|]|>&|<&|<<-|<<|<>|>|<)[[:blank:]]*[^[:blank:];&|()<>]+'
 if [[ "$command" == *[\<\>]* ]]; then
-  redir_targets=$(printf '%s\n' "$command" | grep -oE "$redir_re" | sed -E 's/^(\{[a-z_][a-z0-9_]*\})?[<>&|]+[[:blank:]]*//')
+  redir_targets=$(printf '%s\n' "$command" | grep -oE "$redir_re" | sed -E "s/^${fdvar_re}[<>&|]+[[:blank:]]*//")
   command="$(printf '%s' "$command" | sed -E "s/${redir_re}/ /g")"$'\n'"$redir_targets"
 fi
 
