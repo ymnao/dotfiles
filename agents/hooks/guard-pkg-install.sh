@@ -92,8 +92,10 @@ value_opt='-u|-n|-a|-s|-k|-C|--unset|--signal|--kill-after|--chdir|--adjustment'
 # ラッパーを透過ラッパー全体にしないのは、`if [ -n "a b" ]` のような頻出の形で発火させないため。
 # ラッパーと値オプションの間をオプション・数値・代入・値付きオプションに限るのは、内側の
 # コマンドのオプション (`timeout 60 grep -c "pnpm add"`) で発火させないため。
-# `${...}` / `$(...)` / バックティックは判定の前に 1 語へ潰す。下で __dynbin__ にマスクされて
-# segment の区切りには届かないので、引用の中の `"${TMPDIR}/x"` の `{` で発火させないため。
+# 中身に引用符もバックスラッシュも無い `${...}` / `$(...)` / バックティックは、判定の前に 1 語へ
+# 潰す。外側は下で 1 語に置き換わり、中身は語を割る引用を持たないので、引用の中の
+# `"${TMPDIR}/x"` の `{` で発火させないため。引用を持つ中身 (`$(FOO="a b" pnpm add foo)`) は
+# 別の行として判定に戻るときには引用符が外れているので、潰さずにここで見る。
 split_word=0
 dq_body='"([^"\\]|\\.)*'
 sq_body="'[^']*"
@@ -107,7 +109,7 @@ wrapper_arg="-${plain_word}*|[0-9]+[smhd]?|[A-Za-z_][A-Za-z0-9_]*=${plain_word}*
 wrapper_head="(^|[[:blank:];&|()])(${valued_wrapper})([[:blank:]]+(${wrapper_arg}))*[[:blank:]]+(${value_opt})(=|[[:blank:]]*)"
 # 改行の置き換えを bash の `${command//...}` にしないのは、bash 3.2 では一致数の 2 乗になるため
 if [[ "$command" == *[\"\'\\]* && "$command" == *[\<\>=-]* ]] \
-  && printf '%s\n' "$command" | sed -E -e 's/\$\{[^}]*\}/x/g' -e 's/\$\([^()]*\)/x/g' -e 's/`[^`]*`/x/g' \
+  && printf '%s\n' "$command" | sed -E -e $'s/\\$\\{[^}"\'\\\\]*\\}/x/g' -e $'s/\\$\\([^()"\'\\\\]*\\)/x/g' -e $'s/`[^`"\'\\\\]*`/x/g' \
     | tr '\n' ';' | LC_ALL=C grep -qiE "(${redir_head}|${assign_head}|${wrapper_head})${quoted_sep}"; then
   split_word=1
 fi

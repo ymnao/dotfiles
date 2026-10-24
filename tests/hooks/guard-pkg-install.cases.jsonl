@@ -246,6 +246,13 @@
 {"name":"assign-dq-subst-grep-pnpm-add","expect":"allow","command":"OUT=\"$(mktemp)\"; grep -n \"pnpm add\" HANDOFF.md","reason":"引用の中の $() は解決済みで語を割らない (#480)"}
 {"name":"timeout-grep-c-quoted-pnpm-add","expect":"allow","command":"timeout 60 grep -c \"pnpm add\" HANDOFF.md","reason":"値オプションが内側のコマンドのもの (#480)"}
 {"name":"env-grep-n-quoted-pnpm-add","expect":"allow","command":"env grep -n \"pnpm add\" HANDOFF.md","reason":"ラッパーの後ろのコマンドの -n では発火させない (#480)"}
+{"name":"subst-assign-dq-blank-pnpm-add","expect":"block","command":"echo $(FOO=\"a b\" pnpm add foo)","reason":"置換の中身の代入の値の引用が空白で割れる。中身に引用があるので 1 語へ潰さない (#480)"}
+{"name":"assign-subst-assign-dq-blank-pnpm-add","expect":"block","command":"out=$(NODE_OPTIONS=\"--a b\" pnpm add foo)","reason":"代入の右辺の置換でも同じ (#480)"}
+{"name":"subst-redir-dq-blank-pnpm-add","expect":"block","command":"echo $(>\"a b\" pnpm add foo)","reason":"置換の中のリダイレクト先 (#480)"}
+{"name":"backtick-assign-dq-blank-pnpm-add","expect":"block","command":"echo ` FOO=\"a b\" pnpm add foo`","reason":"バックティックの中の代入 (#480)"}
+{"name":"brace-default-subst-assign-dq-blank-pnpm-add","expect":"block","command":"echo ${X:-$(FOO=\"a b\" pnpm add foo)}","reason":"${} の中の置換 (#480)"}
+{"name":"subst-env-u-dq-blank-pnpm-add","expect":"block","command":"echo $(env -u \"a b\" pnpm add foo)","reason":"置換の中のラッパーの値 (#480)"}
+{"name":"assign-dq-pipe-then-grep-pnpm-add","expect":"block","command":"X=\"a|b\"; grep -n \"pnpm add\" f","reason":"誤 block を受け入れる: 代入の値の引用に区切り文字があると、同じコマンドの引用の中の PM 名からも判定する (#480 の fail-closed の代償)"}
 {"name":"pnpm-run-lint","expect":"allow","command":"pnpm run lint","reason":"スクリプト実行"}
 {"name":"pnpm-exec-direct","expect":"allow","command":"pnpm exec secretlint --","reason":"exec 直接実行は許可 (実測)。make lint は make 経由なので影響なし"}
 {"name":"pnpm-exec-tsc","expect":"allow","command":"pnpm exec tsc --noEmit","reason":"exec 直接実行は許可 (実測)"}
