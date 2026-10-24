@@ -49,17 +49,16 @@ if printf '%s\n' "$gh_segment" | grep -qE '([[:space:]]|^)(--draft(=([Tt][Rr][Uu
   exit 0
 fi
 
-# hook プロセスの cwd はセッションの cwd と一致しない (Claude Code は worktree
-# セッションでも projectConfigRoot で hook を spawn しうる。2026-10-24 に 2.1.308 の
-# 本体で確認、#471)。相対 --body-file の
-# 解決と git の HEAD 判定の両方を入力の cwd に揃える。消えた cwd で元の場所に
-# 留まると別 commit の CI を見る false pass になるので、そこは判定せず通す
+# hook プロセスの cwd を信じない: Claude Code は worktree セッションでも
+# projectConfigRoot (元のチェックアウト) で hook を spawn しうる (2026-10-24 に
+# Desktop 同梱の CLI 2.1.308 の本体で確認、#471)。相対 --body-file の解決と git の
+# HEAD 判定を入力の cwd に揃える。入力の cwd に移れないときに元の場所で HEAD を
+# 判定すると false pass にも false block にもなるので、CI 判定だけは skip する。
+# cwd に依存しない defer / -R 検査は続け、相対 --body-file は解決不能として扱う
 payload_cwd=$(printf '%s\n' "$input" | jq -r '.cwd // empty')
-if [[ -n "$payload_cwd" ]]; then
-  cd "$payload_cwd" 2>/dev/null || {
-    echo "[verify-ci-before-pr] hook 入力の cwd ($payload_cwd) に移動できません: 検証をスキップします" >&2
-    exit 0
-  }
+cwd_unusable=""
+if [[ -n "$payload_cwd" ]] && ! cd "$payload_cwd" 2>/dev/null; then
+  cwd_unusable=1
 fi
 
 # fix-or-issue-or-dismiss ポリシー検査 (pr skill 参照): PR body に「defer(未起票)」が
@@ -92,7 +91,8 @@ if [[ -n "$body_file" || $gh_segment == *--body-file* ]] \
   # 存在しない相対パス等、hook から通常ファイルとして解決できない形式は
   # 検査不能 = defer 検査の迂回経路になるためブロックする (この hook の他の
   # 経路は fail-open だが、ここはポリシー強制が目的なので方針を変える)
-  if [[ -z "$body_file" || "$body_file" == "-" || ! -f "$body_file" || ! -r "$body_file" ]]; then
+  if [[ -z "$body_file" || "$body_file" == "-" || ! -f "$body_file" || ! -r "$body_file" ]] \
+    || [[ -n "$cwd_unusable" && "$body_file" != /* ]]; then
     cat >&2 <<EOF
 [verify-ci-before-pr] --body-file の値を検査可能な実ファイルとして解決できません (got: '${body_file:-<未解決>}')。
 fix-or-issue-or-dismiss ポリシー検査のため、変数展開や stdin (-) ではなくリテラルの実ファイルパスで渡してください。
@@ -142,6 +142,11 @@ if [[ $gh_segment =~ $target_flag_re ]]; then
 --title 等の値の中に該当文字列があるだけの場合も --draft で回避できます。
 EOF
   exit 2
+fi
+
+if [[ -n "$cwd_unusable" ]]; then
+  echo "[verify-ci-before-pr] hook 入力の cwd ($payload_cwd) に移動できません: CI 検証をスキップします" >&2
+  exit 0
 fi
 
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0

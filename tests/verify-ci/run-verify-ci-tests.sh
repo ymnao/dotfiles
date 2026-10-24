@@ -111,6 +111,8 @@ make_repo() {
   local dir="$BASE/$1"
   mkdir -p "$dir"
   git -C "$dir" init -q
+  git -C "$dir" config gc.auto 0
+  git -C "$dir" config maintenance.auto false
   git -C "$dir" config user.email "test@example.com"
   git -C "$dir" config user.name "test"
   printf 'x\n' >"$dir/f.txt"
@@ -131,7 +133,6 @@ NON_GH_REPO=$(make_repo non-gh "https://gitlab.com/o/r.git" yes)
 pass=0
 fail=0
 
-# $1=cwd, $2=fixture 名 ("" なら未設定), $3=command。exit code を echo。
 # fixture 名の typo で curl スタブが exit 22 → hook fail-open (exit 0) と
 # なり expect-0 テストが vacuous pass するのを防ぐため fixture 存在を assert。
 fixture_path() {
@@ -143,6 +144,7 @@ fixture_path() {
   printf '%s' "$BASE/fixtures/$1.json"
 }
 
+# $1=cwd, $2=fixture 名 ("" なら未設定), $3=command。exit code を echo。
 run_hook_in() {
   local json rc=0 fixture_env
   fixture_env=$(fixture_path "$2") || exit 1
@@ -325,16 +327,20 @@ check "payload-cwd-ci-failure" 2 "$(last_rc "$out")"
 # 逆向き: 入力側が workflow 無しなら、プロセス側の CI 失敗に引きずられない
 out=$(run_hook_payload_cwd "$GH_REPO" "$NO_WF_REPO" failure 'gh pr create --title t --body b')
 check "payload-cwd-no-workflows" 0 "$(last_rc "$out")"
-# 入力に cwd が無い payload は従来どおりプロセスの cwd で判定する
-check "no-payload-cwd-falls-back" 2 "$(run_hook_in "$GH_REPO" failure 'gh pr create --title t --body b')"
 # 存在しない cwd は元の場所の HEAD で判定せず通す
 out=$(run_hook_payload_cwd "$GH_REPO" "$BASE/no-such-dir" failure 'gh pr create --title t --body b')
 check "payload-cwd-missing-dir" 0 "$(last_rc "$out")"
+# ただし cwd に依存しない defer / -R 検査は続け、相対 --body-file は解決不能で止める
+out=$(run_hook_payload_cwd "$GH_REPO" "$BASE/no-such-dir" success "gh pr create --title t --body-file $BASE/defer-body.md")
+check "payload-cwd-missing-dir-defer" 2 "$(last_rc "$out")"
+out=$(run_hook_payload_cwd "$GH_REPO" "$BASE/no-such-dir" success 'gh pr create -R testowner/testrepo --title t --body b')
+check "payload-cwd-missing-dir-repo-flag" 2 "$(last_rc "$out")"
+cp "$BASE/clean-body.md" "$GH_REPO/rel-clean.md"
+out=$(run_hook_payload_cwd "$GH_REPO" "$BASE/no-such-dir" success 'gh pr create --title t --body-file rel-clean.md')
+check "payload-cwd-missing-dir-relative-body" 2 "$(last_rc "$out")"
 
 # 実際の worktree: 元のチェックアウトと worktree で HEAD が違う
-git -C "$GH_REPO" config gc.auto 0
-git -C "$GH_REPO" config maintenance.auto false
-git -C "$GH_REPO" worktree add -q -b wt-471 "$BASE/wt" >/dev/null 2>&1
+git -C "$GH_REPO" worktree add -q -b wt-471 "$BASE/wt"
 git -C "$BASE/wt" commit -q --allow-empty -m wt
 # make_repo の workflows は commit 外なので worktree には現れない
 mkdir -p "$BASE/wt/.github/workflows"
