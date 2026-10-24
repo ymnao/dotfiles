@@ -55,9 +55,11 @@ fi
 # 解決と git の HEAD 判定の両方を入力の cwd に揃える。消えた cwd で元の場所に
 # 留まると別 commit の CI を見る false pass になるので、そこは判定せず通す
 payload_cwd=$(printf '%s\n' "$input" | jq -r '.cwd // empty')
-if [[ -n "$payload_cwd" ]] && ! cd "$payload_cwd" 2>/dev/null; then
-  echo "[verify-ci-before-pr] hook 入力の cwd ($payload_cwd) に移動できません: 検証をスキップします" >&2
-  exit 0
+if [[ -n "$payload_cwd" ]]; then
+  cd "$payload_cwd" 2>/dev/null || {
+    echo "[verify-ci-before-pr] hook 入力の cwd ($payload_cwd) に移動できません: 検証をスキップします" >&2
+    exit 0
+  }
 fi
 
 # fix-or-issue-or-dismiss ポリシー検査 (pr skill 参照): PR body に「defer(未起票)」が

@@ -134,15 +134,18 @@ fail=0
 # $1=cwd, $2=fixture 名 ("" なら未設定), $3=command。exit code を echo。
 # fixture 名の typo で curl スタブが exit 22 → hook fail-open (exit 0) と
 # なり expect-0 テストが vacuous pass するのを防ぐため fixture 存在を assert。
-run_hook_in() {
-  local json rc=0 fixture_env=""
-  if [ -n "$2" ]; then
-    fixture_env="$BASE/fixtures/$2.json"
-    if [ ! -f "$fixture_env" ]; then
-      echo "run_hook_in: fixture not found: $fixture_env" >&2
-      exit 1
-    fi
+fixture_path() {
+  [ -n "$1" ] || return 0
+  if [ ! -f "$BASE/fixtures/$1.json" ]; then
+    echo "fixture not found: $BASE/fixtures/$1.json" >&2
+    exit 1
   fi
+  printf '%s' "$BASE/fixtures/$1.json"
+}
+
+run_hook_in() {
+  local json rc=0 fixture_env
+  fixture_env=$(fixture_path "$2") || exit 1
   json=$(jq -cn --arg c "$3" '{"tool_input":{"command":$c}}')
   printf '%s' "$json" \
     | (cd "$1" && PATH="$BASE/bin:$PATH" VERIFY_CI_FIXTURE="$fixture_env" bash "$HOOK" >/dev/null 2>&1) || rc=$?
@@ -307,10 +310,11 @@ check "new-alias-repo-flag"    2 "$(run_hook_in "$GH_REPO" success 'gh pr new -R
 # hook プロセスの cwd ($1) と入力 JSON の cwd ($2) を分けて渡す。
 # $3=fixture 名, $4=command。stderr を echo し、exit code を最終行に足す
 run_hook_payload_cwd() {
-  local json out rc=0
+  local json out rc=0 fixture_env
+  fixture_env=$(fixture_path "$3") || exit 1
   json=$(jq -cn --arg c "$4" --arg d "$2" '{"tool_input":{"command":$c},"cwd":$d}')
   out=$(printf '%s' "$json" \
-    | (cd "$1" && PATH="$BASE/bin:$PATH" VERIFY_CI_FIXTURE="$BASE/fixtures/$3.json" bash "$HOOK" 2>&1 >/dev/null)) || rc=$?
+    | (cd "$1" && PATH="$BASE/bin:$PATH" VERIFY_CI_FIXTURE="$fixture_env" bash "$HOOK" 2>&1 >/dev/null)) || rc=$?
   printf '%s\nrc=%s' "$out" "$rc"
 }
 last_rc() { printf '%s' "${1##*rc=}"; }
