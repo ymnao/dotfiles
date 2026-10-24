@@ -58,21 +58,25 @@ fi
 # 行末の `\` が奇数個のときだけ結合するのは、`\\⏎` (リテラルの `\` + 改行 = コマンド区切り)
 # の次の行を前の行の引数に吸い込まないため。単一引用符の中でも結合するが、そこは実行され
 # ない文字列か、`bash -c` の内側で同じ結合を受ける文字列なので判定は変わらない。
+# コメント (`# x \⏎`) の `\` は行継続にならず次の行が実行されるので、`#` が語の先頭に
+# ある行は結合しない (引用符の中の ` #` でも結合しなくなるが、segment が増えるだけ)。
 if [[ "$command" == *$'\\\n'* ]]; then
   command=$(printf '%s\n' "$command" | awk '{
     n = match($0, /\\+$/) ? RLENGTH : 0
-    if (n % 2) { buf = buf substr($0, 1, length($0) - 1) } else { print buf $0; buf = "" }
+    if (n % 2 && $0 !~ /(^|[[:blank:];&|()])#/) { buf = buf substr($0, 1, length($0) - 1) } else { print buf $0; buf = "" }
   } END { if (buf != "") print buf }')
 fi
 
-# リダイレクト先の語が引用符・バックスラッシュを含む (`>"a b"` / `>a\ b`) と、下の正規化で
-# 引用符を外した後に先の語の境界が失われ、先の後半が実行対象に見える。引用符を意識した
-# 字句解析を持たない代わりに、この形があれば segment 中のどの位置の PM 名からも判定する
-# (block を足すだけの安全網)。`<<'EOF'` の区切り語は先ではないので除く。
-quoted_redir=0
-if [[ "$command" == *[\<\>]* && "$command" == *[\"\'\\]* ]] \
-  && printf '%s' "$command" | grep -qE "(^|[^<])(&>>|&>|>>|>[|]|>&|<&|<>|>|<)[[:blank:]]*[^][:blank:];&|()<>]*[\"'\\\\]"; then
-  quoted_redir=1
+# リダイレクト先や代入の値の語が、引用符・バックスラッシュで空白を含む (`>"a b"` / `>a\ b` /
+# `FOO="a b"`) と、下の正規化で引用符を外した後に語の境界が失われ、値の後半が実行対象に
+# 見える。引用符を意識した字句解析を持たない代わりに、この形があれば segment 中のどの位置の
+# PM 名からも判定する (block を足すだけの安全網)。空白を含まない引用 (`> "$TMPDIR/x"`) は
+# 外しても 1 語のままなので発火させない。`<<'EOF'` の区切り語は先ではないので除く。
+split_word=0
+quoted_blank='([^][:blank:];&|()<>"'"'"'\\]|"([^"\\]|\\.)*"|'"'"'[^'"'"']*'"'"'|\\.)*("([^"\\]|\\.)*[[:blank:]]|'"'"'[^'"'"']*[[:blank:]]|\\[[:blank:]])'
+if [[ "$command" == *[\"\'\\]* && "$command" == *[\<\>=]* ]] \
+  && printf '%s' "$command" | grep -qE "((^|[^<])(&>>|&>|>>|>[|]|>&|<&|<>|>|<)[[:blank:]]*|(^|[[:blank:];&|()])[A-Za-z_][A-Za-z0-9_]*=)${quoted_blank}"; then
+  split_word=1
 fi
 
 # 解析より前にシェル意味論で正規化する（n""pm → npm / n\pm → npm 等の回避を
@@ -172,13 +176,29 @@ resolve_cmd_subst() {
 # 置き換えでは 2000 個で 1 秒 → 132 秒になった)。`<(echo $(x))` / `$(cat <(x))` のように
 # 互いに入れ子になり得るので、どちらも変わらなくなるまで交互に回す。sed は行単位で、
 # 改行をまたぐ置換は bash の =~ だけが一致するので、変化が無ければ打ち切る。
+# 周回ごとに fork するので、プロセス置換の入れ子が深すぎる入力は判定せず block する
+# (深さ 2000 で 18 秒かかった)。
 psub_re='[<>]\(([^()]*)\)'
 subst_inners=""
+subst_rounds=0
 while :; do
+  if ((++subst_rounds > 32)); then
+    echo "ブロック: プロセス置換・コマンド置換の入れ子が深すぎるため判定できません。コマンドを分けてください" >&2
+    exit 2
+  fi
   before="$command"
   if [[ "$command" =~ $psub_re ]]; then
     subst_inners+=$'\n'"$(printf '%s\n' "$command" | grep -oE "$psub_re" | sed -E 's/^[<>][(]//; s/[)]$//')"
     command=$(printf '%s' "$command" | sed -E "s/${psub_re}/__dynbin__/g")
+  fi
+  # 改行をまたぐもの (sed では一致せず何も変わらない) は 1 周に 1 個ずつ置き換える
+  # (while にすると入れ子をこの場で全段消化し、上の周回の上限が効かなくなる)
+  if [[ "$command" == "$before" && "$command" =~ $psub_re ]]; then
+    full="${BASH_REMATCH[0]}"
+    subst_inners+=$'\n'"${BASH_REMATCH[1]}"
+    prefix="${command%%"$full"*}"
+    suffix="${command#*"$full"}"
+    command="${prefix}__dynbin__${suffix}"
   fi
   while [[ "$command" =~ \$\(([^()]*)\) || "$command" =~ \`([^\`]*)\` ]]; do
     full="${BASH_REMATCH[0]}"
@@ -347,11 +367,11 @@ fi
 # コマンドをシェル区切り文字でセグメントに分割（各区切りを改行へ置換）
 segments=$(printf '%s' "$command" | tr ';&|(){}<>`' $'\n\n\n\n\n\n\n\n\n\n')
 
-# 引用符付きのリダイレクト先がある (上の quoted_redir) ときは、各 segment の 2 語目以降に
+# 空白を含む引用付きのリダイレクト先・代入がある (上の split_word) ときは、各 segment の 2 語目以降に
 # 現れる PM 名・__dynbin__・引数注入ラッパーからの suffix も segment として足す。候補を
 # これらの位置に限り、数が上限を超えたら block するのは、suffix ごとに後ろ全体を写すので
 # 候補数 × segment の長さになるため (`>"a b" pnpm pnpm …` 2000 語で 79 秒かかった)。
-if [[ $quoted_redir -eq 1 ]]; then
+if [[ $split_word -eq 1 ]]; then
   suffixes=$(printf '%s\n' "$segments" | awk -v re="${pm_token_re}" -v ai="^(${arginjector})\$" '{
     for (i = 2; i <= NF; i++) {
       name = $i; sub(/.*\//, "", name)
@@ -361,7 +381,7 @@ if [[ $quoted_redir -eq 1 ]]; then
         print s
       }
     }
-  }') || block "引用符付きのリダイレクト先と多数のパッケージマネージャ名を含むコマンドは判定できないため禁止されています。リダイレクト先から引用符を外すか、コマンドを分けてください"
+  }') || block "空白を含む引用付きのリダイレクト先・代入と、多数のパッケージマネージャ名・変数展開を含むコマンドは判定できないため禁止されています。リダイレクト先や値から空白を除くか、コマンドを分けてください"
   segments+=$'\n'"$suffixes"
 fi
 
