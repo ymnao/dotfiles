@@ -103,10 +103,11 @@ valued_wrapper='env|exec|nice|timeout|stdbuf|setsid|nohup|time|command|builtin'
 redir_head='((^|[^<])(&>>|&>|>>|>[|]|>&|<&|<>|>|<)|<<<)[[:blank:]]*'
 assign_head='(^|[[:blank:];&|()])[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?[+]?='
 plain_word='[^[:blank:];&|()<>]'
-wrapper_head="(^|[[:blank:];&|()])(${valued_wrapper})([[:blank:]]+(-${plain_word}*|[0-9]+[smhd]?|[A-Za-z_][A-Za-z0-9_]*=${plain_word}*|(${value_opt})[[:blank:]]+${plain_word}+))*[[:blank:]]+(${value_opt})(=|[[:blank:]]*)"
+wrapper_arg="-${plain_word}*|[0-9]+[smhd]?|[A-Za-z_][A-Za-z0-9_]*=${plain_word}*|(${value_opt})[[:blank:]]+${plain_word}+"
+wrapper_head="(^|[[:blank:];&|()])(${valued_wrapper})([[:blank:]]+(${wrapper_arg}))*[[:blank:]]+(${value_opt})(=|[[:blank:]]*)"
 # 改行の置き換えを bash の `${command//...}` にしないのは、bash 3.2 では一致数の 2 乗になるため
 if [[ "$command" == *[\"\'\\]* && "$command" == *[\<\>=-]* ]] \
-  && printf '%s\n' "$command" | sed -E -e 's/\$\{[^}]*\}/$x/g' -e 's/\$\([^()]*\)/$x/g' -e 's/`[^`]*`/x/g' \
+  && printf '%s\n' "$command" | sed -E -e 's/\$\{[^}]*\}/x/g' -e 's/\$\([^()]*\)/x/g' -e 's/`[^`]*`/x/g' \
     | tr '\n' ';' | LC_ALL=C grep -qiE "(${redir_head}|${assign_head}|${wrapper_head})${quoted_sep}"; then
   split_word=1
 fi
@@ -387,7 +388,7 @@ resolve_binary() {
 # どちらの形でも語が実行対象に見えるので、語ごと消す形も足す。末尾に改行を付けて sed に渡すのは、
 # BSD sed が改行の無い最終行では `p` の出力を改行で区切らず 3 形を 1 行につなげるため。
 if [[ "$command" == *'<<<'* ]]; then
-  command=$(printf '%s\n' "$command" | sed -E -e 'h; s/<<</ /g; p; g; s/<<</;/g; p; g' -e 's/<<<[[:blank:]]*[^[:blank:];&|()<>]+/ /g')
+  command=$(printf '%s\n' "$command" | sed -E -e 'h; s/<<</ /g; p; g; s/<<</;/g; p; g' -e "s/<<<[[:blank:]]*${plain_word}+/ /g")
 fi
 # 演算子の直前の `{name}` (bash / zsh の fd 変数リダイレクト `{fd}>x`) も演算子の一部として消す。
 fdvar_re='(\{[a-z_][a-z0-9_]*\})?'
