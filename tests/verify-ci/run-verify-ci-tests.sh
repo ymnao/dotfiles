@@ -111,6 +111,8 @@ make_repo() {
   local dir="$BASE/$1"
   mkdir -p "$dir"
   git -C "$dir" init -q
+  git -C "$dir" config gc.auto 0
+  git -C "$dir" config maintenance.auto false
   git -C "$dir" config user.email "test@example.com"
   git -C "$dir" config user.name "test"
   printf 'x\n' >"$dir/f.txt"
@@ -131,18 +133,21 @@ NON_GH_REPO=$(make_repo non-gh "https://gitlab.com/o/r.git" yes)
 pass=0
 fail=0
 
-# $1=cwd, $2=fixture 名 ("" なら未設定), $3=command。exit code を echo。
 # fixture 名の typo で curl スタブが exit 22 → hook fail-open (exit 0) と
 # なり expect-0 テストが vacuous pass するのを防ぐため fixture 存在を assert。
-run_hook_in() {
-  local json rc=0 fixture_env=""
-  if [ -n "$2" ]; then
-    fixture_env="$BASE/fixtures/$2.json"
-    if [ ! -f "$fixture_env" ]; then
-      echo "run_hook_in: fixture not found: $fixture_env" >&2
-      exit 1
-    fi
+fixture_path() {
+  [ -n "$1" ] || return 0
+  if [ ! -f "$BASE/fixtures/$1.json" ]; then
+    echo "fixture not found: $BASE/fixtures/$1.json" >&2
+    exit 1
   fi
+  printf '%s' "$BASE/fixtures/$1.json"
+}
+
+# $1=cwd, $2=fixture 名 ("" なら未設定), $3=command。exit code を echo。
+run_hook_in() {
+  local json rc=0 fixture_env
+  fixture_env=$(fixture_path "$2") || exit 1
   json=$(jq -cn --arg c "$3" '{"tool_input":{"command":$c}}')
   printf '%s' "$json" \
     | (cd "$1" && PATH="$BASE/bin:$PATH" VERIFY_CI_FIXTURE="$fixture_env" bash "$HOOK" >/dev/null 2>&1) || rc=$?
@@ -302,6 +307,75 @@ check "new-alias-ci-failure"   2 "$(run_hook_in "$GH_REPO" failure 'gh pr new --
 check "new-alias-draft-bypass" 0 "$(run_hook_in "$GH_REPO" failure 'gh pr new --draft --title t --body b')"
 check "new-alias-defer-body"   2 "$(run_hook_in "$GH_REPO" success 'gh pr new --title t --body "追跡: defer(未起票)"')"
 check "new-alias-repo-flag"    2 "$(run_hook_in "$GH_REPO" success 'gh pr new -R testowner/testrepo --title t --body b')"
+
+# --- hook 入力の cwd を基準に判定する (#471) ------------------------------
+# hook プロセスの cwd ($1) と入力 JSON の cwd ($2) を分けて渡す。
+# $3=fixture 名, $4=command。stderr を echo し、exit code を最終行に足す
+run_hook_payload_cwd() {
+  local json out rc=0 fixture_env
+  fixture_env=$(fixture_path "$3") || exit 1
+  json=$(jq -cn --arg c "$4" --arg d "$2" '{"tool_input":{"command":$c},"cwd":$d}')
+  out=$(printf '%s' "$json" \
+    | (cd "$1" && PATH="$BASE/bin:$PATH" VERIFY_CI_FIXTURE="$fixture_env" bash "$HOOK" 2>&1 >/dev/null)) || rc=$?
+  printf '%s\nrc=%s' "$out" "$rc"
+}
+last_rc() { printf '%s' "${1##*rc=}"; }
+
+# プロセス側は workflow 無しで素通りする repo。入力側の CI 失敗で止まること
+out=$(run_hook_payload_cwd "$NO_WF_REPO" "$GH_REPO" failure 'gh pr create --title t --body b')
+check "payload-cwd-ci-failure" 2 "$(last_rc "$out")"
+# 逆向き: 入力側が workflow 無しなら、プロセス側の CI 失敗に引きずられない
+out=$(run_hook_payload_cwd "$GH_REPO" "$NO_WF_REPO" failure 'gh pr create --title t --body b')
+check "payload-cwd-no-workflows" 0 "$(last_rc "$out")"
+# 存在しない cwd は元の場所の HEAD で判定せず通す
+out=$(run_hook_payload_cwd "$GH_REPO" "$BASE/no-such-dir" failure 'gh pr create --title t --body b')
+check "payload-cwd-missing-dir" 0 "$(last_rc "$out")"
+# ただし cwd に依存しない defer / -R 検査は続け、相対 --body-file は解決不能で止める
+out=$(run_hook_payload_cwd "$GH_REPO" "$BASE/no-such-dir" success "gh pr create --title t --body-file $BASE/defer-body.md")
+check "payload-cwd-missing-dir-defer" 2 "$(last_rc "$out")"
+out=$(run_hook_payload_cwd "$GH_REPO" "$BASE/no-such-dir" success 'gh pr create -R testowner/testrepo --title t --body b')
+check "payload-cwd-missing-dir-repo-flag" 2 "$(last_rc "$out")"
+out=$(run_hook_payload_cwd "$GH_REPO" "$BASE/no-such-dir" success "gh pr create --title t --body-file $BASE/clean-body.md")
+check "payload-cwd-missing-dir-abs-clean-body" 0 "$(last_rc "$out")"
+cp "$BASE/clean-body.md" "$GH_REPO/rel-clean.md"
+out=$(run_hook_payload_cwd "$GH_REPO" "$BASE/no-such-dir" success 'gh pr create --title t --body-file rel-clean.md')
+if [ "$(last_rc "$out")" = 2 ] && printf '%s' "$out" | grep -q "絶対パスで渡してください"; then
+  pass=$((pass + 1))
+else
+  echo "FAIL payload-cwd-missing-dir-relative-body: cwd 不能の案内付きで止まっていない: $out"
+  fail=$((fail + 1))
+fi
+
+# 実際の worktree: 元のチェックアウトと worktree で HEAD が違う
+git -C "$GH_REPO" worktree add -q -b wt-471 "$BASE/wt"
+git -C "$BASE/wt" commit -q --allow-empty -m wt
+# make_repo の workflows は commit 外なので worktree には現れない
+mkdir -p "$BASE/wt/.github/workflows"
+printf 'name: ci\n' >"$BASE/wt/.github/workflows/ci.yml"
+wt_sha=$(git -C "$BASE/wt" rev-parse HEAD)
+main_sha=$(git -C "$GH_REPO" rev-parse HEAD)
+out=$(run_hook_payload_cwd "$GH_REPO" "$BASE/wt" missing 'gh pr create --title t --body b')
+if [ "$wt_sha" != "$main_sha" ] && [ "$(last_rc "$out")" = 2 ] \
+  && printf '%s' "$out" | grep -qF "HEAD ($wt_sha)" \
+  && ! printf '%s' "$out" | grep -qF "$main_sha"; then
+  pass=$((pass + 1))
+else
+  echo "FAIL worktree-head: worktree の HEAD ($wt_sha) を見ていない: $out"
+  fail=$((fail + 1))
+fi
+
+# 相対 --body-file は入力の cwd を基準に解決する
+cp "$BASE/defer-body.md" "$BASE/wt/rel-body.md"
+cp "$BASE/clean-body.md" "$GH_REPO/rel-body.md"
+out=$(run_hook_payload_cwd "$GH_REPO" "$BASE/wt" success 'gh pr create --title t --body-file rel-body.md')
+if [ "$(last_rc "$out")" = 2 ] && printf '%s' "$out" | grep -q "fix-or-issue-or-dismiss"; then
+  pass=$((pass + 1))
+else
+  echo "FAIL relative-body-file-payload-cwd: 入力 cwd 側の defer を検出していない: $out"
+  fail=$((fail + 1))
+fi
+out=$(run_hook_payload_cwd "$BASE/wt" "$GH_REPO" success 'gh pr create --title t --body-file rel-body.md')
+check "relative-body-file-clean-side" 0 "$(last_rc "$out")"
 
 echo "----"
 echo "verify-ci tests: $pass passed, $fail failed"
