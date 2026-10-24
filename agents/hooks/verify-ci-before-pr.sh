@@ -6,7 +6,7 @@
 # 正本: agents/hooks/verify-ci-before-pr.sh
 # (claude/hooks/ と codex/hooks/ からは相対 symlink で参照される)
 #
-# - 対象コミット: git HEAD
+# - 対象コミット: hook 入力の cwd (無ければ hook プロセスの cwd) での git HEAD
 # - bypass: --draft/-d(falsy 値 --draft=false 等は bypass しない)、.github/workflows/ 空、GitHub 以外の remote、ツール不在
 # - 状態判定: GitHub GraphQL の statusCheckRollup.state（legacy status + checks 統合）
 # - exit 0 = 許可, exit 2 = block (stderr 文字列が Claude にフィードバックされる)
@@ -46,6 +46,17 @@ gh_segment=$(printf '%s\n' "$command" \
 
 # --draft / -d は WIP 用 bypass (falsy 値 --draft=false 等は bypass しない)
 if printf '%s\n' "$gh_segment" | grep -qE '([[:space:]]|^)(--draft(=([Tt][Rr][Uu][Ee]|[Tt]|1))?|-d)([[:space:]]|$)'; then
+  exit 0
+fi
+
+# hook プロセスの cwd はセッションの cwd と一致しない (Claude Code は worktree
+# セッションでも projectConfigRoot で hook を spawn しうる。2026-10-24 に 2.1.308 の
+# 本体で確認、#471)。相対 --body-file の
+# 解決と git の HEAD 判定の両方を入力の cwd に揃える。消えた cwd で元の場所に
+# 留まると別 commit の CI を見る false pass になるので、そこは判定せず通す
+payload_cwd=$(printf '%s\n' "$input" | jq -r '.cwd // empty')
+if [[ -n "$payload_cwd" ]] && ! cd "$payload_cwd" 2>/dev/null; then
+  echo "[verify-ci-before-pr] hook 入力の cwd ($payload_cwd) に移動できません: 検証をスキップします" >&2
   exit 0
 fi
 
