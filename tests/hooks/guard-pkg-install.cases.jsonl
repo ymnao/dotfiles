@@ -102,7 +102,7 @@
 {"name":"pnpm-install-test-pkg","expect":"block","command":"pnpm install-test foo","reason":"pnpm install と同じ引数を受ける (pnpm help)"}
 {"name":"pnpm-it-pkg","expect":"block","command":"pnpm it foo","reason":"install-test の alias"}
 {"name":"pnpm-install-log-2to1","expect":"allow","command":"pnpm install >log.txt 2>&1","reason":"末尾の fd 番号付きリダイレクト (#468)"}
-{"name":"pnpm-install-fd-redirect-then-pkg","expect":"block","command":"pnpm install 1>x foo","reason":"bash では foo の install。後ろに語が続く fd 番号は落とさない"}
+{"name":"pnpm-install-fd-redirect-then-pkg","expect":"block","command":"pnpm install 1>x foo","reason":"bash では foo の install。リダイレクトを消しても foo は同じセグメントに残る"}
 {"name":"pnpm-install-2to1-then-pkg","expect":"block","command":"pnpm install 2>&1 foo","reason":"bash では foo の install。>& の & を区切りと読まない"}
 {"name":"pnpm-install-fd-redirect-then-amp-redirect-pkg","expect":"block","command":"pnpm install 2>x &>y foo","reason":"bash では foo の install。&> の & を末尾と読まない"}
 {"name":"pnpm-install-2to1-background","expect":"allow","command":"pnpm install 2>&1 &","reason":"末尾の & はセグメントの区切り (#468)"}
@@ -110,6 +110,30 @@
 {"name":"pnpm-install-fd-input-then-pkg","expect":"block","command":"pnpm install 0<x foo","reason":"bash では foo の install"}
 {"name":"pnpm-install-tab-fd-redirect-then-pkg","expect":"block","command":"pnpm install\t2>x foo","reason":"区切りがタブでも同じ"}
 {"name":"pnpm-install-quoted-space-2-redirect","expect":"block","command":"pnpm install \" 2>x\"","reason":"引用符の中の 2>x は package 名の一部"}
+{"name":"pnpm-install-redirect-then-pkg","expect":"block","command":"pnpm install >x foo","reason":"bash では foo の install。リダイレクト先の後ろの語は別セグメントではない (#474)"}
+{"name":"pnpm-install-spaced-redirect-then-pkg","expect":"block","command":"pnpm install > x foo","reason":"演算子と先の間に空白があっても同じ (#474)"}
+{"name":"pnpm-install-clobber-redirect-then-pkg","expect":"block","command":"pnpm install >|x foo","reason":">| も 1 つのリダイレクト演算子 (#474)"}
+{"name":"pnpm-install-append-redirect-then-pkg","expect":"block","command":"pnpm install >>x foo","reason":">> も 1 つの演算子として先ごと消す (#474)"}
+{"name":"pnpm-install-amp-append-redirect-then-pkg","expect":"block","command":"pnpm install &>>x foo","reason":"&>> も 1 つの演算子として先ごと消す (#474)"}
+{"name":"pnpm-install-readwrite-redirect-then-pkg","expect":"block","command":"pnpm install <>x foo","reason":"<> も 1 つの演算子として先ごと消す (#474)"}
+{"name":"pnpm-install-input-dup-then-pkg","expect":"block","command":"pnpm install 0<&3 foo","reason":"<& も 1 つの演算子として先ごと消す (#474)"}
+{"name":"leading-redirect-pnpm-add","expect":"block","command":">x pnpm add foo","reason":"先頭のリダイレクトの後ろが実行されるコマンド (#474)"}
+{"name":"leading-fd-redirect-pnpm-add","expect":"block","command":"2>x pnpm add foo","reason":"先頭の fd 番号付きリダイレクトの後ろが実行されるコマンド (#474)"}
+{"name":"pnpm-redirect-mid-add","expect":"block","command":"pnpm >x add","reason":"bash では pnpm add (#474)"}
+{"name":"go-mod-2to1-tidy","expect":"block","command":"go mod 2>&1 tidy","reason":"bash では go mod tidy (#474)"}
+{"name":"pnpm-install-log-then-2to1","expect":"allow","command":"pnpm install 1>log 2>&1","reason":"fd 番号付きリダイレクトが続いても引数ではない (#474)"}
+{"name":"pnpm-install-fd-clobber-redirect","expect":"allow","command":"pnpm install 1>|x","reason":"fd 番号付きの >| の数字も引数ではない (codex-review qa-fixture)"}
+{"name":"pnpm-install-fd-readwrite-redirect","expect":"allow","command":"pnpm install 0<>x","reason":"fd 番号付きの <> の数字も引数ではない (codex-review qa-fixture)"}
+{"name":"pnpm-install-four-fd-redirects","expect":"allow","command":"pnpm install 2>a 2>b 2>c 2>d","reason":"隣り合う fd 番号付きリダイレクトが続いても数字は引数ではない (#474)"}
+{"name":"pnpm-install-herestring-then-pkg","expect":"block","command":"pnpm install <<<x foo","reason":"bash では foo の install。ヒアストリングの後ろの語も引数 (#474)"}
+{"name":"bash-herestring-pnpm-add","expect":"block","command":"bash <<<'pnpm add foo'","reason":"ヒアストリングの中身を bash が実行する"}
+{"name":"leading-herestring-bash-herestring-pnpm-add","expect":"block","command":"<<<x bash <<<'pnpm add foo'","reason":"先頭のヒアストリングの語は実行対象ではない。後ろのヒアストリングを bash が実行する (#474)"}
+{"name":"process-subst-pnpm-add","expect":"block","command":"cat <(pnpm add foo)","reason":"プロセス置換の中身は実行される"}
+{"name":"cat-redirect-to-file-named-npx","expect":"block","command":"cat >npx","reason":"先の語は単独で判定する。コマンド置換が PM 名に解決された形と区別できないため (#474)"}
+{"name":"cat-input-from-subst-npx","expect":"block","command":"cat <$(npx foo)","reason":"リダイレクト先のコマンド置換は実行される (#474)"}
+{"name":"cat-output-to-subst-npx","expect":"block","command":"cat >$(npx foo)","reason":"リダイレクト先のコマンド置換は実行される (#474)"}
+{"name":"cat-output-to-backtick-npm","expect":"block","command":"cat >`npm install foo`","reason":"リダイレクト先のコマンド置換は実行される (#474)"}
+{"name":"pnpm-install-herestring-word","expect":"block","command":"pnpm install <<< y","reason":"ヒアストリングの語を引数に残す形で判定するため。`<<<x foo` の foo を漏らさない代償 (#474)"}
 {"name":"pnpm-run-lint","expect":"allow","command":"pnpm run lint","reason":"スクリプト実行"}
 {"name":"pnpm-exec-direct","expect":"allow","command":"pnpm exec secretlint --","reason":"exec 直接実行は許可 (実測)。make lint は make 経由なので影響なし"}
 {"name":"pnpm-exec-tsc","expect":"allow","command":"pnpm exec tsc --noEmit","reason":"exec 直接実行は許可 (実測)"}
