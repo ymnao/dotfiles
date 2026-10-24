@@ -54,6 +54,24 @@ if [[ -z "$command" ]]; then
   exit 0
 fi
 
+# 行継続 `\⏎` は shell が単語分割より前に取り除くので、同じく先に結合する。
+# 行末の `\` が奇数個のときだけ結合するのは、`\\⏎` (リテラルの `\` + 改行 = コマンド区切り)
+# の次の行を前の行の引数に吸い込まないため。単一引用符の中でも結合するが、そこは実行され
+# ない文字列か、`bash -c` の内側で同じ結合を受ける文字列なので判定は変わらない。
+command=$(printf '%s\n' "$command" | awk '{
+  n = match($0, /\\+$/) ? RLENGTH : 0
+  if (n % 2) { buf = buf substr($0, 1, length($0) - 1) } else { print buf $0; buf = "" }
+} END { if (buf != "") print buf }')
+
+# リダイレクト先の語が引用符・バックスラッシュを含む (`>"a b"` / `>a\ b`) と、下の正規化で
+# 引用符を外した後に先の語の境界が失われ、先の後半が実行対象に見える。引用符を意識した
+# 字句解析を持たない代わりに、この形があれば segment 中のどの位置の PM 名からも判定する
+# (block を足すだけの安全網)。`<<'EOF'` の区切り語は先ではないので除く。
+quoted_redir=0
+if printf '%s' "$command" | grep -qE "(^|[^<])(&>>|&>|>>|>[|]|>&|<&|<>|>|<)[[:blank:]]*[^][:blank:];&|()<>]*[\"'\\\\]"; then
+  quoted_redir=1
+fi
+
 # 解析より前にシェル意味論で正規化する（n""pm → npm / n\pm → npm 等の回避を
 # 解消）。シェルの単語分割と同じ順序で:
 #   0. fd 番号付きリダイレクト（2>&1 / 2>/dev/null）の数字を落とす
@@ -143,23 +161,44 @@ resolve_cmd_subst() {
   fi
 }
 
-while [[ "$command" =~ \$\(([^()]*)\) ]]; do
-  full="${BASH_REMATCH[0]}"
-  inner="${BASH_REMATCH[1]}"
-  replacement=$(resolve_cmd_subst "$inner")
-  prefix="${command%%"$full"*}"
-  suffix="${command#*"$full"}"
-  command="${prefix}${replacement}${suffix}"
+# 置き換えた 1 語は置換の外の文脈 (`$(which npm) install` のバイナリ位置) の判定に使い、
+# 中身そのものは実行されるので別の行として末尾に足して判定に残す (`echo $(pnpm add foo)`)。
+# プロセス置換 `<(...)` / `>(...)` も中身を同じく残し、`> >(cat) foo` で先が 1 語として消える
+# よう 1 語 (__dynbin__) に置き換える。こちらは置き換えが中身に依らないので、最内側を
+# まとめて sed で置き換え、反復を個数ではなく入れ子の深さにする (`$(...)` と同じ 1 個ずつの
+# 置き換えでは 2000 個で 1 秒 → 132 秒になった)。`<(echo $(x))` / `$(cat <(x))` のように
+# 互いに入れ子になり得るので、どちらも変わらなくなるまで交互に回す。sed は行単位で、
+# 改行をまたぐ置換は bash の =~ だけが一致するので、変化が無ければ打ち切る。
+psub_re='[<>]\(([^()]*)\)'
+subst_inners=""
+while :; do
+  before="$command"
+  if [[ "$command" =~ $psub_re ]]; then
+    subst_inners+=$'\n'"$(printf '%s\n' "$command" | grep -oE "$psub_re" | sed -E 's/^[<>][(]//; s/[)]$//')"
+    command=$(printf '%s' "$command" | sed -E "s/${psub_re}/__dynbin__/g")
+  fi
+  while [[ "$command" =~ \$\(([^()]*)\) ]]; do
+    full="${BASH_REMATCH[0]}"
+    inner="${BASH_REMATCH[1]}"
+    replacement=$(resolve_cmd_subst "$inner")
+    subst_inners+=$'\n'"$inner"
+    prefix="${command%%"$full"*}"
+    suffix="${command#*"$full"}"
+    command="${prefix}${replacement}${suffix}"
+  done
+  [[ "$command" == "$before" ]] && break
 done
 
 while [[ "$command" =~ \`([^\`]*)\` ]]; do
   full="${BASH_REMATCH[0]}"
   inner="${BASH_REMATCH[1]}"
   replacement=$(resolve_cmd_subst "$inner")
+  subst_inners+=$'\n'"$inner"
   prefix="${command%%"$full"*}"
   suffix="${command#*"$full"}"
   command="${prefix}${replacement}${suffix}"
 done
+command+="$subst_inners"
 
 # 残ったコマンド置換 `$(...)` / バックティック / 変数展開 `$var` `${var}` は実行時
 # まで中身が決まらず静的に追えない。プレースホルダ __dynbin__ に置換し、それが
@@ -247,7 +286,8 @@ dyn_danger="${npm_restore}|a|dlx|exec|inject|tool|pip|create|uvx|bunx|run|test|c
 # 透過的な実行ラッパー: 実行対象がラッパーの先にあり、内側のバイナリがそのまま
 # exec される。読み飛ばして「実際に実行されるバイナリ」を解決する。shell の -c や
 # eval も含む（bash -c "cmd" / eval cmd は引数以降が実行対象なので内側まで辿れる）。
-transparent='command|builtin|exec|eval|env|nohup|nice|setsid|stdbuf|time|timeout|bash|sh|zsh|dash|ksh|mksh|ash|fish|csh|tcsh'
+# `!` と予約語 (if/then/while/do 等) はその直後の語が実行対象になるので同じく読み飛ばす。
+transparent='command|builtin|exec|eval|env|nohup|nice|setsid|stdbuf|time|timeout|bash|sh|zsh|dash|ksh|mksh|ash|fish|csh|tcsh|!|if|then|elif|else|do|while|until'
 
 # 引数注入ラッパー: 実行対象の引数を stdin/置換で後から与えるため、見かけ上
 # 「引数なし install」でも実際にはパッケージ名が注入され得る。これらの先に PM 名が
@@ -303,14 +343,33 @@ resolve_binary() {
 if [[ "$command" == *'<<<'* ]]; then
   command="$(printf '%s' "$command" | sed 's/<<</ /g')"$'\n'"$(printf '%s' "$command" | sed 's/<<</;/g')"
 fi
-redir_re='(&>>|&>|>>|>[|]|>&|<&|<<-|<<|<>|>|<)[[:blank:]]*[^[:blank:];&|()<>]+'
+# 演算子の直前の `{name}` (bash / zsh の fd 変数リダイレクト `{fd}>x`) も演算子の一部として消す。
+redir_re='(\{[a-z_][a-z0-9_]*\})?(&>>|&>|>>|>[|]|>&|<&|<<-|<<|<>|>|<)[[:blank:]]*[^[:blank:];&|()<>]+'
 if [[ "$command" == *[\<\>]* ]]; then
-  redir_targets=$(printf '%s\n' "$command" | grep -oE "$redir_re" | sed -E 's/^[<>&|]+[[:blank:]]*//')
+  redir_targets=$(printf '%s\n' "$command" | grep -oE "$redir_re" | sed -E 's/^(\{[a-z_][a-z0-9_]*\})?[<>&|]+[[:blank:]]*//')
   command="$(printf '%s' "$command" | sed -E "s/${redir_re}/ /g")"$'\n'"$redir_targets"
 fi
 
 # コマンドをシェル区切り文字でセグメントに分割（各区切りを改行へ置換）
 segments=$(printf '%s' "$command" | tr ';&|(){}<>`' $'\n\n\n\n\n\n\n\n\n\n')
+
+# 引用符付きのリダイレクト先がある (上の quoted_redir) ときは、各 segment の 2 語目以降に
+# 現れる PM 名・__dynbin__・引数注入ラッパーからの suffix も segment として足す。候補を
+# これらの位置に限り、数が上限を超えたら block するのは、suffix ごとに後ろ全体を写すので
+# 候補数 × segment の長さになるため (`>"a b" pnpm pnpm …` 2000 語で 79 秒かかった)。
+if [[ $quoted_redir -eq 1 ]]; then
+  suffixes=$(printf '%s\n' "$segments" | awk -v re="${pm_token_re}" -v ai="^(${arginjector})\$" '{
+    for (i = 2; i <= NF; i++) {
+      name = $i; sub(/.*\//, "", name)
+      if (name ~ re || name ~ ai || name ~ /__dynbin__/) {
+        if (++count > 32) exit 3
+        s = $i; for (j = i + 1; j <= NF; j++) s = s " " $j
+        print s
+      }
+    }
+  }') || block "引用符付きのリダイレクト先と多数のパッケージマネージャ名を含むコマンドは判定できないため禁止されています。リダイレクト先から引用符を外すか、コマンドを分けてください"
+  segments+=$'\n'"$suffixes"
+fi
 
 while IFS= read -r segment; do
   read -ra toks <<< "$segment"
