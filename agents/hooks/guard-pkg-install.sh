@@ -194,21 +194,26 @@ resolve_cmd_subst() {
 psub_re='[<>]\(([^()]*)\)'
 subst_inners=""
 subst_rounds=0
+ml_psubs=0
 while :; do
   ((++subst_rounds > 32)) && block "プロセス置換・コマンド置換の入れ子が深すぎるため判定できません。コマンドを分けてください"
   before="$command"
   if [[ "$command" =~ $psub_re ]]; then
     subst_inners+=$'\n'"$(printf '%s\n' "$command" | grep -oE "$psub_re" | sed -E 's/^[<>][(]//; s/[)]$//')"
     command=$(printf '%s' "$command" | sed -E "s/${psub_re}/__dynbin__/g")
-    # 改行をまたぐもの (sed では一致せず何も変わらない) は 1 周に 1 個ずつ置き換える
-    # (while にすると入れ子をこの場で全段消化し、上の周回の上限が効かなくなる)
-    if [[ "$command" == "$before" && "$command" =~ $psub_re ]]; then
-      full="${BASH_REMATCH[0]}"
-      inner="${BASH_REMATCH[1]}"
-      subst_inners+=$'\n'"$inner"
-      prefix="${command%%"$full"*}"
-      suffix="${command#*"$full"}"
-      command="${prefix}__dynbin__${suffix}"
+    # 改行をまたぐもの (sed では一致せず何も変わらない) は bash の =~ で 1 個ずつ置き換える。
+    # 入れ子もここで全段消化するので、周回の上限とは別に個数の上限を置く (1 個の置き換えが
+    # 文字列の長さに比例するので、上限 256 では深さ 2000 の入れ子で 12 秒かかった)
+    if [[ "$command" == "$before" ]]; then
+      while [[ "$command" =~ $psub_re ]]; do
+        ((++ml_psubs > 32)) && block "改行をまたぐプロセス置換が多すぎるため判定できません。コマンドを分けてください"
+        full="${BASH_REMATCH[0]}"
+        inner="${BASH_REMATCH[1]}"
+        subst_inners+=$'\n'"$inner"
+        prefix="${command%%"$full"*}"
+        suffix="${command#*"$full"}"
+        command="${prefix}__dynbin__${suffix}"
+      done
     fi
   fi
   while [[ "$command" =~ \$\(([^()]*)\) || "$command" =~ \`([^\`]*)\` ]]; do
