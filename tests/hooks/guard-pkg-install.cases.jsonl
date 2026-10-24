@@ -229,6 +229,7 @@
 {"name":"git-commit-msg-pnpm-add","expect":"allow","command":"git commit -m \"fix pnpm add\"","reason":"引用の中の PM 名は実行されない (#480 で粗い判定を足さなかった)"}
 {"name":"grep-n-quoted-pnpm-add","expect":"allow","command":"grep -n \"pnpm add\" HANDOFF.md","reason":"ラッパーでないコマンドの値オプションでは安全網を発火させない (#480)"}
 {"name":"if-n-quoted-blank","expect":"allow","command":"if [ -n \"a b\" ]; then echo pnpm; fi","reason":"予約語は安全網の対象のラッパーに入れない (#480)"}
+{"name":"assign-sq-bracket-echo-pnpm-add","expect":"allow","command":"P='[a]' echo pnpm add","reason":"引用の中の ] は語を割らないので安全網を発火させない (#480)"}
 {"name":"env-u-dq-blank-ls","expect":"allow","command":"env -u \"a b\" ls","reason":"安全網が発火しても PM 名がなければ許可 (#480)"}
 {"name":"leading-herestring-cat","expect":"allow","command":"<<<x cat","reason":"ヒアストリングの語を消す形を足しても PM 名がなければ許可 (#480)"}
 {"name":"noglob-ls","expect":"allow","command":"noglob ls *.txt","reason":"noglob を読み飛ばしても PM 名がなければ許可 (#480)"}
