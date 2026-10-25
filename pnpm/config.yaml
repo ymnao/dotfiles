@@ -4,14 +4,13 @@
 # config get を比べて確認）。
 
 # 既定値も 1440 だが、明示すると minimumReleaseAgeStrict が既定で true になる
-# (pnpm.io/settings の minimumReleaseAgeStrict 項)。strict だと条件を満たす版が無いとき古い版へ
-# 戻さず、対話実行では承認を求め、承認した版を pnpm-workspace.yaml の minimumReleaseAgeExclude に
-# 書き込む (pnpm 12.15.0 のメッセージ文言による。実行しては確かめていない)
+# (pnpm.io/settings)。strict だと条件を満たす版が無いとき古い版へ戻さず止まり、対話実行で承認すると
+# project の pnpm-workspace.yaml の minimumReleaseAgeExclude に書き込む (pnpm 12.15.0 の文言による。未実行)
 minimumReleaseAge: 1440
 
 trustPolicy: no-downgrade
 
 # 書かないもの: blockExoticSubdeps / allowBuilds は global の config.yaml に置くと config get で
-# undefined だった（同上の日・版）。docs の既定が安全側（true / 載っていない依存の build は不許可）
-# なので頼らない。ignoreScripts は project 自身の lifecycle script と許可済みの build まで止め、
+# undefined だった（同上の日・版）。docs の既定が安全側（true / 載っていない依存の build は不許可）。
+# ignoreScripts は project 自身の lifecycle script と許可済みの build まで止め、
 # esbuild などに頼る project を壊す
