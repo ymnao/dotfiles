@@ -1,22 +1,14 @@
-# pnpm の global 設定（供給網の防御）
-# 配置先: macOS ~/Library/Preferences/pnpm/config.yaml / Linux ~/.config/pnpm/config.yaml
-#         Windows ~/AppData/Local/pnpm/config/config.yaml（XDG_CONFIG_HOME があればその下の pnpm/）
-# pnpm は registry・認証以外の設定を YAML からだけ読み、~/.npmrc の ignore-scripts=true は
-# pnpm には効かない（2026-10-25、pnpm 12.15.0 で project の .npmrc と pnpm-workspace.yaml に
-# 同じ値を置いて config get を比べて確認）。
-# project の pnpm-workspace.yaml の値がこちらより優先される。
+# pnpm の global 設定（供給網の防御）。project の pnpm-workspace.yaml の値が優先される。
+# ~/.npmrc に置かないのは、pnpm が registry・認証以外の設定を YAML からだけ読むため
+# （2026-10-25、pnpm 12.15.0 で project の .npmrc と pnpm-workspace.yaml に同じ値を置いて
+# config get を比べて確認）。
 
-# 公開から 1 日たっていない版を入れない。既定値も 1440 だが、明示すると
-# minimumReleaseAgeStrict が true になり、条件を満たす版が無いときに古い版へ黙って
-# 戻さずエラーで止まる。急ぎで入れる版は project 側の minimumReleaseAgeExclude で外す
+# 既定値も 1440 だが、明示すると minimumReleaseAgeStrict が true になり、条件を満たす版が
+# 無いときに古い版へ黙って戻さずエラーで止まる。急ぐ版は project 側の minimumReleaseAgeExclude で外す
 minimumReleaseAge: 1440
 
-# 信頼の根拠 (provenance 等) が以前の版より弱くなった版を拒否する（既定は off）
 trustPolicy: no-downgrade
 
-# blockExoticSubdeps と allowBuilds はここに書かない。global の config.yaml に置いても
-# config get で読まれなかった（上と同じ日・同じ版で確認）。docs の既定値は
-# blockExoticSubdeps: true、allowBuilds は「載っていない依存の build は許可しない」で、
-# どちらも守る側に倒れている。
-# ignoreScripts: true も書かない。project 自身の lifecycle script と allowBuilds で許可した
-# build まで止まり、esbuild などに頼る project が壊れるため
+# 書かないもの: blockExoticSubdeps / allowBuilds は global に置いても読まれない（同上の確認）が、
+# 既定が安全側（true / 載っていない依存の build は不許可）。ignoreScripts は project 自身の
+# lifecycle script と許可済みの build まで止め、esbuild などに頼る project を壊す

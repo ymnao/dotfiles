@@ -1,8 +1,5 @@
-# uv の user 設定（供給網の防御）
-# 配置先: macOS / Linux ~/.config/uv/uv.toml、Windows %APPDATA%\uv\uv.toml
-# project の uv.toml / pyproject.toml の [tool.uv] の値がこちらより優先される。
+# uv の user 設定（供給網の防御）。project の uv.toml / [tool.uv] の値が優先される。
 
-# 公開から 1 日たっていない版を候補から外す（pnpm の minimumReleaseAge と揃える）。
 # 相対期間は uv 0.7.19 では parse error になり uv pip compile 等が落ちる。0.13.5 では
 # 読める（2026-10-25 に --show-settings で確認）。古い uv が PATH の先に無いこと
 exclude-newer = "1 day"

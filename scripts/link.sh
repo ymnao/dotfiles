@@ -111,20 +111,18 @@ if [[ -f "$DOTFILES_DIR/npm/npmrc" ]]; then
     link_file "$DOTFILES_DIR/npm/npmrc" "$HOME/.npmrc"
 fi
 
-# pnpm は ~/.npmrc から registry・認証以外を読まないので、供給網の設定は別の YAML に置く
+# Link pnpm configuration
 if [[ -f "$DOTFILES_DIR/pnpm/config.yaml" ]]; then
     if [[ "$(uname -s)" == "Darwin" ]]; then
         pnpm_config_dir="$HOME/Library/Preferences/pnpm"
     else
         pnpm_config_dir="$HOME/.config/pnpm"
     fi
-    mkdir -p "$pnpm_config_dir"
     link_file "$DOTFILES_DIR/pnpm/config.yaml" "$pnpm_config_dir/config.yaml"
 fi
 
 # Link uv configuration
 if [[ -f "$DOTFILES_DIR/uv/uv.toml" ]]; then
-    mkdir -p "$HOME/.config/uv"
     link_file "$DOTFILES_DIR/uv/uv.toml" "$HOME/.config/uv/uv.toml"
 fi
 

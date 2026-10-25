@@ -1,8 +1,7 @@
 # postinstall などライフサイクルスクリプトを無効化（supply chain attack 対策）
 # npm はデフォルトで実行されるため明示して無効化する。プロジェクトで必要な場合は、
 # そのプロジェクトの .npmrc で ignore-scripts=false を指定する。
-# pnpm はこのファイルから registry・認証以外を読まないので、ここは pnpm には効かない。
-# pnpm 側は pnpm/config.yaml と、依存の build を既定で許可しない allowBuilds で守る
+# pnpm にはこの設定は効かない（pnpm 側は pnpm/config.yaml）
 ignore-scripts=true
 
 fund=false

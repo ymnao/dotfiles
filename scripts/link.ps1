@@ -245,24 +245,20 @@ if (Test-Path $npmrcSource) {
     New-FileLink -Source $npmrcSource -Destination $npmrcDest
 }
 
+# pnpm configuration
+Write-Info "`nLinking pnpm configuration..."
 $pnpmConfigSource = Join-Path $DOTFILES_DIR "pnpm\config.yaml"
-$pnpmConfigDir = Join-Path $env:LOCALAPPDATA "pnpm\config"
+$pnpmConfigDest = Join-Path $env:LOCALAPPDATA "pnpm\config\config.yaml"
 if (Test-Path $pnpmConfigSource) {
-    if (-not (Test-Path $pnpmConfigDir)) {
-        New-Item -ItemType Directory -Path $pnpmConfigDir -Force | Out-Null
-    }
-    New-FileLink -Source $pnpmConfigSource -Destination (Join-Path $pnpmConfigDir "config.yaml")
+    New-FileLink -Source $pnpmConfigSource -Destination $pnpmConfigDest
 }
 
 # uv configuration
 Write-Info "`nLinking uv configuration..."
 $uvConfigSource = Join-Path $DOTFILES_DIR "uv\uv.toml"
-$uvConfigDir = Join-Path $env:APPDATA "uv"
+$uvConfigDest = Join-Path $env:APPDATA "uv\uv.toml"
 if (Test-Path $uvConfigSource) {
-    if (-not (Test-Path $uvConfigDir)) {
-        New-Item -ItemType Directory -Path $uvConfigDir -Force | Out-Null
-    }
-    New-FileLink -Source $uvConfigSource -Destination (Join-Path $uvConfigDir "uv.toml")
+    New-FileLink -Source $uvConfigSource -Destination $uvConfigDest
 }
 
 # Starship configuration (pwsh でも starship を使う場合に有効。未使用でも実害なし)
