@@ -245,6 +245,26 @@ if (Test-Path $npmrcSource) {
     New-FileLink -Source $npmrcSource -Destination $npmrcDest
 }
 
+$pnpmConfigSource = Join-Path $DOTFILES_DIR "pnpm\config.yaml"
+$pnpmConfigDir = Join-Path $env:LOCALAPPDATA "pnpm\config"
+if (Test-Path $pnpmConfigSource) {
+    if (-not (Test-Path $pnpmConfigDir)) {
+        New-Item -ItemType Directory -Path $pnpmConfigDir -Force | Out-Null
+    }
+    New-FileLink -Source $pnpmConfigSource -Destination (Join-Path $pnpmConfigDir "config.yaml")
+}
+
+# uv configuration
+Write-Info "`nLinking uv configuration..."
+$uvConfigSource = Join-Path $DOTFILES_DIR "uv\uv.toml"
+$uvConfigDir = Join-Path $env:APPDATA "uv"
+if (Test-Path $uvConfigSource) {
+    if (-not (Test-Path $uvConfigDir)) {
+        New-Item -ItemType Directory -Path $uvConfigDir -Force | Out-Null
+    }
+    New-FileLink -Source $uvConfigSource -Destination (Join-Path $uvConfigDir "uv.toml")
+}
+
 # Starship configuration (pwsh でも starship を使う場合に有効。未使用でも実害なし)
 Write-Info "`nLinking Starship configuration..."
 $starshipSource = Join-Path $DOTFILES_DIR "starship\starship.toml"
