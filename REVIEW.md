@@ -26,4 +26,4 @@
   パスを足さない
 - `agents/hooks/guard-pkg-install.sh` は guardrail で、セキュリティ境界ではない (範囲はヘッダー)。
   回避形を指摘するときは、agent が実際に書く形かどうかの見立てを添える (直すかは /pr の三択で決める。#482)。
-  この diff で block → allow に変わる形は、組み立てた形でも必ず指摘する
+  この diff で block → allow に変わる形 (後退) は、組み立てた形でも必ず指摘する
