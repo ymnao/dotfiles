@@ -25,6 +25,15 @@ paths:
   そのものを壊す**。`agents/hooks/` を触る PR のレビュー依頼には毎回この指示を含める
   (`claude/agents/code-reviewer.md` からこの項を指している)。
   実例: issue #308 のレビューで code-reviewer が payload を分割連結して guard を回避した
+- **Bash の hook の判定を変えたら、過去の Bash 呼び出しを main 版と変更版に流し比べる**。
+  ケースは自分が思い付いた形しか測らないので、受理を狭めた・広げたつもりの変更が、普段の
+  コマンドの判定を逆向きに変えても緑のまま通る。`~/.claude/projects/*/*.jsonl` の
+  `tool_use` (name が `Bash`) の `input.command` を集め、両版の exit code が違うものを
+  allow → block / block → allow に分けて数える。block → allow は 1 件でも原因を特定する。
+  比べる hook は走行前に `git show HEAD:<path>` でコピーして固定する (走行中に作業用の
+  コピーを書き換えると、どの版を測ったか分からなくなる)。
+  実例: issue #480 — 安全網の区切り文字に `]` が紛れ込み、テスト (235 件) と /simplify は
+  通ったまま、過去の呼び出し約 5 万件の流し比べで初めて allow → block が見つかった
 - **codex に配線する hook の stdout は `{` / `[` で始めない**。codex は hook の
   stdout がその 2 文字で始まると JSON 出力とみなし、パースに失敗した時点で run を
   `Failed` にして**本文を model の context に入れない**(実測根拠は
