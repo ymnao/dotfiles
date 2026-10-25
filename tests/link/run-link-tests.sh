@@ -94,6 +94,8 @@ make_fake_home "$c1_home"
 mkdir -p "$c1_root/wezterm" "$c1_root/nvim"
 mkdir -p "$c1_root/starship"; printf 'x\n' > "$c1_root/starship/starship.toml"
 mkdir -p "$c1_root/herdr"; printf 'x\n' > "$c1_root/herdr/config.toml"
+mkdir -p "$c1_root/pnpm"; printf 'x\n' > "$c1_root/pnpm/config.yaml"
+mkdir -p "$c1_root/uv"; printf 'x\n' > "$c1_root/uv/uv.toml"
 rc=$(run_link "$c1_root" "$c1_home" "$c1_home/out" "$c1_home/err")
 ok=1
 [ "$rc" = 0 ] || { echo "FAIL c1: rc=$rc"; ok=0; }
@@ -102,6 +104,13 @@ assert_symlink "$c1_home/.config/nvim" "$c1_root/nvim" "c1: nvim symlink"
 assert_symlink "$c1_home/.config/starship.toml" "$c1_root/starship/starship.toml" "c1: starship symlink"
 # herdr は config.toml 単体を張る (ディレクトリを張ると socket が repo 内に作られる)
 assert_symlink "$c1_home/.config/herdr/config.toml" "$c1_root/herdr/config.toml" "c1: herdr symlink"
+if [ "$(uname -s)" = Darwin ]; then
+  c1_pnpm_dest="$c1_home/Library/Preferences/pnpm/config.yaml"
+else
+  c1_pnpm_dest="$c1_home/.config/pnpm/config.yaml"
+fi
+assert_symlink "$c1_pnpm_dest" "$c1_root/pnpm/config.yaml" "c1: pnpm config symlink"
+assert_symlink "$c1_home/.config/uv/uv.toml" "$c1_root/uv/uv.toml" "c1: uv config symlink"
 if [ "$ok" = 1 ]; then pass=$((pass+1)); else fail=$((fail+1)); sed 's/^/  /' "$c1_home/err"; fi
 
 # ---- case 2: 既存 regular file → .backup にリネーム、symlink 新規作成

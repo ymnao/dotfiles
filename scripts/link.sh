@@ -106,7 +106,7 @@ if [[ -f "$DOTFILES_DIR/gh/config.yml" ]]; then
     link_file "$DOTFILES_DIR/gh/config.yml" "$HOME/.config/gh/config.yml"
 fi
 
-# Link npm/pnpm configuration
+# Link npm configuration
 if [[ -f "$DOTFILES_DIR/npm/npmrc" ]]; then
     link_file "$DOTFILES_DIR/npm/npmrc" "$HOME/.npmrc"
 fi

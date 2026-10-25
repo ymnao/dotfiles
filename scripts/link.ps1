@@ -237,8 +237,8 @@ New-FileLink -Source $gitIgnoreSource -Destination $gitIgnoreDest
 # gh/config.yml は Windows 版では意図的にスキップ (パス体系が %AppData%\GitHub CLI\ で
 # 異なり単純移植不可。必要になったら別 PR で対応する)
 
-# npm/pnpm configuration
-Write-Info "`nLinking npm/pnpm configuration..."
+# npm configuration
+Write-Info "`nLinking npm configuration..."
 $npmrcSource = Join-Path $DOTFILES_DIR "npm\npmrc"
 $npmrcDest = Join-Path $env:USERPROFILE ".npmrc"
 if (Test-Path $npmrcSource) {
