@@ -24,3 +24,5 @@
 
 - `.local` `.private` `.env*` 系のファイルは gitignore のまま保ち、`.gitignore` を迂回する
   パスを足さない
+- `agents/hooks/guard-pkg-install.sh` は guardrail で、セキュリティ境界ではない (範囲はヘッダー)。
+  回避形を指摘するときは、agent が実際に書く形かどうかを添える。わざと組み立てた形は指摘しない (#482)
