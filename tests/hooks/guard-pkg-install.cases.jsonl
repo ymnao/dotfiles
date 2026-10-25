@@ -253,6 +253,9 @@
 {"name":"brace-default-subst-assign-dq-blank-pnpm-add","expect":"block","command":"echo ${X:-$(FOO=\"a b\" pnpm add foo)}","reason":"${} の中の置換 (#480)"}
 {"name":"subst-env-u-dq-blank-pnpm-add","expect":"block","command":"echo $(env -u \"a b\" pnpm add foo)","reason":"置換の中のラッパーの値 (#480)"}
 {"name":"assign-dq-pipe-then-grep-pnpm-add","expect":"block","command":"X=\"a|b\"; grep -n \"pnpm add\" f","reason":"誤 block を受け入れる: 代入の値の引用に区切り文字があると、同じコマンドの引用の中の PM 名からも判定する (#480 の fail-closed の代償)"}
+{"name":"timeout-num-then-s-dq-blank-pnpm-add","expect":"block","command":"timeout 5 -s \"a b\" pnpm add foo","reason":"値オプションの前の数値を読み飛ばす (#480)"}
+{"name":"env-assign-then-u-dq-blank-pnpm-add","expect":"block","command":"env FOO=x -u \"a b\" pnpm add foo","reason":"値オプションの前の代入を読み飛ばす (#480)"}
+{"name":"assign-dq-backtick-grep-pnpm-add","expect":"allow","command":"OUT=\"`mktemp`\"; grep -n \"pnpm add\" HANDOFF.md","reason":"引用の中のバックティックは 1 語へ潰して発火させない (#480)"}
 {"name":"pnpm-run-lint","expect":"allow","command":"pnpm run lint","reason":"スクリプト実行"}
 {"name":"pnpm-exec-direct","expect":"allow","command":"pnpm exec secretlint --","reason":"exec 直接実行は許可 (実測)。make lint は make 経由なので影響なし"}
 {"name":"pnpm-exec-tsc","expect":"allow","command":"pnpm exec tsc --noEmit","reason":"exec 直接実行は許可 (実測)"}
