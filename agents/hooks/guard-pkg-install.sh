@@ -78,17 +78,39 @@ if [[ "$command" == *$'\\\n'* ]]; then
   }')
 fi
 
-# リダイレクト先や代入の値の語が、引用符・バックスラッシュで空白を含む (`>"a b"` / `>a\ b` /
-# `FOO="a b"`) と、下の正規化で引用符を外した後に語の境界が失われ、値の後半が実行対象に
-# 見える。引用符を意識した字句解析を持たない代わりに、この形があれば segment 中のどの位置の
-# PM 名からも判定する (block を足すだけの安全網)。空白を含まない引用 (`> "$TMPDIR/x"`) は
-# 外しても 1 語のままなので発火させない。`<<'EOF'` の区切り語は先ではないので除く。
+# 値（次トークン）を取るラッパーオプション。env -u NAME / nice -n N /
+# timeout -s SIG / exec -a NAME 等。値を実行対象と誤認しないよう読み飛ばす。
+value_opt='-u|-n|-a|-s|-k|-C|--unset|--signal|--kill-after|--chdir|--adjustment'
+
+# リダイレクト先・代入の値・ラッパーのオプションの値の語が、引用符・バックスラッシュで空白や
+# segment の区切り文字を含む (`>"a b"` / `>a\;b` / `FOO="a;b"` / `env -u "a b"`) と、下の正規化で
+# 引用符を外した後に語の境界が失われ、値の後半が実行対象に見える。引用符を意識した字句解析を
+# 持たない代わりに、この形があれば segment 中のどの位置の PM 名からも判定する (block を足す
+# だけの安全網)。空白も区切りも含まない引用 (`> "$TMPDIR/x"`) は外しても 1 語のままなので
+# 発火させない。`<<'EOF'` の区切り語は先ではないので除く (`<<<` の語は除かない)。
+# 引用の中の改行も語を割るが grep は行単位なので、この判定に限り改行を `;` に変えて 1 行にする。
+# ラッパーを透過ラッパー全体にしないのは、`if [ -n "a b" ]` のような頻出の形で発火させないため。
+# ラッパーと値オプションの間をオプション・数値・代入・値付きオプションに限るのは、内側の
+# コマンドのオプション (`timeout 60 grep -c "pnpm add"`) で発火させないため。
+# 中身に引用符もバックスラッシュも無い `${...}` / `$(...)` / バックティックは、判定の前に 1 語へ
+# 潰す。外側は下で 1 語に置き換わり、中身は語を割る引用を持たないので、引用の中の
+# `"${TMPDIR}/x"` の `{` で発火させないため。引用を持つ中身 (`$(FOO="a b" pnpm add foo)`) は
+# 別の行として判定に戻るときには引用符が外れているので、潰さずにここで見る。
 split_word=0
 dq_body='"([^"\\]|\\.)*'
 sq_body="'[^']*"
-quoted_blank="([^][:blank:];&|()<>\"'\\\\]|${dq_body}\"|${sq_body}'|\\\\.)*(${dq_body}[[:blank:]]|${sq_body}[[:blank:]]|\\\\[[:blank:]])"
-if [[ "$command" == *[\"\'\\]* && "$command" == *[\<\>=]* ]] \
-  && printf '%s' "$command" | grep -qE "((^|[^<])(&>>|&>|>>|>[|]|>&|<&|<>|>|<)[[:blank:]]*|(^|[[:blank:];&|()])[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?[+]?=)${quoted_blank}"; then
+word_sep="[[:blank:];&|(){}<>\`]"
+quoted_sep="([^][:blank:];&|()<>\"'\\\\]|${dq_body}\"|${sq_body}'|\\\\.)*(${dq_body}${word_sep}|${sq_body}${word_sep}|\\\\${word_sep})"
+valued_wrapper='env|exec|nice|timeout|stdbuf|setsid|nohup|time|command|builtin'
+redir_head='((^|[^<])(&>>|&>|>>|>[|]|>&|<&|<>|>|<)|<<<)[[:blank:]]*'
+assign_head='(^|[[:blank:];&|()])[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?[+]?='
+plain_word='[^[:blank:];&|()<>]'
+wrapper_arg="-${plain_word}*|[0-9]+[smhd]?|[A-Za-z_][A-Za-z0-9_]*=${plain_word}*|(${value_opt})[[:blank:]]+${plain_word}+"
+wrapper_head="(^|[[:blank:];&|()])(${valued_wrapper})([[:blank:]]+(${wrapper_arg}))*[[:blank:]]+(${value_opt})(=|[[:blank:]]*)"
+# 改行の置き換えを bash の `${command//...}` にしないのは、bash 3.2 では一致数の 2 乗になるため
+if [[ "$command" == *[\"\'\\]* && "$command" == *[\<\>=-]* ]] \
+  && printf '%s\n' "$command" | sed -E -e $'s/\\$\\{[^}"\'\\\\]*\\}/x/g' -e $'s/\\$\\([^()"\'\\\\]*\\)/x/g' -e $'s/`[^`"\'\\\\]*`/x/g' \
+    | tr '\n' ';' | LC_ALL=C grep -qiE "(${redir_head}|${assign_head}|${wrapper_head})${quoted_sep}"; then
   split_word=1
 fi
 
@@ -190,7 +212,8 @@ resolve_cmd_subst() {
 # 互いに入れ子になり得るので、どちらも変わらなくなるまで交互に回す。sed は行単位で、
 # 改行をまたぐ置換は bash の =~ だけが一致するので、変化が無ければ打ち切る。
 # 周回ごとに fork するので、プロセス置換の入れ子が深すぎる入力は判定せず block する
-# (深さ 2000 で 18 秒かかった)。
+# (深さ 2000 で 18 秒かかった)。中身を次の周回に戻すので、周回の上限が数えるのは
+# プロセス置換・コマンド置換・バックティックが互いに入れ子になる段数 (+ 収束を確かめる 1 周)。
 psub_re='[<>]\(([^()]*)\)'
 subst_inners=""
 subst_rounds=0
@@ -225,9 +248,12 @@ while :; do
     suffix="${command#*"$full"}"
     command="${prefix}${replacement}${suffix}"
   done
+  # 中身は次の周回にも通す。中身に入れ子のバックティック (`$(echo `x`)`) が残っていると、
+  # 周回の後に足すだけでは下の一括マスクで消える
+  command+="$subst_inners"
+  subst_inners=""
   [[ "$command" == "$before" ]] && break
 done
-command+="$subst_inners"
 
 # 残ったコマンド置換 `$(...)` / バックティック / 変数展開 `$var` `${var}` は実行時
 # まで中身が決まらず静的に追えない。プレースホルダ __dynbin__ に置換し、それが
@@ -310,17 +336,14 @@ dyn_danger="${npm_restore}|a|dlx|exec|inject|tool|pip|create|uvx|bunx|run|test|c
 # 透過的な実行ラッパー: 実行対象がラッパーの先にあり、内側のバイナリがそのまま
 # exec される。読み飛ばして「実際に実行されるバイナリ」を解決する。shell の -c や
 # eval も含む（bash -c "cmd" / eval cmd は引数以降が実行対象なので内側まで辿れる）。
-# `!` と予約語 (if/then/while/do 等) はその直後の語が実行対象になるので同じく読み飛ばす。
-transparent='command|builtin|exec|eval|env|nohup|nice|setsid|stdbuf|time|timeout|bash|sh|zsh|dash|ksh|mksh|ash|fish|csh|tcsh|!|if|then|elif|else|do|while|until'
+# `!` と予約語 (if/then/while/do 等)、bash の coproc、zsh の noglob / nocorrect はその直後の語が
+# 実行対象になるので同じく読み飛ばす。
+transparent='command|builtin|exec|eval|env|nohup|nice|setsid|stdbuf|time|timeout|bash|sh|zsh|dash|ksh|mksh|ash|fish|csh|tcsh|!|if|then|elif|else|do|while|until|coproc|noglob|nocorrect'
 
 # 引数注入ラッパー: 実行対象の引数を stdin/置換で後から与えるため、見かけ上
 # 「引数なし install」でも実際にはパッケージ名が注入され得る。これらの先に PM 名が
 # 現れたら復元例外なしでブロックする（echo x | xargs npm install 等）。
 arginjector='xargs|find|parallel'
-
-# 値（次トークン）を取るラッパーオプション。env -u NAME / nice -n N /
-# timeout -s SIG / exec -a NAME 等。値を実行対象と誤認しないよう読み飛ばす。
-value_opt='-u|-n|-a|-s|-k|-C|--unset|--signal|--kill-after|--chdir|--adjustment'
 
 # グローバル toks / n から、透過ラッパー・オプション・その値・env 代入・裸の数値
 # （timeout の duration 等）を読み飛ばし、実際に実行されるバイナリの basename と
@@ -363,9 +386,11 @@ resolve_binary() {
 # 解決済みで（`cat <$(npx foo)` → `cat <npx`）、消すだけだとその実行を隠すため。
 # `<<<` の語は `bash <<<'pnpm add x'` のように実行され得るので消さず、引数に残す形と
 # 別セグメントにする形の両方を判定する（片方だけだと `<<<x bash <<<'pnpm add x'` か
-# `pnpm install <<<x foo` のどちらかが漏れる）。
+# `pnpm install <<<x foo` のどちらかが漏れる）。語が先頭にある (`<<<x pnpm add foo`) と
+# どちらの形でも語が実行対象に見えるので、語ごと消す形も足す。末尾に改行を付けて sed に渡すのは、
+# BSD sed が改行の無い最終行では `p` の出力を改行で区切らず 3 形を 1 行につなげるため。
 if [[ "$command" == *'<<<'* ]]; then
-  command="$(printf '%s' "$command" | sed 's/<<</ /g')"$'\n'"$(printf '%s' "$command" | sed 's/<<</;/g')"
+  command=$(printf '%s\n' "$command" | sed -E -e 'h; s/<<</ /g; p; g; s/<<</;/g; p; g' -e "s/<<<[[:blank:]]*${plain_word}+/ /g")
 fi
 # 演算子の直前の `{name}` (bash / zsh の fd 変数リダイレクト `{fd}>x`) も演算子の一部として消す。
 fdvar_re='(\{[a-z_][a-z0-9_]*\})?'
