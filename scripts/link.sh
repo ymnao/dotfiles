@@ -112,13 +112,13 @@ if [[ -f "$DOTFILES_DIR/npm/npmrc" ]]; then
 fi
 
 # Link pnpm configuration
+# pnpm は XDG_CONFIG_HOME があるとその下だけを読み、OS 既定の場所へはフォールバックしない。
+# fish は XDG_CONFIG_HOME=~/.config を export するが、fish 以外から起動した pnpm には無いので両方に張る
 if [[ -f "$DOTFILES_DIR/pnpm/config.yaml" ]]; then
+    link_file "$DOTFILES_DIR/pnpm/config.yaml" "$HOME/.config/pnpm/config.yaml"
     if [[ "$(uname -s)" == "Darwin" ]]; then
-        pnpm_config_dir="$HOME/Library/Preferences/pnpm"
-    else
-        pnpm_config_dir="$HOME/.config/pnpm"
+        link_file "$DOTFILES_DIR/pnpm/config.yaml" "$HOME/Library/Preferences/pnpm/config.yaml"
     fi
-    link_file "$DOTFILES_DIR/pnpm/config.yaml" "$pnpm_config_dir/config.yaml"
 fi
 
 # Link uv configuration

@@ -248,9 +248,10 @@ if (Test-Path $npmrcSource) {
 # pnpm configuration
 Write-Info "`nLinking pnpm configuration..."
 $pnpmConfigSource = Join-Path $DOTFILES_DIR "pnpm\config.yaml"
-$pnpmConfigDest = Join-Path $env:LOCALAPPDATA "pnpm\config\config.yaml"
+# profile.ps1 が XDG_CONFIG_HOME を立てるので、pnpm が読む場所は起動元で変わる。両方に張る (link.sh と同じ理由)
 if (Test-Path $pnpmConfigSource) {
-    New-FileLink -Source $pnpmConfigSource -Destination $pnpmConfigDest
+    New-FileLink -Source $pnpmConfigSource -Destination (Join-Path $env:USERPROFILE ".config\pnpm\config.yaml")
+    New-FileLink -Source $pnpmConfigSource -Destination (Join-Path $env:LOCALAPPDATA "pnpm\config\config.yaml")
 }
 
 # uv configuration

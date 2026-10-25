@@ -104,12 +104,10 @@ assert_symlink "$c1_home/.config/nvim" "$c1_root/nvim" "c1: nvim symlink"
 assert_symlink "$c1_home/.config/starship.toml" "$c1_root/starship/starship.toml" "c1: starship symlink"
 # herdr は config.toml 単体を張る (ディレクトリを張ると socket が repo 内に作られる)
 assert_symlink "$c1_home/.config/herdr/config.toml" "$c1_root/herdr/config.toml" "c1: herdr symlink"
+assert_symlink "$c1_home/.config/pnpm/config.yaml" "$c1_root/pnpm/config.yaml" "c1: pnpm XDG config symlink"
 if [ "$(uname -s)" = Darwin ]; then
-  c1_pnpm_dest="$c1_home/Library/Preferences/pnpm/config.yaml"
-else
-  c1_pnpm_dest="$c1_home/.config/pnpm/config.yaml"
+  assert_symlink "$c1_home/Library/Preferences/pnpm/config.yaml" "$c1_root/pnpm/config.yaml" "c1: pnpm macOS config symlink"
 fi
-assert_symlink "$c1_pnpm_dest" "$c1_root/pnpm/config.yaml" "c1: pnpm config symlink"
 assert_symlink "$c1_home/.config/uv/uv.toml" "$c1_root/uv/uv.toml" "c1: uv config symlink"
 if [ "$ok" = 1 ]; then pass=$((pass+1)); else fail=$((fail+1)); sed 's/^/  /' "$c1_home/err"; fi
 
