@@ -52,7 +52,7 @@ brewfile: ## Regenerate Brewfile from installed packages (destructive; requires 
 	@brew bundle dump --force --file=Brewfile
 	@echo "Brewfile updated"
 
-brewfile-drift: ## Detect packages installed but not tracked in Brewfile
+brewfile-drift: ## Detect brew packages and uv/cargo/pnpm globals installed but not declared
 	@bash scripts/brewfile-drift.sh
 
 lint: ## Run secretlint to detect leaked secrets

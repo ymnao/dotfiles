@@ -46,7 +46,7 @@ skill / hook / テスト / CI は、この目的を安全に達成するため�
 - `make install` — 初回セットアップ（Homebrew + パッケージ + シンボリックリンク）
 - `make link` — シンボリックリンクのみ作成
 - `make update` — パッケージ更新
-- `make brewfile-drift` — Brewfile 未追跡のインストール済みパッケージを検出
+- `make brewfile-drift` — 宣言されていないインストール済みパッケージ (brew / uv・cargo・pnpm の global) を検出。agent の sandbox 内では uv と cargo の一覧が取れずエラーになるので、user の shell で走らせる
 - `make lint` — secretlint でシークレット漏洩チェック
 - `make clean` — 壊れたシンボリックリンクを削除
 - `make test` — 設定ファイルの検証（hook 回帰テスト含む）
@@ -66,7 +66,7 @@ AI 運用の方針（モデル使い分け・移行手順・ツール追加の�
 ## 変更時の注意
 
 - 新ツール追加時は `scripts/link.sh` にシンボリックリンク定義を追加
-- Homebrew パッケージ追加・削除時は Brewfile を**手動で編集**する（セクション・コメント・`trusted:` オプションを維持）
+- Homebrew パッケージ追加・削除時は Brewfile を**手動で編集**する（セクション・コメント・`trusted:` オプションを維持）。uv / cargo の global install も Brewfile に `uv "<name>"` / `cargo "<name>"` で宣言する。pnpm の global は置かない（宣言先が無く、`make brewfile-drift` が drift として出す）
 - `make brewfile`（`brew bundle dump --force`）は手動編集の構造を全て破壊するため使わない
 - 削除候補のツールの未使用判定を shell history 単独で行わない（agent の Bash 実行は history に残らない。`figlet` / `poppler` は 0 ヒットだがセッションログに実行記録がある）。設定ファイル・state の mtime・repo やエディタ設定からの参照・agent のセッションログも併せて見る
 - sandbox 内の git は `error: could not lock config file` / `fatal: failed to store: 100001` を出しながら**本体は成功する**ことがある。成否はエラー文言ではなく ref の値（`git ls-remote` の SHA と手元の SHA の一致、`git branch` の出力）で確かめる。remote 追跡ブランチから `checkout -b` / `switch -c` で切ると HEAD を元のまま残し、`git init` は完走しない。init / checkout / merge / fetch / push / branch -d / worktree の前に [docs/sandbox-git.md](docs/sandbox-git.md) を読む
