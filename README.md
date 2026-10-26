@@ -97,7 +97,9 @@ dotfiles/
 ├── fish/           # Fish設定（macOS/Linux）
 ├── git/            # Git設定
 ├── gh/             # GitHub CLI設定
-├── npm/            # npm/pnpm設定
+├── npm/            # npm設定
+├── pnpm/           # pnpm設定（供給網の防御）
+├── uv/             # uv設定（供給網の防御）
 ├── karabiner/      # Karabiner設定（macOS）
 ├── nvim/           # Neovim設定
 ├── wezterm/        # WezTerm設定（プラットフォーム対応）

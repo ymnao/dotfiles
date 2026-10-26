@@ -237,12 +237,29 @@ New-FileLink -Source $gitIgnoreSource -Destination $gitIgnoreDest
 # gh/config.yml は Windows 版では意図的にスキップ (パス体系が %AppData%\GitHub CLI\ で
 # 異なり単純移植不可。必要になったら別 PR で対応する)
 
-# npm/pnpm configuration
-Write-Info "`nLinking npm/pnpm configuration..."
+# npm configuration
+Write-Info "`nLinking npm configuration..."
 $npmrcSource = Join-Path $DOTFILES_DIR "npm\npmrc"
 $npmrcDest = Join-Path $env:USERPROFILE ".npmrc"
 if (Test-Path $npmrcSource) {
     New-FileLink -Source $npmrcSource -Destination $npmrcDest
+}
+
+# pnpm configuration
+Write-Info "`nLinking pnpm configuration..."
+$pnpmConfigSource = Join-Path $DOTFILES_DIR "pnpm\config.yaml"
+# profile.ps1 が XDG_CONFIG_HOME を立てるので、pnpm が読む場所は起動元で変わる。両方に張る (link.sh と同じ理由)
+if (Test-Path $pnpmConfigSource) {
+    New-FileLink -Source $pnpmConfigSource -Destination (Join-Path $env:USERPROFILE ".config\pnpm\config.yaml")
+    New-FileLink -Source $pnpmConfigSource -Destination (Join-Path $env:LOCALAPPDATA "pnpm\config\config.yaml")
+}
+
+# uv configuration
+Write-Info "`nLinking uv configuration..."
+$uvConfigSource = Join-Path $DOTFILES_DIR "uv\uv.toml"
+$uvConfigDest = Join-Path $env:APPDATA "uv\uv.toml"
+if (Test-Path $uvConfigSource) {
+    New-FileLink -Source $uvConfigSource -Destination $uvConfigDest
 }
 
 # Starship configuration (pwsh でも starship を使う場合に有効。未使用でも実害なし)

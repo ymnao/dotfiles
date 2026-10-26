@@ -106,9 +106,24 @@ if [[ -f "$DOTFILES_DIR/gh/config.yml" ]]; then
     link_file "$DOTFILES_DIR/gh/config.yml" "$HOME/.config/gh/config.yml"
 fi
 
-# Link npm/pnpm configuration
+# Link npm configuration
 if [[ -f "$DOTFILES_DIR/npm/npmrc" ]]; then
     link_file "$DOTFILES_DIR/npm/npmrc" "$HOME/.npmrc"
+fi
+
+# Link pnpm configuration
+# pnpm は XDG_CONFIG_HOME があるとその下だけを読み、OS 既定の場所へはフォールバックしない。
+# fish は XDG_CONFIG_HOME=~/.config を export するが、fish 以外から起動した pnpm には無いので両方に張る
+if [[ -f "$DOTFILES_DIR/pnpm/config.yaml" ]]; then
+    link_file "$DOTFILES_DIR/pnpm/config.yaml" "$HOME/.config/pnpm/config.yaml"
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        link_file "$DOTFILES_DIR/pnpm/config.yaml" "$HOME/Library/Preferences/pnpm/config.yaml"
+    fi
+fi
+
+# Link uv configuration
+if [[ -f "$DOTFILES_DIR/uv/uv.toml" ]]; then
+    link_file "$DOTFILES_DIR/uv/uv.toml" "$HOME/.config/uv/uv.toml"
 fi
 
 # Ensure Claude configuration directory exists if needed
