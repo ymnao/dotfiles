@@ -44,11 +44,15 @@ stub() {
   chmod +x "$1/$2"
 }
 
-# host に入っている uv / cargo / pnpm を拾わないよう PATH を system utility だけに絞る。
-# jq は pnpm の listing で使うので host のものを bin に置く。
+# host に入っている uv / cargo / pnpm を拾わないよう、PATH を system utility だけに絞ったうえで
+# 3 つとも空の一覧を返すスタブを先に置く。/usr/bin に cargo を置く Linux もあり、PATH を絞るだけでは
+# 実物が残るため。jq は pnpm の listing で使うので host のものを bin に置く。
 prepare_bin() {
   mkdir -p "$1"
   ln -s "$(command -v jq)" "$1/jq"
+  stub "$1" uv ':'
+  stub "$1" cargo ':'
+  stub "$1" pnpm "printf '[]\n'"
 }
 CASE_PATH_TAIL="/usr/bin:/bin"
 
@@ -147,10 +151,14 @@ run_case empty-leaves \
   0 "no drift" ""
 
 # case 8: uv / cargo / pnpm が無い → skip して drift なし
-run_case globals-absent-skip \
-'brew "ripgrep"' \
-"$(make_stub 'printf "ripgrep\n"' ':')" \
-  0 'pnpm not installed' ''
+# system 側の PATH に実物がある host では「無い」状態を作れないので飛ばす
+setup_globals_absent() { rm -f "$1/uv" "$1/cargo" "$1/pnpm"; }
+if [ -z "$(PATH="$CASE_PATH_TAIL" command -v uv cargo pnpm)" ]; then
+  run_case globals-absent-skip \
+  'brew "ripgrep"' \
+  "$(make_stub 'printf "ripgrep\n"' ':')" \
+    0 'pnpm not installed' '' setup_globals_absent
+fi
 
 setup_uv_cargo_declared() {
   stub "$1" uv 'printf "claude-usage-monitor v3.1.0\n- claude-monitor\n"'
