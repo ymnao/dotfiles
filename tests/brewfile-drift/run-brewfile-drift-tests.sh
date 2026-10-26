@@ -14,7 +14,8 @@ set -euo pipefail
 #   8. uv / cargo / pnpm が無ければ skip する
 #   9. uv / cargo の global を Brewfile の uv / cargo 行と突き合わせる
 #  10. pnpm の global は宣言先が無く、あれば scope 付きの名前のまま drift として出す
-#  11. uv の listing 失敗 → exit 1 (drift なし表示にしない)
+#  11. uv / cargo / pnpm の listing 失敗 (途中まで出力してからの失敗、JSON でない出力を含む)
+#      → exit 1 (drift なし表示にしない)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd "$SCRIPT_DIR" && git rev-parse --show-toplevel)"
@@ -215,6 +216,34 @@ run_case uv-list-fails \
 'brew "ripgrep"' \
 "$(make_stub 'printf "ripgrep\n"' ':')" \
   1 "listing installed uv failed" "Operation not permitted" setup_uv_fails
+
+setup_cargo_fails() {
+  stub "$1" cargo 'printf "bat v0.24.0:\n    bat\n"; echo "error: failed to read crates.toml" >&2; exit 101'
+}
+# case 11b: cargo が途中まで出力してから失敗 → 後段の awk の成功で失敗を隠さない
+run_case cargo-list-fails \
+'brew "ripgrep"
+cargo "bat"' \
+"$(make_stub 'printf "ripgrep\n"' ':')" \
+  1 "listing installed cargo failed" "failed to read crates.toml" setup_cargo_fails
+
+setup_pnpm_fails() {
+  stub "$1" pnpm "printf '[]\n'; echo 'ERR_PNPM_SOMETHING' >&2; exit 1"
+}
+# case 11c: pnpm が正しい JSON を出して非 0 終了 → jq が成功しても失敗として扱う
+run_case pnpm-list-fails \
+'brew "ripgrep"' \
+"$(make_stub 'printf "ripgrep\n"' ':')" \
+  1 "listing installed pnpm failed" "ERR_PNPM_SOMETHING" setup_pnpm_fails
+
+setup_pnpm_bad_json() {
+  stub "$1" pnpm 'printf "not json\n"'
+}
+# case 11d: pnpm の出力が JSON でない → jq の失敗を取得失敗として扱う
+run_case pnpm-bad-json \
+'brew "ripgrep"' \
+"$(make_stub 'printf "ripgrep\n"' ':')" \
+  1 "listing installed pnpm failed" "" setup_pnpm_bad_json
 
 echo "brewfile-drift tests: $pass passed, $fail failed"
 [ "$fail" = 0 ] || exit 1
