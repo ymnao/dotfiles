@@ -10,7 +10,8 @@
 # `brew bundle dump` は Brewfile 手動編集の構造 (セクション・コメント・trusted:) を
 # 破壊するため使わない (CLAUDE.md 参照)。uv / cargo の一覧も `brew bundle dump --uv`
 # 等からは取らない。brew 側が一覧コマンドの失敗を空の一覧として扱い、取得に
-# 失敗しても drift なしと出るため。
+# 失敗しても drift なしと出るため (brew 7.0.10 の bundle/extensions/uv.rb・cargo.rb を
+# 2026-10-27 に確認)。
 #
 # tap 付き記述 (例: "supabase/tap/supabase") は最終 / 以降で正規化して突き合わせる。
 #
