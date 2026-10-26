@@ -38,7 +38,10 @@ normalize() { awk -F/ '/^@/ {print; next} {print $NF}' | sort; }
 
 list_uv()    { uv tool list | awk '/^[A-Za-z0-9][^ ]* v/ {print $1}'; }
 list_cargo() { cargo install --list | awk '/^[^ \t]/ {print $1}'; }
-list_pnpm()  { pnpm ls -g --depth=0 --json | jq -r '.[] | (.dependencies // {}) | keys[]'; }
+list_pnpm() {
+    command -v jq >/dev/null || { echo "jq not installed" >&2; return 1; }
+    pnpm ls -g --depth=0 --json | jq -r '.[] | (.dependencies // {}) | keys[]'
+}
 
 # $1: kind label (formula|cask|uv|cargo|pnpm)
 # $2: Brewfile 側の prefix。空なら宣言 0 件として扱う
@@ -81,26 +84,21 @@ check_drift() {
     return 0
 }
 
-# $1: 必要なコマンド。入っていなければ skip する。$2..: check_drift の引数
+# $1: ツール名 (kind label を兼ねる。入っていなければ skip)、$2: Brewfile 側の prefix、$3: listing 関数
 check_global() {
-    local tool=$1
-    shift
-    if ! command -v "$tool" >/dev/null; then
-        skip "$tool not installed"
+    if ! command -v "$1" >/dev/null; then
+        skip "$1 not installed"
         return 0
     fi
-    check_drift "$@"
+    check_drift "$1" "$2" "$3"
 }
 
 rc=0
 check_drift formula brew brew leaves       || rc=1
 check_drift cask    cask brew list --cask  || rc=1
-check_global uv    uv    uv    list_uv     || rc=1
-check_global cargo cargo cargo list_cargo  || rc=1
-if command -v pnpm >/dev/null; then
-    command -v jq >/dev/null || error "jq not installed (needed to read pnpm ls --json)"
-fi
-check_global pnpm  pnpm  ""    list_pnpm   || rc=1
+check_global uv    uv    list_uv           || rc=1
+check_global cargo cargo list_cargo        || rc=1
+check_global pnpm  ""    list_pnpm         || rc=1
 
 if [ "$rc" -eq 0 ]; then
     info "no drift (brew leaves/casks and uv/cargo/pnpm globals all declared)"

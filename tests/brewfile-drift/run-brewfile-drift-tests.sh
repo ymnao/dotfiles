@@ -35,7 +35,7 @@ fail=0
 # mock brew shim を組み立てる。$1: `brew leaves` の body、$2: `brew list --cask` の body。
 # body は shell 文 (例: 'printf "ripgrep\n"' や ':')。
 make_stub() {
-  printf '#!/usr/bin/env bash\ncase "$*" in\n  "leaves") %s ;;\n  "list --cask") %s ;;\n  *) exit 99 ;;\nesac\n' "$1" "$2"
+  printf 'case "$*" in\n  "leaves") %s ;;\n  "list --cask") %s ;;\n  *) exit 99 ;;\nesac\n' "$1" "$2"
 }
 
 # $1: bin dir、$2: コマンド名、$3: body (shell 文)
@@ -65,8 +65,7 @@ run_case() {
   ln -s "$REPO_ROOT/scripts/brewfile-drift.sh" "$root/scripts/brewfile-drift.sh"
   ln -s "$REPO_ROOT/scripts/lib/log.sh" "$root/scripts/lib/log.sh"
   printf '%s\n' "$brewfile" > "$root/Brewfile"
-  printf '%s\n' "$brew_stub" > "$root/bin/brew"
-  chmod +x "$root/bin/brew"
+  stub "$root/bin" brew "$brew_stub"
   [ -z "$setup" ] || "$setup" "$root/bin"
 
   local out err rc=0
@@ -125,24 +124,12 @@ run_case brew-cli-fails \
 
 # case 5: Brewfile が読めない (permission 0) → 明示エラー
 # root では chmod 000 でも読めるので skip
+setup_brewfile_unreadable() { chmod 000 "$1/../Brewfile"; }
 if [ "$(id -u)" -ne 0 ]; then
-  root="$(mktemp -d "$WORKDIR/case.XXXXXX")"
-  mkdir -p "$root/scripts/lib"
-  prepare_bin "$root/bin"
-  ln -s "$REPO_ROOT/scripts/brewfile-drift.sh" "$root/scripts/brewfile-drift.sh"
-  ln -s "$REPO_ROOT/scripts/lib/log.sh" "$root/scripts/lib/log.sh"
-  : > "$root/Brewfile"
-  chmod 000 "$root/Brewfile"
-  make_stub 'printf "ripgrep\n"' ':' > "$root/bin/brew"
-  chmod +x "$root/bin/brew"
-  rc=0
-  PATH="$root/bin:$CASE_PATH_TAIL" "$BASH" "$root/scripts/brewfile-drift.sh" >"$root/out" 2>"$root/err" || rc=$?
-  if [ "$rc" -eq 1 ] && grep -qE "Brewfile not readable" "$root/err"; then
-    pass=$((pass + 1))
-  else
-    echo "FAIL brewfile-unreadable: rc=$rc stderr:"; sed 's/^/  /' "$root/err"
-    fail=$((fail + 1))
-  fi
+  run_case brewfile-unreadable \
+  '' \
+  "$(make_stub 'printf "ripgrep\n"' ':')" \
+    1 "" "Brewfile not readable" setup_brewfile_unreadable
 fi
 
 # case 6: tap 付き記述 (a/b/c) の正規化
