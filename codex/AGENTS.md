@@ -122,16 +122,15 @@
 
 npm/pypi 等のパッケージエコシステムはサプライチェーン攻撃の標的となっている。以下のルールを厳守すること:
 
-- **パッケージの追加コマンドを直接実行しない** — フックが allowlist 方式でガードしている
+- **パッケージの追加コマンドを直接実行しない** — フック (`~/.codex/hooks/guard-pkg-install.sh`) が allowlist 方式でガードしている
 - **npm / npx は全サブコマンド禁止** — pnpm への一本化のため `npm ci` / `npm install` / `npm run` / `npm test` / `npm exec` / `npm init` すべてブロックされる。`pnpm install` / `pnpm run` / `pnpm exec` / `pnpm dlx` を使うこと
-- 許可されるのは `pnpm install` / `yarn install`（とその公式 alias。ロックファイルからの復元）の素の形のみ
-- `pnpm install --frozen-lockfile` / `yarn install --mode=update-lockfile` 等、復元を超える副作用を持つオプション付き install もブロックされる（前後どちらにオプションを挟んでも不可）
+- 許可される install は `pnpm install` / `yarn install`（とその公式 alias。ロックファイルからの復元）の素の形と、`pnpm install` に lockfile を書き換えないフラグ（`--frozen-lockfile` 等。一覧はフックのヘッダー）を付けた形だけ。それ以外のオプション付き install（`yarn install --mode=update-lockfile` 等）はブロックされる（前後どちらにオプションを挟んでも不可）
 - `pnpm add`、`pnpm dlx`、`yarn add`（`yarn global add` 含む）、`yarn dlx`、`bun add/install`、`bunx`、`pip install`、`pipx install/inject/run`、`uv add`、`uv tool install/run`、`uvx`、`poetry add` 等もすべてブロックされる
 - `pnpm create` / `yarn create` / `bun create` も initializer パッケージを実行時取得するためブロックされる
 - `uv run --with <package>` / `uv run --with-editable` / `uv run --with-requirements` も実行時取得のためブロックされる（`uv run script.py` 単体は許可）
 - `corepack use` / `corepack install` / `corepack prepare` / `corepack enable` / `corepack disable` / `corepack up` / `corepack pack` も PM の取得・更新・有効化を伴うためブロックされる。`corepack pnpm add` / `corepack yarn add` のようなラッパー経由の委譲呼び出しは、内側の PM を解決して同じ allowlist で判定する
 - `python -m pip install` / `python -m pipx install/inject/run` も pip/pipx の直接起動として同様にブロックされる（`python -m venv` / `python -m unittest` 等の無害なモジュールは許可）
-- 動的バイナリ経由（`$(...)` / `` `...` `` / `$var` で構築した実行）も同じ allowlist で判定する。`$(which corepack) use pnpm@latest` / `$(printf %s n pm) install lodash` などは固定バイナリ判定と整合的にブロックされる。一方、PM 名でも指定子でもない汎用引数（`$(some-tool) init project` / `$(cat /dev/null) prepare build` 等）は素通りする。これは「動的構築 PM + generic initializer 名」（例: `$(printf ...) init vite`）が静的に判別不能なための実用的妥協で、AI エージェントはこの抜けに依存せず固定 PM 名で正しく書くこと
+- PM はコマンド置換や変数で組み立てず、固定 PM 名で書くこと。フックは guardrail で、判定しない形がある（範囲はフックのヘッダー）
 - パッケージの追加が必要な場合は、ユーザーに報告して手動インストールを依頼する
 - AI が生成したパッケージ名は 20% の確率で実在しない（スロップスクワッティング）。存在確認なしにパッケージ名を提案しないこと
 

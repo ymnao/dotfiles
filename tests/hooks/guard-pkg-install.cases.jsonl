@@ -49,11 +49,6 @@
 {"name":"corepack-enable","expect":"block","command":"corepack enable","reason":"PM 差し替え"}
 # --- block: 回避形 ---
 {"name":"which-npm-install","expect":"block","command":"$(which npm) install lodash","reason":"コマンド置換で PM 解決"}
-{"name":"dynbin-run-build","expect":"block","command":"$(get_pm_name) run build","reason":"動的経由 run は npm 全禁止に合わせて塞ぐ"}
-{"name":"dynbin-test","expect":"block","command":"$(get_pm_name) test","reason":"動的経由 test も塞ぐ"}
-{"name":"dynbin-ci","expect":"block","command":"$(get_pm_name) ci","reason":"動的経由 ci も塞ぐ"}
-{"name":"dynbin-publish","expect":"block","command":"$(get_pm_name) publish","reason":"動的経由 publish も塞ぐ"}
-{"name":"var-split-npm","expect":"block","command":"a=n; b=pm; $a$b install x","reason":"変数分割構築"}
 {"name":"quote-split-npm","expect":"block","command":"n\"\"pm install x","reason":"クォート分割"}
 {"name":"npm-upper","expect":"block","command":"NPM INSTALL x","reason":"大文字"}
 {"name":"env-npm-install","expect":"block","command":"env npm install x","reason":"透過ラッパー経由"}
@@ -125,39 +120,15 @@
 {"name":"pnpm-install-fd-clobber-redirect","expect":"allow","command":"pnpm install 1>|x","reason":"fd 番号付きの >| の数字も引数ではない (codex-review qa-fixture)"}
 {"name":"pnpm-install-fd-readwrite-redirect","expect":"allow","command":"pnpm install 0<>x","reason":"fd 番号付きの <> の数字も引数ではない (codex-review qa-fixture)"}
 {"name":"pnpm-install-four-fd-redirects","expect":"allow","command":"pnpm install 2>a 2>b 2>c 2>d","reason":"隣り合う fd 番号付きリダイレクトが続いても数字は引数ではない (#474)"}
-{"name":"pnpm-install-herestring-then-pkg","expect":"block","command":"pnpm install <<<x foo","reason":"bash では foo の install。ヒアストリングの後ろの語も引数 (#474)"}
-{"name":"bash-herestring-pnpm-add","expect":"block","command":"bash <<<'pnpm add foo'","reason":"ヒアストリングの中身を bash が実行する"}
-{"name":"leading-herestring-bash-herestring-pnpm-add","expect":"block","command":"<<<x bash <<<'pnpm add foo'","reason":"先頭のヒアストリングの語は実行対象ではない。後ろのヒアストリングを bash が実行する (#474)"}
 {"name":"process-subst-pnpm-add","expect":"block","command":"cat <(pnpm add foo)","reason":"プロセス置換の中身は実行される"}
-{"name":"cat-redirect-to-file-named-npx","expect":"block","command":"cat >npx","reason":"先の語は単独で判定する。コマンド置換が PM 名に解決された形と区別できないため (#474)"}
 {"name":"cat-input-from-subst-npx","expect":"block","command":"cat <$(npx foo)","reason":"リダイレクト先のコマンド置換は実行される (#474)"}
 {"name":"cat-output-to-subst-npx","expect":"block","command":"cat >$(npx foo)","reason":"リダイレクト先のコマンド置換は実行される (#474)"}
 {"name":"cat-output-to-backtick-npm","expect":"block","command":"cat >`npm install foo`","reason":"リダイレクト先のコマンド置換は実行される (#474)"}
-{"name":"pnpm-install-herestring-word","expect":"block","command":"pnpm install <<< y","reason":"ヒアストリングの語を引数に残す形で判定するため。`<<<x foo` の foo を漏らさない代償 (#474)"}
 # --- #476: セグメント分割が取りこぼす shell の文法 ---
-{"name":"leading-quoted-space-redirect-pnpm-add","expect":"block","command":">\"a b\" pnpm add foo","reason":"先は \"a b\" の 1 語で、pnpm add が実行される (#476)"}
-{"name":"leading-single-quoted-redirect-pip-install","expect":"block","command":">'a b' pip install foo","reason":"単一引用符の先も 1 語 (#476)"}
-{"name":"leading-escaped-space-redirect-pnpm-add","expect":"block","command":">a\\ b pnpm add foo","reason":"バックスラッシュで続けた先も 1 語 (#476)"}
-{"name":"leading-fd-quoted-redirect-npx","expect":"block","command":"2>\"a b\" npx foo","reason":"fd 番号付きでも同じ (#476)"}
 {"name":"quoted-redirect-subst-npx","expect":"block","command":"cat >\"$(npx foo) x\"","reason":"引用符付きの先の中のコマンド置換も実行される (#476)"}
-{"name":"leading-quoted-space-redirect-xargs-pnpm","expect":"block","command":">\"a b\" xargs pnpm install","reason":"安全網は引数注入ラッパーの位置からも判定する (#476)"}
-{"name":"leading-quoted-space-redirect-go-mod-tidy","expect":"block","command":">\"a b\" go mod tidy","reason":"安全網の suffix は先頭から判定する分岐 (go mod tidy) にも届く (#476)"}
-{"name":"quoted-redirect-32-pm-names","expect":"allow","command":">\"a b\" pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm","reason":"安全網の候補が上限ちょうど (32) なら判定する (#476)"}
-{"name":"quoted-redirect-many-pm-names","expect":"block","command":">\"a b\" pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm pnpm","reason":"安全網の候補が上限を超えたら判定せず block する (#476)"}
-{"name":"quoted-escaped-dquote-blank","expect":"block","command":">\"a\\\" b\" pnpm add foo","reason":"二重引用符の中の \\\" は引用を閉じない (#476)"}
-{"name":"quoted-escaped-dquote-then-blank","expect":"block","command":">\"x\\\"y\"\" z\" pnpm add foo","reason":"空白の無い引用の中の \\\" で引用の終わりを見誤らない (#476)"}
-{"name":"quoted-prefix-then-blank","expect":"block","command":">x\"y\"\" z\" pnpm add foo","reason":"語の途中の引用に空白があっても同じ (#476)"}
-{"name":"quoted-env-assign-pnpm-add","expect":"block","command":"FOO=\"a b\" pnpm add foo","reason":"代入の値も 1 語で、pnpm add が実行される (#476)"}
-{"name":"quoted-env-assign-node-options","expect":"block","command":"NODE_OPTIONS=\"--a b\" pnpm add foo","reason":"同上 (#476)"}
-{"name":"quoted-env-append-assign-pnpm-add","expect":"block","command":"FOO+=\"a b\" pnpm add foo","reason":"+= の代入も同じ (#476)"}
-{"name":"quoted-array-assign-pnpm-add","expect":"block","command":"a[0]=\"x y\" pnpm add foo","reason":"配列要素の代入も同じ (#476)"}
-{"name":"assign-quoted-no-blank-echo","expect":"allow","command":"FOO=\"a\" echo pnpm add","reason":"空白を含まない引用の値では安全網は発火しない (#476)"}
-{"name":"heredoc-case-to-quoted-tmpdir","expect":"allow","command":"cat > \"$TMPDIR/s.sh\" <<'EOF'\ncase \"$1\" in\n  a) echo a;;\nesac\nEOF","reason":"空白を含まない引用の先では安全網は発火しない (#476)"}
-{"name":"echo-run-to-quoted-tmpdir","expect":"allow","command":"echo \"$msg\" run > \"$TMPDIR/log\"","reason":"同上。__dynbin__ からの suffix (run) を作らない (#476)"}
-{"name":"grep-pnpm-add-to-quoted-tmpdir","expect":"allow","command":"grep -n \"pnpm add\" README.md > \"$TMPDIR/hits\"","reason":"同上 (#476)"}
-{"name":"quoted-tmpdir-no-blank","expect":"allow","command":"echo pnpm > \"$TMPDIR/out\"","reason":"同上 (#476)"}
+{"name":"grep-pnpm-add-to-quoted-tmpdir","expect":"allow","command":"grep -n \"pnpm add\" README.md > \"$TMPDIR/hits\"","reason":"grep のパターンの PM 名と引用符付きのリダイレクト先は実行対象ではない (#476)"}
+{"name":"quoted-tmpdir-no-blank","expect":"allow","command":"echo pnpm > \"$TMPDIR/out\"","reason":"echo の引数の PM 名と引用符付きのリダイレクト先は実行対象ではない (#476)"}
 {"name":"pnpm-install-quoted-redirect-no-space","expect":"allow","command":"pnpm install >\"out.txt\"","reason":"空白を含まない引用符付きの先は引数を増やさない (#476)"}
-{"name":"git-commit-quoted-space-redirect","expect":"allow","command":"git commit -F msg.txt >\"a b\"","reason":"安全網は PM 名の位置からだけ判定を足す (#476)"}
 {"name":"pnpm-install-quoted-space-redirect","expect":"block","command":"pnpm install >\"build log.txt\"","reason":"誤 block を受け入れる。allow に戻すには引用符を意識した字句解析が要る (#476)"}
 {"name":"line-continuation-pnpm-install-pkg","expect":"block","command":"pnpm \\\ninstall foo","reason":"行継続は 1 行に結合される (#476)"}
 {"name":"line-continuation-in-redirect","expect":"block","command":"pnpm install >\\\nx foo","reason":"行継続の後の x が先で、foo は install の引数 (#476)"}
@@ -170,18 +141,11 @@
 {"name":"line-continuation-pnpm-install-frozen","expect":"allow","command":"pnpm install \\\n  --frozen-lockfile","reason":"行継続をまたいでも復元フラグだけなら許可 (#476)"}
 {"name":"fd-var-redirect-then-pkg","expect":"block","command":"pnpm install {fd}>x foo","reason":"{fd}>x は fd 変数リダイレクトで、foo は install の引数 (#476)"}
 {"name":"fd-var-redirect-only","expect":"allow","command":"pnpm install {fd}>x","reason":"fd 変数リダイレクトだけなら引数は増えない (#476)"}
-{"name":"process-subst-redirect-target-then-pkg","expect":"block","command":"pnpm install > >(cat) foo","reason":"先はプロセス置換の 1 語で、foo は install の引数 (#476)"}
 {"name":"process-subst-redirect-target-pnpm-add","expect":"block","command":"pnpm install > >(pnpm add foo)","reason":"プロセス置換の中身は実行される (#476)"}
 {"name":"process-subst-redirect-target-only","expect":"allow","command":"pnpm install > >(tee log)","reason":"プロセス置換の先だけなら引数は増えない (#476)"}
 {"name":"process-subst-around-subst-pnpm-add","expect":"block","command":"cat <(echo $(pnpm add foo))","reason":"プロセス置換の中のコマンド置換も実行される (#476)"}
 {"name":"subst-around-process-subst-pnpm-add","expect":"block","command":"echo $(cat <(pnpm add foo))","reason":"コマンド置換の中のプロセス置換も実行される (#476)"}
 {"name":"multiline-process-subst-pnpm-add","expect":"block","command":"cat <(\npnpm add foo\n)","reason":"改行をまたぐプロセス置換も中身が実行される (#476)"}
-{"name":"multiline-psub-redirect-target","expect":"block","command":"pnpm install > >(\ncat\n) foo","reason":"改行をまたぐプロセス置換も先は 1 語で、foo は install の引数 (#476)"}
-{"name":"multiline-psub-arg","expect":"block","command":"pnpm install <(\necho x\n)","reason":"改行をまたぐプロセス置換も 1 語の引数 (#476)"}
-{"name":"multiline-psubs-32-flat","expect":"allow","command":"echo pipe > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n)","reason":"入れ子でない改行をまたぐプロセス置換は周回の上限に数えず、個数の上限 (32) ちょうどなら判定する (#476)"}
-{"name":"multiline-psubs-33-flat","expect":"block","command":"echo pipe > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n) > >(\ncat\n)","reason":"改行をまたぐプロセス置換が上限を超えたら判定せず block する (#476)"}
-{"name":"deep-process-subst-nesting","expect":"block","command":"echo pipe <(<(<(<(<(<(<(<(<(<(<(<(<(<(<(<(<(<(<(<(<(<(<(<(<(<(<(<(<(<(<(<(<(a)))))))))))))))))))))))))))))))))","reason":"入れ子が深すぎる置換は判定せず block する (#476)"}
-{"name":"process-subst-nesting-31","expect":"allow","command":"echo pipe <(<(<(<(<(<(<(<(<(<(<(<(<(<(<(<(<(<(<(<(<(<(<(<(<(<(<(<(<(<(<(a)))))))))))))))))))))))))))))))","reason":"上限未満の入れ子は判定する (#476)"}
 {"name":"diff-process-subst-pnpm-list","expect":"allow","command":"diff <(pnpm list) <(cat x)","reason":"プロセス置換の中身は参照系 (#476)"}
 {"name":"bang-pnpm-add","expect":"block","command":"! pnpm add foo","reason":"! の後ろが実行される (#476)"}
 {"name":"if-then-pnpm-add","expect":"block","command":"if true; then pnpm add foo; fi","reason":"then の後ろが実行される (#476)"}
@@ -199,63 +163,29 @@
 {"name":"assign-subst-command-v-pnpm","expect":"allow","command":"p=$(command -v pnpm)","reason":"PM の所在確認は許可 (#477)"}
 {"name":"subst-which-npm-install","expect":"block","command":"$(which npm) install","reason":"置き換えた 1 語は外の文脈の判定に使い続ける (#477)"}
 # --- #480: 引用・置換・予約語まわりの取りこぼし ---
-{"name":"redir-dq-semi-pnpm-add","expect":"block","command":">\"a;b\" pnpm add foo","reason":"引用の中の ; で segment が割れ、後半が実行対象に見える (#480)"}
-{"name":"redir-dq-pipe-pnpm-add","expect":"block","command":">\"a|b\" pnpm add foo","reason":"引用の中の | (#480)"}
-{"name":"redir-dq-amp-pnpm-add","expect":"block","command":">\"a&b\" pnpm add foo","reason":"引用の中の & (#480)"}
-{"name":"redir-sq-paren-pnpm-add","expect":"block","command":">'a(b' pnpm add foo","reason":"単一引用の中の ( (#480)"}
 {"name":"redir-dq-brace-pnpm-add","expect":"block","command":">\"a}b\" pnpm add foo","reason":"引用の中の } (#480)"}
-{"name":"redir-bs-semi-pnpm-add","expect":"block","command":">a\\;b pnpm add foo","reason":"バックスラッシュでエスケープした ; (#480)"}
-{"name":"assign-dq-semi-pnpm-add","expect":"block","command":"FOO=\"a;b\" pnpm add foo","reason":"代入の値の引用の中の ; (#480)"}
 {"name":"assign-sq-lt-pnpm-add","expect":"block","command":"FOO='a<b' pnpm add foo","reason":"代入の値の引用の中の < (#480)"}
-{"name":"redir-dq-newline-pnpm-add","expect":"block","command":">\"a\nb\" pnpm add foo","reason":"引用の中の改行 (#480)"}
-{"name":"assign-dq-newline-pnpm-add","expect":"block","command":"FOO=\"a\nb\" pnpm add foo","reason":"代入の値の引用の中の改行 (#480)"}
-{"name":"assign-sq-newline-pnpm-add","expect":"block","command":"FOO='a\nb' pnpm add foo","reason":"代入の値の単一引用の中の改行 (#480)"}
-{"name":"env-u-dq-blank-pnpm-add","expect":"block","command":"env -u \"a b\" pnpm add foo","reason":"ラッパーのオプションの値の引用が空白で割れる (#480)"}
-{"name":"env-u-dq-semi-pnpm-add","expect":"block","command":"env -u \"a;b\" pnpm add foo","reason":"ラッパーのオプションの値の引用の中の ; (#480)"}
-{"name":"env-u-attached-pnpm-add","expect":"block","command":"env -u\"a b\" pnpm add foo","reason":"オプションに値をつなげた形 (#480)"}
-{"name":"env-unset-eq-pnpm-add","expect":"block","command":"env --unset=\"a b\" pnpm add foo","reason":"長いオプションの = つなぎ (#480)"}
-{"name":"env-i-u-pnpm-add","expect":"block","command":"env -i -u \"a b\" pnpm add foo","reason":"値オプションの前に別のオプション (#480)"}
-{"name":"exec-a-dq-blank-pnpm-add","expect":"block","command":"exec -a \"a b\" pnpm add foo","reason":"exec -a の値 (#480)"}
-{"name":"timeout-s-sq-blank-pnpm-add","expect":"block","command":"timeout -s 'a b' 5 pnpm add foo","reason":"timeout -s の値 (#480)"}
 {"name":"echo-subst-nested-backtick-pnpm-add","expect":"block","command":"echo $(echo `pnpm add foo`)","reason":"置換の中に入れ子になったバックティック (#480)"}
 {"name":"cat-psub-nested-backtick-pnpm-add","expect":"block","command":"cat <(echo `pnpm add foo`)","reason":"プロセス置換の中のバックティック (#480)"}
 {"name":"echo-subst-deep-backtick-pnpm-add","expect":"block","command":"echo $(echo $(echo `pnpm add foo`))","reason":"2 段の置換の中のバックティック (#480)"}
 {"name":"leading-herestring-pnpm-add","expect":"block","command":"<<<x pnpm add foo","reason":"先頭のヒアストリングの語は実行対象ではない (#480)"}
 {"name":"leading-herestring-blank-pnpm-add","expect":"block","command":"<<< x pnpm add foo","reason":"<<< の後に空白 (#480)"}
-{"name":"leading-herestring-quoted-blank-pnpm-add","expect":"block","command":"<<<\"a b\" pnpm add foo","reason":"ヒアストリングの語の引用が空白で割れる (#480)"}
 {"name":"coproc-pnpm-add","expect":"block","command":"coproc pnpm add foo","reason":"coproc は直後の語を実行する (#480)"}
 {"name":"noglob-pnpm-add","expect":"block","command":"noglob pnpm add foo","reason":"zsh の noglob は直後の語を実行する (#480)"}
 {"name":"nocorrect-pnpm-add","expect":"block","command":"nocorrect pnpm add foo","reason":"zsh の nocorrect は直後の語を実行する (#480)"}
 {"name":"git-commit-msg-pnpm-add","expect":"allow","command":"git commit -m \"fix pnpm add\"","reason":"引用の中の PM 名は実行されない (#480 で粗い判定を足さなかった)"}
-{"name":"grep-n-quoted-pnpm-add","expect":"allow","command":"grep -n \"pnpm add\" HANDOFF.md","reason":"ラッパーでないコマンドの値オプションでは安全網を発火させない (#480)"}
-{"name":"if-n-quoted-blank","expect":"allow","command":"if [ -n \"a b\" ]; then echo pnpm; fi","reason":"予約語は安全網の対象のラッパーに入れない (#480)"}
-{"name":"assign-sq-bracket-echo-pnpm-add","expect":"allow","command":"P='[a]' echo pnpm add","reason":"引用の中の ] は語を割らないので安全網を発火させない (#480)"}
-{"name":"env-u-dq-blank-ls","expect":"allow","command":"env -u \"a b\" ls","reason":"安全網が発火しても PM 名がなければ許可 (#480)"}
-{"name":"leading-herestring-cat","expect":"allow","command":"<<<x cat","reason":"ヒアストリングの語を消す形を足しても PM 名がなければ許可 (#480)"}
+{"name":"grep-n-quoted-pnpm-add","expect":"allow","command":"grep -n \"pnpm add\" HANDOFF.md","reason":"grep のパターンの PM 名は実行対象ではない"}
 {"name":"noglob-ls","expect":"allow","command":"noglob ls *.txt","reason":"noglob を読み飛ばしても PM 名がなければ許可 (#480)"}
 {"name":"echo-subst-nested-backtick-date","expect":"allow","command":"echo $(echo `date`)","reason":"入れ子のバックティックを解いても PM 操作がなければ許可 (#480)"}
 {"name":"herestring-mid-segment-pnpm-add","expect":"block","command":"cat <<<x; <<<y pnpm add foo","reason":"2 つ目の segment の先頭のヒアストリング (#480)"}
 {"name":"subst-psub-backtick-pnpm-add","expect":"block","command":"echo $(cat <(echo `pnpm add foo`))","reason":"置換 > プロセス置換 > バックティックの 3 段 (#480)"}
-{"name":"fdvar-redir-dq-semi-pnpm-add","expect":"block","command":"{fd}>\"a;b\" pnpm add foo","reason":"fd 変数リダイレクトの先の引用の中の ; (#480)"}
-{"name":"assign-plus-dq-semi-pnpm-add","expect":"block","command":"FOO+=\"a;b\" pnpm add foo","reason":"+= 代入の値の引用の中の ; (#480)"}
-{"name":"env-u-dq-tab-pnpm-add","expect":"block","command":"env -u \"a\tb\" pnpm add foo","reason":"引用の中のタブ (#480)"}
-{"name":"env-u-value-then-u-pnpm-add","expect":"block","command":"env -u x -u \"a b\" pnpm add foo","reason":"値付きオプションの後の値オプション (#480)"}
 {"name":"coproc-upper-pnpm-add","expect":"block","command":"COPROC pnpm add foo","reason":"大文字の coproc (#480)"}
-{"name":"assign-dq-brace-var-grep-pnpm-add","expect":"allow","command":"OUT=\"${TMPDIR}/out\"; grep -n \"pnpm add\" HANDOFF.md","reason":"引用の中の ${} は __dynbin__ にマスクされ語を割らない (#480)"}
+{"name":"assign-dq-brace-var-grep-pnpm-add","expect":"allow","command":"OUT=\"${TMPDIR}/out\"; grep -n \"pnpm add\" HANDOFF.md","reason":"代入の後の grep のパターンの PM 名は実行対象ではない"}
 {"name":"printf-redir-dq-brace-var","expect":"allow","command":"printf '%s\\n' 'pnpm add foo' > \"${TMPDIR}/cmd.txt\"","reason":"リダイレクト先の ${} (#480)"}
-{"name":"assign-dq-subst-grep-pnpm-add","expect":"allow","command":"OUT=\"$(mktemp)\"; grep -n \"pnpm add\" HANDOFF.md","reason":"引用の中の $() は解決済みで語を割らない (#480)"}
-{"name":"timeout-grep-c-quoted-pnpm-add","expect":"allow","command":"timeout 60 grep -c \"pnpm add\" HANDOFF.md","reason":"値オプションが内側のコマンドのもの (#480)"}
-{"name":"env-grep-n-quoted-pnpm-add","expect":"allow","command":"env grep -n \"pnpm add\" HANDOFF.md","reason":"ラッパーの後ろのコマンドの -n では発火させない (#480)"}
-{"name":"subst-assign-dq-blank-pnpm-add","expect":"block","command":"echo $(FOO=\"a b\" pnpm add foo)","reason":"置換の中身の代入の値の引用が空白で割れる。中身に引用があるので 1 語へ潰さない (#480)"}
-{"name":"assign-subst-assign-dq-blank-pnpm-add","expect":"block","command":"out=$(NODE_OPTIONS=\"--a b\" pnpm add foo)","reason":"代入の右辺の置換でも同じ (#480)"}
-{"name":"subst-redir-dq-blank-pnpm-add","expect":"block","command":"echo $(>\"a b\" pnpm add foo)","reason":"置換の中のリダイレクト先 (#480)"}
-{"name":"backtick-assign-dq-blank-pnpm-add","expect":"block","command":"echo ` FOO=\"a b\" pnpm add foo`","reason":"バックティックの中の代入 (#480)"}
-{"name":"brace-default-subst-assign-dq-blank-pnpm-add","expect":"block","command":"echo ${X:-$(FOO=\"a b\" pnpm add foo)}","reason":"${} の中の置換 (#480)"}
-{"name":"subst-env-u-dq-blank-pnpm-add","expect":"block","command":"echo $(env -u \"a b\" pnpm add foo)","reason":"置換の中のラッパーの値 (#480)"}
-{"name":"assign-dq-pipe-then-grep-pnpm-add","expect":"block","command":"X=\"a|b\"; grep -n \"pnpm add\" f","reason":"誤 block を受け入れる: 代入の値の引用に区切り文字があると、同じコマンドの引用の中の PM 名からも判定する (#480 の fail-closed の代償)"}
-{"name":"timeout-num-then-s-dq-blank-pnpm-add","expect":"block","command":"timeout 5 -s \"a b\" pnpm add foo","reason":"値オプションの前の数値を読み飛ばす (#480)"}
-{"name":"env-assign-then-u-dq-blank-pnpm-add","expect":"block","command":"env FOO=x -u \"a b\" pnpm add foo","reason":"値オプションの前の代入を読み飛ばす (#480)"}
-{"name":"assign-dq-backtick-grep-pnpm-add","expect":"allow","command":"OUT=\"`mktemp`\"; grep -n \"pnpm add\" HANDOFF.md","reason":"引用の中のバックティックは 1 語へ潰して発火させない (#480)"}
+{"name":"assign-dq-subst-grep-pnpm-add","expect":"allow","command":"OUT=\"$(mktemp)\"; grep -n \"pnpm add\" HANDOFF.md","reason":"代入の値のコマンド置換の中身 (mktemp) は PM ではなく、grep のパターンの PM 名は実行対象ではない (#480)"}
+{"name":"timeout-grep-c-quoted-pnpm-add","expect":"allow","command":"timeout 60 grep -c \"pnpm add\" HANDOFF.md","reason":"timeout の後ろの grep のパターンの PM 名は実行対象ではない (#480)"}
+{"name":"env-grep-n-quoted-pnpm-add","expect":"allow","command":"env grep -n \"pnpm add\" HANDOFF.md","reason":"env の後ろの grep のパターンの PM 名は実行対象ではない"}
+{"name":"assign-dq-backtick-grep-pnpm-add","expect":"allow","command":"OUT=\"`mktemp`\"; grep -n \"pnpm add\" HANDOFF.md","reason":"代入の値のバックティックの中身 (mktemp) は PM ではなく、grep のパターンの PM 名は実行対象ではない (#480)"}
 {"name":"pnpm-run-lint","expect":"allow","command":"pnpm run lint","reason":"スクリプト実行"}
 {"name":"pnpm-exec-direct","expect":"allow","command":"pnpm exec secretlint --","reason":"exec 直接実行は許可 (実測)。make lint は make 経由なので影響なし"}
 {"name":"pnpm-exec-tsc","expect":"allow","command":"pnpm exec tsc --noEmit","reason":"exec 直接実行は許可 (実測)"}
@@ -268,3 +198,10 @@
 {"name":"echo-npm-string","expect":"allow","command":"echo npm install x","reason":"echo の引数 (実行されない)"}
 {"name":"git-clone","expect":"allow","command":"git clone https://github.com/x/y","reason":"PM 無関係"}
 {"name":"docker-npm-ci","expect":"allow","command":"docker run node npm ci","reason":"docker はラッパー追跡外"}
+{"name":"heredoc-body-var-before-install-allow","expect":"allow","command":"python3 - <<'EOF'\ns = s.replace(\"$pm install\", \"$pm add\")\nEOF","reason":"heredoc の本文の $pm install / $pm add を実行と見なさない (#486 前は block していた)"}
+{"name":"path-prepend-make-test-allow","expect":"allow","command":"PATH=\"/Users/x/.pyenv/shims:$PATH\" make test","reason":"代入の値の $PATH をバイナリ位置の変数展開と見なさない (#486 前は block していた)"}
+{"name":"find-under-pnpm-dir-allow","expect":"allow","command":"find ~/Library/pnpm -maxdepth 4 -name pnpm.cjs","reason":"find の起点のパスの末尾が PM 名でも PM の実行と見なさない (#486 前は block していた)"}
+{"name":"find-execdir-pnpm-add","expect":"block","command":"find . -name package.json -execdir pnpm add foo \\;","reason":"find の -exec 系の後ろは実行対象"}
+{"name":"xargs-abs-path-pnpm-add","expect":"block","command":"echo foo | xargs /opt/homebrew/bin/pnpm add","reason":"xargs の後ろの絶対パスの PM"}
+{"name":"ls-brace-var-path-ending-npm","expect":"allow","command":"ls \"${HOME}/.local/bin/npm\"","reason":"${name} の波括弧でパスを割らない (末尾が PM 名でもファイル参照)"}
+{"name":"brace-var-path-pnpm-add","expect":"block","command":"\"${HOME}/bin/pnpm\" add foo","reason":"${name} で始まるパスの PM の実行"}

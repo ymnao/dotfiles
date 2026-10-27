@@ -14,15 +14,16 @@
 # 各セグメント（`;`/`&&`/`|` 等で分割）について「実際に実行されるバイナリ」を
 # 解決してから判定する。command/env/nice/timeout 等の透過ラッパーや bash -c /
 # eval はオプション・値・代入を読み飛ばして内側のバイナリまで辿り、xargs/find の
-# ような引数注入ラッパーは PM 名出現時点でブロックする。コマンド置換 `$(...)` や
-# 変数展開 `$var` は静的に追えないため __dynbin__ にマスクし、それが実行対象に
-# 来てパッケージ操作を伴う場合は安全側でブロックする。これによりグローバル
-# オプション・env 代入・絶対パス・大文字表記・ラッパー・動的組み立て経由の
-# 回避のうち、agent がふだん書く形を貫通させない (既知の取りこぼしの例は #482)。
+# ような引数注入ラッパーは PM 名を引数に取った時点でブロックする。コマンド置換
+# `$(which pnpm)` は中身の PM 名に置き換えて判定し、中身そのものも別に判定する。
+# これによりグローバルオプション・env 代入・絶対パス・大文字表記・ラッパー経由の
+# 形を貫通させない。
 #
 # 守る範囲: agent がふだん書く形を判断の場で止めて user へ回す guardrail であり、セキュリティ
-# 境界ではない。スクリプトファイル・インタプリタ (`python3 -c` 等)・`make`・エンコードを経由する
-# 形は PM 名がシェルのバイナリ位置に現れないので、文字列の解析を深くしても閉じない。その備えは
+# 境界ではない。変数で組み立てたバイナリ (`$pm add`)・空白を含む引用付きの値 (`FOO="a b" pnpm add`)・
+# ヒアストリングで渡すコマンドは見ない。スクリプトファイル・インタプリタ (`python3 -c` 等)・`make`・
+# エンコードを経由する形は PM 名がシェルのバイナリ位置に現れないので、文字列の解析を深くしても
+# 閉じない。その備えは
 # package manager 自身の設定 (#485) と入った状態の検査 (global は #484、project は lockfile の
 # diff) の側に置く。sandbox は npm / PyPI の registry を allowedDomains で通すので、この備えには
 # 数えない。
@@ -41,12 +42,12 @@ input=$(cat)
 # 後段の jq 抽出済み command に対する正規化で精密に行う。
 # macOS APFS は既定で case-insensitive のため大文字バイナリも対象にする。
 gap='([\\"'"'"']|\\\\|\\")*'
-# 動的展開（$ / バックティック）を含む入力は、PM 名を変数・コマンド置換で
-# 分割構築している可能性があるため早期 exit しない。本判定側で展開・
-# マスク後に判定する。誤検知の代償は通常コマンドの本判定走行のみ。
+# コマンド置換（$( / バックティック）を含む入力は、PM 名を置換の出力で
+# 組み立てている (`$(printf %s n pm)`) 可能性があるため早期 exit しない。本判定側で
+# 中身を解析する。誤検知の代償は通常コマンドの本判定走行のみ。
 # python は `python -m pip install` 経由で pip を起動できるためスクリーニング対象。
 if ! printf '%s' "$input" | tr '[:upper:]' '[:lower:]' \
-    | grep -qE "n${gap}p${gap}m|n${gap}p${gap}x|p${gap}n${gap}p${gap}m|y${gap}a${gap}r${gap}n|b${gap}u${gap}n|p${gap}i${gap}p|u${gap}v|p${gap}o${gap}e${gap}t${gap}r${gap}y|c${gap}o${gap}r${gap}e${gap}p${gap}a${gap}c${gap}k|p${gap}y${gap}t${gap}h${gap}o${gap}n|c${gap}a${gap}r${gap}g${gap}o|g${gap}e${gap}m|b${gap}u${gap}n${gap}d${gap}l|g${gap}o([^a-z0-9_-]|\$)|\\\$|\`"; then
+    | grep -qE "n${gap}p${gap}m|n${gap}p${gap}x|p${gap}n${gap}p${gap}m|y${gap}a${gap}r${gap}n|b${gap}u${gap}n|p${gap}i${gap}p|u${gap}v|p${gap}o${gap}e${gap}t${gap}r${gap}y|c${gap}o${gap}r${gap}e${gap}p${gap}a${gap}c${gap}k|p${gap}y${gap}t${gap}h${gap}o${gap}n|c${gap}a${gap}r${gap}g${gap}o|g${gap}e${gap}m|b${gap}u${gap}n${gap}d${gap}l|g${gap}o([^a-z0-9_-]|\$)|\\\$\\(|\`"; then
   exit 0
 fi
 
@@ -89,42 +90,10 @@ fi
 # timeout -s SIG / exec -a NAME 等。値を実行対象と誤認しないよう読み飛ばす。
 value_opt='-u|-n|-a|-s|-k|-C|--unset|--signal|--kill-after|--chdir|--adjustment'
 
-# リダイレクト先・代入の値・ラッパーのオプションの値の語が、引用符・バックスラッシュで空白や
-# segment の区切り文字を含む (`>"a b"` / `>a\;b` / `FOO="a;b"` / `env -u "a b"`) と、下の正規化で
-# 引用符を外した後に語の境界が失われ、値の後半が実行対象に見える。引用符を意識した字句解析を
-# 持たない代わりに、この形があれば segment 中のどの位置の PM 名からも判定する (block を足す
-# だけの安全網)。空白も区切りも含まない引用 (`> "$TMPDIR/x"`) は外しても 1 語のままなので
-# 発火させない。`<<'EOF'` の区切り語は先ではないので除く (`<<<` の語は除かない)。
-# 引用の中の改行も語を割るが grep は行単位なので、この判定に限り改行を `;` に変えて 1 行にする。
-# ラッパーを透過ラッパー全体にしないのは、`if [ -n "a b" ]` のような頻出の形で発火させないため。
-# ラッパーと値オプションの間をオプション・数値・代入・値付きオプションに限るのは、内側の
-# コマンドのオプション (`timeout 60 grep -c "pnpm add"`) で発火させないため。
-# 中身に引用符もバックスラッシュも無い `${...}` / `$(...)` / バックティックは、判定の前に 1 語へ
-# 潰す。外側は下で 1 語に置き換わり、中身は語を割る引用を持たないので、引用の中の
-# `"${TMPDIR}/x"` の `{` で発火させないため。引用を持つ中身 (`$(FOO="a b" pnpm add foo)`) は
-# 別の行として判定に戻るときには引用符が外れているので、潰さずにここで見る。
-split_word=0
-dq_body='"([^"\\]|\\.)*'
-sq_body="'[^']*"
-word_sep="[[:blank:];&|(){}<>\`]"
-quoted_sep="([^][:blank:];&|()<>\"'\\\\]|${dq_body}\"|${sq_body}'|\\\\.)*(${dq_body}${word_sep}|${sq_body}${word_sep}|\\\\${word_sep})"
-valued_wrapper='env|exec|nice|timeout|stdbuf|setsid|nohup|time|command|builtin'
-redir_head='((^|[^<])(&>>|&>|>>|>[|]|>&|<&|<>|>|<)|<<<)[[:blank:]]*'
-assign_head='(^|[[:blank:];&|()])[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?[+]?='
-plain_word='[^[:blank:];&|()<>]'
-wrapper_arg="-${plain_word}*|[0-9]+[smhd]?|[A-Za-z_][A-Za-z0-9_]*=${plain_word}*|(${value_opt})[[:blank:]]+${plain_word}+"
-wrapper_head="(^|[[:blank:];&|()])(${valued_wrapper})([[:blank:]]+(${wrapper_arg}))*[[:blank:]]+(${value_opt})(=|[[:blank:]]*)"
-# 改行の置き換えを bash の `${command//...}` にしないのは、bash 3.2 では一致数の 2 乗になるため
-if [[ "$command" == *[\"\'\\]* && "$command" == *[\<\>=-]* ]] \
-  && printf '%s\n' "$command" | sed -E -e $'s/\\$\\{[^}"\'\\\\]*\\}/x/g' -e $'s/\\$\\([^()"\'\\\\]*\\)/x/g' -e $'s/`[^`"\'\\\\]*`/x/g' \
-    | tr '\n' ';' | LC_ALL=C grep -qiE "(${redir_head}|${assign_head}|${wrapper_head})${quoted_sep}"; then
-  split_word=1
-fi
-
 # 解析より前にシェル意味論で正規化する（n""pm → npm / n\pm → npm 等の回避を
 # 解消）。シェルの単語分割と同じ順序で:
 #   0. fd 番号付きリダイレクト（2>&1 / 2>/dev/null）の数字を落とす
-#      （リダイレクト本体はセグメント分割の直前に先ごと消し、先の語は別に判定する）
+#      （リダイレクト本体はセグメント分割の直前に先ごと消す）
 #   1. \X → X（バックスラッシュエスケープ解除）
 #   2. ' " を全削除（トークン内クォート連結を解消）
 # 0 を 1・2 より前に置き、リダイレクト先の直後を空白・行末・区切りに限るのは
@@ -140,48 +109,19 @@ command=$(printf '%s' "$command" \
     -e 's/\\(.)/\1/g' -e $'s/[\'"]//g' \
   | tr '[:upper:]' '[:lower:]')
 
-# 単純な変数代入 `var=value` を「コマンド中の $var / ${var}」に静的展開する。
-# 例: a=n; b=pm; $a$b install → npm install、
-# 　　 a=p; b=npm; core${a}ack $b add → corepack npm add。
-# 代入を grep で全て抽出し、各々を sed で順に置換する。bash の通常代入と
-# 異なるケース（export FOO=bar / function ローカル等）は対象外。
-assignments=$(printf '%s' "$command" \
-  | grep -oE '(^|[[:space:];&|])[a-z_][a-z0-9_]*=[^[:space:];&|]*' \
-  | sed -E 's/^[[:space:];&|]+//')
-if [[ -n "$assignments" ]]; then
-  while IFS= read -r asgn; do
-    [[ -z "$asgn" ]] && continue
-    name="${asgn%%=*}"
-    val="${asgn#*=}"
-    esc_name=$(printf '%s' "$name" | sed 's/[][\\.*^$/]/\\&/g')
-    esc_val=$(printf '%s' "$val" | sed 's/[\\&/]/\\&/g')
-    command=$(printf '%s' "$command" | sed -E \
-      -e "s/\\\$\\{${esc_name}\\}/${esc_val}/g" \
-      -e "s/\\\$${esc_name}([^a-z0-9_]|\$)/${esc_val}\\1/g")
-  done <<< "$assignments"
-fi
-
-# コマンド置換 `$(...)` / バックティックの中身を一般的に解析し、PM 名 token を
-# 含むものはその PM 名に展開してから __dynbin__ マスクへ。これにより
-# which/command -v/type -p/printf/echo 等の具体的なイディオムに依存せず、
-# 「$(...) が PM 名を出力する形であれば固定バイナリ分岐に合流」できる。
+# コマンド置換 `$(...)` / バックティックの中身を解析し、PM 名 token を含むものは
+# その PM 名 1 語に置き換える。which/command -v/type -p/printf/echo 等の具体的な
+# イディオムに依存せず、「$(...) が PM 名を出力する形」を固定バイナリ分岐に合流させる。
 #   $(which corepack)       → corepack
 #   $(printf npm)           → npm
 #   $(printf %s npm)        → npm（中身の "%s" は token として PM 名と一致せず）
-#   $(echo -n corepack)     → corepack
 #   $(command -v -- npm)    → npm
-#   $(type -p -- corepack)  → corepack
-#   $(cat /dev/null)        → __dynbin__（PM 名 token なし）
-#   $(echo docker)          → docker（PM 名でないため後段の bin 解析で素通り）
-#
-# 反復で最内側 $(...) から処理しネスト ($(echo $(printf npm))) にも対応する。
-# 無限ループ防止: 置換しても何も変わらなくなったら break。
+#   $(cat /dev/null)        → __subst__（PM 名 token なし）
 pm_token_re='^(npm|npx|pnpm|yarn|bun|bunx|pip|pip3|pipx|uv|uvx|poetry|corepack|python|python3|python[0-9.]+|cargo|gem|bundle|bundler|go)$'
 
-# コマンド置換 1 つの中身を解析して bin replacement 文字列を返す（標準出力）。
 # 中身の各 token が PM 名と一致すれば即その PM 名を、また printf の引数列
-# （%* / -* を除外）を連結した文字列が PM 名と一致すればその PM 名を返す。
-# どちらも該当しなければ __dynbin__ を返す。
+# （%* / -* を除外）を連結した文字列が PM 名と一致すればその PM 名を標準出力に返す。
+# どちらも該当しなければ PM 名でない 1 語 __subst__ を返す。
 resolve_cmd_subst() {
   local inner="$1"
   local first_pm="" concat=""
@@ -206,46 +146,18 @@ resolve_cmd_subst() {
   elif [[ -n "$concat" && "$concat" =~ $pm_token_re ]]; then
     printf '%s' "$concat"
   else
-    printf '%s' "__dynbin__"
+    printf '%s' "__subst__"
   fi
 }
 
 # 置き換えた 1 語は置換の外の文脈 (`$(which npm) install` のバイナリ位置) の判定に使い、
 # 中身そのものは実行されるので別の行として末尾に足して判定に残す (`echo $(pnpm add foo)`)。
-# プロセス置換 `<(...)` / `>(...)` も中身を同じく残し、`> >(cat) foo` で先が 1 語として消える
-# よう 1 語 (__dynbin__) に置き換える。こちらは置き換えが中身に依らないので、最内側を
-# まとめて sed で置き換え、反復を個数ではなく入れ子の深さにする (`$(...)` と同じ 1 個ずつの
-# 置き換えでは 2000 個で 1 秒 → 132 秒になった)。`<(echo $(x))` / `$(cat <(x))` のように
-# 互いに入れ子になり得るので、どちらも変わらなくなるまで交互に回す。sed は行単位で、
-# 改行をまたぐ置換は bash の =~ だけが一致するので、変化が無ければ打ち切る。
-# 周回ごとに fork するので、プロセス置換の入れ子が深すぎる入力は判定せず block する
-# (深さ 2000 で 18 秒かかった)。中身を次の周回に戻すので、周回の上限が数えるのは
-# プロセス置換・コマンド置換・バックティックが互いに入れ子になる段数 (+ 収束を確かめる 1 周)。
-psub_re='[<>]\(([^()]*)\)'
+# 最内側から 1 個ずつ置き換え、中身を足し終えたら次の周回でその中身も同じく置き換える
+# (中身に入れ子のバックティック `$(echo `x`)` が残るため)。置換 1 個ごとに `$(` `)` か
+# バックティックの対が 1 組減るので、周回に上限を置かなくても止まる。
 subst_inners=""
-subst_rounds=0
-ml_psubs=0
 while :; do
-  ((++subst_rounds > 32)) && block "プロセス置換・コマンド置換の入れ子が深すぎるため判定できません。コマンドを分けてください"
   before="$command"
-  if [[ "$command" =~ $psub_re ]]; then
-    subst_inners+=$'\n'"$(printf '%s\n' "$command" | grep -oE "$psub_re" | sed -E 's/^[<>][(]//; s/[)]$//')"
-    command=$(printf '%s' "$command" | sed -E "s/${psub_re}/__dynbin__/g")
-    # 改行をまたぐもの (sed では一致せず何も変わらない) は bash の =~ で 1 個ずつ置き換える。
-    # 入れ子もここで全段消化するので、周回の上限とは別に個数の上限を置く (1 個の置き換えが
-    # 文字列の長さに比例するので、上限 256 では深さ 2000 の入れ子で 12 秒かかった)
-    if [[ "$command" == "$before" ]]; then
-      while [[ "$command" =~ $psub_re ]]; do
-        ((++ml_psubs > 32)) && block "改行をまたぐプロセス置換が多すぎるため判定できません。コマンドを分けてください"
-        full="${BASH_REMATCH[0]}"
-        inner="${BASH_REMATCH[1]}"
-        subst_inners+=$'\n'"$inner"
-        prefix="${command%%"$full"*}"
-        suffix="${command#*"$full"}"
-        command="${prefix}__dynbin__${suffix}"
-      done
-    fi
-  fi
   while [[ "$command" =~ \$\(([^()]*)\) || "$command" =~ \`([^\`]*)\` ]]; do
     full="${BASH_REMATCH[0]}"
     inner="${BASH_REMATCH[1]}"
@@ -255,25 +167,16 @@ while :; do
     suffix="${command#*"$full"}"
     command="${prefix}${replacement}${suffix}"
   done
-  # 中身は次の周回にも通す。中身に入れ子のバックティック (`$(echo `x`)`) が残っていると、
-  # 周回の後に足すだけでは下の一括マスクで消える
   command+="$subst_inners"
   subst_inners=""
   [[ "$command" == "$before" ]] && break
 done
 
-# 残ったコマンド置換 `$(...)` / バックティック / 変数展開 `$var` `${var}` は実行時
-# まで中身が決まらず静的に追えない。プレースホルダ __dynbin__ に置換し、それが
-# 実行対象（バイナリ位置）に来てパッケージ操作サブコマンドを伴う場合に後段で
-# 安全側ブロックする（$npm add / $(printf n)$(printf pm) install 等）。
-# 末尾で __dynbin__ の連続（$(printf n)$(printf pm) / $a$b 等）を 1 個に正規化し、
-# 動的に分割構築されたバイナリも __dynbin__ 単体として bin 解析に渡す。
-command=$(printf '%s' "$command" | sed -E \
-  -e 's/\$\([^)]*\)/__dynbin__/g' \
-  -e 's/`[^`]*`/__dynbin__/g' \
-  -e 's/\$\{[a-z_][a-z0-9_]*\}/__dynbin__/g' \
-  -e 's/\$[a-z_][a-z0-9_]*/__dynbin__/g' \
-  -e 's/(__dynbin__)+/__dynbin__/g')
+# `${name}` を 1 語に潰すのは、下の分割が `{` `}` で語を割り、`ls "${HOME}/bin/npm"` のパスの
+# 後半を実行対象に見せるため。
+if [[ "$command" == *'${'* ]]; then
+  command=$(printf '%s' "$command" | sed -E 's/\$\{[a-z_][a-z0-9_]*\}/__var__/g')
+fi
 
 # トークン先頭の alias 無効化バックスラッシュと引用符を剥がす（\npm / "npm" → npm）。
 # サブシェル fork を避けるため結果はグローバル変数 STRIPPED に格納する。
@@ -326,20 +229,6 @@ pm_should_block() {
   return 1
 }
 
-# npm install と公式 alias（npm help install / install-test の列挙に従う）
-npm_restore='install|i|add|in|ins|inst|insta|instal|isnt|isnta|isntal|isntall|install-test|it'
-
-# 動的バイナリ（__dynbin__）の直後に現れたらブロックするパッケージ操作サブコマンド。
-# どの PM か特定できないため install 系 alias に各 PM の追加/取得系を足した和集合。
-# PM 特化の語のみを含める。use/prepare/enable/disable/up/pack のような汎用語
-# （docker compose up / make prepare 等で使われる）は除外し、代わりに
-# $(which X) / `which X` / $(command -v X) を X に literal 展開する正規化で
-# 動的 corepack 経路を固定バイナリ分岐に合流させる。run/test/ci/publish は
-# 直接 npm 全禁止に合わせて動的経路でも塞ぐ（$(get_pm_name) run build 等での
-# bypass を防ぐ）。pnpm run/test の正当ケースは固定バイナリ pnpm 分岐で処理される。
-# uv run --with* は別途検出。
-dyn_danger="${npm_restore}|a|dlx|exec|inject|tool|pip|create|uvx|bunx|run|test|ci|publish"
-
 # 透過的な実行ラッパー: 実行対象がラッパーの先にあり、内側のバイナリがそのまま
 # exec される。読み飛ばして「実際に実行されるバイナリ」を解決する。shell の -c や
 # eval も含む（bash -c "cmd" / eval cmd は引数以降が実行対象なので内側まで辿れる）。
@@ -389,44 +278,16 @@ resolve_binary() {
 
 # リダイレクトは先の 1 語ごと消す。`<>` で分割すると先の後ろの語
 # （`pnpm install >x foo` の foo）が別セグメントへ追い出され、判定から漏れるため。
-# 消した先の語を単独のセグメントで判定するのは、コマンド置換が上で PM 名 1 語に
-# 解決済みで（`cat <$(npx foo)` → `cat <npx`）、消すだけだとその実行を隠すため。
-# `<<<` の語は `bash <<<'pnpm add x'` のように実行され得るので消さず、引数に残す形と
-# 別セグメントにする形の両方を判定する（片方だけだと `<<<x bash <<<'pnpm add x'` か
-# `pnpm install <<<x foo` のどちらかが漏れる）。語が先頭にある (`<<<x pnpm add foo`) と
-# どちらの形でも語が実行対象に見えるので、語ごと消す形も足す。末尾に改行を付けて sed に渡すのは、
-# BSD sed が改行の無い最終行では `p` の出力を改行で区切らず 3 形を 1 行につなげるため。
-if [[ "$command" == *'<<<'* ]]; then
-  command=$(printf '%s\n' "$command" | sed -E -e 'h; s/<<</ /g; p; g; s/<<</;/g; p; g' -e "s/<<<[[:blank:]]*${plain_word}+/ /g")
-fi
+# 先がコマンド置換でも (`cat <$(npx foo)`)、その中身は上で別の行として足してある。
 # 演算子の直前の `{name}` (bash / zsh の fd 変数リダイレクト `{fd}>x`) も演算子の一部として消す。
 fdvar_re='(\{[a-z_][a-z0-9_]*\})?'
 redir_re="${fdvar_re}"'(&>>|&>|>>|>[|]|>&|<&|<<-|<<|<>|>|<)[[:blank:]]*[^[:blank:];&|()<>]+'
 if [[ "$command" == *[\<\>]* ]]; then
-  redir_targets=$(printf '%s\n' "$command" | grep -oE "$redir_re" | sed -E "s/^${fdvar_re}[<>&|]+[[:blank:]]*//")
-  command="$(printf '%s' "$command" | sed -E "s/${redir_re}/ /g")"$'\n'"$redir_targets"
+  command=$(printf '%s' "$command" | sed -E "s/${redir_re}/ /g")
 fi
 
 # コマンドをシェル区切り文字でセグメントに分割（各区切りを改行へ置換）
 segments=$(printf '%s' "$command" | tr ';&|(){}<>`' $'\n\n\n\n\n\n\n\n\n\n')
-
-# 空白を含む引用付きのリダイレクト先・代入がある (上の split_word) ときは、各 segment の 2 語目以降に
-# 現れる PM 名・__dynbin__・引数注入ラッパーからの suffix も segment として足す。候補を
-# これらの位置に限り、数が上限を超えたら block するのは、suffix ごとに後ろ全体を写すので
-# 候補数 × segment の長さになるため (`>"a b" pnpm pnpm …` 2000 語で 79 秒かかった)。
-if [[ $split_word -eq 1 ]]; then
-  suffixes=$(printf '%s\n' "$segments" | awk -v re="${pm_token_re}" -v ai="^(${arginjector})\$" '{
-    for (i = 2; i <= NF; i++) {
-      name = $i; sub(/.*\//, "", name)
-      if (name ~ re || name ~ ai || name ~ /__dynbin__/) {
-        if (++count > 32) exit 3
-        s = $i; for (j = i + 1; j <= NF; j++) s = s " " $j
-        print s
-      }
-    }
-  }') || block "空白を含む引用付きのリダイレクト先・代入と、多数のパッケージマネージャ名・変数展開を含むコマンドは判定できないため禁止されています。リダイレクト先や値から空白を除くか、コマンドを分けてください"
-  segments+=$'\n'"$suffixes"
-fi
 
 while IFS= read -r segment; do
   read -ra toks <<< "$segment"
@@ -437,13 +298,6 @@ while IFS= read -r segment; do
   bin="$BIN"
   [[ -z "$bin" ]] && continue
   rest=("${toks[@]:BIN_IDX+1}")
-
-  # バイナリトークンに __dynbin__ が混じる（例: core${a}ack → core__dynbin__ack /
-  # x$VAR → x__dynbin__）場合は動的構築されたバイナリとして扱う。マスク後の連続
-  # は既に sed で 1 個に正規化済みなので、ここでは「含む」かどうかだけ見る。
-  case "$bin" in
-    *__dynbin__*) bin="__dynbin__" ;;
-  esac
 
   # python -m <module> は <module> を pip/pipx として直接起動できる
   # （python -m pip install X / python -m pipx run X 等）ので、bin が
@@ -500,61 +354,18 @@ while IFS= read -r segment; do
     esac
   fi
 
-  # コマンド置換/変数展開で組み立てた実行（バイナリが __dynbin__）は中身を静的に
-  # 追えないため、パッケージ操作サブコマンドを伴うものを安全側でブロックする。
-  if [[ "$bin" == __dynbin__ ]]; then
-    pm_should_block "$dyn_danger" '' "${rest[@]}" \
-      && block "コマンド置換/変数展開経由のパッケージマネージャ実行は禁止されています。パッケージ操作はユーザーに依頼してください"
-    # uv run --with* に相当する実行時取得フラグも検出する。固定バイナリ側の uv
-    # 分岐と同じ判定を __dynbin__ 経由（$(which uv) run --with ... 等）にも適用。
-    for ((j = 0; j < ${#rest[@]}; j++)); do
-      strip_token "${rest[j]}"
-      case "$STRIPPED" in
-        --with|--with=*|--with-editable|--with-editable=*|--with-requirements|--with-requirements=*)
-          block "コマンド置換/変数展開経由の uv run --with* は実行時にパッケージを取得するため禁止されています"
-          ;;
-      esac
-    done
-    # PM 文脈の手がかりとなるサブコマンド（init/use/prepare/enable/disable/up/
-    # pack/x/exec）に「PM 名 or パッケージ指定子」が続けば、PM 文脈と判定して
-    # block する。連結構築（$(printf %s n pm) use pnpm@latest /
-    # $(printf %c... 99 111 ...) use pnpm 等）で resolve_cmd_subst が PM 名を
-    # 抽出できず __dynbin__ に落ちても、引数に PM 名や name@version が現れれば
-    # 固定 npm init <pkg> / corepack use <pm> と整合的に block される。
-    # 引数が PM 名でも指定子でもない場合（$(cat /dev/null) init project /
-    # $(some-tool) use config 等）は素通り＝誤検知回避。
-    # 取りこぼし: $(printf ...) init vite のような「動的構築 PM + generic
-    # initializer 名」は素通りする。generic 名（vite/react-app/next-app 等）
-    # は列挙不可能なための実用的妥協。
-    pm_subcmds_re='^(init|use|prepare|enable|disable|up|pack|x|exec)$'
-    pm_spec_re='^([@a-z0-9][a-z0-9._/@-]*@[a-z0-9._-]+|@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*)$'
-    sub_idx=-1
-    for ((j = 0; j < ${#rest[@]}; j++)); do
-      strip_token "${rest[j]}"
-      if [[ "$STRIPPED" =~ $pm_subcmds_re ]]; then
-        sub_idx=$j
-        break
-      fi
-    done
-    if [[ $sub_idx -ge 0 ]]; then
-      for ((k = sub_idx + 1; k < ${#rest[@]}; k++)); do
-        strip_token "${rest[k]}"
-        case "$STRIPPED" in
-          -*) continue ;;
-        esac
-        if [[ "$STRIPPED" =~ $pm_token_re ]] || [[ "$STRIPPED" =~ $pm_spec_re ]]; then
-          block "コマンド置換/変数展開経由の PM 文脈サブコマンド（PM 名または指定子付き）は禁止されています。パッケージ操作はユーザーに依頼してください"
-        fi
-      done
-    fi
-    continue
-  fi
-
   # xargs / find 経由は引数注入で「素の install」も危険なため、PM 名が現れた
-  # 時点でブロックする（復元例外を与えない）。
+  # 時点でブロックする（復元例外を与えない）。find は -exec 系より前を見ないのは、検索の
+  # 起点 (`find ~/Library/pnpm`) や -name の値に PM 名が入る形で誤検知するため。
   if [[ "$bin" =~ ^($arginjector)$ ]]; then
+    in_exec=1
+    [[ "$bin" == find ]] && in_exec=0
     for ((j = BIN_IDX + 1; j < n; j++)); do
       strip_token "${toks[j]}"
+      if [[ $in_exec -eq 0 ]]; then
+        [[ "$STRIPPED" =~ ^-(exec|execdir|ok|okdir)$ ]] && in_exec=1
+        continue
+      fi
       cand="${STRIPPED##*/}"
       case "$cand" in
         npm|npx|pnpm|yarn|bun|bunx|pip|pip3|pipx|uv|uvx|poetry|cargo|gem|bundle|bundler)
