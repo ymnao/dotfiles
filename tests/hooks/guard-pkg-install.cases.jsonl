@@ -126,8 +126,8 @@
 {"name":"cat-output-to-backtick-npm","expect":"block","command":"cat >`npm install foo`","reason":"リダイレクト先のコマンド置換は実行される (#474)"}
 # --- #476: セグメント分割が取りこぼす shell の文法 ---
 {"name":"quoted-redirect-subst-npx","expect":"block","command":"cat >\"$(npx foo) x\"","reason":"引用符付きの先の中のコマンド置換も実行される (#476)"}
-{"name":"grep-pnpm-add-to-quoted-tmpdir","expect":"allow","command":"grep -n \"pnpm add\" README.md > \"$TMPDIR/hits\"","reason":"同上 (#476)"}
-{"name":"quoted-tmpdir-no-blank","expect":"allow","command":"echo pnpm > \"$TMPDIR/out\"","reason":"同上 (#476)"}
+{"name":"grep-pnpm-add-to-quoted-tmpdir","expect":"allow","command":"grep -n \"pnpm add\" README.md > \"$TMPDIR/hits\"","reason":"grep のパターンの PM 名と引用符付きのリダイレクト先は実行対象ではない (#476)"}
+{"name":"quoted-tmpdir-no-blank","expect":"allow","command":"echo pnpm > \"$TMPDIR/out\"","reason":"echo の引数の PM 名と引用符付きのリダイレクト先は実行対象ではない (#476)"}
 {"name":"pnpm-install-quoted-redirect-no-space","expect":"allow","command":"pnpm install >\"out.txt\"","reason":"空白を含まない引用符付きの先は引数を増やさない (#476)"}
 {"name":"pnpm-install-quoted-space-redirect","expect":"block","command":"pnpm install >\"build log.txt\"","reason":"誤 block を受け入れる。allow に戻すには引用符を意識した字句解析が要る (#476)"}
 {"name":"line-continuation-pnpm-install-pkg","expect":"block","command":"pnpm \\\ninstall foo","reason":"行継続は 1 行に結合される (#476)"}
@@ -182,10 +182,10 @@
 {"name":"coproc-upper-pnpm-add","expect":"block","command":"COPROC pnpm add foo","reason":"大文字の coproc (#480)"}
 {"name":"assign-dq-brace-var-grep-pnpm-add","expect":"allow","command":"OUT=\"${TMPDIR}/out\"; grep -n \"pnpm add\" HANDOFF.md","reason":"代入の後の grep のパターンの PM 名は実行対象ではない"}
 {"name":"printf-redir-dq-brace-var","expect":"allow","command":"printf '%s\\n' 'pnpm add foo' > \"${TMPDIR}/cmd.txt\"","reason":"リダイレクト先の ${} (#480)"}
-{"name":"assign-dq-subst-grep-pnpm-add","expect":"allow","command":"OUT=\"$(mktemp)\"; grep -n \"pnpm add\" HANDOFF.md","reason":"引用の中の $() は解決済みで語を割らない (#480)"}
-{"name":"timeout-grep-c-quoted-pnpm-add","expect":"allow","command":"timeout 60 grep -c \"pnpm add\" HANDOFF.md","reason":"値オプションが内側のコマンドのもの (#480)"}
+{"name":"assign-dq-subst-grep-pnpm-add","expect":"allow","command":"OUT=\"$(mktemp)\"; grep -n \"pnpm add\" HANDOFF.md","reason":"代入の値のコマンド置換と grep のパターンの PM 名は実行対象ではない (#480)"}
+{"name":"timeout-grep-c-quoted-pnpm-add","expect":"allow","command":"timeout 60 grep -c \"pnpm add\" HANDOFF.md","reason":"timeout の後ろの grep のパターンの PM 名は実行対象ではない (#480)"}
 {"name":"env-grep-n-quoted-pnpm-add","expect":"allow","command":"env grep -n \"pnpm add\" HANDOFF.md","reason":"env の後ろの grep のパターンの PM 名は実行対象ではない"}
-{"name":"assign-dq-backtick-grep-pnpm-add","expect":"allow","command":"OUT=\"`mktemp`\"; grep -n \"pnpm add\" HANDOFF.md","reason":"引用の中のバックティックは 1 語へ潰して発火させない (#480)"}
+{"name":"assign-dq-backtick-grep-pnpm-add","expect":"allow","command":"OUT=\"`mktemp`\"; grep -n \"pnpm add\" HANDOFF.md","reason":"代入の値のバックティックと grep のパターンの PM 名は実行対象ではない (#480)"}
 {"name":"pnpm-run-lint","expect":"allow","command":"pnpm run lint","reason":"スクリプト実行"}
 {"name":"pnpm-exec-direct","expect":"allow","command":"pnpm exec secretlint --","reason":"exec 直接実行は許可 (実測)。make lint は make 経由なので影響なし"}
 {"name":"pnpm-exec-tsc","expect":"allow","command":"pnpm exec tsc --noEmit","reason":"exec 直接実行は許可 (実測)"}
