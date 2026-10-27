@@ -172,6 +172,12 @@ while :; do
   [[ "$command" == "$before" ]] && break
 done
 
+# `${name}` を 1 語に潰すのは、下の分割が `{` `}` で語を割り、`ls "${HOME}/bin/npm"` のパスの
+# 後半を実行対象に見せるため。
+if [[ "$command" == *'${'* ]]; then
+  command=$(printf '%s' "$command" | sed -E 's/\$\{[a-z_][a-z0-9_]*\}/__var__/g')
+fi
+
 # トークン先頭の alias 無効化バックスラッシュと引用符を剥がす（\npm / "npm" → npm）。
 # サブシェル fork を避けるため結果はグローバル変数 STRIPPED に格納する。
 strip_token() {

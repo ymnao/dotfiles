@@ -203,3 +203,5 @@
 {"name":"find-under-pnpm-dir-allow","expect":"allow","command":"find ~/Library/pnpm -maxdepth 4 -name pnpm.cjs","reason":"find の起点のパスの末尾が PM 名でも PM の実行と見なさない (#486 前は block していた)"}
 {"name":"find-execdir-pnpm-add","expect":"block","command":"find . -name package.json -execdir pnpm add foo \\;","reason":"find の -exec 系の後ろは実行対象"}
 {"name":"xargs-abs-path-pnpm-add","expect":"block","command":"echo foo | xargs /opt/homebrew/bin/pnpm add","reason":"xargs の後ろの絶対パスの PM"}
+{"name":"ls-brace-var-path-ending-npm","expect":"allow","command":"ls \"${HOME}/.local/bin/npm\"","reason":"${name} の波括弧でパスを割らない (末尾が PM 名でもファイル参照)"}
+{"name":"brace-var-path-pnpm-add","expect":"block","command":"\"${HOME}/bin/pnpm\" add foo","reason":"${name} で始まるパスの PM の実行"}
