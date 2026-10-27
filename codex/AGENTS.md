@@ -122,10 +122,9 @@
 
 npm/pypi 等のパッケージエコシステムはサプライチェーン攻撃の標的となっている。以下のルールを厳守すること:
 
-- **パッケージの追加コマンドを直接実行しない** — フックが allowlist 方式でガードしている
+- **パッケージの追加コマンドを直接実行しない** — フック (`~/.codex/hooks/guard-pkg-install.sh`) が allowlist 方式でガードしている
 - **npm / npx は全サブコマンド禁止** — pnpm への一本化のため `npm ci` / `npm install` / `npm run` / `npm test` / `npm exec` / `npm init` すべてブロックされる。`pnpm install` / `pnpm run` / `pnpm exec` / `pnpm dlx` を使うこと
-- 許可されるのは `pnpm install` / `yarn install`（とその公式 alias。ロックファイルからの復元）の素の形のみ
-- `pnpm install` は lockfile を書き換えないフラグ（`--frozen-lockfile` 等。一覧はフックのヘッダー）だけ付けてよい。それ以外のオプション付き install（`yarn install --mode=update-lockfile` 等）はブロックされる（前後どちらにオプションを挟んでも不可）
+- 許可される install は `pnpm install` / `yarn install`（とその公式 alias。ロックファイルからの復元）の素の形と、`pnpm install` に lockfile を書き換えないフラグ（`--frozen-lockfile` 等。一覧はフックのヘッダー）を付けた形だけ。それ以外のオプション付き install（`yarn install --mode=update-lockfile` 等）はブロックされる（前後どちらにオプションを挟んでも不可）
 - `pnpm add`、`pnpm dlx`、`yarn add`（`yarn global add` 含む）、`yarn dlx`、`bun add/install`、`bunx`、`pip install`、`pipx install/inject/run`、`uv add`、`uv tool install/run`、`uvx`、`poetry add` 等もすべてブロックされる
 - `pnpm create` / `yarn create` / `bun create` も initializer パッケージを実行時取得するためブロックされる
 - `uv run --with <package>` / `uv run --with-editable` / `uv run --with-requirements` も実行時取得のためブロックされる（`uv run script.py` 単体は許可）
