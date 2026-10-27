@@ -21,9 +21,9 @@
 #
 # 守る範囲: agent がふだん書く形を判断の場で止めて user へ回す guardrail であり、セキュリティ
 # 境界ではない。変数で組み立てたバイナリ (`$pm add`)・空白を含む引用付きの値 (`FOO="a b" pnpm add`)・
-# ヒアストリングで渡すコマンドは見ない (#486 で外した。過去の agent の呼び出しでは、これらの解析が
-# 止めたのは heredoc の本文や grep のパターンといった誤検知だけだった)。スクリプトファイル・
-# インタプリタ (`python3 -c` 等)・`make`・エンコードを経由する形は PM 名がシェルのバイナリ位置に現れないので、文字列の解析を深くしても閉じない。その備えは
+# ヒアストリングで渡すコマンドは見ない。スクリプトファイル・インタプリタ (`python3 -c` 等)・`make`・
+# エンコードを経由する形は PM 名がシェルのバイナリ位置に現れないので、文字列の解析を深くしても
+# 閉じない。その備えは
 # package manager 自身の設定 (#485) と入った状態の検査 (global は #484、project は lockfile の
 # diff) の側に置く。sandbox は npm / PyPI の registry を allowedDomains で通すので、この備えには
 # 数えない。
@@ -42,12 +42,12 @@ input=$(cat)
 # 後段の jq 抽出済み command に対する正規化で精密に行う。
 # macOS APFS は既定で case-insensitive のため大文字バイナリも対象にする。
 gap='([\\"'"'"']|\\\\|\\")*'
-# コマンド置換（$ / バックティック）を含む入力は、PM 名を置換の出力で
+# コマンド置換（$( / バックティック）を含む入力は、PM 名を置換の出力で
 # 組み立てている (`$(printf %s n pm)`) 可能性があるため早期 exit しない。本判定側で
 # 中身を解析する。誤検知の代償は通常コマンドの本判定走行のみ。
 # python は `python -m pip install` 経由で pip を起動できるためスクリーニング対象。
 if ! printf '%s' "$input" | tr '[:upper:]' '[:lower:]' \
-    | grep -qE "n${gap}p${gap}m|n${gap}p${gap}x|p${gap}n${gap}p${gap}m|y${gap}a${gap}r${gap}n|b${gap}u${gap}n|p${gap}i${gap}p|u${gap}v|p${gap}o${gap}e${gap}t${gap}r${gap}y|c${gap}o${gap}r${gap}e${gap}p${gap}a${gap}c${gap}k|p${gap}y${gap}t${gap}h${gap}o${gap}n|c${gap}a${gap}r${gap}g${gap}o|g${gap}e${gap}m|b${gap}u${gap}n${gap}d${gap}l|g${gap}o([^a-z0-9_-]|\$)|\\\$|\`"; then
+    | grep -qE "n${gap}p${gap}m|n${gap}p${gap}x|p${gap}n${gap}p${gap}m|y${gap}a${gap}r${gap}n|b${gap}u${gap}n|p${gap}i${gap}p|u${gap}v|p${gap}o${gap}e${gap}t${gap}r${gap}y|c${gap}o${gap}r${gap}e${gap}p${gap}a${gap}c${gap}k|p${gap}y${gap}t${gap}h${gap}o${gap}n|c${gap}a${gap}r${gap}g${gap}o|g${gap}e${gap}m|b${gap}u${gap}n${gap}d${gap}l|g${gap}o([^a-z0-9_-]|\$)|\\\$\\(|\`"; then
   exit 0
 fi
 
@@ -153,8 +153,8 @@ resolve_cmd_subst() {
 # 置き換えた 1 語は置換の外の文脈 (`$(which npm) install` のバイナリ位置) の判定に使い、
 # 中身そのものは実行されるので別の行として末尾に足して判定に残す (`echo $(pnpm add foo)`)。
 # 最内側から 1 個ずつ置き換え、中身を足し終えたら次の周回でその中身も同じく置き換える
-# (中身に入れ子のバックティック `$(echo `x`)` が残るため)。周回ごとに fork するので、
-# 入れ子が深すぎる入力は判定せず block する。
+# (中身に入れ子のバックティック `$(echo `x`)` が残るため)。置換 1 個ごとに fork し、中身を
+# 戻すたびに周回が増えるので、入れ子が深すぎる入力は判定せず block する。
 subst_inners=""
 subst_rounds=0
 while :; do
@@ -351,12 +351,18 @@ while IFS= read -r segment; do
   fi
 
   # xargs / find 経由は引数注入で「素の install」も危険なため、PM 名が現れた
-  # 時点でブロックする（復元例外を与えない）。パスの末尾 (`find ~/Library/pnpm`) では
-  # 見ないのは、検索の起点に PM のディレクトリを渡す形で誤検知するため。
+  # 時点でブロックする（復元例外を与えない）。find は -exec 系より前を見ないのは、検索の
+  # 起点 (`find ~/Library/pnpm`) や -name の値に PM 名が入る形で誤検知するため。
   if [[ "$bin" =~ ^($arginjector)$ ]]; then
+    in_exec=1
+    [[ "$bin" == find ]] && in_exec=0
     for ((j = BIN_IDX + 1; j < n; j++)); do
       strip_token "${toks[j]}"
-      cand="$STRIPPED"
+      if [[ $in_exec -eq 0 ]]; then
+        [[ "$STRIPPED" =~ ^-(exec|execdir|ok|okdir)$ ]] && in_exec=1
+        continue
+      fi
+      cand="${STRIPPED##*/}"
       case "$cand" in
         npm|npx|pnpm|yarn|bun|bunx|pip|pip3|pipx|uv|uvx|poetry|cargo|gem|bundle|bundler)
           block "xargs/find 経由のパッケージマネージャ実行（${cand}）は禁止されています。パッケージ操作はユーザーに依頼してください"
