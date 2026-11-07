@@ -75,6 +75,14 @@ Run each `gh` command as a bare invocation and substitute prior output literally
 6. Generate PR title and body:
    - **Title**: under 70 characters, summarizing the changes
    - **Body**: use the repo's PR template if `pr_template` is not null, otherwise the default template below. ALWAYS append the evidence section (below) at the end of the body.
+   - **Merge verdict** (evidence の「merge 判定」に書く): Run `bash "$HOME/.claude/skills/pr/scripts/merge-gate.sh" <base_branch>` — yields `{"verdict": "要確認|候補", "reasons": [...], "files": [...]}`
+     - `要確認` → `要確認 — <reasons> / <files>` と書く。tier=high の根拠は reasons にだけ出る
+     - `候補` → 次のどれかに当たれば要確認に上げて、当たった条件を書く。diff には現れない事実なので、この判定は script ではなくここで行う。どれにも当たらなければ `no look merge 可` と書く
+       - step 4 がこの tier に要求した検証に、実施しなかったものがある (`tier=low のため未実施` のレビューは当たらない)
+       - `/dev` の実機確認に未確認の項目がある
+       - (b) 起票 / (c) 対応しない の finding がある
+       - Draft 判定が draft
+     - script が exit 1 → `要確認 — merge-gate 失敗: <stderr>` と書く (判定できていないものを `no look merge 可` にしない)
 7. Run `git push origin HEAD` (no-op if origin is already up to date; also syncs review-fix commits made after an early push). **ブランチ名を代入しない**。`git push origin HEAD` は "A handy way to push the current branch to the same name on the remote" (`git help push`) で `<branch_name>` 指定と等価。**`-u` は付けない**。sandbox 内の push は `fatal: failed to store: 100001` を出しながら本体は成功するので、**`fatal:` の文言で失敗と読まず**、`git ls-remote --heads origin "refs/heads/$(git branch --show-current)"` の SHA が `git rev-parse HEAD` と一致することで確かめる。代入を避ける理由と、この `"$(...)"` が代入とは別物で安全な理由は dotfiles の `claude/rules/acceptance-patterns.md` の「外部由来の名前」の項。パターン無しの全件 (`git ls-remote --heads origin`) でも安全だが、remote のブランチ数だけ行が返るので絞る。If the push is rejected as non-fast-forward (origin advanced independently), do NOT force push — report the divergence to the user and stop. `-u` を付けない理由・`refs/heads/` を付ける理由・sandbox 内の git のほかの罠 (checkout / merge / worktree) は dotfiles の `docs/sandbox-git.md`
 8. Create the PR with `gh pr create`. Add `--draft` when step 4 **or** step 5 decided draft (draft-wins). **Exception**: user が PR 作成前の任意の時点(step 5 の walkthrough 応答 / それ以前 いずれも可、tier を問わない)で「step 4 の draft 判定は別 PR で追う。normal で作って」等、draft 判定を明示的に override する指示を出した場合は normal で作成し、その override 内容(受け取った user 指示の要約と受け取った step)を evidence の Draft 判定に記録する。**制約**: normal override でも hook の defer 検査は bypass されないため、未起票 finding が残ったまま normal 化するには (b) 起票または (c) dismiss (「追跡しない (user 指示: <要約>)」の記録) が前提。marker 文字列 `defer(未起票)` を残すと hook が block して deadlock になる。If `linked_issue` exists, include `Closes #<number>` in the body. ただし **tier=high で override が step 5 前に受け取られた場合**、step 5 walkthrough で新 finding が surface した際は override 継続意思を user に再確認する(walkthrough で見えた新事実に対して pre-walkthrough override が sticky にならないよう safety net)。再確認では対象 finding の識別子を添えて override を継続するかを尋ね、その turn では `gh pr create` を実行せず、user の回答を受け取ってから作成する。
 
@@ -124,12 +132,16 @@ backlog delta: 起票 <N> 件 / 本 PR で close <M> 件 / 現在 open <合計> 
 - 根拠: <step 4 / step 4 pending / step 4 dismiss / step 5 / step 8 override> — <理由と該当 finding>
 - override 内容: <根拠が `step 8 override` のときのみ記載、user 指示の要約と override を受けた step>
 
+## merge 判定
+<`no look merge 可` または `要確認 — <当たった条件> / <読むべき file>`>
+
 </details>
 ```
 
 Evidence rules (strict):
 - Write ONLY results of commands actually executed in this session. Before writing each row, check it against the actual tool output. If a verification was not run, write "未実施" — never leave it blank or omit the row.
 - Transcribe outputs as summaries (counts, last lines), not full logs.
+- PR を作った後に commit を足したら、merge 判定を出し直して PR 本文を更新する。判定は user が diff を読まずに merge する根拠になるので、古いまま残さない。
 
 ## Report format
 
@@ -143,3 +155,4 @@ Created PR: <PR URL>
 | Risk tier | <tier> |
 | Review | <PASS / findings summary / skipped reason> |
 | Draft 判定 | <normal / draft> — <step 4 / step 4 pending / step 4 dismiss / step 5 / step 8 override, 理由> |
+| merge 判定 | <no look merge 可 / 要確認 — 当たった条件 / 読むべき file> |

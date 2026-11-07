@@ -213,19 +213,23 @@ grep -h '"model":"<id>"' ~/.claude/projects/*/*.jsonl | grep -o '"timestamp":"[^
   「X の場合は Y する」)。定期的に各行へ
   「この行を消したらミスするか?」を問い、No なら削除する
 - 200 行を超えたら skill / hook への移譲を検討する
+- `no look merge 可` で merge した PR で後から不具合が出たら、見逃した確認
+  (テスト・レビュー観点・`.claude/merge-gate.conf` の条件)の方を直す。
+  「やはり全部読むべきだった」には戻さない
 
 ## 4. セッション運用の定石
 
 - **開発サイクルの定型は 2 コマンド**: `/dev`(受付 → plan 承認(非自明のみ)
   → 実装 → simplify / code-review / テストのレビューループ → /pr)→ user が
-  GitHub で merge → `/next`(merged 確認 → pull → 学び昇格チェック →
+  PR 本文の merge 判定を見て merge → `/next`(merged 確認 → pull → 学び昇格チェック →
   handoff → 次候補提示)→ `/clear` → 次の `/dev`。人間ゲートは
   「非自明タスクの plan」・「/pr の finding 分類承認 ((b)/(c) が 1 件でも
   あるとき発火)」・「merge」の 3 点。レビュー finding は
   fix-or-issue-or-dismiss ポリシー(fix / issue 起票 / 対応しない の三択。
   「対応しない」は pr skill step 4 (c) の許可条件 + user 承認 + PR body 記録が
   必須、未起票 defer は verify-ci-before-pr hook がブロック)で次セッションへの
-  暗黙持ち越しを防ぐ
+  暗黙持ち越しを防ぐ。merge するのは常に user だが、判定が `no look merge 可` の
+  PR は diff を読まずに merge してよいと user が決めている(§6)
 - 無関係なタスクの間で `/clear`(コンテキストを引きずらない)
 - **2 回訂正して直らなければ `/clear`** し、学んだことを盛り込んだ
   プロンプトで新セッションを始める(訂正が蓄積した長セッションより、
@@ -253,9 +257,16 @@ grep -h '"model":"<id>"' ~/.claude/projects/*/*.jsonl | grep -o '"timestamp":"[^
 
 ## 6. レビューと理解の保ち方
 
-- PR の証拠セクション(pr skill が自動生成)を読む。diff 全精読は
-  高リスク PR のみ(explain-the-diff ウォークスルー付き)
-- 原則: **理解できないコードはマージしない**(差し戻すか説明させる)
+- PR の証拠セクション(pr skill が自動生成)の merge 判定を見る。
+  `no look merge 可` は diff を読まずに merge してよい。`要確認` は当たった条件と
+  示された file を読む。判定の材料は `merge-gate.sh`(tier=high・
+  `.claude/merge-gate.conf` の条件・ファイルの削除)と /pr が見る evidence
+  (未実施の検証・(b)/(c) の finding・draft)。CI green は verify-ci-before-pr hook が
+  PR 作成時に確かめる
+- tier=high の explain-the-diff ウォークスルーは merge 判定とは別に残す。
+  ウォークスルーは PR を作る前に方向を変えられるゲートで、merge 判定は merge の時点で
+  読む場所を示すもの。一本化するかは非対話で回す #432 のときに決める
+- 原則: **読んで理解できないコードはマージしない**(差し戻すか説明させる)
 - AI レビュー(codex-review / code-review)は信頼できる diff 専用。
   外部コントリビュータの PR に無条件で自動レビューを走らせない
   (prompt injection 前提の運用)

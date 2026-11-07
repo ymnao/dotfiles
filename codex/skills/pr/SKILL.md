@@ -39,6 +39,13 @@ Run each `gh` command as a bare invocation and substitute prior output literally
 6. Generate PR title and body:
    - **Title**: under 70 characters, summarizing the changes
    - **Body**: use the repo's PR template if `pr_template` is not null, otherwise the default template below. ALWAYS append the evidence section (below) at the end of the body.
+   - **Merge verdict** (evidence の「merge 判定」に書く): Run `bash "$HOME/.agents/skills/pr/scripts/merge-gate.sh" <base_branch>` — yields `{"verdict": "要確認|候補", "reasons": [...], "files": [...]}`
+     - `要確認` → `要確認 — <reasons> / <files>` と書く。tier=high の根拠は reasons にだけ出る
+     - `候補` → 次のどれかに当たれば要確認に上げて、当たった条件を書く。どれにも当たらなければ `no look merge 可` と書く
+       - tier が medium / high (この harness では独立レビューができないので、merge 前に Claude Code 側のレビューが要る)
+       - step 4 がこの tier に要求した検証に、実施しなかったものがある
+       - UNRESOLVED の finding が残っている、または draft で作る
+     - script が exit 1 → `要確認 — merge-gate 失敗: <stderr>` と書く (判定できていないものを `no look merge 可` にしない)
 7. Run `git push origin HEAD` (no-op if origin is already up to date; also syncs review-fix commits made after an early push). **ブランチ名を代入しない**。`git push origin HEAD` は "A handy way to push the current branch to the same name on the remote" (`git help push`) で `<branch_name>` 指定と等価。**`-u` は付けない**。sandbox 内の push は `fatal: failed to store: 100001` を出しながら本体は成功するので、**`fatal:` の文言で失敗と読まず**、`git ls-remote --heads origin "refs/heads/$(git branch --show-current)"` の SHA が `git rev-parse HEAD` と一致することで確かめる。代入を避ける理由と、この `"$(...)"` が代入とは別物で安全な理由は dotfiles の `claude/rules/acceptance-patterns.md` の「外部由来の名前」の項。If the push is rejected as non-fast-forward (origin advanced independently), do NOT force push — report the divergence to the user and stop. `-u` を付けない理由・`refs/heads/` を付ける理由・sandbox 内の git のほかの罠 (checkout / merge / worktree) は dotfiles の `docs/sandbox-git.md`
 8. Create the PR with `gh pr create` (add `--draft` when step 4/5 decided draft). If `linked_issue` exists, include `Closes #<number>` in the body.
 
@@ -73,12 +80,16 @@ tier: <tier> — <reasons を列挙>
 ## レビュー指摘と対応
 <この harness では独立レビュー不可。tier=medium/high の場合は「merge 前に Claude Code 側で /codex-review または code-reviewer サブエージェントを実行すること」と明記>
 
+## merge 判定
+<`no look merge 可` または `要確認 — <当たった条件> / <読むべき file>`>
+
 </details>
 ```
 
 Evidence rules (strict):
 - Write ONLY results of commands actually executed in this session. Before writing each row, check it against the actual tool output. If a verification was not run, write "未実施" — never leave it blank or omit the row.
 - Transcribe outputs as summaries (counts, last lines), not full logs.
+- PR を作った後に commit を足したら、merge 判定を出し直して PR 本文を更新する。判定は user が diff を読まずに merge する根拠になるので、古いまま残さない。
 
 ## Report format
 
@@ -91,3 +102,4 @@ Created PR: <PR URL>
 | Changed files | <files_changed> files (+<insertions> -<deletions>) |
 | Risk tier | <tier> |
 | Review | <PASS / findings summary / skipped reason> |
+| merge 判定 | <no look merge 可 / 要確認 — 当たった条件 / 読むべき file> |
