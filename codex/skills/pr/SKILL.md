@@ -43,7 +43,7 @@ Run each `gh` command as a bare invocation and substitute prior output literally
      - `要確認` → `要確認 — <reasons> / <files>` と書く
      - `候補` → 次のどれかに当たれば要確認に上げて、当たった条件と読むべき箇所 (finding の file:line、未実施の検証の対象) を書く。どれにも当たらなければ `no look merge 可` と書く
        - tier が medium / high (この harness では独立レビューができないので、merge 前に Claude Code 側のレビューが要る)
-       - evidence の検証に `未実施` がある
+       - evidence の検証に `未実施` か FAIL がある
        - UNRESOLVED の finding が残っている、または draft で作る
      - script の exit が 0 以外 → `要確認 — merge-gate 失敗: <stderr>` と書く (判定できていないものを `no look merge 可` にしない)
 7. Run `git push origin HEAD` (no-op if origin is already up to date; also syncs review-fix commits made after an early push). **ブランチ名を代入しない**。`git push origin HEAD` は "A handy way to push the current branch to the same name on the remote" (`git help push`) で `<branch_name>` 指定と等価。**`-u` は付けない**。sandbox 内の push は `fatal: failed to store: 100001` を出しながら本体は成功するので、**`fatal:` の文言で失敗と読まず**、`git ls-remote --heads origin "refs/heads/$(git branch --show-current)"` の SHA が `git rev-parse HEAD` と一致することで確かめる。代入を避ける理由と、この `"$(...)"` が代入とは別物で安全な理由は dotfiles の `claude/rules/acceptance-patterns.md` の「外部由来の名前」の項。If the push is rejected as non-fast-forward (origin advanced independently), do NOT force push — report the divergence to the user and stop. `-u` を付けない理由・`refs/heads/` を付ける理由・sandbox 内の git のほかの罠 (checkout / merge / worktree) は dotfiles の `docs/sandbox-git.md`
@@ -89,7 +89,7 @@ tier: <tier> — <reasons を列挙>
 Evidence rules (strict):
 - Write ONLY results of commands actually executed in this session. Before writing each row, check it against the actual tool output. If a verification step 4 requires for this tier was not run, write "未実施"; if the tier does not require it or the project has none, write "該当なし" — never leave it blank or omit the row.
 - Transcribe outputs as summaries (counts, last lines), not full logs.
-- PR を作った後に commit を足したら、step 4 のこの tier の検証を新しい HEAD で回してから merge 判定を出し直し、PR 本文を更新する。判定は user が diff を読まずに merge する根拠になるので、script だけ走らせ直して前の HEAD の検証結果を流用しない。
+- PR を作った後に commit を足したら、`/pr` は step 2 で止まるので次を手で行う: step 4 のこの tier の検証を新しい HEAD で回す → step 6 の merge 判定を出し直す → `gh pr edit <PR URL> --body-file <path>` で本文を差し替える。判定は user が diff を読まずに merge する根拠になるので、script だけ走らせ直して前の HEAD の検証結果を流用しない。
 
 ## Report format
 

@@ -78,7 +78,7 @@ Run each `gh` command as a bare invocation and substitute prior output literally
    - **Merge verdict** (evidence の「merge 判定」に書く): Run `bash "$HOME/.claude/skills/pr/scripts/merge-gate.sh" <base_branch>` — yields `{"verdict": "要確認|候補", "reasons": [...], "files": [...]}`
      - `要確認` → `要確認 — <reasons> / <files>` と書く
      - `候補` → 次のどれかに当たれば要確認に上げて、当たった条件と読むべき箇所 (finding の file:line、未実施の検証の対象) を書く。diff には現れない事実なので、この判定は script ではなくここで行う。どれにも当たらなければ `no look merge 可` と書く
-       - evidence の検証に `未実施` がある
+       - evidence の検証に `未実施` か FAIL がある
        - `/dev` の実機確認に未確認の項目がある
        - (b) 起票 / (c) 対応しない の finding がある
        - Draft 判定が draft
@@ -141,7 +141,7 @@ backlog delta: 起票 <N> 件 / 本 PR で close <M> 件 / 現在 open <合計> 
 Evidence rules (strict):
 - Write ONLY results of commands actually executed in this session. Before writing each row, check it against the actual tool output. If a verification step 4 requires for this tier was not run, write "未実施"; if the tier does not require it or the project has none, write "該当なし" — never leave it blank or omit the row.
 - Transcribe outputs as summaries (counts, last lines), not full logs.
-- PR を作った後に commit を足したら、step 4 のこの tier の検証とレビューを新しい HEAD で回してから merge 判定を出し直し、PR 本文を更新する。判定は user が diff を読まずに merge する根拠になるので、script だけ走らせ直して前の HEAD の検証結果を流用しない。
+- PR を作った後に commit を足したら、`/pr` は step 2 で止まるので次を手で行う: step 4 のこの tier の検証とレビューを新しい HEAD で回す → step 6 の merge 判定を出し直す → `gh pr edit <PR URL> --body-file <path>` で本文を差し替える。判定は user が diff を読まずに merge する根拠になるので、script だけ走らせ直して前の HEAD の検証結果を流用しない。
 
 ## Report format
 
