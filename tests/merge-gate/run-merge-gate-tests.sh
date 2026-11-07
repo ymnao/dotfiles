@@ -149,6 +149,12 @@ assert_gate_error "空のパターンは判定を止める" "unknown line"
 new_branch_on_conf 'REQUIRE_REVIEW_PATHS=^scripts/'
 assert_gate_error "綴りの違うキーは判定を止める" "unknown line"
 
+new_branch_on_conf 'REQUIRE_REVIEW_PATH=^scripts/link\.sh$ '
+assert_gate_error "末尾に空白のある条件は判定を止める" "whitespace in line"
+
+new_branch_on_conf "$(printf 'REQUIRE_REVIEW_PATH=^scripts/link\\.sh$\r')"
+assert_gate_error "CR の付いた条件は判定を止める" "whitespace in line"
+
 git checkout -q main
 git rm -q .claude/merge-gate.conf
 commit_all

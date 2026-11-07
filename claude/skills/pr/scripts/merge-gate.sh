@@ -5,7 +5,7 @@ set -euo pipefail
 #
 # 使い方: merge-gate.sh <base-branch>
 # 出力 (JSON): {"verdict": "要確認|候補", "reasons": ["<rule>: <対象>", ...], "files": ["<読むべき file>", ...]}
-# exit: 0 = 判定成功 (verdict がどれでも 0) / 1 = 前提エラー
+# exit: 0 = 判定成功 (verdict がどれでも 0) / 0 以外 = 判定できていない (git の失敗は 128 で落ちる)
 #
 # 「候補」は diff から見て要確認の条件に当たらなかったという意味で、no look merge 可の
 # 確定ではない。未実施の検証や残した finding は diff に現れないので、/pr が evidence を
@@ -59,6 +59,11 @@ if git rev-parse -q --verify "$REF:$CONF" >/dev/null; then
   while IFS= read -r line; do
     case "$line" in
       '' | '#'*) continue ;;
+      # 空白や CR を含むパターンは grep で不正にならず不一致になり、条件が黙って効かなくなる
+      *[[:space:]]*)
+        echo "ERROR: $CONF: whitespace in line: $line" >&2
+        exit 1
+        ;;
       REQUIRE_REVIEW_PATH=?*) pattern="${line#REQUIRE_REVIEW_PATH=}" ;;
       *)
         echo "ERROR: $CONF: unknown line: $line" >&2

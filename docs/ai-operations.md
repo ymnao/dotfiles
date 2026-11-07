@@ -261,9 +261,10 @@ grep -h '"model":"<id>"' ~/.claude/projects/*/*.jsonl | grep -o '"timestamp":"[^
   `no look merge 可` は diff を読まずに merge してよい。`要確認` は当たった条件と
   示された file を読む。判定の材料は `merge-gate.sh`(tier=high・
   `.claude/merge-gate.conf` の条件・ファイルの削除)と /pr が見る evidence
-  (未実施の検証・(b)/(c) の finding・draft)。CI green は verify-ci-before-pr hook が
-  PR 作成時に確かめる。required check ではないので、作成後の push の CI は merge 画面で
-  見る。判定に添えた HEAD が PR の最新 commit と違うときは、判定が古いので読む
+  (未実施の検証・(b)/(c) の finding・draft)。CI は verify-ci-before-pr hook が PR 作成時に
+  確かめるが、hook には skip する条件があり (hook のヘッダー)、required check でもないので、
+  最後は merge 画面の CI 表示を見る。判定に添えた HEAD が PR の最新 commit と違うときは、
+  判定が古いので読む
 - tier=high の explain-the-diff ウォークスルーは merge 判定とは別に残す。
   ウォークスルーは PR を作る前に方向を変えられるゲートで、merge 判定は merge の時点で
   読む場所を示すもの。一本化するかは非対話で回す #432 のときに決める
