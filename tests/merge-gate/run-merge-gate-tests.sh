@@ -140,6 +140,11 @@ echo "x" >> sub/keep.sh
 commit_all
 GATE="$REPO_ROOT/codex/skills/pr/scripts/merge-gate.sh" assert_gate "codex 側の配置からも動く" "候補" "" ""
 
+new_branch_on_conf 'REQUIRE_REVIEW_PATH=^scripts/q'
+echo "x" > 'scripts/q"uote.sh'
+commit_all
+assert_gate "引用符を含むパスも条件に当たる" "要確認" 'conf-path: scripts/q"uote.sh' 'scripts/q"uote.sh'
+
 new_branch_on_conf 'REQUIRE_REVIEW_PATH=^unclosed($'
 assert_gate_error "不正な ERE は判定を止める" "invalid pattern"
 

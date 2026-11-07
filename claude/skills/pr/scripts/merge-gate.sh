@@ -29,9 +29,10 @@ fi
 CONF=".claude/merge-gate.conf"
 
 # rename を delete + add に分解する。--name-only は宛先しか返さないので、conf の対象を
-# 別名へ動かすだけで条件から外れてしまう
-changed=$(git -c core.quotePath=false diff "$REF...HEAD" --name-only --no-renames)
-deleted=$(git -c core.quotePath=false diff "$REF...HEAD" --name-only --no-renames --diff-filter=D)
+# 別名へ動かすだけで条件から外れてしまう。-z なしだと引用符やタブを含むパスは引用された形で
+# 出て、^ で始まる条件に当たらない
+changed=$(git diff "$REF...HEAD" --name-only --no-renames -z | tr '\0' '\n')
+deleted=$(git diff "$REF...HEAD" --name-only --no-renames --diff-filter=D -z | tr '\0' '\n')
 
 reasons=$(printf '%s' "$classification" | jq -r 'select(.tier == "high") | .reasons[] | "tier-high: \(.)"')
 files=""
