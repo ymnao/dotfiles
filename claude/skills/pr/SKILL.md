@@ -76,7 +76,7 @@ Run each `gh` command as a bare invocation and substitute prior output literally
    - **Title**: under 70 characters, summarizing the changes
    - **Body**: use the repo's PR template if `pr_template` is not null, otherwise the default template below. ALWAYS append the evidence section (below) at the end of the body.
    - **Merge verdict** (evidence の「merge 判定」に書く): Run `bash "$HOME/.claude/skills/pr/scripts/merge-gate.sh" <base_branch>` — yields `{"verdict": "要確認|候補", "reasons": [...], "files": [...]}`
-     - `要確認` → `要確認 — <reasons> / <files>` と書く。tier=high の根拠は reasons にだけ出る
+     - `要確認` → `要確認 — <reasons> / <files>` と書く
      - `候補` → 次のどれかに当たれば要確認に上げて、当たった条件を書く。diff には現れない事実なので、この判定は script ではなくここで行う。どれにも当たらなければ `no look merge 可` と書く
        - step 4 がこの tier に要求した検証に、実施しなかったものがある (`tier=low のため未実施` のレビューは当たらない)
        - `/dev` の実機確認に未確認の項目がある
@@ -133,7 +133,7 @@ backlog delta: 起票 <N> 件 / 本 PR で close <M> 件 / 現在 open <合計> 
 - override 内容: <根拠が `step 8 override` のときのみ記載、user 指示の要約と override を受けた step>
 
 ## merge 判定
-<`no look merge 可` または `要確認 — <当たった条件> / <読むべき file>`>
+<`no look merge 可` または `要確認 — <当たった条件> / <読むべき file>`> (判定時 HEAD: <`git rev-parse --short HEAD` の値>)
 
 </details>
 ```

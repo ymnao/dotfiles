@@ -10,12 +10,6 @@ set -euo pipefail
 # 「候補」は diff から見て要確認の条件に当たらなかったという意味で、no look merge 可の
 # 確定ではない。未実施の検証や残した finding は diff に現れないので、/pr が evidence を
 # 見て要確認へ上げる (claude/skills/pr/SKILL.md step 6)。
-# tier=high の根拠は reasons に出る。files に出るのは conf の条件と削除に当たった file だけ。
-
-if ! command -v jq >/dev/null 2>&1; then
-  echo "ERROR: jq is not installed" >&2
-  exit 1
-fi
 
 BASE="${1:-}"
 if [ -z "$BASE" ]; then
@@ -24,6 +18,7 @@ if [ -z "$BASE" ]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+# jq が無い・base が見つからないときは、ここで classify-risk.sh が exit 1 で止まる
 classification=$(bash "$SCRIPT_DIR/classify-risk.sh" "$BASE")
 
 REF="$BASE"
@@ -33,36 +28,35 @@ fi
 
 CONF=".claude/merge-gate.conf"
 
-reasons=""
-files=""
-add_reason() {
-  reasons="${reasons}${reasons:+
-}$1"
-}
-add_files() {
-  files="${files}${files:+
-}$1"
-}
-
-if [ "$(printf '%s' "$classification" | jq -r '.tier')" = "high" ]; then
-  while IFS= read -r reason; do
-    add_reason "tier-high: $reason"
-  done < <(printf '%s' "$classification" | jq -r '.reasons[]')
-fi
-
 # rename を delete + add に分解する。--name-only は宛先しか返さないので、conf の対象を
 # 別名へ動かすだけで条件から外れてしまう
 changed=$(git -c core.quotePath=false diff "$REF...HEAD" --name-only --no-renames)
 deleted=$(git -c core.quotePath=false diff "$REF...HEAD" --name-only --no-renames --diff-filter=D)
 
-if printf '%s\n' "$changed" | grep -qxF "$CONF"; then
-  add_reason "conf-change: $CONF"
-  add_files "$CONF"
+reasons=$(printf '%s' "$classification" | jq -r 'select(.tier == "high") | .reasons[] | "tier-high: \(.)"')
+files=""
+add_hit() {
+  reasons="$reasons
+$1: $(printf '%s' "$2" | tr '\n' ' ')"
+  files="$files
+$2"
+}
+
+# tier=high の reasons は対象を切り詰め、内容ルールでは file 名を持たないので diff 全体を読む対象にする
+if [ -n "$reasons" ]; then
+  files="$changed"
 fi
 
-# working tree ではなく base の版を読む。PR 自身が条件を消して「候補」になるのを防ぐ
-if git cat-file -e "$REF:$CONF" 2>/dev/null; then
-  while IFS= read -r line || [ -n "$line" ]; do
+# grep -q は一致した時点で閉じる。pipefail の下だと長い一覧で printf が SIGPIPE になり、一致を不一致と読む
+if printf '%s\n' "$changed" | grep -xF "$CONF" >/dev/null; then
+  add_hit "conf-change" "$CONF"
+fi
+
+# working tree ではなく base の版を読む。PR 自身が条件を消して「候補」になるのを防ぐ。
+# cat-file -e は取得の失敗も「無い」と同じ終了コードにするので使わない (理由は run-review.sh)
+if git rev-parse -q --verify "$REF:$CONF" >/dev/null; then
+  conf_text=$(git show "$REF:$CONF")
+  while IFS= read -r line; do
     case "$line" in
       '' | '#'*) continue ;;
       REQUIRE_REVIEW_PATH=?*) pattern="${line#REQUIRE_REVIEW_PATH=}" ;;
@@ -78,15 +72,13 @@ if git cat-file -e "$REF:$CONF" 2>/dev/null; then
       exit 1
     fi
     if [ -n "$hits" ]; then
-      add_reason "conf-path: $(printf '%s' "$hits" | tr '\n' ' ')"
-      add_files "$hits"
+      add_hit "conf-path" "$hits"
     fi
-  done < <(git show "$REF:$CONF")
+  done < <(printf '%s\n' "$conf_text")
 fi
 
 if [ -n "$deleted" ]; then
-  add_reason "deleted: $(printf '%s' "$deleted" | tr '\n' ' ')"
-  add_files "$deleted"
+  add_hit "deleted" "$deleted"
 fi
 
 verdict="候補"
