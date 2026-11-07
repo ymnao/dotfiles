@@ -78,7 +78,7 @@ Run each `gh` command as a bare invocation and substitute prior output literally
    - **Merge verdict** (evidence の「merge 判定」に書く): Run `bash "$HOME/.claude/skills/pr/scripts/merge-gate.sh" <base_branch>` — yields `{"verdict": "要確認|候補", "reasons": [...], "files": [...]}`
      - `要確認` → `要確認 — <reasons> / <files>` と書く
      - `候補` → 次のどれかに当たれば要確認に上げて、当たった条件と読むべき箇所 (finding の file:line、未実施の検証の対象) を書く。diff には現れない事実なので、この判定は script ではなくここで行う。どれにも当たらなければ `no look merge 可` と書く
-       - evidence の検証に `未実施` がある (`該当なし` と `tier=low のため未実施` のレビューは当たらない)
+       - evidence の検証に `未実施` がある
        - `/dev` の実機確認に未確認の項目がある
        - (b) 起票 / (c) 対応しない の finding がある
        - Draft 判定が draft
@@ -115,7 +115,7 @@ tier: <tier> — <reasons を列挙>
 | レビュー | codex-review <観点> | <PASS / N findings (M fixed, K report-only)> |
 
 ## レビュー指摘と対応
-<codex-review の Report format 表を転記。レビュー未実施なら「tier=low のため未実施」>
+<codex-review の Report format 表を転記。tier=low なら「該当なし (tier=low)」>
 
 ## 追跡先
 backlog delta: 起票 <N> 件 / 本 PR で close <M> 件 / 現在 open <合計> 件
