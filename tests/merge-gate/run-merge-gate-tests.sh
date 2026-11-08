@@ -1,0 +1,186 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# merge-gate.sh の判定を一時 git リポジトリで確かめる
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+REPO_ROOT="$(cd "$SCRIPT_DIR" && git rev-parse --show-toplevel)"
+GATE="$REPO_ROOT/claude/skills/pr/scripts/merge-gate.sh"
+
+WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/merge-gate.XXXXXX")"
+cleanup() { rm -rf "$WORKDIR"; }
+trap cleanup EXIT
+
+cd "$WORKDIR"
+git init -q -b main .
+git config user.email "test@example.com"
+git config user.name "test"
+git config diff.renames true
+git config gc.auto 0
+git config maintenance.auto false
+
+mkdir -p .claude scripts sub
+printf 'REQUIRE_REVIEW_PATH=^scripts/link\\.sh$\n# comment\n\n' > .claude/merge-gate.conf
+echo "link" > scripts/link.sh
+echo "keep" > sub/keep.sh
+echo "gone" > sub/gone.sh
+git add .
+git commit -qm "init"
+
+pass=0
+fail=0
+branch_no=0
+
+new_branch() {
+  git checkout -q main
+  branch_no=$((branch_no + 1))
+  git checkout -q -b "case-$branch_no"
+}
+
+commit_all() {
+  git add -A
+  git commit -qm "change"
+}
+
+# main の conf を差し替え、そこから切ったブランチで無関係なファイルを変更する
+new_branch_on_conf() {
+  git checkout -q main
+  printf '%s\n' "$1" > .claude/merge-gate.conf
+  commit_all
+  new_branch
+  echo "x" >> sub/keep.sh
+  commit_all
+}
+
+# assert_gate <name> <verdict> <reason の部分文字列 ("" で reasons が空)> <files を空白で連結した値>
+assert_gate() {
+  local name="$1" want_verdict="$2" want_reason="$3" want_files="$4" out verdict reasons got_files
+  out=$(bash "$GATE" main)
+  verdict=$(printf '%s' "$out" | jq -r '.verdict')
+  reasons=$(printf '%s' "$out" | jq -r '.reasons | join(" ")')
+  got_files=$(printf '%s' "$out" | jq -r '.files | join(" ")')
+  if [ "$verdict" != "$want_verdict" ] || [ "$got_files" != "$want_files" ]; then
+    echo "FAIL $name: $out"
+    fail=$((fail + 1))
+    return
+  fi
+  case "$want_reason:$reasons" in
+    :) pass=$((pass + 1)) ;;
+    ?*:*"$want_reason"*) pass=$((pass + 1)) ;;
+    *)
+      echo "FAIL $name: reason: $out"
+      fail=$((fail + 1))
+      ;;
+  esac
+}
+
+# assert_gate_error <name> <stderr の部分文字列>
+assert_gate_error() {
+  local name="$1" want="$2" status=0 err
+  err=$(bash "$GATE" main 2>&1 >/dev/null) || status=$?
+  case "$status:$err" in
+    1:*"$want"*) pass=$((pass + 1)) ;;
+    *)
+      echo "FAIL $name: status=$status stderr=$err"
+      fail=$((fail + 1))
+      ;;
+  esac
+}
+
+new_branch
+echo "x" >> sub/keep.sh
+commit_all
+assert_gate "該当なしは候補" "候補" "" ""
+
+new_branch
+echo "x" > README.md
+commit_all
+assert_gate "tier=low の reasons は要確認にしない" "候補" "" ""
+
+new_branch
+echo 'brew "jq"' > Brewfile
+commit_all
+echo "x" >> sub/keep.sh
+commit_all
+assert_gate "tier=high は要確認で diff 全体を読む対象にする" "要確認" "tier-high: dependency" "Brewfile sub/keep.sh"
+
+new_branch
+echo "x" >> scripts/link.sh
+commit_all
+assert_gate "conf の条件に一致すると要確認" "要確認" "conf-path: scripts/link.sh" "scripts/link.sh"
+
+new_branch
+git mv scripts/link.sh scripts/moved.sh
+commit_all
+assert_gate "conf の対象を別名へ動かしても要確認" "要確認" "conf-path: scripts/link.sh" "scripts/link.sh"
+
+new_branch
+git rm -q sub/gone.sh
+commit_all
+assert_gate "削除は要確認" "要確認" "deleted: sub/gone.sh" "sub/gone.sh"
+
+new_branch
+git mv sub/gone.sh sub/moved.sh
+commit_all
+assert_gate "別名への移動は元のパスの削除として要確認" "要確認" "deleted: sub/gone.sh" "sub/gone.sh"
+
+new_branch
+printf '# no conditions\n' > .claude/merge-gate.conf
+echo "x" >> scripts/link.sh
+commit_all
+assert_gate "PR で conf の条件を消しても base の版で判定する" "要確認" "conf-path: scripts/link.sh" ".claude/merge-gate.conf scripts/link.sh"
+
+new_branch
+printf 'REQUIRE_REVIEW_PATH=^none$\n' >> .claude/merge-gate.conf
+commit_all
+assert_gate "conf の変更は要確認" "要確認" "conf-change: .claude/merge-gate.conf" ".claude/merge-gate.conf"
+
+new_branch
+echo "x" >> sub/keep.sh
+commit_all
+GATE="$REPO_ROOT/codex/skills/pr/scripts/merge-gate.sh" assert_gate "codex 側の配置からも動く" "候補" "" ""
+
+new_branch_on_conf 'REQUIRE_REVIEW_PATH=^scripts/q'
+echo "x" > 'scripts/q"uote.sh'
+commit_all
+assert_gate "引用符を含むパスも条件に当たる" "要確認" 'conf-path: scripts/q"uote.sh' 'scripts/q"uote.sh'
+
+new_branch_on_conf 'REQUIRE_REVIEW_PATH=^unclosed($'
+assert_gate_error "不正な ERE は判定を止める" "invalid pattern"
+
+new_branch_on_conf 'REQUIRE_REVIEW_PATH='
+assert_gate_error "空のパターンは判定を止める" "unknown line"
+
+new_branch_on_conf 'REQUIRE_REVIEW_PATHS=^scripts/'
+assert_gate_error "綴りの違うキーは判定を止める" "unknown line"
+
+new_branch_on_conf 'REQUIRE_REVIEW_PATH=^scripts/link\.sh$ '
+assert_gate_error "末尾に空白のある条件は判定を止める" "whitespace in line"
+
+new_branch_on_conf "$(printf 'REQUIRE_REVIEW_PATH=^scripts/link\\.sh$\r')"
+assert_gate_error "CR の付いた条件は判定を止める" "whitespace in line"
+
+git checkout -q main
+git rm -q .claude/merge-gate.conf
+commit_all
+new_branch
+echo "x" >> scripts/link.sh
+commit_all
+assert_gate "conf が無い repo では tier と削除だけで判定する" "候補" "" ""
+
+new_branch
+git rm -q sub/gone.sh
+commit_all
+assert_gate "conf が無い repo でも削除は要確認" "要確認" "deleted: sub/gone.sh" "sub/gone.sh"
+
+status=0
+bash "$GATE" no-such-branch >/dev/null 2>&1 || status=$?
+if [ "$status" -eq 1 ]; then
+  pass=$((pass + 1))
+else
+  echo "FAIL base が見つからなければ exit 1: status=$status"
+  fail=$((fail + 1))
+fi
+
+echo "merge-gate: pass=$pass fail=$fail"
+[ "$fail" -eq 0 ]

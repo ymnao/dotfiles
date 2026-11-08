@@ -11,7 +11,7 @@ simplify / codex-review / pr の個別指示と code-reviewer サブエージェ
 呼び出しを不要にする。
 
 サイクル全体: `/dev` → (plan 承認) → 実装 → レビューループ → PR 報告で停止
-→ user が GitHub 上でレビュー & merge → `/next` → `/clear` → 次の `/dev`。
+→ user が PR 本文の merge 判定を見て merge → `/next` → `/clear` → 次の `/dev`。
 
 ## Steps
 
@@ -352,7 +352,8 @@ fix-or-issue-or-dismiss → evidence 付き PR 作成まで /pr の手順に従�
 ### 6. 停止
 
 PR URL と evidence 要約を報告して**停止する**。merge はしない
-(user が GitHub 上でレビューして merge するのが監視ゲート)。
+(merge は user のゲート。merge 判定が `no look merge 可` の PR は diff を読まずに
+merge してよいと user が決めており、`要確認` の PR は示された箇所を読む)。
 merge 後の後続は `/next` skill が担う。
 
 ## 注意

@@ -36,6 +36,7 @@ skill / hook / テスト / CI は、この目的を安全に達成するため�
 - `uv/uv.toml` → `~/.config/uv/uv.toml` にシンボリックリンク（同じく供給網の設定）
 - `.claude/stop-gate.conf` はリポジトリごとの Stop hook 検証ゲート設定（`claude/hooks/stop-verify-gate.sh` が参照するオプトインファイル）
 - `.claude/backlog.conf` はリポジトリごとの backlog 観測設定（`/dev` と `/next` が参照するオプトインファイル。`BACKLOG_CAP` は起票ゲートの煙探知機）
+- `.claude/merge-gate.conf` はリポジトリごとの「人の確認が要る変更」の条件（`/pr` の merge 判定が base ブランチの版を読むオプトインファイル）
 - `REVIEW.md` はこの repo のレビューの前提（bash 3.2 / BSD・GNU 両対応など）。codex-review が base ブランチの版を全観点のプロンプトに足す。観点プロンプト（`codex/review-prompts/`）には repo 固有の前提を書かない
 - `tests/` — hook・スクリプトの回帰テスト群（make test で全実行）
 - `claude/templates/` — 新規プロジェクト用の CLAUDE.md テンプレート（5 種）
