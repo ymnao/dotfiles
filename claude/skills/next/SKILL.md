@@ -12,6 +12,14 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
    で現ブランチの PR 状態を確認する。merged でなければ (open /
    closed-unmerged / PR なし) 状態を報告して**停止する** (pull もブランチ
    削除もしない)
+   - **作業ブランチを持たない PR** (Dependabot の PR を main にいたまま merge
+     した等): user が PR 番号を示したら、番号なしでは別の PR を引くか空振り
+     しうるので、最初からその番号 (数字だけ) を付けて
+     `gh pr view <N> --json ...` を打つ。返った `headRefName` が
+     `git branch --show-current` と一致したら現ブランチの PR なので通常どおり進む。
+     一致しなければ消すブランチが無いのでブランチ名の控え
+     (`merged-branch.txt`) と step 3 の削除は省き、step 3 は 2. の到達確認だけを
+     打つ。`git rev-parse HEAD` は通常どおり控える (ワークツリーの step 2 が使う)
    - **ワークツリー判定**: `git worktree list --porcelain` を打つ。先頭の
      `worktree` 行が本体チェックアウトのパスで、`git rev-parse --show-toplevel`
      がそれと異なれば linked worktree (Claude Code の `.claude/worktrees/<name>` 等)
