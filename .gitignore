@@ -50,7 +50,8 @@ automatic_backups/
 # Claude Code が claude.ai の skill を同期する先 (~/.claude/skills/synced/)。同期先を変える設定は無く
 # (2026-09-27 公式 docs で確認)、同期した skill を使うので syncClaudeAiSkills:false で止めもしない
 claude/skills/synced/
-# skill を削除すると Claude Code が退避する先 (~/.claude/skills/.trash)。~/.claude/skills が repo への symlink なので repo 内にできる
+# skill を削除すると Claude Code が退避する先 (~/.claude/skills/.trash。2026-11-11 に 2.1.322 の binary で確認)。
+# ~/.claude/skills が repo への symlink なので repo 内にできる
 claude/skills/.trash/
 
 # Serena

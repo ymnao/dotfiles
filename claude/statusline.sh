@@ -16,11 +16,11 @@
 # (2026-10-17) で出荷済み (starship#7614。変数追加のみで既定 format に入らないため、
 # probe するときは [claude_model] format に $effort を足す — でないと偽陰性)。
 # レート制限は starship#7442 が open (2026-11-11 確認。最終更新 2026-10-23)。
-# claude_model への項目追加ではなく別モジュール claude_usage の設計なので、
-# probe はそのモジュールの有無で見る。
+# probe は claude_usage モジュールの有無で見る (claude_model には入らない設計)。
 # starship は `brew pin` していない (Brewfile 側に版を止める記法は無い) ので
-# `make update` で黙って上がり、上の 1.26.0 という測定値は古くなる
-# (2026-11-11 時点の host は 1.27.0。eff の再測定はまだしていない)。
+# `make update` で黙って上がる。2026-11-11 時点の host は 1.27.0。そこでも
+# `starship print-config --default` に claude_usage は無く、5h / 7d が出ない
+# という判断の前提は変わっていない。
 
 set -uo pipefail
 
