@@ -19,7 +19,7 @@ open な Dependabot PR を 1 branch に統合し、push を 1 回にして CI �
 2. **列挙 + 分類**
    - 作業用 dir を作る: `mkdir -p "<scratchpad>/dependabot-bulk"`。`<scratchpad>` は system prompt が示すセッションの scratchpad ディレクトリで、**リテラルのパスで書く**。skill flow の全一時ファイルはこの下に置き、以下 `<dir>` と書く
      - `$TMPDIR` には置かない。step 7 が `classified.json` を検証済みとして `git fetch` / `pnpm up` に渡すので、dotfiles の `claude/rules/acceptance-patterns.md` の「一時ファイルの置き場」の項に当たる。実例 (issue #502): `$TMPDIR` に置いた `classified.json` が、作業の途中で並走セッションによる別 repo の分類に上書きされた
-     - scratchpad を示さない harness (codex 等) では `$TMPDIR/dependabot-bulk-<repo名>` を使う。`<repo名>` は `gh repo view --json name --jq .name` を単独で打って表示された値を書く。この場合、同じ repo を 2 セッションで同時に回すと衝突する
+     - scratchpad を示さない harness (codex 等) では `$TMPDIR/dependabot-bulk-<repo名>` を使う。`<repo名>` は `gh repo view --json name --jq .name` を単独で打って表示された値を書く。この経路は codex で通していない。名前に owner を含まないので、同じ repo や同名の repo (fork と upstream など) を 2 セッションで同時に回すと衝突し、別セッションのファイルも残りうる
      - **`WORK=$(mktemp -d ...)` は使わない**。Bash tool 呼び出し間で shell 変数が persist しないことに加え、`> "$WORK/..."` は `block-dangerous-commands.sh` の「動的展開を含む書き込み系リダイレクト」でブロックされる。**リダイレクト先に書ける変数は `$TMPDIR` / `$HOME` / `$XDG_*` (と同名の `${...}` 形) だけ**で、既定値つきの `${TMPDIR:-/tmp}` は落ちる (2026-09-02 実測。dotfiles の `claude/rules/acceptance-patterns.md` も参照)
      - 同じセッションで前回回したときのファイルは残りうる。step 2 が毎回 `classified.json` を上書きするので通常は問題にならないが、**step 2 を飛ばして step 7 以降だけを再開しない**
      - **`gh` の行にリダイレクトを付けない**。ファイルへのリダイレクト (`>` / `<`) が付くと除外コマンドの単独行でも sandbox 内で走り、`gh` が TLS 検証で落ちる (Claude Code 2.1.281 で実測。dotfiles の `docs/ai-operations.md` §10「リダイレクト付きの単独行」)。代わりに Bash tool の `run_in_background: true` が書く出力ファイルを経由する
@@ -50,14 +50,16 @@ open な Dependabot PR を 1 branch に統合し、push を 1 回にして CI �
    - 既存の場合 (同日リトライ / 朝夕 2 回運用) は `deps/bulk-<YYYY-MM-DD>-2` `-3` と suffix を付けて空きを探す
    - 決めた名前で `git checkout -b <名前>`
 7. **依存ごとに 1 commit を積む** (ecosystem で取り込み方が違う)
-   - **PR の headRefName / title / package 名をコマンド文字列にタイプし直さない**。下記のとおり `classified.json` から `"$(jq ...)"` で引数として渡す (理屈は dotfiles の `claude/rules/acceptance-patterns.md` の「外部由来の名前」の項)。このスキル固有の事情は、`extract_package` が title から `[^ ]+` で名前を抜くため `Bump $(id) from 1.0.0 to 1.0.1` のような title がそのまま package 名として通ること
-   - **`$(...)` が空文字を返す経路を fail-closed にする**。jq は「番号に一致する要素が無い」ときだけでなく、`classified.json` が空 / 不在 / 壊れているときも**何も出力せず exit 0** を返す。`$(...)` の exit code はコマンドの成否に影響しないので `&&` でも捕まらない。したがって空文字が渡っても止まる形にしておく:
+   - **PR の headRefName / title / package 名をコマンド文字列にタイプし直さない**。下記のとおり `classified.json` から jq で取り出して渡す (理屈は dotfiles の `claude/rules/acceptance-patterns.md` の「外部由来の名前」の項)。このスキル固有の事情は、`extract_package` が title から `[^ ]+` で名前を抜くため `Bump $(id) from 1.0.0 to 1.0.1` のような title がそのまま package 名として通ること
+   - **jq が空文字を返す経路を fail-closed にする**。jq は番号に一致する要素が無いときや `classified.json` が `[]` / 0 バイトのときは**何も出力せず exit 0** を返す。不在や壊れた JSON では非 0 で落ちるが、引数位置の `$(...)` の中ではその exit code が捨てられ、`&&` でも捕まらない。したがって空文字が渡っても止まる形にしておく:
      - `git fetch origin ""` は失敗せず remote の HEAD を `FETCH_HEAD` に入れて **exit 0** を返す (実測)。そのまま cherry-pick するとデフォルトブランチの HEAD を積む。**`refs/heads/` を前置**すると空のとき `fatal: invalid refspec 'refs/heads/'` で止まる
      - commit message は jq 式 1 つで本文全体を書き出して `git commit -F` で渡す (下の「commit」の形)。番号不一致・空の `classified.json` では jq が何も出さずに exit 0 で終わり、空のファイルを渡された `git commit -F` が `Aborting commit due to empty commit message.` で exit 1 になる。`classified.json` が無いときは jq が exit 2 で落ち、`&&` が commit まで進ませない (いずれも 2026-11-12 実測)。`>` は jq が走る前にファイルを空にするので、前回の message は残らない
+     - trailer も jq 文字列の中に入れる。`git commit --trailer ...` や `>>` の追記で外から足すと、jq が空でも commit が通り、trailer 行が subject になる (2026-11-12 実測)
      - fetch 行の `// "NO-MATCH"` は要素が無いときの番兵。**`//` は空文字 (`""`) を置き換えない**ので、`refs/heads/` の前置と併用して初めて塞がる
    - **commit** (npm / uv 共通。`<files>` は各 ecosystem の項に書く): `jq -r --argjson n <N> 'first(.[]|select(.number==$n)|"\(.title)\n\n統合元: #\(.number)")' "<dir>/classified.json" > "<dir>/commit-msg.txt" && git add <files> && git commit -F "<dir>/commit-msg.txt"`
      - attribution の trailer を付けるよう指示されているときは、jq 文字列の `#\(.number)` の後に `\n\n` + その trailer 行をそのまま足す (`<` `>` もそのまま書いてよい)
-     - `-m "$(jq ...)"` で渡さないのは、trailer の `<` `>` が入ると、前に `git diff ... | grep ...;` のようなパイプ付きの確認を付けただけで `block-dangerous-commands.sh` の「動的展開を含む書き込み系リダイレクト」に止まるから。`-F` の 1 行形は前置きの有無・`<` `>` の書き方に関わらず通る (2026-11-12 実測。実例: issue #502)
+     - **この 1 行は単独の Bash 呼び出しで打つ** (確認用のコマンドを前に付けない。npm の `spec=$(...); pnpm up ...` の行とも分ける)。`block-dangerous-commands.sh` の「動的展開を含む書き込み系リダイレクト」は、呼び出し全体に `$(...)` などの動的展開と書き込みリダイレクトの両方があると止める。この行の `>` と、同じ呼び出しの別コマンドの `$(...)` が組になると止まる (2026-11-12 実測)
+     - `-m "$(jq ...)"` で渡さないのは、trailer の `<` `>` が入ると、前に単引用符を含むコマンド (`grep -n 'exclude-newer' ...;` など) を付けただけで同じ判定に止まるから (実例: issue #502)。`-F` 形はその前置きでは通る。ただし前置きに単引用符と `$` の両方があると `-F` 形も止まる (いずれも 2026-11-12 実測)。どちらの形でも単独で打てば通る
      - 依存ごとに 1 commit を保つ (CI 赤時の bisect のため)
    - **github-actions**: `git fetch origin "refs/heads/$(jq -r --argjson n <N> 'first(.[]|select(.number==$n)|.headRefName) // "NO-MATCH"' "<dir>/classified.json")" && git cherry-pick FETCH_HEAD`
      - 同一ファイル (test.yml) 複数 bump でも pin コメント行単位で解消可能
