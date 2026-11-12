@@ -19,7 +19,7 @@ open な Dependabot PR を 1 branch に統合し、push を 1 回にして CI �
 2. **列挙 + 分類**
    - 作業用 dir を作る: `mkdir -p "<scratchpad>/dependabot-bulk"`。`<scratchpad>` は system prompt が示すセッションの scratchpad ディレクトリで、**リテラルのパスで書く**。skill flow の全一時ファイルはこの下に置き、以下 `<dir>` と書く
      - `$TMPDIR` には置かない。step 7 が `classified.json` を検証済みとして `git fetch` / `pnpm up` に渡すので、dotfiles の `claude/rules/acceptance-patterns.md` の「一時ファイルの置き場」の項に当たる。実例 (issue #502): `$TMPDIR` に置いた `classified.json` が、作業の途中で並走セッションによる別 repo の分類に上書きされた
-     - scratchpad を示さない harness (codex 等) では `$TMPDIR/dependabot-bulk-<repo名>` を使う。`<repo名>` は `gh repo view --json name --jq .name` を単独で打って表示された値を書く。この経路は codex で通していない。名前に owner を含まないので、同じ repo や同名の repo (fork と upstream など) を 2 セッションで同時に回すと衝突し、別セッションのファイルも残りうる
+     - scratchpad を示さない harness (codex 等) では `$TMPDIR/dependabot-bulk-<repo名>` を使う。`<repo名>` は `gh repo view --json name --jq .name` を単独で打って表示された値を書く。この経路は codex で通していない。名前に owner を含まないので、同じ repo や同名の repo (fork と upstream など) を 2 セッションで同時に回すと衝突し、別セッションのファイルも残りうる。step 11 の `--body-file` だけは `$TMPDIR` を展開したリテラルのパスで書く (`verify-ci-before-pr.sh` が変数を含むパスを exit 2 で止める。2026-11-12 実測)
      - **`WORK=$(mktemp -d ...)` は使わない**。Bash tool 呼び出し間で shell 変数が persist しないことに加え、`> "$WORK/..."` は `block-dangerous-commands.sh` の「動的展開を含む書き込み系リダイレクト」でブロックされる。**リダイレクト先に書ける変数は `$TMPDIR` / `$HOME` / `$XDG_*` (と同名の `${...}` 形) だけ**で、既定値つきの `${TMPDIR:-/tmp}` は落ちる (2026-09-02 実測。dotfiles の `claude/rules/acceptance-patterns.md` も参照)
      - 同じセッションで前回回したときのファイルは残りうる。step 2 が毎回 `classified.json` を上書きするので通常は問題にならないが、**step 2 を飛ばして step 7 以降だけを再開しない**
      - **`gh` の行にリダイレクトを付けない**。ファイルへのリダイレクト (`>` / `<`) が付くと除外コマンドの単独行でも sandbox 内で走り、`gh` が TLS 検証で落ちる (Claude Code 2.1.281 で実測。dotfiles の `docs/ai-operations.md` §10「リダイレクト付きの単独行」)。代わりに Bash tool の `run_in_background: true` が書く出力ファイルを経由する
@@ -58,8 +58,8 @@ open な Dependabot PR を 1 branch に統合し、push を 1 回にして CI �
      - fetch 行の `// "NO-MATCH"` は要素が無いときの番兵。**`//` は空文字 (`""`) を置き換えない**ので、`refs/heads/` の前置と併用して初めて塞がる
    - **commit** (npm / uv 共通。`<files>` は各 ecosystem の項に書く): `jq -r --argjson n <N> 'first(.[]|select(.number==$n)|"\(.title)\n\n統合元: #\(.number)")' "<dir>/classified.json" > "<dir>/commit-msg.txt" && git add <files> && git commit -F "<dir>/commit-msg.txt"`
      - attribution の trailer を付けるよう指示されているときは、jq 文字列の `#\(.number)` の後に `\n\n` + その trailer 行をそのまま足す (`<` `>` もそのまま書いてよい)
-     - **この 1 行は単独の Bash 呼び出しで打つ** (確認用のコマンドを前に付けない。npm の `spec=$(...); pnpm up ...` の行とも分ける)。この行の `>` が、同じ呼び出しの `$(...)` と組になると `block-dangerous-commands.sh` の「動的展開を含む書き込み系リダイレクト」に止まる (判定の説明は `/next` skill step 1 の「この 2 コマンドは別々の Bash 呼び出しで打つこと」の項)。前置きに単引用符と `$` の両方があっても止まる (いずれも 2026-11-12 実測)
-     - `-m "$(jq ...)"` で渡さないのは、trailer の `<` `>` が入ると、前に単引用符を含むコマンド (`grep -n 'exclude-newer' ...;` など) を付けただけで同じ判定に止まるから。`-F` 形はその前置きでは通る (2026-11-12 実測。実例: issue #502)
+     - **この 1 行は単独の Bash 呼び出しで打つ** (確認用のコマンドを前に付けない。npm の `spec=$(...); pnpm up ...` の行とも分ける)。この行の `>` が、同じ呼び出しの `$(...)` と組になると `block-dangerous-commands.sh` の「動的展開を含む書き込み系リダイレクト」に止まる (判定の説明は `/next` skill step 1 の「この 2 コマンドは別々の Bash 呼び出しで打つこと」の項)。前置きの形によっても止まる。`grep -c 'exclude-newer' "$HOME/x";` の前置きで止まり、`git diff --stat | awk '{print $1}';` の前置きでは通った (いずれも 2026-11-12 実測)。どの前置きが止まるかは書き分けられていないので、前置きは付けない
+     - `-m "$(jq ...)"` で渡さないのは、trailer の `<` `>` が入ると、`grep -n 'exclude-newer' uv.lock;` のような前置きを付けただけで同じ判定に止まるから。`-F` 形はこの前置きでは通る (2026-11-12 実測。実例: issue #502)
      - 依存ごとに 1 commit を保つ (CI 赤時の bisect のため)
    - **github-actions**: `git fetch origin "refs/heads/$(jq -r --argjson n <N> 'first(.[]|select(.number==$n)|.headRefName) // "NO-MATCH"' "<dir>/classified.json")" && git cherry-pick FETCH_HEAD`
      - 同一ファイル (test.yml) 複数 bump でも pin コメント行単位で解消可能
