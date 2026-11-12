@@ -17,14 +17,16 @@ open な Dependabot PR を 1 branch に統合し、push を 1 回にして CI �
    - `git status --porcelain` が空でなければ報告して停止
    - 現在ブランチがデフォルトブランチでなければ、デフォルトブランチに移動する
 2. **列挙 + 分類**
-   - 作業用 tmp dir を作る: `mkdir -p "$TMPDIR/dependabot-bulk"` (skill flow の全 tmp ファイルはこの下に置く)
+   - 作業用 dir を作る: `mkdir -p "<scratchpad>/dependabot-bulk"`。`<scratchpad>` は system prompt が示すセッションの scratchpad ディレクトリで、**リテラルのパスで書く**。skill flow の全一時ファイルはこの下に置き、以下 `<dir>` と書く
+     - `$TMPDIR` に置かないのは、`$TMPDIR` がセッションを分けないから (uid スコープの固定パス。実測: `/tmp/claude-501`)。別セッションが同時に `/dependabot-bulk` を回すと同じファイルを奪い合う。実例 (issue #502): `classified.json` が作業の途中で別 repo の分類に上書きされた。番号が偶然一致すると、別 repo の title / headRefName / spec で通ってしまう。step 7 はこのファイルを検証済みとして `git fetch` / `pnpm up` に渡すので、置き場の規約は dotfiles の `claude/rules/acceptance-patterns.md` の「一時ファイルの置き場」の項に従う
+     - scratchpad を示さない harness (codex 等) では `$TMPDIR/dependabot-bulk-<repo名>` を使う。`<repo名>` は `gh repo view --json name --jq .name` を単独で打って表示された値を書く。この場合、同じ repo を 2 セッションで同時に回すと衝突する
      - **`WORK=$(mktemp -d ...)` は使わない**。Bash tool 呼び出し間で shell 変数が persist しないことに加え、`> "$WORK/..."` は `block-dangerous-commands.sh` の「動的展開を含む書き込み系リダイレクト」でブロックされる。**リダイレクト先に書ける変数は `$TMPDIR` / `$HOME` / `$XDG_*` (と同名の `${...}` 形) だけ**で、既定値つきの `${TMPDIR:-/tmp}` は落ちる (2026-09-02 実測。dotfiles の `claude/rules/acceptance-patterns.md` も参照)
-     - `$TMPDIR` は uid スコープの固定パス (実測: `/tmp/claude-501`) で、前回の別 repo / 別 run のファイルが残りうる。step 2 が毎回 `classified.json` を上書きするので通常は問題にならないが、**step 2 を飛ばして step 7 以降だけを再開しない**
+     - 同じセッションで前回回したときのファイルは残りうる。step 2 が毎回 `classified.json` を上書きするので通常は問題にならないが、**step 2 を飛ばして step 7 以降だけを再開しない**
      - **`gh` の行にリダイレクトを付けない**。ファイルへのリダイレクト (`>` / `<`) が付くと除外コマンドの単独行でも sandbox 内で走り、`gh` が TLS 検証で落ちる (Claude Code 2.1.281 で実測。dotfiles の `docs/ai-operations.md` §10「リダイレクト付きの単独行」)。代わりに Bash tool の `run_in_background: true` が書く出力ファイルを経由する
      - 以下の `gh` の手順は Claude Code 向け。codex には `run_in_background` が無く、codex での `gh` の挙動は測っていない
    - `gh pr list --author app/dependabot --state open --json number,title,headRefName,url,body,labels` を **`run_in_background: true` で**起動する (リダイレクトは付けない)。結果の `Output is being written to: <path>` の `<path>` を控える
    - **完了通知で exit code 0 を確認してから**次へ進む。非 0 なら `<path>` を読んで原因を報告して停止する。出力ファイルは stdout と stderr が混ざり、末尾に harness が `[exited with code N]` を追記するので、ファイルの中身で成否を判定しない
-   - `jq -n 'input' "<path>" | bash "$HOME/.claude/skills/dependabot-bulk/scripts/list-dependabot-prs.sh" > "$TMPDIR/dependabot-bulk/classified.json"` (`<path>` は控えた実パスを貼る)。`jq -n 'input'` は先頭の JSON 値だけを読むので末尾の追記を無視する。出力ファイルは残る保証が無いので通知を受けたらすぐ取り込み、既に無ければ `gh` の行から打ち直す。jq が parse error で落ちたら (stderr の行が JSON より前に出た等) `<path>` を読んで報告して停止する
+   - `jq -n 'input' "<path>" | bash "$HOME/.claude/skills/dependabot-bulk/scripts/list-dependabot-prs.sh" > "<dir>/classified.json"` (`<path>` は控えた実パスを貼る)。`jq -n 'input'` は先頭の JSON 値だけを読むので末尾の追記を無視する。出力ファイルは残る保証が無いので通知を受けたらすぐ取り込み、既に無ければ `gh` の行から打ち直す。jq が parse error で落ちたら (stderr の行が JSON より前に出た等) `<path>` を読んで報告して停止する
    - 出力 JSON の各要素: `{number, title, headRefName, url, package, toVersion, ecosystem, semver, security}`
    - semver は grouped PR (dependabot.yml `groups` 由来の複合 title)・v prefix (`v4.1.1`)・commit-message prefix (`Chore(deps): Bump ...` のような dependabot.yml `commit-message` 由来の接頭辞) を吸収して判定する。判別不能は `unknown`
    - semver / package / toVersion は title のみ、ecosystem は headRefName、security は body と labels から判定する。`-` 始まりの package 名は `pnpm up` にオプションとして解釈されうるので `semver=unknown` に倒れる (個別維持行き)。title は誰でも書ける文字列で、**Dependabot 生成物であることの保証は上の `--author app/dependabot` フィルタが担う**ので、このスクリプトを別経路の PR 一覧に流用しない
@@ -51,22 +53,23 @@ open な Dependabot PR を 1 branch に統合し、push を 1 回にして CI �
    - **PR の headRefName / title / package 名をコマンド文字列にタイプし直さない**。下記のとおり `classified.json` から `"$(jq ...)"` で引数として渡す (理屈は dotfiles の `claude/rules/acceptance-patterns.md` の「外部由来の名前」の項)。このスキル固有の事情は、`extract_package` が title から `[^ ]+` で名前を抜くため `Bump $(id) from 1.0.0 to 1.0.1` のような title がそのまま package 名として通ること
    - **`$(...)` が空文字を返す経路を fail-closed にする**。jq は「番号に一致する要素が無い」ときだけでなく、`classified.json` が空 / 不在 / 壊れているときも**何も出力せず exit 0** を返す。`$(...)` の exit code はコマンドの成否に影響しないので `&&` でも捕まらない。したがって空文字が渡っても止まる形にしておく:
      - `git fetch origin ""` は失敗せず remote の HEAD を `FETCH_HEAD` に入れて **exit 0** を返す (実測)。そのまま cherry-pick するとデフォルトブランチの HEAD を積む。**`refs/heads/` を前置**すると空のとき `fatal: invalid refspec 'refs/heads/'` で止まる
-     - `git commit` は subject 用の `-m` を **1 つだけ**渡す (trailer も同じ jq 式で作る)。空文字なら `Aborting commit due to empty commit message` で止まる。`-m "" -m "統合元: #<N>"` の 2 段だと 2 つ目が subject に繰り上がって**通ってしまう** (実測)
+     - commit message は jq 式 1 つで本文全体 (trailer を含む) を `<dir>/commit-msg.txt` に書き出し、`git commit -F` で渡す。番号不一致・空の `classified.json` では jq が何も出さずに exit 0 で終わり、空のファイルを渡された `git commit -F` が `Aborting commit due to empty commit message.` で exit 1 になる。`classified.json` が無いときは jq が exit 2 で落ち、`&&` が commit まで進ませない (いずれも 2026-11-12 実測)。`>` は jq が走る前にファイルを空にするので、前回の message は残らない。`-m "" -m "統合元: #<N>"` のように本文を分けて渡すと、2 つ目が subject に繰り上がって**通ってしまう** (実測)
      - `// "NO-MATCH"` は要素が無いときの番兵。**`//` は空文字 (`""`) を置き換えない**ので、上の 2 つの形と併用して初めて塞がる
-   - **github-actions**: `git fetch origin "refs/heads/$(jq -r --argjson n <N> 'first(.[]|select(.number==$n)|.headRefName) // "NO-MATCH"' "$TMPDIR/dependabot-bulk/classified.json")" && git cherry-pick FETCH_HEAD`
+   - **github-actions**: `git fetch origin "refs/heads/$(jq -r --argjson n <N> 'first(.[]|select(.number==$n)|.headRefName) // "NO-MATCH"' "<dir>/classified.json")" && git cherry-pick FETCH_HEAD`
      - 同一ファイル (test.yml) 複数 bump でも pin コメント行単位で解消可能
    - **npm**: cherry-pick **しない** (lockfile が世代衝突するため)
-     - この repo は pnpm なので `spec=$(jq -r --argjson n <N> 'first(.[]|select(.number==$n)|"\(.package)@\(.toVersion)")' "$TMPDIR/dependabot-bulk/classified.json"); pnpm up "${spec:?classified.json から #<N> の spec を取れない}"` を使う (依存ごとに 1 commit を保つため、複数依存があっても 1 件ずつ回す)。他 lockfile (`package-lock.json` / `yarn.lock`) の repo に流用する場合は該当マネージャの update コマンドに置き換える
+     - この repo は pnpm なので `spec=$(jq -r --argjson n <N> 'first(.[]|select(.number==$n)|"\(.package)@\(.toVersion)")' "<dir>/classified.json"); pnpm up "${spec:?classified.json から #<N> の spec を取れない}"` を使う (依存ごとに 1 commit を保つため、複数依存があっても 1 件ずつ回す)。他 lockfile (`package-lock.json` / `yarn.lock`) の repo に流用する場合は該当マネージャの update コマンドに置き換える
        - ここだけ変数に受けるのは、**`pnpm up ""` が fail-open だから**。空文字を渡すと exit 0 で**全依存が最新に更新される** (実測)。`git fetch` の `refs/heads/` 前置や `git commit` の単一 `-m` に相当する「空なら止まる」形が pnpm の引数側に無いので、`${spec:?...}` で shell に止めさせる。変数は同じ呼び出し内でしか使わないので persist の制約には掛からない
        - **ターゲットバージョンも表から転記しない**。classifier が `toVersion` として出すのは `classify_semver` の regex が実際に検証した部分文字列そのもので、agent が生 title から読み直すと「検証した文字列と使う文字列が別物」に戻る (regex は `Bump foo from 1.0.0 to 1.0.1 to 9.9.9` のような末尾も許すので、目視の転記は一致しない)
-     - `git add package.json pnpm-lock.yaml && git commit -m "$(jq -r --argjson n <N> 'first(.[]|select(.number==$n)|"\(.title)\n\n統合元: #\(.number)")' "$TMPDIR/dependabot-bulk/classified.json")"`
-       - memory の「commit 本文はファイル方式」が避けているのは `$(cat <<EOF ...)` のような heredoc 内包形で、`$(jq ...)` / `$(cat <file>)` の引数渡しは通る (実測。`/next` step 1 も同じ形を使っている)。`-F <file>` にすると message ファイルを作る呼び出しが 1 つ増えるだけなので採らない
+     - `jq -r --argjson n <N> 'first(.[]|select(.number==$n)|"\(.title)\n\n統合元: #\(.number)")' "<dir>/classified.json" > "<dir>/commit-msg.txt" && git add package.json pnpm-lock.yaml && git commit -F "<dir>/commit-msg.txt"`
+       - attribution の trailer を付けるよう指示されているときは、jq 文字列の `#\(.number)` の後に `\n\n` + その trailer 行をそのまま足す (`<` `>` もそのまま書いてよい)
+       - `-m "$(jq ...)"` で渡さないのは、trailer の `<` `>` が入ると、前に `git diff ... | grep ...;` のようなパイプ付きの確認を付けただけで `block-dangerous-commands.sh` の「動的展開を含む書き込み系リダイレクト」に止まるから。`-F` の 1 行形は前置きの有無・`<` `>` の書き方に関わらず通る (2026-11-12 実測。実例: issue #502)
      - 依存ごとに 1 commit を保つ (CI 赤時の bisect のため)
    - **uv** (Python): npm と同じく cherry-pick しない (`uv.lock` が世代衝突するため)
-     - **pin を書き換えてから `uv lock --no-config`** の順で回す。`pyproject.toml` が `ruff==0.16.1` のように `==` 固定なら、`uv lock --upgrade-package <pkg>` を打っても制約側が動かないのでバージョンは上がらない (2026-09-04 実測)。pin の書き換えは Edit tool で行い、`jq -r --argjson n <N> 'first(.[]|select(.number==$n)|"\(.package)==\(.toVersion)")' "$TMPDIR/dependabot-bulk/classified.json"` を打って**表示された文字列をそのまま置換後の値にする** (npm 側と同じ理由で表から転記しない)
+     - **pin を書き換えてから `uv lock --no-config`** の順で回す。`pyproject.toml` が `ruff==0.16.1` のように `==` 固定なら、`uv lock --upgrade-package <pkg>` を打っても制約側が動かないのでバージョンは上がらない (2026-09-04 実測)。pin の書き換えは Edit tool で行い、`jq -r --argjson n <N> 'first(.[]|select(.number==$n)|"\(.package)==\(.toVersion)")' "<dir>/classified.json"` を打って**表示された文字列をそのまま置換後の値にする** (npm 側と同じ理由で表から転記しない)
        - `--no-config` を付けるのは、この Mac の uv (0.13.5) がユーザー設定 (`uv/uv.toml`) の `exclude-newer = "1 day"` を読むから。素の `uv lock` はそれを `uv.lock` の `[options]` に `exclude-newer-span = "P1D"` として書き込み、その設定を持たない lockfile には `uv run --locked` が「needs to be updated」で落ちる (2026-10-27 実測)。CI にはこの設定が無い。実例: ymnao/artificial-market#354 で `uv lock --no-config` の出力は Dependabot の `uv.lock` と同じ blob だった
      - `build-system` の `requires` に入る依存 (hatchling 等) は `uv.lock` に現れないので、`uv lock --no-config` の diff が空でも失敗ではない。その場合の commit は `pyproject.toml` のみになる
-     - `git add pyproject.toml uv.lock && git commit -m "$(jq -r --argjson n <N> 'first(.[]|select(.number==$n)|"\(.title)\n\n統合元: #\(.number)")' "$TMPDIR/dependabot-bulk/classified.json")"`
+     - `jq -r --argjson n <N> 'first(.[]|select(.number==$n)|"\(.title)\n\n統合元: #\(.number)")' "<dir>/classified.json" > "<dir>/commit-msg.txt" && git add pyproject.toml uv.lock && git commit -F "<dir>/commit-msg.txt"` (trailer の足し方は npm と同じ)
    - commit message body に `統合元: #<N>` を書けば統合 PR body から原本 PR に辿れる。release notes 全文転記は不要
 8. **ローカル検証**: CI の workflow が打っているコマンドを手元で打つ。この repo では `make test && make lint`。Makefile が無い repo は `.github/workflows/*.yml` の `run:` をそのまま打つ (例: uv の repo なら `uv run --no-config --locked ruff check` / `uv run --no-config --locked ruff format --check` / `uv run --no-config --locked python -m unittest discover`)
 9. **push は 1 回だけ**: `git push origin <step 6 で決めた branch 名>` (collision で `-2`/`-3` を付けた場合はその名前で push する。literal `deps/bulk-<YYYY-MM-DD>` を貼らない。`-u` を付けない理由は `/pr` skill の step 7 参照)
@@ -74,7 +77,7 @@ open な Dependabot PR を 1 branch に統合し、push を 1 回にして CI �
     - **`on: push` がある repo** (この repo を含む): push 直後は GitHub 側で run が作成されるまで数秒〜十数秒のラグがある。まず `git rev-parse HEAD` を単独で打って SHA を読む (**変数に代入しない** — Bash tool 呼び出し間で shell 変数は persist しない。理由は step 2 と同じ) → `gh run list --branch <branch名> --limit 5 --json databaseId,status,headSha` で、上で読んだ SHA と `headSha` が一致する run を探す → 無ければ step 11 の PR body のうち CI 行以外を書いてから再問い合わせする (CI 行は run の完走後に埋める。Claude Code の Bash tool は foreground の `sleep` をブロックするので待つ間に別の作業を挟む。codex では数秒待ってよい。数回問い合わせても出なければ `gh run list` の結果を添えて user に報告して停止する) → 出現したら `gh run watch <databaseId> --exit-status` で完走待ち
     - **`on: pull_request` のみの repo**: push では run が立たないので step 11 (PR 作成) を先に行い、`gh pr checks <PR番号> --watch --fail-fast` で完走を待つ。evidence に書く run-id は `gh pr checks <PR番号> --json link` の `link` (`.../actions/runs/<run-id>/job/<job-id>`) から読む。verify-ci-before-pr hook は「HEAD に紐づく check が無い」状態をこのケースとして許可する (`claude/hooks/verify-ci-before-pr.sh` の最終 `*)` 分岐) ので PR 作成は止まらない
     - どちらでも verify-ci-before-pr hook が最終ゲート。`--draft` bypass は使わない
-11. **統合 PR 作成**: `gh pr create --title <title> --body-file "$TMPDIR/dependabot-bulk/pr-body.md"` (本文は Claude Code なら Write tool、codex なら `apply_patch` で書く)
+11. **統合 PR 作成**: `gh pr create --title <title> --body-file "<dir>/pr-body.md"` (本文は Claude Code なら Write tool、codex なら `apply_patch` で書く)
     - PR body テンプレは下記 「PR body」 節を参照
     - block-dangerous-commands hook 対策のため `--body-file` (heredoc / インライン文字列は使わない)
 12. **原本 PR の close (統合 PR 作成直後)** ← rebase 起因 CI を止めるため作成直後に閉じる
@@ -106,7 +109,7 @@ step 7 の cherry-pick / lockfile 更新 / `make test` などが失敗した状�
 - cherry-pick 中の conflict: `git cherry-pick --abort` で作業を打ち切る
 - lockfile 更新中のエラー: `git restore package.json pnpm-lock.yaml`
 - 統合 branch そのものを捨てる場合: 元ブランチ (default branch) へ `git checkout <default branch>` → `git branch -D <統合branch名>`
-- `$TMPDIR/dependabot-bulk/` は残しておくと partial state のデバッグに使える (stale の扱いは step 2 参照)。片付けるなら `rm -f` でファイルを名指しする — `rm -rf` は `claude/settings.json` の deny 対象
+- `<dir>` は残しておくと partial state のデバッグに使える (stale の扱いは step 2 参照)。片付けるなら `rm -f` でファイルを名指しする — `rm -rf` は `claude/settings.json` の deny 対象
 
 ### やらないこと
 
