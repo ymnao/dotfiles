@@ -517,8 +517,8 @@ issue #289 の「保護をコマンド文字列の静的解析で担い続ける
 
 1. **home の外のプロジェクト** (`/Volumes/…` 等) — `~/*/` は home 直下を起点に
    するので届かない
-2. **excludedCommands にマッチする行** — sandbox ごと外れる(次節)。
-   compound 行は `guard-sandbox-exclusions.sh` が止めるが、**単独の除外コマンド**
+2. **excludedCommands にマッチする行** — sandbox ごと外れる(どの行が外れるかは版で
+   変わった。次節の冒頭)。compound 行は `guard-sandbox-exclusions.sh` が止めるが、**単独の除外コマンド**
    (リダイレクト無し、または `2>&1` のような fd 複製だけが付いた行)は
    unsandboxed で走るので hook だけが残る。**ファイルへのリダイレクト
    (`>` / `<`)が付いた単独行は sandbox 内で走る**ので、リダイレクト先の書き込みは
@@ -763,18 +763,35 @@ Read tool は `permissions.deny` の Read ルールで止める。sandbox 側の
 | セッションの sandbox 設定表示(変更前後) | 変更後は `denyRead` に未展開の `~/.ssh` 等 4 本が展開済みの 4 本と並んだ(Read ルールの取り込み) |
 | `claude doctor` | 設定エントリへの警告なし(無効なエントリで警告が出るかの対照は取っていない) |
 
-Bash 経路で 4 ディレクトリを止めている根拠は、次節の表にある `ls ~/.ssh` / `ls ~/.aws` の
-`Operation not permitted`(2026-08-04 / 2.1.212、sandbox 層)。2.1.322 では測り直していない
-(実在しない名前では sandbox が無い場合と区別できない)。
+Bash 経路で 4 ディレクトリのうち `~/.ssh` / `~/.aws` を止めている根拠は、次節の
+2026-11-13 の表にある `ls ~/.ssh` / `ls ~/.aws` の `Operation not permitted`
+(2.1.321〜2.1.323、sandbox 層。どちらも実在するディレクトリ)。`~/.gnupg` /
+`~/.config/gcloud` は Bash 経路で測っていない(実在しない名前では sandbox が無い場合と
+区別できない)。
 
 ### sandbox の excludedCommands が「一次防御」を丸ごと外す経路
 
-上表の「一次: sandbox」は、**同じ Bash 呼び出しに excludedCommands マッチが
-1 つでも混ざると成立しない**。Claude Code の Bash tool は 1 呼び出しをまるごと
-sandbox 内か外のどちらかで実行する all-or-nothing 設計で、マッチ判定は
-**パース済み sub-command 単位・順序非依存**に行われるため(issue #267)。
+上表の「一次: sandbox」は、excludedCommands にマッチして sandbox 外で走る行では
+成立しない。Claude Code の Bash tool は 1 呼び出しをまるごと sandbox 内か外の
+どちらかで実行する。**どの行が外に出るかは版で逆転した**:
 
-実測(2026-08-04 / Claude Code 2.1.212 / macOS Seatbelt。`~/` は allowWrite 外):
+- **2.1.212**(2026-08-04 実測。issue #267): sub-command が **1 つでも**マッチすると
+  行全体が外に出た(順序非依存)。下の 1 つ目の表
+- **2.1.321 / 2.1.322 / 2.1.323**(2026-11-13 実測。issue #494): 外に出るのは
+  **全 sub-command がマッチする行**だけ。除外でないコマンドが 1 つでも混ざると
+  行全体が sandbox 内で走る。下の「compound 行の再測定」の表
+
+現行の上流 docs(code.claude.com/docs/en/sandboxing)もこの形を
+「Every command in the call has to match」と書き、`npm ci && docker compose build` は
+`npm ci` を覆う項目が別に無ければ sandbox 内に留まる、と例示している。CHANGELOG には
+2.1.314 で「listed commands は常に sandbox 外で走る」という設定説明の誤りを直した項が、
+2.1.323 で excludedCommands が名指ししていないコマンドを一部の場合に sandbox 外で
+走らせていた不具合を直した項がある。**挙動がどの版で変わったかは分からない**
+(2.1.313 以前の CHANGELOG は読んでいない。2.1.321 は 2.1.323 の修正の前の版だが、
+今回の 13 行では差が出なかった)。
+
+実測(2026-08-04 / Claude Code 2.1.212 / macOS Seatbelt。`~/` は allowWrite 外。
+**旧挙動の記録**):
 
 | 行 | 結果 |
 |---|---|
@@ -797,6 +814,30 @@ sandbox 内か外のどちらかで実行する all-or-nothing 設計で、マ�
 `~/.ssh` `~/.aws` を使う行は `denyRead` で測っている(sandbox 内なら `ls` が非 0)。
 `x=$(brew ...)` の行以外は #267 のレビュー中に code-reviewer が同日 live 実測した。
 
+**compound 行の再測定**(2026-11-13 / Claude Code 2.1.321(desktop 同梱)・2.1.322・
+2.1.323(どちらも terminal の cask)/ gh 2.104.0。issue #494)。hook が止めるので
+このセッションからは打てない。そこで scratchpad に sandbox 節だけの project 設定を置き、
+**hook を読まない別セッション**(`claude --setting-sources project`)で 1 行 1 呼び出し、
+書き換え・リトライ無しで打った。内外は `~/` への `touch` と `denyRead` の `ls` の
+成否で判定し、`gh api` の行は TLS の成否で判定した。13 行のうち測れた 12 行は
+**3 版で結果が一致した**(残る 1 行は下表の未測定の行):
+
+| 行 | 結果 |
+|---|---|
+| `touch ~/.sbxprobe-494-1`(対照) | `Operation not permitted`(sandbox **内**) |
+| `brew --version > /dev/null && touch ~/.sbxprobe-494-2` | `Operation not permitted`(**内**) |
+| `touch ~/.sbxprobe-494-3; gh --version` / 同じ 2 つを改行区切り | `touch` が `Operation not permitted`(**内**)。`gh --version` は通信しないので内でも版を表示する |
+| `ls ~/.ssh; command gh --version` / `ls ~/.aws; FOO='a b' gh --version` / `ls ~/.aws; FOO+=x gh --version` / `ls ~/.aws;<TAB>gh --version` | `ls` が `Operation not permitted`(**内**) |
+| `ls ~/.ssh; g"h" --version` | **未測定** — 測定セッションの auto mode 分類器が 3 版とも拒否した(回避して打ち直していない) |
+| `gh api user --jq .login` | 成功(**外**) |
+| `gh api user --jq .login \| cat` | TLS 失敗(**内**) |
+| `gh api user --jq .login && brew --version` | 両方成功(**外**。全 sub-command が除外コマンド) |
+| `touch ~/.sbxprobe-494-13 && gh api user --jq .login` | `touch` が `Operation not permitted` で止まり、`gh` は走っていない(**内**) |
+
+マーカーファイルは 1 つも作られなかった(3 版とも `ls -a ~ | grep sbxprobe` が空)。
+1 つ目の表のうち `command -p gh` / `echo ">"& gh` / `ls >""&gh` / 文字列言及 /
+`x=$(brew ...)` / subshell・if の行は測り直していない。
+
 **リダイレクト付きの単独行**(2026-09-25 / Claude Code 2.1.281 (desktop 2.9939.2 の
 pin) / gh 2.101.0。issue #360)。sandbox 内の `gh` は TLS 検証で
 `x509: OSStatus -26276` になる(下記)ので、その成否で内外を判定した。
@@ -815,18 +856,14 @@ pin) / gh 2.101.0。issue #360)。sandbox 内の `gh` は TLS 検証で
 上流がなぜそう判定するかは確認していない(`strings` は採っていない)。
 2026-09-04 / 09-06 には同じ形が sandbox 外で走っていた(下の `$TMPDIR` の段落)が、
 その時点の版は記録していないので、どの版で変わったかは分からない。
-compound 行が sandbox 外に落ちる挙動(上表)は今回測り直していない
-(`guard-sandbox-exclusions.sh` がブロックするので Bash tool から直接は打てない)。
 
-外れるのは filesystem の `denyRead` / `denyWrite` / `allowWrite` だけでなく、
+外に出た行で外れるのは filesystem の `denyRead` / `denyWrite` / `allowWrite` だけでなく、
 `network.allowedDomains` と `credentials.files` / `credentials.envVars` の deny も
 まとめて(sandbox 化されないコマンドにはどの層も適用されないため。ただし直接
-測っているのは上表の filesystem 経路のみ)。**これは Claude Code の仕様**で、
-除外を「単独コマンドのときだけ」に絞る指定方法は上流に存在しない
-(2.1.220 時点、2.1.212 から変化なし。2026-08-04 実測 — `excludedCommands` の
-schema は `array(string)` のままで、粒度を指定するフィールドが無い)。
-上流ドキュメントは逆に `docker` / `gh` について excludedCommands の使用を
-推奨しており、compound 行での粒度には言及がない。
+測っているのは上表の filesystem 経路のみ)。2.1.220 時点では、除外を「単独
+コマンドのときだけ」に絞る指定方法は上流に無かった(2026-08-04 実測 —
+`excludedCommands` の schema は `array(string)` で、粒度を指定するフィールドが無い)。
+現行の挙動は節の冒頭のとおり。
 
 除外コマンドは sandbox 外で走るため、**環境変数の値そのものも sandbox 内と
 一致しない**。`$TMPDIR` は sandbox 内では uid スコープの `/tmp/claude-<uid>`、
@@ -835,9 +872,10 @@ sandbox 外では macOS 本来の `/var/folders/…/T/` に展開される(2026-
 落ち、出力先を sandbox 内の実パスのリテラルにすれば往復が成立した
 (2026-09-06 実測。版は未記録)。**2.1.281 ではこの対処は成立しない** —
 リダイレクトを付けた時点で行が sandbox 内に入り、`gh` 自体が TLS で落ちる
-(上の 2 つ目の表)。なお `gh … | bash <script>` のような pipe 形は
-行全体が sandbox 外に落ちるため `guard-sandbox-exclusions.sh` がブロックする
-(2026-09-06 実測)。
+(上の 2 つ目の表)。なお `gh … | bash <script>` のような pipe 形は、2026-09-06 には
+行全体が sandbox 外に落ちた(実測)。2.1.321 以降は sandbox 内で走り、`gh` が TLS で
+落ちる(再測定の表の `| cat` の行)。どちらの版でも `guard-sandbox-exclusions.sh` が
+ブロックする。
 
 **`gh` の出力をファイルへ渡すには、Bash tool の `run_in_background: true` を使う**
 (2026-09-25 / Claude Code 2.1.281 実測。#364)。リダイレクトを付けずに background で
@@ -871,9 +909,18 @@ sandbox 外では macOS 本来の `/var/folders/…/T/` に展開される(2026-
 |---|---|---|---|
 | 二次: hook (Bash) | `claude/hooks/guard-sandbox-exclusions.sh`(Claude 専用の実体。codex には excludedCommands 相当が無いため symlink しない) | compound な行(`;` `\|` `&` 改行で 2 つ以上に割れる行)に除外コマンド名が**単語として現れたら位置を問わずブロック**し、単独実行を強制する | 除外コマンドの**単独行**そのもの。語一致に失敗する形(`(gh` / `x=$(brew` のように区切り文字以外が直前に付くと 1 語になる) |
 
-語一致に失敗する形が今のところ escape になっていないのは、**上流もそこに降下しない
+**2.1.321 以降、この hook が止めているのは sandbox の escape ではなく、sandbox 内で
+落ちる行**。混在行は hook が止めなくても sandbox 内で走る(再測定の表)。止めずに
+走らせると、`gh ... | jq` や `gh ... && other` の `gh` が TLS で落ち、出力が「失敗」にも
+「空の結果」にも見える。hook はそれを打つ前に止める lint として残し、**判定は変えない** —
+2.1.212 型の挙動に戻った版を踏んでも fail-closed のまま効くため。hook 本体のコメントと
+エラーメッセージは「1 つマッチすると行全体が外」という旧前提の文言のまま(直すのは
+issue #494 の残り)。
+
+語一致に失敗する形が 2.1.212 で escape にならなかったのは、**上流もそこに降下しない
 から**であって、hook がそれを判定しているからではない。両者は別の理由で一致している
-だけなので、上流が降下し始めると hook 側は無防備になる(下記の「allow 側の前提」参照)。
+だけなので、2.1.212 型の挙動のまま上流が降下し始めると hook 側は無防備になる
+(下記の「allow 側の前提」参照)。
 
 **判定を「上流の正規化を写す」方式から粗い fail-closed に切り替えた経緯**:
 当初はコマンド位置を判定していたが、レビュー 2 周で毎回「写し漏れ」が見つかり、
@@ -888,10 +935,9 @@ sandbox 外では macOS 本来の `/var/folders/…/T/` に展開される(2026-
 方式を切り替えた直後のレビューでも 2 件見つかっている(上表のタブ字下げと
 `ls >""&gh`。どちらも live 実測で sandbox が外れた)。
 
-**この hook の退役条件**: 上流に「excludedCommands を単独コマンドのときだけ
-適用するオプション」が入れば、hook ごと不要になる。要望を出すのが筋なので、
-Claude Code のリリースノートでこの種のオプションを見かけたら §10 のこの節ごと
-畳むこと。
+**この hook の退役条件**: `gh` が sandbox 内で動くようになったとき(下の TLS の段落)。
+防御としての退役条件(上流が除外を単独コマンドに絞ること)は、2.1.321 時点で既定の
+挙動として満たされている。
 
 **根治の候補として `gh` を sandbox 内で動かす道は、2026-09-07 時点でも塞がって
 いる**。Keychain 依存は `GH_TOKEN` で外せる見込みだが、TLS 側は外せなかった —
@@ -926,8 +972,9 @@ proxy の CA 配布側ではなく Go の macOS verifier 側。**`codex` が同�
 `allow-command-substitution-in-compound` / `allow-subshell-in-compound` が
 この前提を pin しているが、pin が見ているのは「hook がその判断を変えていないこと」
 だけで、**上流が降下し始めたかどうかは測っていない**(測れない)。
-**Claude Code を更新したら、上表の実測を取り直すこと**
-(§10 末尾の再確認チェックリスト参照)。
+この腐り方が escape になるのは 2.1.212 型の挙動に戻った場合だけ(上の lint の段落)。
+それを見落とさないために、**Claude Code を更新したら、上表の実測を取り直すこと**
+(測り方は再測定の表の前文。§10 末尾の再確認チェックリスト参照)。
 
 クォート解釈とコメント除去は残してある — `gh ... --jq '.[] | .name'` は
 クォート内に区切りを持つ単独コマンドで、既存 skill の主要な使い方だから。
@@ -989,7 +1036,7 @@ TLS 検証も通らない(実測: 上記 OSStatus -26276)ため外せない。�
 未使用は削除根拠にならない。
 
 - regression は `tests/hooks/guard-sandbox-exclusions.cases.jsonl` が pin する。
-  block 側は上表の「sandbox が実際に外れた行」そのものと、粗い判定の代償
+  block 側は 2.1.212 で「sandbox が実際に外れた行」そのもの(現行版では lint として止める行)と、粗い判定の代償
   (コード中の文字列言及)。allow 側は既存 skill が使う bare な呼び方、
   シェルコメント内の言及、旧実装が hang していた形
 - 上記の hook テストは**隔離 HOME で走る**ため hook 内の組み込み既定リストしか
@@ -1530,7 +1577,7 @@ Code merges entries from every scope」)。したがって user 設定側の既�
 
 2. **塞ぎたい経路が lock の対象外**。上の docs 逐語のとおり lock は sandbox 内に
    しか効かないが、`excludedCommands` の 4 コマンド(`docker` / `gh` / `brew` /
-   `pnpm test:e2e`)を含む行は sandbox 外で走る(上の
+   `pnpm test:e2e`)だけで成る行は sandbox 外で走る(上の
    「[sandbox の excludedCommands が「一次防御」を丸ごと外す経路](#sandbox-の-excludedcommands-が一次防御を丸ごと外す経路)」節の実測)。
    **この host からいちばん広く外に出られる `gh` は lock の後も任意ホストへ通る**
 
@@ -1574,7 +1621,7 @@ Code merges entries from every scope」)。したがって user 設定側の既�
 | symlink 越しでも user scope か | **効く(根拠は実装の読み取り)**。`~/.claude/settings.json` は repo への symlink だが、scope は「どの source slot から読んだか」で決まり実体パスは見ないため。live probe(許可外の `gitlab.com` が `CONNECT tunnel failed, response 403` で即落ち)は**この仮説と整合するが判別力は無い** — 非対話セッションでは strictAllowlist が無くても確認プロンプトが自動 deny されて同じ結果になる。判別まで取るなら対話セッションでプロンプトが出ないことを見る |
 | `allowedDomains` 自体の scope | 2.1.220 時点では strictAllowlist と違い **project 設定からもマージされた**(v2.1.285 以降の変化はこのセルの末尾)。さらに **`permissions.allow` の `WebFetch(domain:X)` ルールも同じ allowlist にマージされる**(実測: allowlist 構築関数が `permissions.allow` を走査して `domain:` 接頭辞を剥がし `allowedDomains` に push する)。この repo で `www.anthropic.com` に到達できるのはこの経路 — gitignore 済みの `.claude/settings.local.json` の `WebFetch(domain:www.anthropic.com)` が由来で、settings に無い組み込みホストがあるわけではない。**「WebFetch を許可すると sandbox 化された Bash の egress も開く」** という非自明な結合なので、`WebFetch(domain:...)` を足すときは egress を開けてよい相手かで判断する。加えてセッション中に承認したホストも合流するため、許可ホストの集合を設定ファイルの列挙だけで書き下すことはできない。**v2.1.285 で変わった**: user 設定の strictAllowlist は、repo の settings の `allowedDomains` と `WebFetch(domain:...)` allow ルールを sandbox に対して無視させる(上流 docs「Locks that apply without an admin-required sandbox」、2026-10-04 確認。WebFetch tool 自体は repo のルールに従い続ける)。したがって上の「project 設定からもマージされる」と `settings.local.json` 経由の `www.anthropic.com` は、今は sandbox 化された Bash には効かない。`formulae.brew.sh` / `ghcr.io` は #393 で user 側に移した。brew の bottle は `ghcr.io` から `pkg-containers.githubusercontent.com` へ redirect されるので、このホストも #393 で user 側に足した(sandbox 内の `brew fetch` で実測。足す前は 403 で bottle の取得に失敗した) |
 | WebFetch は締まるか | **締まらない**。schema に "in-process tools such as WebFetch are not gated by this setting" と明記。効くのは **sandbox 化された Bash コマンドだけ** |
-| `excludedCommands` は締まるか | **締まらない**。上の「excludedCommands が『一次防御』を丸ごと外す経路」節のとおり、除外コマンド(`gh` / `brew` / `docker` / `pnpm test:e2e`)を含む行は sandbox 外で走るので `allowedDomains` ごと素通りする。**`gh` は任意ホストへ通る** — 「許可外は決定的に拒否」と要約して読むとここが盲点になる |
+| `excludedCommands` は締まるか | **締まらない**。上の「excludedCommands が『一次防御』を丸ごと外す経路」節のとおり、除外コマンド(`gh` / `brew` / `docker` / `pnpm test:e2e`)だけで成る行(単独行を含む)は sandbox 外で走るので `allowedDomains` ごと素通りする。**`gh` は任意ホストへ通る** — 「許可外は決定的に拒否」と要約して読むとここが盲点になる |
 
 **運用上の注意**: 拒否は確認ダイアログを出さないので、症状は
 「なぜか通信できない」という形でしか現れない。見分けるには
@@ -1805,7 +1852,10 @@ host 側の実ファイル `~/.codex/config.toml`(これが git 追跡外。repo
   出ないことを確認する**だけでよい。出たら件数を問わず仕様変更を疑う)
 - **Claude Code を upgrade したら** — 2b / 2c、および
   「sandbox の excludedCommands が『一次防御』を丸ごと外す経路」節の実測表。
-  とくに **allow 側の 2 行**(`x=$(brew --version); ls ~/.ssh` と subshell / if の行)
+  まず**混在行が sandbox 内に留まること**を、再測定の表と同じ別セッションで
+  `brew --version > /dev/null && touch ~/.sbxprobe-recheck`(内なら `Operation not permitted`)と
+  `gh api user --jq .login | cat`(内なら TLS 失敗)の 2 行で確かめる。外に出たら同節の
+  lint の段落と退役条件を書き直す。そのうえで **allow 側の 2 行**(`x=$(brew --version); ls ~/.ssh` と subshell / if の行)
   を測り直すこと — この 2 つは `guard-sandbox-exclusions.sh` が「単独扱いでよい」と
   判断する根拠で、上流が降下するようになると**黙って escape 経路に変わる**。
   block 側の写し漏れと違い、live に痛みが出ないまま前提だけが false になる。
