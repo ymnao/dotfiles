@@ -740,29 +740,21 @@ server-side の秘密置き場そのもので、Vite でも `VITE_` を持たな
 
 ### credential ディレクトリの Read deny ルール(#495)
 
-`sandbox.filesystem.denyRead` と `sandbox.credentials.files` が覆う
-`~/.ssh` / `~/.gnupg` / `~/.aws` / `~/.config/gcloud` は、上の `.env` と同じく
-**Read tool からは素通りだった**(変更前、Read tool で `~/.ssh` 配下の実在しない名前を
-読むと `File does not exist` が返り、拒否されなかった)。sandbox 層が止めるのは
-Bash 経路だけなので、`permissions.deny` に `Read(~/.ssh/**)` / `Read(~/.gnupg/**)` /
-`Read(~/.aws/**)` / `Read(~/.config/gcloud/**)` を足して tool 層の範囲を sandbox 層に
-揃えた。`~/.gnupg` / `~/.config/gcloud` はこの host には無いが、sandbox 層と同じ
-4 本にそろえている(片方の層にだけ在るエントリを作らない)。
+機構は上の `.env` 節と同じ(sandbox 層は Bash 経路だけを止め、Read tool は
+`permissions.deny` の Read ルールで止める。sandbox 側の既存エントリを消さない理由も同節)。
+ここでは差分だけを残す。`sandbox.filesystem.denyRead` / `sandbox.credentials.files` の
+4 ディレクトリは Read tool から素通りだった(変更前、`~/.ssh` 配下の実在しない名前を
+Read すると `File does not exist` が返った)ので、同じ 4 本を `Read(~/<dir>/**)` の形で
+足した。`~/.gnupg` / `~/.config/gcloud` はこの host に無いが、sandbox 層と範囲を
+そろえるため入れている。
 
-実測(2026-11-13 / Claude Code 2.1.322 / macOS。実在するファイルは読まず、
-すべて実在しない名前で測った):
+実測(2026-11-13 / Claude Code 2.1.322 / macOS。すべて実在しない名前で測った):
 
 | 測ったこと | 結果 |
 |---|---|
-| Read tool で 4 ディレクトリ直下の実在しない名前 | 拒否(`denied by your permission settings`) |
-| Read tool で `~/.ssh/a/b/` 配下の実在しない名前 | 拒否 = `**` は 2 段ネストにもマッチする |
-| Read tool で `~/.env` / 対照の `~/.env.example`(どちらも実在しない) | `~/.env` は拒否、対照は `File does not exist` = 既存の `.env` ルールは変わらず効き、拒否は全面ではない |
-| `claude doctor` | 設定エントリへの警告なし(出た警告は sandbox 内で Keychain に書けない 1 件のみ) |
-
-変更後のセッションの sandbox 設定表示では、`denyRead` に未展開の `~/.ssh` 等 4 本が
-展開済みの 4 本と並んで現れた(`.env` 側と同じく Read deny ルールの取り込み)。
-**Bash 経路を止めている根拠は従来の `sandbox.filesystem.denyRead` の側**なので、
-そちらの 4 本は消さない。
+| Read tool で 4 ディレクトリ直下と `~/.ssh/a/b/` 配下 | 拒否(`denied by your permission settings`)= `**` は 2 段ネストにもマッチする |
+| Read tool で `~/.env` / 対照の `~/.env.example` | `~/.env` は拒否、対照は `File does not exist` = 既存ルールは変わらず効き、拒否は全面ではない |
+| `claude doctor` | 設定エントリへの警告なし |
 
 ### sandbox の excludedCommands が「一次防御」を丸ごと外す経路
 
