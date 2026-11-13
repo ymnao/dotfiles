@@ -517,10 +517,8 @@ issue #289 の「保護をコマンド文字列の静的解析で担い続ける
 
 1. **home の外のプロジェクト** (`/Volumes/…` 等) — `~/*/` は home 直下を起点に
    するので届かない
-2. **excludedCommands にマッチする行** — sandbox ごと外れる(次節)。
-   2.1.321〜2.1.323 で外れるのは**全 sub-command が除外コマンドにマッチする行**だけで、
-   除外でないコマンドが混ざった compound 行は sandbox 内で走る(2026-11-13 実測)。
-   compound 行は `guard-sandbox-exclusions.sh` が止めるが、**単独の除外コマンド**
+2. **excludedCommands にマッチする行** — sandbox ごと外れる(どの行が外れるかは版で
+   変わった。次節の冒頭)。compound 行は `guard-sandbox-exclusions.sh` が止めるが、**単独の除外コマンド**
    (リダイレクト無し、または `2>&1` のような fd 複製だけが付いた行)は
    unsandboxed で走るので hook だけが残る。**ファイルへのリダイレクト
    (`>` / `<`)が付いた単独行は sandbox 内で走る**ので、リダイレクト先の書き込みは
@@ -821,15 +819,15 @@ Bash 経路で 4 ディレクトリのうち `~/.ssh` / `~/.aws` を止めてい
 このセッションからは打てない。そこで scratchpad に sandbox 節だけの project 設定を置き、
 **hook を読まない別セッション**(`claude --setting-sources project`)で 1 行 1 呼び出し、
 書き換え・リトライ無しで打った。内外は `~/` への `touch` と `denyRead` の `ls` の
-成否で判定し、`gh api` の行は TLS の成否で判定した。**3 版で全行の結果が一致した**:
+成否で判定し、`gh api` の行は TLS の成否で判定した。13 行のうち測れた 12 行は
+**3 版で結果が一致した**(残る 1 行は下表の未測定の行):
 
 | 行 | 結果 |
 |---|---|
 | `touch ~/.sbxprobe-494-1`(対照) | `Operation not permitted`(sandbox **内**) |
 | `brew --version > /dev/null && touch ~/.sbxprobe-494-2` | `Operation not permitted`(**内**) |
 | `touch ~/.sbxprobe-494-3; gh --version` / 同じ 2 つを改行区切り | `touch` が `Operation not permitted`(**内**)。`gh --version` は通信しないので内でも版を表示する |
-| `ls ~/.ssh; command gh --version` | `ls` が `Operation not permitted`(**内**) |
-| `ls ~/.aws; FOO='a b' gh --version` / `ls ~/.aws; FOO+=x gh --version` / `ls ~/.aws;<TAB>gh --version` | 同上(**内**) |
+| `ls ~/.ssh; command gh --version` / `ls ~/.aws; FOO='a b' gh --version` / `ls ~/.aws; FOO+=x gh --version` / `ls ~/.aws;<TAB>gh --version` | `ls` が `Operation not permitted`(**内**) |
 | `ls ~/.ssh; g"h" --version` | **未測定** — 測定セッションの auto mode 分類器が 3 版とも拒否した(回避して打ち直していない) |
 | `gh api user --jq .login` | 成功(**外**) |
 | `gh api user --jq .login \| cat` | TLS 失敗(**内**) |
@@ -858,7 +856,6 @@ pin) / gh 2.101.0。issue #360)。sandbox 内の `gh` は TLS 検証で
 上流がなぜそう判定するかは確認していない(`strings` は採っていない)。
 2026-09-04 / 09-06 には同じ形が sandbox 外で走っていた(下の `$TMPDIR` の段落)が、
 その時点の版は記録していないので、どの版で変わったかは分からない。
-compound 行はこの時点では測り直しておらず、2026-11-13 に上の再測定の表で測った。
 
 外に出た行で外れるのは filesystem の `denyRead` / `denyWrite` / `allowWrite` だけでなく、
 `network.allowedDomains` と `credentials.files` / `credentials.envVars` の deny も
@@ -866,8 +863,7 @@ compound 行はこの時点では測り直しておらず、2026-11-13 に上の
 測っているのは上表の filesystem 経路のみ)。2.1.220 時点では、除外を「単独
 コマンドのときだけ」に絞る指定方法は上流に無かった(2026-08-04 実測 —
 `excludedCommands` の schema は `array(string)` で、粒度を指定するフィールドが無い)。
-2.1.321 以降は指定を足さなくても、除外でないコマンドが混ざった行は外に出ない
-(上の再測定の表と上流 docs の引用)。
+現行の挙動は節の冒頭のとおり。
 
 除外コマンドは sandbox 外で走るため、**環境変数の値そのものも sandbox 内と
 一致しない**。`$TMPDIR` は sandbox 内では uid スコープの `/tmp/claude-<uid>`、
@@ -939,11 +935,9 @@ sandbox 外では macOS 本来の `/var/folders/…/T/` に展開される(2026-
 方式を切り替えた直後のレビューでも 2 件見つかっている(上表のタブ字下げと
 `ls >""&gh`。どちらも live 実測で sandbox が外れた)。
 
-**この hook の退役条件**: 当初の条件は「上流に excludedCommands を単独コマンドの
-ときだけ適用するオプションが入ること」だった。防御の側は、2.1.321 時点で
-オプションではなく既定の挙動として満たされている(全 sub-command が一致した行だけが
-外に出る)。それでも hook を外さないのは、上の lint の役割が残るため。lint の役割まで
-要らなくなるのは、`gh` が sandbox 内で動くようになったとき(下の TLS の段落)。
+**この hook の退役条件**: `gh` が sandbox 内で動くようになったとき(下の TLS の段落)。
+防御としての退役条件(上流が除外を単独コマンドに絞ること)は、2.1.321 時点で既定の
+挙動として満たされている。
 
 **根治の候補として `gh` を sandbox 内で動かす道は、2026-09-07 時点でも塞がって
 いる**。Keychain 依存は `GH_TOKEN` で外せる見込みだが、TLS 側は外せなかった —
@@ -978,8 +972,7 @@ proxy の CA 配布側ではなく Go の macOS verifier 側。**`codex` が同�
 `allow-command-substitution-in-compound` / `allow-subshell-in-compound` が
 この前提を pin しているが、pin が見ているのは「hook がその判断を変えていないこと」
 だけで、**上流が降下し始めたかどうかは測っていない**(測れない)。
-2.1.321 以降の挙動の下では、降下し始めても除外でないコマンドが混ざる行は外に
-出ないので、この腐り方が escape になるのは 2.1.212 型の挙動に戻った場合に限られる。
+この腐り方が escape になるのは 2.1.212 型の挙動に戻った場合だけ(上の lint の段落)。
 それを見落とさないために、**Claude Code を更新したら、上表の実測を取り直すこと**
 (測り方は再測定の表の前文。§10 末尾の再確認チェックリスト参照)。
 
@@ -1043,7 +1036,7 @@ TLS 検証も通らない(実測: 上記 OSStatus -26276)ため外せない。�
 未使用は削除根拠にならない。
 
 - regression は `tests/hooks/guard-sandbox-exclusions.cases.jsonl` が pin する。
-  block 側は上表の「sandbox が実際に外れた行」そのものと、粗い判定の代償
+  block 側は 2.1.212 で「sandbox が実際に外れた行」そのもの(現行版では lint として止める行)と、粗い判定の代償
   (コード中の文字列言及)。allow 側は既存 skill が使う bare な呼び方、
   シェルコメント内の言及、旧実装が hang していた形
 - 上記の hook テストは**隔離 HOME で走る**ため hook 内の組み込み既定リストしか
@@ -1859,8 +1852,10 @@ host 側の実ファイル `~/.codex/config.toml`(これが git 追跡外。repo
   出ないことを確認する**だけでよい。出たら件数を問わず仕様変更を疑う)
 - **Claude Code を upgrade したら** — 2b / 2c、および
   「sandbox の excludedCommands が『一次防御』を丸ごと外す経路」節の実測表。
-  まず**混在行が sandbox 内に留まること**を再測定の表と同じ手順で確かめる(2.1.212 型に
-  戻っていたら、同節の lint の扱いと退役条件を書き直す)。そのうえで **allow 側の 2 行**(`x=$(brew --version); ls ~/.ssh` と subshell / if の行)
+  まず**混在行が sandbox 内に留まること**を、再測定の表と同じ別セッションで
+  `brew --version > /dev/null && touch ~/.sbxprobe-recheck`(内なら `Operation not permitted`)と
+  `gh api user --jq .login | cat`(内なら TLS 失敗)の 2 行で確かめる。外に出たら同節の
+  lint の段落と退役条件を書き直す。そのうえで **allow 側の 2 行**(`x=$(brew --version); ls ~/.ssh` と subshell / if の行)
   を測り直すこと — この 2 つは `guard-sandbox-exclusions.sh` が「単独扱いでよい」と
   判断する根拠で、上流が降下するようになると**黙って escape 経路に変わる**。
   block 側の写し漏れと違い、live に痛みが出ないまま前提だけが false になる。
