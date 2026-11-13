@@ -40,7 +40,11 @@
       "Read(~/*/**/.env)",
       "Read(~/*/**/.env.local)",
       "Read(~/.env)",
-      "Read(~/.env.local)"
+      "Read(~/.env.local)",
+      "Read(~/.ssh/**)",
+      "Read(~/.gnupg/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.config/gcloud/**)"
     ],
     "defaultMode": "auto"
   },
