@@ -738,6 +738,35 @@ server-side の秘密置き場そのもので、Vite でも `VITE_` を持たな
 結論が変わるかは中身次第なので、**この節の `find` を打ち直す契機**を §9 の
 再評価条件に書いてある。
 
+### credential ディレクトリの Read deny ルール(#495)
+
+機構は上の「denyRead の実測」節の `.env` と同じ(sandbox 層は Bash 経路だけを止め、
+Read tool は `permissions.deny` の Read ルールで止める。sandbox 側の既存エントリを消さない
+理由も同節)。
+ここでは差分だけを残す。`sandbox.filesystem.denyRead` / `sandbox.credentials.files` の
+4 ディレクトリには Read ルールが無く、変更前は `~/.ssh` 配下の実在しない名前を Read
+すると `File does not exist` が返った(中身が返るかは未測定。実在ファイルは読まない方針)。
+同じ 4 本を `Read(~/<dir>/**)` の形で足した。`~/.gnupg` / `~/.config/gcloud` はこの host に
+無いが、sandbox 層と範囲をそろえるため含めた。Read deny ルールは Edit / Write tool も
+同じ path で止める(code.claude.com/docs/en/permissions、2026-11-13 取得。NotebookEdit は
+対象外。Write の新規作成は同節の 2026-09-26 の表で実測)が、
+4 ディレクトリでの書き込み側は未測定。
+
+実測(2026-11-13 / Claude Code 2.1.322 / macOS。すべて実在しない名前で測った):
+
+| 測ったこと | 結果 |
+|---|---|
+| Read tool で 4 ディレクトリ直下と `~/.ssh/a/b/` 配下 | 拒否(`denied by your permission settings`)= `**` は 2 段ネストにもマッチする |
+| Read tool で隣の名前 `~/.ssh-zz-…/x` / `~/.config/zz-…` | `File does not exist` = 新しい 4 本は隣を巻き込まない |
+| Read tool で `~/.env` / 対照の `~/.env.example` | `~/.env` は拒否、対照は `File does not exist`(既存 4 本のうち測ったのは `Read(~/.env)` だけ) |
+| Bash の `cat ~/.ssh/<実在しない名前>` | メインセッションでは `Permission to use Bash with command … has been denied.`、code-reviewer サブエージェントでは `No such file or directory`。拒否した層は文言から特定できない(`defaultMode: auto` の分類器の可能性も残る) |
+| セッションの sandbox 設定表示(変更前後) | 変更後は `denyRead` に未展開の `~/.ssh` 等 4 本が展開済みの 4 本と並んだ(Read ルールの取り込み) |
+| `claude doctor` | 設定エントリへの警告なし(無効なエントリで警告が出るかの対照は取っていない) |
+
+Bash 経路で 4 ディレクトリを止めている根拠は、次節の表にある `ls ~/.ssh` / `ls ~/.aws` の
+`Operation not permitted`(2026-08-04 / 2.1.212、sandbox 層)。2.1.322 では測り直していない
+(実在しない名前では sandbox が無い場合と区別できない)。
+
 ### sandbox の excludedCommands が「一次防御」を丸ごと外す経路
 
 上表の「一次: sandbox」は、**同じ Bash 呼び出しに excludedCommands マッチが
