@@ -9,8 +9,8 @@
 #
 # block ケースの多くは、レビュー中に **実 sandbox で境界が外れることを live 実測した
 # 入力**そのもの (2026-08-04 / Claude Code 2.1.212)。reason に「実測」と書いたものが
-# それで、それ以外は判定ロジックの pin。2.1.321〜2.1.323 で測り直した行は sandbox 内で
-# 走った (2026-11-13。測り直していない行もある)。docs/ai-operations.md §10 の実測表を参照。
+# それで、それ以外は判定ロジックの pin。2.1.321〜2.1.323 で測り直した行 (どれも混在行) は
+# sandbox 内で走った (2026-11-13。測り直していない行もある)。docs/ai-operations.md §10 の実測表を参照。
 
 # --- 2.1.212 の実測で sandbox が外れた形 ---
 {"name":"escape-brew-prefix","expect":"block","command":"brew --version > /dev/null && touch {{HOME}}/x.tmp","reason":"実測: 行全体が sandbox 外で走り ~/ への write が通った"}
