@@ -30,7 +30,8 @@ upstream 設定の書き込みだけが `error: unable to write upstream branch 
 sandbox の denyWithinAllow に入っているパス (settings 系・skills 系・hooks 系・
 agents / rules など、`~/.claude/` 配下へ symlink する設定資産。完全な列挙は harness の
 Filesystem policy が正本) は、Bash 経由では書き込めない (git の unlink を含む。
-Edit / Write tool では書ける)。そのため、これらのパスの中身を書き換える checkout /
+Edit / Write tool では書ける。`claude/settings.json` は ask ルールで確認を求められる。
+docs/ai-operations.md の #499 の節)。そのため、これらのパスの中身を書き換える checkout /
 pull / merge は失敗するか、半端な状態を残す (以下の各節)。
 
 ## remote 追跡ブランチから `checkout -b` / `switch -c` で切る: config を書かない 2 段階

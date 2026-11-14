@@ -41,7 +41,8 @@
 # 任意の場所の .claude/settings.json / .claude/settings.local.json。
 # Why not Claude Code の Edit / Write も対象にする: この hook は Claude 側にも配線されて
 # おり、repo の claude/settings.json を Claude が編集する通常の作業まで止まる
-# (Claude の Edit 経路は docs/ai-operations.md の #212 の既知残余のまま)。
+# (~/.claude/settings.json への Claude の Edit は permissions.ask が確認を求める。project
+# settings は止めていない。docs/ai-operations.md の #499 の節)。
 #
 # Cymulate notify エスケープ（未修正）対策。
 #
