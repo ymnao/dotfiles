@@ -353,7 +353,7 @@ codex CLI の `~/.codex/config.toml` は **sandbox 境界を越えて host 側�
 
 | 層 | 実装 | 効くもの | 効かないもの |
 |---|---|---|---|
-| 一次: sandbox | `claude/settings.json` の `.sandbox.filesystem.denyWrite` に `~/.codex/config.toml`(allowWrite の `~/.codex` に対する deny-within-allow) | **Bash tool 経由**の全書き込み経路(リダイレクト / write コマンド / `sed -i` / `mv`)。`cd ~/.codex && printf x > config.toml` のように hook を回避する形も止まる | **Edit / Write / MultiEdit / apply_patch の file 編集 tool には適用されない**(実測: deny 対象の `claude/settings.json` は Bash append は拒否されるが Edit tool では書き換えられた。Claude Code の file 編集 tool は #499 以降 `permissions.deny` の Edit ルールが止める。下の「file 編集 tool で作業ディレクトリ外の設定を書き換えさせない」節) |
+| 一次: sandbox | `claude/settings.json` の `.sandbox.filesystem.denyWrite` に `~/.codex/config.toml`(allowWrite の `~/.codex` に対する deny-within-allow) | **Bash tool 経由**の全書き込み経路(リダイレクト / write コマンド / `sed -i` / `mv`)。`cd ~/.codex && printf x > config.toml` のように hook を回避する形も止まる | **Edit / Write / MultiEdit / apply_patch の file 編集 tool には適用されない**(実測: deny 対象の `claude/settings.json` は Bash append は拒否されるが Edit tool では書き換えられた。Claude Code の file 編集 tool は #499 以降 Edit deny が止める。下の #499 の節) |
 | 一次: sandbox (プロジェクト配下) | 同 `denyWrite` に `~/*/**/.codex/**`(2026-08-08 追加) | home 直下 1 階層の作業ディレクトリ配下で `.codex/` を deny。ディレクトリが存在しなくても `mkdir` も `mv` (rename) も拒否される。**測れた範囲は下記節に明記** | 4 経路(home の外 / excludedCommands で sandbox ごと外れる行 / file 編集 tool / この設定自体の改ざん)。内訳と担当は下記「denyWrite のパス表記」節の末尾に 1 箇所だけ書く |
 | 二次: hook (Bash) | `agents/hooks/block-dangerous-commands.sh` の「書き込み文脈 + `.codex` component」判定。**cwd 配下については `agents/hooks/guard-codex-dir.sh` も Bash matcher に配線されており**、command 文字列から token を抽出して cwd 内の `.codex/` を止める(読み取りも止まる) | tilde / `$HOME` / 絶対パス表記のいずれでも、path token に `.codex` component が現れる書き込みを block(block-dangerous 側は読み取りは allow のまま) | `cd ~/.codex && printf x > config.toml` のように **書き込み segment 側に `.codex` component が現れない形**(一次防御が担当) |
 | 二次: hook (file 編集) | `agents/hooks/guard-codex-dir.sh` の 3 判定: `is_protected_project_path`(cwd 配下)/ `is_protected_home_codex_config`(`~/.codex/config.toml` 1 ファイル)/ `is_protected_home_project_codex_path`(home 配下の別プロジェクト。2026-08-09 追加 / #291) | Edit / Write / MultiEdit / NotebookEdit / apply_patch が (a) cwd 配下の `.codex/`、(b) `~/.codex/config.toml`、(c) `~/<任意のディレクトリ>/…/.codex/` 配下 を指す場合。tilde / `$HOME` / `${HOME}` / 絶対パス / `..` 経由 / 大文字表記を正規化し、**symlink はこの経路では無条件に解決**してから比較する(gate 任せだと、名前に `codex` を含まない symlink + `config.toml` 以外の leaf が素通りする。2026-08-09 に対照付きで実測して塞いだ) | `~/.codex/` 配下の他ファイル(`sessions/` / `auth.json` 等は codex CLI が正当に書くため意図的に allow)、および **home の外**の `.codex/`(`/tmp` / `/Volumes` 等。下記参照) |
@@ -550,10 +550,8 @@ issue #289 の「保護をコマンド文字列の静的解析で担い続ける
    **経路 1 (home の外) ではこの形が素通りする**
 4. **この deny エントリ自体の改ざん** — `claude/settings.json` は
    Edit / Write tool で書き換えられた(sandbox の denyWrite は Bash 経路にしか
-   効かない。表の 1 行目の実測)。Claude Code の file 編集 tool は #499 以降
-   `permissions.deny` の `Edit(~/.claude/settings.json)` が止める(下の「file 編集 tool で
-   作業ディレクトリ外の設定を書き換えさせない」節。codex の apply_patch は
-   `guard-codex-dir.sh` が止める)。エントリを消してから Bash で書く並びでは
+   効かない。表の 1 行目の実測)。#499 以降は Claude Code の file 編集 tool を
+   Edit deny が止める(下の #499 の節)。エントリを消してから Bash で書く並びでは
    防御が経路 2 と同じ状態(cwd 内は hook 2 つ、cwd 外は
    `block-dangerous-commands.sh` のみ)に戻る。
    `tests/integrity/` の pin は `make test` / CI / Stop gate での**事後**検出で、
@@ -743,9 +741,8 @@ server-side の秘密置き場そのもので、Vite でも `VITE_` を持たな
 
 ### file 編集 tool で作業ディレクトリ外の設定を書き換えさせない — Edit deny を採る(#499)
 
-sandbox の `denyWrite` は Bash 経路にしか効かない(§10 冒頭の表の 1 行目)ので、
-Edit / Write tool からは `~/.claude/settings.json` や shell の rc を書き換えられた。
-塞ぎ方は 2 案あった。
+§10 冒頭の表の 1 行目のとおり、Edit / Write tool には sandbox の `denyWrite` が効かず、
+`~/.claude/settings.json` や shell の rc を書き換えられた。塞ぎ方は 2 案あった。
 
 - A: `permissions.blockWritesOutsideWorkingDirectories: true`(v2.1.314 以上)。作業
   ディレクトリの外への Write / Edit / NotebookEdit を全 permission mode で拒否する
@@ -756,29 +753,28 @@ Edit / Write tool からは `~/.claude/settings.json` や shell の rc を書き
 
 - 公式の保護パス一覧(permission-modes ページの "Protected paths")のうち、home 直下に
   実在する実ファイル: `~/.zshrc` `~/.zprofile` `~/.bashrc` `~/.bash_profile` `~/.profile`
-  `~/.gitconfig` `~/.claude.json`
+  `~/.gitconfig` `~/.claude.json`。docs によれば、保護パスへの書き込みも auto mode では
+  分類器が判断するだけで、確実に止めるには deny を足す(2026-11-14 取得。要約で読み、
+  逐語は未確認)
 - `~/.claude/settings.json`(repo への symlink。repo 側の `claude/settings.json` の Edit も
   止まるが、settings は user が手で編集する運用なので副作用にならない)
 - `~/.codex/config.toml`(一覧には無いが、codex で同じ役割のファイル)
 
-docs によれば、保護パスへの書き込みも auto mode では分類器が判断するだけで、
-確実に止めたいなら deny を足すよう書かれている(2026-11-14 取得。一覧とこの記述は
-取得した要約で読んだもので、逐語では確かめていない)。
+**入れなかったもの**: ディレクトリの symlink(`~/.claude/hooks` `skills` `rules` `agents`、
+`~/.config/fish` 等)と、repo 側を agent が直すファイルの symlink(`~/.npmrc` → `npm/npmrc`、
+`~/.config/git/config` → `git/config`)。symlink への deny は repo 側の実体まで止めるので
+(下の B-2 / B-3)、dotfiles を直す普段の作業が止まる。ディレクトリ側は引き続き下の
+「hooks 系ファイルの防御層」節の検知層が受ける。
 
-入れなかったもの:
-
-- **ディレクトリの symlink**(`~/.claude/hooks` `skills` `rules` `agents`、`~/.config/fish` 等)。
-  deny が repo 側の実体にまで効き、dotfiles を直す普段の作業が止まる(下の実測 B-3)。
-  この経路は引き続き下の「hooks 系ファイルの防御層」節の検知層が受ける
-- **ファイルの symlink で、repo 側を agent が直すもの**(`~/.npmrc` → `npm/npmrc`、
-  `~/.config/git/config` → `git/config`)。理由は同じ(実測 B-2)
-
-A を見送った理由: 作業ディレクトリの外は全部止まるので、別 repo で起動したセッションから
+**A を見送った理由**: 作業ディレクトリの外は全部止まるので、別 repo で起動したセッションから
 dotfiles や他 repo を直す作業も止まる。また、どのスコープの `true` も優先されるので、
 一度入れると全 settings から消すまで緩められない(settings docs の例外表)。
 
-実測(2026-11-14 / ターミナルの Claude Code 2.1.323 / macOS。A と B は
-`claude --settings <一時ファイル>` で 1 セッションずつ、dotfiles を cwd にして測った):
+実測(2026-11-14 / macOS)。A / B はターミナルの Claude Code 2.1.323 で
+`claude --settings <一時ファイル>` を 1 セッションずつ、dotfiles を cwd にして測った。
+「設定後」は 9 本を入れた後の Desktop のセッション(CLI の版は未確認)で、存在しない文字列を
+置き換える Edit を投げた(deny が効いていなくてもファイルは変わらない形)。拒否の文言は
+B と設定後のすべてで `File is in a directory that is denied by your permission settings.`。
 
 | 測ったこと | 結果 |
 |---|---|
@@ -786,37 +782,27 @@ dotfiles や他 repo を直す作業も止まる。また、どのスコープ�
 | A-2: Write tool でこのプロジェクトの auto memory(`~/.claude/projects/<この repo>/memory/`) | 成功 = auto memory は例外 |
 | A-3: Edit tool で `~/.claude/statusline.sh`(repo への symlink) | 拒否 = symlink のパスで照合される(実体は作業ディレクトリ内) |
 | A-4: Edit tool で `claude/statusline.sh`(実体) | 成功 |
-| B-1: `Edit(~/.claude/statusline.sh)` deny 下で、同じパスを Edit | 拒否 |
-| B-2: 同じ deny 下で、repo 側の `claude/statusline.sh` を Edit | **拒否** |
-| B-3: `Edit(~/.claude/rules/**)` deny 下で、repo 側の `claude/rules/written-claims.md` を Edit | 拒否。ディレクトリの symlink への deny も実体まで止める |
+| B-1: `Edit(~/.claude/statusline.sh)` と `Edit(~/.claude/rules/**)` の deny 下で、`~/.claude/statusline.sh` を Edit | 拒否 |
+| B-2: 同じ deny 下で、repo 側の `claude/statusline.sh` を Edit | **拒否**(どちらのルールが止めたかはこれだけでは分からない) |
+| B-3: 同じ deny 下で、repo 側の `claude/rules/written-claims.md` を Edit | 拒否 = ディレクトリの symlink への deny は実体まで止める |
+| 設定後: 9 本それぞれ(`~/.claude/settings.json` は symlink のパスと repo 側の実体パスの両方) | すべて拒否。repo 側の `claude/settings.json` に当たるルールは `Edit(~/.claude/settings.json)` だけなので、ファイルの symlink への deny も実体まで止める |
+| 設定後の対照: `README.md` と `~/.claude/statusline.sh`(ルールの無い symlink) | deny を通り `String to replace not found` |
 
 B-2 は docs の「要求されたパスか、解決先が一致すれば deny」からは予想できない結果だった
-(repo 側のパスはどちらも一致しない)。B の一時 settings には B-1 と B-3 の 2 本を同時に
-入れていたので、B-2 だけではどちらのルールが止めたか分からない。ファイルの symlink への
-deny が実体まで止めることは、下の設定後の確認で `Edit(~/.claude/settings.json)` が repo 側の
-`claude/settings.json` を止めたことで確かめた(9 本のうち、このファイルに当たるルールは
-その 1 本だけ)。文言はどれも
-`File is in a directory that is denied by your permission settings.`。
-
-設定を入れた後、Desktop のセッション(CLI の版は未確認)で、9 本それぞれに
-存在しない文字列を置き換える Edit を投げた(deny が効いていなくてもファイルは変わらない形)。
-9 本とも、上と同じ文言で拒否された。`~/.claude/settings.json` は symlink のパスと
-repo 側の実体パスの両方を測った。対照の `README.md` と `~/.claude/statusline.sh`
-(ルールの無い symlink)は deny を通り、`String to replace not found` まで進んだ。
-**Write tool と NotebookEdit が止まるかは docs の記述だけで、測っていない**(許されたら
-ファイルを上書きしてしまうため)。
+(repo 側のパスはどちらも一致しない)。**Write tool と NotebookEdit が止まるかは docs の記述
+だけで、測っていない**(許されたらファイルを上書きしてしまうため)。Edit ルールが Bash の
+書き込みにどう効くかも測っていない(Bash 経路は従来どおり sandbox が担当する)。
 
 位置づけの変化:
 
 - `~/.codex/config.toml` と `~/.claude.json` は、`guard-codex-dir.sh` だけが守る状態から、
   hook と deny の二重になった
 - Claude Code の Edit / Write で `claude/settings.json` を書き換えられる経路(#212 の
-  既知の残余)は閉じた。ただし、任意の場所の `.claude/settings.json`(project settings)は
+  既知の残余)は閉じた。任意の場所の `.claude/settings.json`(project settings)は
   Claude 側では止めていない
-- Bash 経路は従来どおり sandbox が担当する。Edit ルールが Bash の書き込みにどう効くかは
-  測っていない
-- security docs は、セッション中の settings の変更を `ConfigChange` hook で監査・遮断する形も
-  勧めている。hook を 1 本足す別の設計なので、ここでは入れていない
+
+security docs は、セッション中の settings の変更を `ConfigChange` hook で監査・遮断する形も
+勧めている。hook を 1 本足す別の設計なので、ここでは入れていない。
 
 ### credential ディレクトリの Read deny ルール(#495)
 
@@ -1375,9 +1361,8 @@ tightening).`。user 自身の設定が読まれ、repo 側は**締める方向�
 従い、ここから先は根拠に使わない。
 
 なお `claude/settings.json` は user scope の実体で、#499 までは **agent の Edit tool から
-書き換えられた**(sandbox の denyWrite は Bash 経路にしか効かない — #212)。#499 以降は
-`permissions.deny` の `Edit(~/.claude/settings.json)` が Claude Code の file 編集 tool を
-止めるが、この deny 自体も user settings にあり、user が外せば戻る。
+書き換えられた**(#212。閉じた経緯は §10 の #499 の節)。閉じている deny 自体も
+user settings にある。
 `refuse` を agent が緩められない位置に置きたいなら managed 正本へ移す必要があるが、
 現状は入れていない。
 
@@ -1576,8 +1561,7 @@ organization's managed settings (disableSideloadFlags).
 > Project settings in `.claude/settings.json` and `.claude/settings.local.json`
 > can't, so a checked-out project can't switch filesystem isolation off.
 
-このうち user 設定は、#499 までは agent の Edit tool から書き換えられた
-(#499 以降は `Edit(~/.claude/settings.json)` の deny が止める)
+このうち user 設定は、#499 までは agent の Edit tool から書き換えられた(§10 の #499 の節)
 (§10「[managed settings で実際に enforce する](#managed-settings-で実際に-enforce-するuser-操作)」)。
 **この経路が閉じることは docs の記述に拠っており、実測はしていない** —
 user 設定に直接 `filesystem.disabled` を書いた状態は試していない。
@@ -2140,9 +2124,8 @@ apply_patch は失敗したが、codex は自分で symlink を辿って実体�
 修正後の 2026-09-30 に同じ条件で実体のパス(`dotfiles/claude/settings.json`)への追記を
 依頼すると、codex (0.157.1) の apply_patch はこの hook の #381 のメッセージで拒否され、
 ファイルは変わらなかった(回帰は `tests/hooks/guard-codex-dir.cases.jsonl` が hook 単体で見る)。
-Claude Code の Edit / Write はこの hook の対象外。`~/.claude/settings.json`(と repo 側の
-実体)は、#499 以降 `permissions.deny` の Edit ルールが止める。任意の場所の
-`.claude/settings.json` は Claude 側では止めていない。
+Claude Code の Edit / Write はこの hook の対象外(`~/.claude/settings.json` は Edit deny が
+止める。§10 の #499 の節)。
 
 **cwd=この repo の codex は、hook 実行面を permission profile で書けなくしている(#385)。**
 この hook は apply_patch の名前しか見ないので、codex の Bash 経路(`printf >> claude/settings.json`
