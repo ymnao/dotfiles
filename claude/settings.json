@@ -44,7 +44,16 @@
       "Read(~/.ssh/**)",
       "Read(~/.gnupg/**)",
       "Read(~/.aws/**)",
-      "Read(~/.config/gcloud/**)"
+      "Read(~/.config/gcloud/**)",
+      "Edit(~/.zshrc)",
+      "Edit(~/.zprofile)",
+      "Edit(~/.bashrc)",
+      "Edit(~/.bash_profile)",
+      "Edit(~/.profile)",
+      "Edit(~/.gitconfig)",
+      "Edit(~/.claude.json)",
+      "Edit(~/.claude/settings.json)",
+      "Edit(~/.codex/config.toml)"
     ],
     "defaultMode": "auto"
   },
