@@ -11,7 +11,8 @@ paths:
 
 - **`~/.codex/config.toml` への書き込みは全経路で禁止**。Bash 経路は sandbox の
   `denyWrite` + `block-dangerous-commands.sh` が、Edit / Write / apply_patch の
-  file 編集 tool 経路は `guard-codex-dir.sh` が block する。`notify` /
+  file 編集 tool 経路は `guard-codex-dir.sh` と、Claude Code では `permissions.deny` の
+  `Edit(~/.codex/config.toml)` も block する。`notify` /
   `mcp_servers` / `hooks` / `shell_environment_policy` が host 側の任意コマンド
   実行に繋がるため (issue #190)。**読み取りは許可されている**
 - **`scripts/codex-merge-config.sh` を agent から実行しない**。sandbox の

@@ -47,13 +47,16 @@
       "Read(~/.config/gcloud/**)",
       "Edit(~/.zshrc)",
       "Edit(~/.zprofile)",
+      "Edit(~/.zshenv)",
       "Edit(~/.bashrc)",
       "Edit(~/.bash_profile)",
       "Edit(~/.profile)",
       "Edit(~/.gitconfig)",
       "Edit(~/.claude.json)",
-      "Edit(~/.claude/settings.json)",
       "Edit(~/.codex/config.toml)"
+    ],
+    "ask": [
+      "Edit(~/.claude/settings.json)"
     ],
     "defaultMode": "auto"
   },

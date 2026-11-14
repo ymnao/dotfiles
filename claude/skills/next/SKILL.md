@@ -100,7 +100,8 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
         (locked path が数個に収まらないなら user Terminal に依頼する)
      2. 各 locked path の目的内容を `git show <new>:<path>` で取り出し、
         Write / Edit tool で working tree に反映する
-        (Bash 経路は unlink できないが file 編集 tool は通る)
+        (Bash 経路は unlink できないが file 編集 tool は通る。`claude/settings.json` は
+        確認画面が出るので user に許可してもらう)
      3. **`git diff <new>` が空**であることを確認する
         — これが「working tree が stale でない」ことの実測で、
         この確認を飛ばすと上記の禁止手順と同じ事故になる
