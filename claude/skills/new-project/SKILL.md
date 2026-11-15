@@ -11,9 +11,10 @@ description: 個人開発を新しく始めるときに、調査 → GitHub repo
 - **起動場所**: 新しい repo を置く親ディレクトリ (例: `~/development`) で起動する。
   repo は cwd の下に clone する。`check` 以外で cwd が git の作業ツリーの中なら
   (`git rev-parse --is-inside-work-tree` が成功したら) 止める — 既存 repo への後付けは対象外。
-  `check` は対象 repo の作業ツリーの中で起動する
+  `check` は対象 repo の作業ツリーの中で起動する。repo 名のフォルダが git 未初期化で既にある
+  (HANDOFF.md などだけ置いてある) ときは、そのフォルダで起動して step 2 の「既存フォルダの場合」に従う
 - `<repo-dir>` は新しい repo の作業ツリーの**絶対パス** (`pwd` で得た親ディレクトリ + `/<name>`。
-  `check` 単独では `git rev-parse --show-toplevel` の値) で、以後はリテラルで埋める。相対パスに
+  既存フォルダでは `pwd` の値。`check` 単独では `git rev-parse --show-toplevel` の値) で、以後はリテラルで埋める。相対パスに
   しないのは、Bash tool の cwd が呼び出しをまたいで残り、途中で `cd` すると指す先がずれるため
 - `gh` は 1 回の Bash 呼び出しに 1 コマンドだけ書き、`&&` / `;` / パイプ / コマンド置換 /
   リダイレクトに混ぜない。加工は `--jq`、対象 repo は `--repo <owner>/<name>` をリテラルで渡す。
@@ -60,6 +61,19 @@ description: 個人開発を新しく始めるときに、調査 → GitHub repo
 
 - 出力された URL の `<owner>/<name>` を控える。default branch の名前 (以下 `<branch>`) は
   clone した直後の `git -C <repo-dir> branch --show-current` で控える
+
+**既存フォルダの場合**: `--clone` を外して `gh repo create <name> --private --gitignore <gitignore 名>`
+を打つ (`--source` は `--gitignore` と併用できないので使わない。2026-11-15 実測)。`<branch>` は
+`gh repo view <owner>/<name> --json defaultBranchRef --jq .defaultBranchRef.name` で控える。
+sandbox 内では `git init` が完走しない (`<dotfiles>/docs/sandbox-git.md`) ので、次の行は
+user に fish で打ってもらう (`<url>` は出力された URL):
+
+```fish
+cd "<repo-dir>"; and git init -b <branch>; and git remote add origin <url>; and git pull origin <branch>
+```
+
+HANDOFF.md はグローバル gitignore でコミットされないので、残したい内容は step 3 で
+README / CLAUDE.md / docs に、作業項目は step 7 の issue に移す
 
 ### 3. 初期ファイル (main への直接 push はこの 1 回だけ)
 
