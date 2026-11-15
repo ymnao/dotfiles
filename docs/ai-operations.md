@@ -30,7 +30,7 @@ fail-loud になる場所の版数固定はこの規約の対象外**(eval 実�
 | **plan 立案**(非自明タスク) | **Opus 世代(メイン)** | メインと同じ(難所は上げる) | `/dev` step 2 の変更ファイル・実装手順・考慮点の立案。事前調査をしたメインが委譲せずに書く(下記) |
 | 並列 fan-out(中軽度並列) | Sonnet 世代 | high | /simplify の観点別 finder、多点調査 |
 | 独立第二意見(別モデル系統) | Fable 世代など | xhigh | fresh context のレビュー、難しい設計判断 |
-| 探索・情報収集 | Haiku 世代 | - | 軽い調査・ファイル探索 |
+| 探索・情報収集 | Haiku 世代 | subagent の既定 (high。下げる指定はしていない) | 軽い調査・ファイル探索 |
 
 **plan 立案を Fable 委譲からメインに切り替えた (2026-10-15、issue #456、user 判断)**。
 根拠は 2 つ: user が実際の `/dev` で見た plan の質と、委譲すると事前調査の事実を
@@ -111,7 +111,7 @@ agent の Bash sandbox 内で `codex-review` が回るかどうか、回すた�
   ところだけ、Agent ツールの `effort` パラメータか、サブエージェント定義
   (`claude/agents/*.md`) の frontmatter `effort:` で指定する。Agent ツールは user か
   CLAUDE.md・skill が明示したときだけ `effort` を付けるので、委譲する skill の
-  本文にパラメータとして書く (code-reviewer は frontmatter の `xhigh` で足りるので書かない)。
+  本文にパラメータとして書く (code-reviewer は frontmatter で足りるので書かない)。
   版ごとの挙動 (subagent のログ
   `~/.claude/projects/<proj>/<session>/subagents/agent-<id>.jsonl` の `"effort"` で測る。
   `model` と違い、effort はこの方法でセッション内から確かめられる):
