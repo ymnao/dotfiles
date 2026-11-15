@@ -106,20 +106,32 @@ agent の Bash sandbox 内で `codex-review` が回るかどうか、回すた�
 - 切り替え: `/model`、Agent ツールの `model` パラメータ
   (例: `Agent(subagent_type: "general-purpose", model: "sonnet", prompt: ...)`
   独立第二意見は `model: "fable"`)
-- effort の指定: Agent ツールの `effort` パラメータか、サブエージェント定義
-  (`claude/agents/*.md`) の frontmatter `effort:`。Agent ツールは user か
+- effort の指定: **subagent の既定は `claude/settings.json` の `env` に置いた
+  `CLAUDE_CODE_SUBAGENT_EFFORT=high`** (表の並列 fan-out の値)。既定と違う値が要る
+  ところだけ、Agent ツールの `effort` パラメータか、サブエージェント定義
+  (`claude/agents/*.md`) の frontmatter `effort:` で指定する。Agent ツールは user か
   CLAUDE.md・skill が明示したときだけ `effort` を付けるので、委譲する skill の
-  本文にパラメータとして書く (code-reviewer は frontmatter で足りるので書かない)。
-  **どちらも無い subagent はセッションの effort を継ぐ**ので、表の値は指定した箇所
-  でしか保証されない。実測 (2026-10-12 / `claude` 2.1.295、subagent のログ
-  `~/.claude/projects/<proj>/<session>/subagents/agent-<id>.jsonl` の `"effort"`):
-  指定した subagent は指定値 (パラメータの `high`、frontmatter の `xhigh`)、未指定は
-  セッションの値 (`medium`) だった。`model` と違い、frontmatter の `effort` は
-  この方法でセッション内から確かめられる
+  本文にパラメータとして書く (code-reviewer は frontmatter の `xhigh` で足りるので書かない)。
+  版ごとの挙動 (subagent のログ
+  `~/.claude/projects/<proj>/<session>/subagents/agent-<id>.jsonl` の `"effort"` で測る。
+  `model` と違い、effort はこの方法でセッション内から確かめられる):
+  - 2.1.316 より前: どちらも無い subagent はセッションの effort を継いでいた。
+    実測 (2026-10-12 / 2.1.295): 指定した subagent は指定値 (パラメータの `high`、
+    frontmatter の `xhigh`)、未指定はセッションの値 (`medium`)
+  - 2.1.316: `CLAUDE_CODE_SUBAGENT_EFFORT` が追加された。CHANGELOG の文言は、ほかに
+    effort を指定するものが無い subagent がセッションの値の代わりにこの値で動く
+  - 2.1.317 以降: 本体と別モデルの subagent は、セッションの値ではなくそのモデルの
+    保存値 (`modelSettings`) か既定値で動く (CHANGELOG)。
+    実測 (2026-11-15 / 2.1.325): env 無しでは、別モデルの subagent はモデルの既定値の
+    `medium` だった (Sonnet の general-purpose 8 本、Sonnet の Explore 5 本、Haiku の
+    web-fetch)。frontmatter の code-reviewer (Fable) は `xhigh` のまま。
+    env に `high` を付けて起動した CLI セッション (本体は Fable 5.2 の `medium`) では、
+    Sonnet の general-purpose と Opus で動いた Explore が各 1 本とも `high` だった。
+    env はモデルの既定値より優先される
 - メインの effort: **settings では指定せず、モデルの既定 (Opus 5.5 は `medium`、
   公式 docs の model-config) で動かす**。独立第二意見の委譲は上のとおり
   呼び出し側で effort を明示しているので、メインを上げなくても表の値で動く (明示の
-  無い `/simplify` の finder などはセッションの値を継ぐ)。
+  無い `/simplify` の finder などは上の env の `high`)。
   難所だけ上げる: CLI は `/effort` のスライダーで `s` (そのセッションだけ)、
   デスクトップアプリはセッションのピッカー。`/effort` を `Enter` で確定すると
   `modelSettings` に保存され (同 model-config)、`~/.claude/settings.json` は symlink
