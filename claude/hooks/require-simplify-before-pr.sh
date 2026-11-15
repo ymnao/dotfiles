@@ -25,7 +25,7 @@ command -v jq &>/dev/null || exit 0
 command=$(printf '%s\n' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)
 [[ -z "$command" ]] && exit 0
 
-# command 位置の判定は verify-ci-before-pr.sh と同じ式に揃える
+# command 位置の判定は verify-ci-before-pr.sh と同じ式に揃える (下の jq の PR_RE も同じ)
 if ! printf '%s\n' "$command" \
   | grep -qE '(^|[;&|({`[:space:]/\])([A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*[[:space:]]+)*gh[[:space:]]+pr[[:space:]]+(create|new)'; then
   exit 0
@@ -35,42 +35,36 @@ transcript=$(printf '%s\n' "$input" | jq -r '.transcript_path // empty' 2>/dev/n
 [[ -n "$transcript" && -f "$transcript" && -r "$transcript" ]] || exit 0
 
 # 前の PR 作成の成否は tool_result の本文に PR の URL があるかで見る。is_error だけだと
-# `grep "gh pr create"` のような言及だけのコマンドの成功もリセットに数えてしまう
+# PR を作らずに成功したコマンドもリセットに数えてしまう
 # Why not `fromjson?` を外す: 書き込み途中の末尾行や壊れた行で全体が落ちないようにする
-verdict=$(jq -Rrn '
-  def texts: if type == "string" then . elif type == "array" then map(.text? // "" | strings) | join("\n") else "" end;
-  def skill_name: tostring | split(":") | last;
-  reduce (inputs | fromjson? | select(type == "object" and (.isSidechain // false) != true)) as $e
-    ({simplify: false, dependabot: false, pr_ids: {}};
-      ($e.message.content // null) as $c
-      | if $e.type == "assistant" and ($c | type) == "array" then
-          reduce ($c[] | select(type == "object" and .type == "tool_use")) as $b (.;
-            if $b.name == "Skill" then
-              ($b.input.skill // "" | skill_name) as $s
-              | if $s == "simplify" then .simplify = true
-                elif $s == "dependabot-bulk" then .dependabot = true
-                else . end
-            elif $b.name == "Bash" and (($b.input.command // "") | tostring | test("gh\\s+pr\\s+(create|new)")) then
-              .pr_ids[$b.id // ""] = true
-            else . end)
-        elif $e.type == "user" then
-          (if ($c | type) == "string" then $c
-           elif ($c | type) == "array" then [$c[] | select(type == "object" and .type == "text") | .text // ""] | join("\n")
-           else "" end) as $t
-          | (if ($t | test("<command-name>/?([A-Za-z0-9_-]+:)?simplify</command-name>")) then .simplify = true else . end)
-          | (if ($t | test("<command-name>/?([A-Za-z0-9_-]+:)?dependabot-bulk</command-name>")) then .dependabot = true else . end)
-          | if ($c | type) == "array" then
-              reduce ($c[] | select(type == "object" and .type == "tool_result")) as $r (.;
-                if .pr_ids[$r.tool_use_id // ""] and ($r.is_error // false) != true
-                   and (($r.content // "") | texts | test("github\\.com/[^/[:space:]]+/[^/[:space:]]+/pull/[0-9]+"))
-                then .simplify = false | .dependabot = false
-                else . end)
-            else . end
-        else . end)
-  | if .simplify then "simplify" elif .dependabot then "dependabot" else "missing" end
+# Why not 文字クラスの `\` を 1 個: Oniguruma では `\]` がクラスを閉じない (ERE とは逆)
+ok=$(jq -Rrn '
+  def texts: if type == "string" then . elif type == "array" then map(.text? | strings) | join("\n") else "" end;
+  def gated: "(simplify|dependabot-bulk)";
+  def PR_RE: "(^|[;&|({`[:space:]/\\\\])([A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*[[:space:]]+)*gh[[:space:]]+pr[[:space:]]+(create|new)";
+  def events:
+    .message.content as $c
+    | if .type == "assistant" then
+        $c | arrays[] | select(.type? == "tool_use")
+        | if .name == "Skill" and (.input.skill // "" | tostring | test("^([^:]*:)?" + gated + "$")) then {ok: true}
+          elif .name == "Bash" and (.input.command // "" | tostring | test(PR_RE)) then {pr: (.id // "")}
+          else empty end
+      elif .type == "user" then
+        (select($c | texts | test("<command-name>/?([A-Za-z0-9_-]+:)?" + gated + "</command-name>")) | {ok: true}),
+        ($c | arrays[] | select(.type? == "tool_result" and .is_error != true
+            and (.content | texts | test("github\\.com/[^/[:space:]]+/[^/[:space:]]+/pull/[0-9]+")))
+          | {done: (.tool_use_id // "")})
+      else empty end;
+  reduce (inputs | fromjson? | objects | select(.isSidechain != true) | events) as $v
+    ({ok: false, prs: {}};
+      if $v.ok then .ok = true
+      elif $v.pr then .prs[$v.pr] = true
+      elif .prs[$v.done] then .ok = false
+      else . end)
+  | .ok
 ' < "$transcript" 2>/dev/null) || exit 0
 
-[[ "$verdict" == "missing" ]] || exit 0
+[[ "$ok" == "false" ]] || exit 0
 
 cat >&2 <<'EOF'
 [require-simplify-before-pr] このセッションで (前の PR 作成より後に) /simplify が呼ばれていません。
