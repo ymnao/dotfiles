@@ -3,12 +3,13 @@
 # PreToolUse hook (Claude Code 専用): `gh pr create` (alias `gh pr new` 含む) の前に、
 # このセッションで /simplify が呼ばれているかを transcript から判定し、無ければ止める (#508)
 #
+# - 対象: 入力の cwd の repo ルートに .claude/simplify-gate.conf がある repo だけ (opt-in)
 # - 数える範囲: 直前に作成した `gh pr create` より後 (PR 単位)。compaction ではリセットしない
 #   (/simplify の効果は適用済みの修正としてコードに残るため、やり直させても得るものが無い)
 # - 呼び出しの形: Skill tool の tool_use (agent が呼んだ) と <command-name> タグ (user が打った)
 # - 免除: 同じ範囲で dependabot-bulk skill が呼ばれている (Dependabot 由来の統合 PR)
 # - --draft は免除しない (CI 待ちの bypass とは目的が違い、draft も後で ready になる)
-# - transcript が無い・読めない・jq が無いときは判定できないので通す
+# - transcript が無い・読めない・cwd が repo でない・jq / git が無いときは判定できないので通す
 # - exit 0 = 許可, exit 2 = block (stderr が Claude にフィードバックされる)
 
 # Why not -e: jq の失敗を fail-open の分岐で自分で扱う
@@ -22,14 +23,29 @@ case "$input" in
 esac
 
 command -v jq &>/dev/null || exit 0
+command -v git &>/dev/null || exit 0
 
 # command 位置の `gh pr create|new`。verify-ci-before-pr.sh の grep -E の式と同じ集合を受理する
 # Why not 文字クラスの `\` を 1 個: Oniguruma では `\]` がクラスを閉じない (ERE とは逆)
 PR_RE='(^|[;&|({`[:space:]/\\])([A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*[[:space:]]+)*gh[[:space:]]+pr[[:space:]]+(create|new)'
 
 # Why not grep -q へ pipe: pipefail 下で grep が先に終わると printf の SIGPIPE が不一致扱いになる
-transcript=$(printf '%s' "$input" | jq -r --arg re "$PR_RE" \
-  'select((.tool_input.command // "" | tostring | test($re))) | .transcript_path // ""' 2>/dev/null) || exit 0
+vals=$(printf '%s' "$input" | jq -r --arg re "$PR_RE" \
+  'select((.tool_input.command // "" | tostring | test($re))) | (.cwd // ""), (.transcript_path // "")' 2>/dev/null) || exit 0
+[[ -n "$vals" ]] || exit 0
+{
+  IFS= read -r cwd
+  IFS= read -r transcript
+} <<EOF
+$vals
+EOF
+
+# opt-in: repo ルートに .claude/simplify-gate.conf がある repo だけで止める (stop-gate.conf と同じ方式)。
+# repo は入力の cwd で決める (hook プロセスの cwd は worktree でも元のチェックアウトになりうる。#471)
+[[ -n "$cwd" && -d "$cwd" ]] || exit 0
+repo_root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || exit 0
+[[ -f "$repo_root/.claude/simplify-gate.conf" ]] || exit 0
+
 [[ -n "$transcript" && -f "$transcript" && -r "$transcript" ]] || exit 0
 
 # 前の PR 作成は「tool_result が error でなく、本文に PR の URL がある」で作成済みとみなす

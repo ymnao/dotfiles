@@ -18,7 +18,9 @@ if [ ! -f "$HOOK" ]; then
   echo "ERROR: hook not found: $HOOK (HOOK_PATH で上書き可)" >&2
   exit 1
 fi
-command -v jq >/dev/null 2>&1 || { echo "ERROR: jq is required" >&2; exit 1; }
+for tool in jq git; do
+  command -v "$tool" >/dev/null 2>&1 || { echo "ERROR: $tool is required" >&2; exit 1; }
+done
 
 T="$(mktemp -d "${TMPDIR:-/tmp}/simplify-gate-tests.XXXXXX")"
 trap 'rm -rf "$T"' EXIT
@@ -26,7 +28,7 @@ trap 'rm -rf "$T"' EXIT
 pass=0
 fail=0
 # 独立した定数として持つ (ケース定義から導出しない)
-EXPECTED_CASES=29
+EXPECTED_CASES=34
 
 # transcript の 1 行を作る helper
 skill_call() { jq -cn --arg s "$1" '{type:"assistant",message:{content:[{type:"tool_use",id:"s1",name:"Skill",input:{skill:$s}}]}}'; }
@@ -37,12 +39,21 @@ tool_result() { jq -cn --arg id "$1" --arg t "$2" --argjson e "${3:-false}" '{ty
 user_text() { jq -cn --arg t "$1" '{type:"user",message:{content:$t}}'; }
 PR_URL="https://github.com/ymnao/dotfiles/pull/1"
 
-# run <name> <expect allow|block> <command> <transcript-file ("" なら transcript_path 無し)>
+# opt-in した repo (cwd の既定) と、していない repo
+mkrepo() {
+  git init -q "$1" && git -C "$1" config gc.auto 0 && git -C "$1" config maintenance.auto false
+}
+mkrepo "$T/optin" && mkdir -p "$T/optin/.claude" "$T/optin/sub" && : > "$T/optin/.claude/simplify-gate.conf"
+mkrepo "$T/plain"
+mkdir -p "$T/norepo"
+CWD="$T/optin"
+
+# run <name> <expect allow|block> <command> <transcript-file ("" なら transcript_path 無し)> [cwd]
 run() {
-  local name="$1" expect="$2" cmd="$3" tr="$4" err rc want=0
+  local name="$1" expect="$2" cmd="$3" tr="$4" cwd="${5-$CWD}" err rc want=0
   [ "$expect" = "block" ] && want=2
-  err=$(jq -cn --arg c "$cmd" --arg t "$tr" \
-      '{tool_name:"Bash",tool_input:{command:$c}} + (if $t == "" then {} else {transcript_path:$t} end)' \
+  err=$(jq -cn --arg c "$cmd" --arg t "$tr" --arg d "$cwd" \
+      '{tool_name:"Bash",tool_input:{command:$c},cwd:$d} + (if $t == "" then {} else {transcript_path:$t} end)' \
     | bash "$HOOK" 2>&1 >/dev/null)
   rc=$?
   if [ "$rc" = "$want" ]; then
@@ -134,6 +145,13 @@ skill_call simplify | jq -c '.isSidechain = true' > "$T/side.jsonl"
 run "sidechain-not-counted" block "$CREATE" "$T/side.jsonl"
 
 run "no-transcript" allow "$CREATE" ""
+
+# opt-in の判定は入力の cwd の repo ルートで行う
+run "optin-subdir" block "$CREATE" "$T/none.jsonl" "$T/optin/sub"
+run "not-opted-in-repo" allow "$CREATE" "$T/none.jsonl" "$T/plain"
+run "cwd-not-a-repo" allow "$CREATE" "$T/none.jsonl" "$T/norepo"
+run "cwd-missing" allow "$CREATE" "$T/none.jsonl" "$T/does-not-exist"
+run "cwd-empty" allow "$CREATE" "$T/none.jsonl" ""
 run "not-pr-create" allow "gh pr view 1" "$T/none.jsonl"
 # 早期 case は通るが command 位置ではない言及 (入口の式まで届く)
 run "quoted-mention-not-pr-create" allow 'grep -n "gh pr create" x.md' "$T/none.jsonl"
