@@ -55,21 +55,21 @@ printf 'model = "x"\n' >"$DF/codex/config.toml"
 
 # 正常な偽 HOME を作る。$1=HOME パス, $2=symlink の指す dotfiles (省略時 $DF)
 make_good_home() {
-  local h="$1" DF="${2:-$DF}"
+  local h="$1" df="${2:-$DF}"
   mkdir -p "$h/.claude" "$h/.codex" "$h/.agents/skills"
-  ln -s "$DF/agents/AGENTS.md"      "$h/.claude/CLAUDE.md"
-  ln -s "$DF/claude/settings.json"  "$h/.claude/settings.json"
-  ln -s "$DF/claude/skills"         "$h/.claude/skills"
-  ln -s "$DF/claude/hooks"          "$h/.claude/hooks"
-  ln -s "$DF/claude/agents"         "$h/.claude/agents"
-  ln -s "$DF/claude/rules"          "$h/.claude/rules"
-  ln -s "$DF/claude/statusline.sh"  "$h/.claude/statusline.sh"
-  ln -s "$DF/codex/AGENTS.md"       "$h/.codex/AGENTS.md"
-  ln -s "$DF/codex/hooks.json"      "$h/.codex/hooks.json"
-  ln -s "$DF/codex/hooks"           "$h/.codex/hooks"
-  ln -s "$DF/codex/skills/pr"       "$h/.agents/skills/pr"
+  ln -s "$df/agents/AGENTS.md"      "$h/.claude/CLAUDE.md"
+  ln -s "$df/claude/settings.json"  "$h/.claude/settings.json"
+  ln -s "$df/claude/skills"         "$h/.claude/skills"
+  ln -s "$df/claude/hooks"          "$h/.claude/hooks"
+  ln -s "$df/claude/agents"         "$h/.claude/agents"
+  ln -s "$df/claude/rules"          "$h/.claude/rules"
+  ln -s "$df/claude/statusline.sh"  "$h/.claude/statusline.sh"
+  ln -s "$df/codex/AGENTS.md"       "$h/.codex/AGENTS.md"
+  ln -s "$df/codex/hooks.json"      "$h/.codex/hooks.json"
+  ln -s "$df/codex/hooks"           "$h/.codex/hooks"
+  ln -s "$df/codex/skills/pr"       "$h/.agents/skills/pr"
   # マージ方式の config.toml (base + 保護セクション)
-  { cat "$DF/codex/config.toml"; printf '\n[projects."/x"]\ntrust_level = "trusted"\n'; } \
+  { cat "$df/codex/config.toml"; printf '\n[projects."/x"]\ntrust_level = "trusted"\n'; } \
     >"$h/.codex/config.toml"
 }
 
@@ -181,12 +181,11 @@ rm -r "$DF/codex/skills/shared"
 
 # 12. linked worktree から上書きなしで走らせる (issue #520)。期待パスは本体チェックアウト
 # (live の symlink は本体を指す)。worktree を指す symlink は NG にならなければならない
-WT_MAIN="$BASE/wt-main"
-mkdir -p "$WT_MAIN/tests/integrity"
+mkdir -p "$BASE/wt-main/tests/integrity"
+WT_MAIN="$(cd "$BASE/wt-main" && pwd -P)"
 cp -R "$DF/." "$WT_MAIN/"
 cp "$CHECKER" "$WT_MAIN/tests/integrity/run-integrity-check.sh"
 cp "$SCRIPT_DIR/codex-config-subset.py" "$SCRIPT_DIR/allowed-mcp.txt" "$WT_MAIN/tests/integrity/"
-WT_MAIN="$(cd "$WT_MAIN" && pwd -P)"
 wt_git() { git -C "$WT_MAIN" -c user.name=t -c user.email=t@example.invalid -c commit.gpgsign=false -c core.hooksPath=/dev/null "$@" >/dev/null 2>&1; }
 wt_git init -q && wt_git config gc.auto 0 && wt_git config maintenance.auto false \
   && wt_git add -A && wt_git commit -q -m init && wt_git worktree add -q "$BASE/wt-linked"

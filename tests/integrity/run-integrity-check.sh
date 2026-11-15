@@ -20,17 +20,16 @@ set -uo pipefail
 # 検知時: exit 1 で失敗し、期待と実際を列挙する。自動修復はしない
 # (改ざんかもしれないものを黙って直すのは危険。make link の再実行は人間が判断)。
 #
-# 環境変数 (テスト用):
-#   INTEGRITY_HOME     — $HOME の代わりに検査するルート
-#   INTEGRITY_DOTFILES — dotfiles リポジトリルートの上書き
+# 環境変数:
+#   INTEGRITY_HOME     — $HOME の代わりに検査するルート (テスト用)
+#   INTEGRITY_DOTFILES — dotfiles リポジトリルートの上書き (テストと、本体を解決済みの tests/run-gate.sh)
 #
 # ~/.claude が無い環境 (CI・未セットアップ機) では skip (fail-open)。
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 # --show-toplevel にしないのは、linked worktree から走らせるとそれが worktree を返し、
 # 本体を指す正しい symlink を全件 NG にするため (#520)。live の symlink は本体を指す
-MAIN_ROOT="$(cd "$(cd "$SCRIPT_DIR" && git rev-parse --path-format=absolute --git-common-dir)/.." && pwd -P)"
-DOTFILES="${INTEGRITY_DOTFILES:-$MAIN_ROOT}"
+DOTFILES="${INTEGRITY_DOTFILES:-$(cd "$(git -C "$SCRIPT_DIR" rev-parse --path-format=absolute --git-common-dir)/.." && pwd -P)}"
 H="${INTEGRITY_HOME:-$HOME}"
 
 if [ ! -d "$H/.claude" ]; then

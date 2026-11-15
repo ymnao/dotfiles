@@ -97,13 +97,13 @@ bash tests/link-backup/run-link-backup-tests.sh
 # 以下は導入済みの場合のみ (PR14 / PR19 / PR22 / PR23 で追加されるテスト・検査)
 [ -f tests/hooks-glob/run-glob-determinism-tests.sh ] && bash tests/hooks-glob/run-glob-determinism-tests.sh
 [ -f tests/verify-ci/run-verify-ci-tests.sh ] && bash tests/verify-ci/run-verify-ci-tests.sh
-[ -f tests/integrity/run-integrity-check.sh ] && bash tests/integrity/run-integrity-check.sh
+# 両検査とも本体チェックアウトを基準にする。host が実行し live の symlink が指すのは本体なので、
+# linked worktree から走らせても worktree ではなく本体を見る (#520)
+main_root="$(cd "$(git rev-parse --path-format=absolute --git-common-dir)/.." && pwd -P)"
+[ -f tests/integrity/run-integrity-check.sh ] && INTEGRITY_DOTFILES="$main_root" bash tests/integrity/run-integrity-check.sh
 # host 実行される hook 定義の未コミット改変を警告する (warn-only、gate の合否には
 # 影響させない)。issue #207 — codex の trusted_hash はスクリプト本体を検査しない
 # ため、未コミットの hook 改変がそのまま host 実行される窓を検知で受ける。
-# 渡すのは本体チェックアウト。host が実行するのは live の symlink の先 (本体) なので、
-# linked worktree から走らせても worktree の dirty ではなく本体の dirty を見る (#520)
-main_root="$(cd "$(git rev-parse --path-format=absolute --git-common-dir)/.." && pwd -P)"
 [ -f agents/hooks/hooks-integrity-warn.sh ] && HOOKS_INTEGRITY_REPO="$main_root" bash agents/hooks/hooks-integrity-warn.sh
 # codex hook が配線済みだが codex TUI で未承認 (= 一度も実行されない) 状態を
 # 警告する (warn-only、gate の合否には影響させない)。issue #239 — 承認は host 側の
