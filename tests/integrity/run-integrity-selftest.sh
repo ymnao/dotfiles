@@ -53,9 +53,9 @@ printf 'codex agents\n' >"$DF/codex/AGENTS.md"
 printf '{}\n' >"$DF/codex/hooks.json"
 printf 'model = "x"\n' >"$DF/codex/config.toml"
 
-# 正常な偽 HOME を作る。$1=HOME パス
+# 正常な偽 HOME を作る。$1=HOME パス, $2=symlink の指す dotfiles (省略時 $DF)
 make_good_home() {
-  local h="$1"
+  local h="$1" DF="${2:-$DF}"
   mkdir -p "$h/.claude" "$h/.codex" "$h/.agents/skills"
   ln -s "$DF/agents/AGENTS.md"      "$h/.claude/CLAUDE.md"
   ln -s "$DF/claude/settings.json"  "$h/.claude/settings.json"
@@ -178,6 +178,30 @@ H="$BASE/home-skill-filelink"; make_good_home "$H"
 ln -s "$DF/codex/skills/shared" "$H/.agents/skills/shared"
 check "skill-file-symlink" 1 "$(run_checker "$H")"
 rm -r "$DF/codex/skills/shared"
+
+# 12. linked worktree から上書きなしで走らせる (issue #520)。期待パスは本体チェックアウト
+# (live の symlink は本体を指す)。worktree を指す symlink は NG にならなければならない
+WT_MAIN="$BASE/wt-main"
+mkdir -p "$WT_MAIN/tests/integrity"
+cp -R "$DF/." "$WT_MAIN/"
+cp "$CHECKER" "$WT_MAIN/tests/integrity/run-integrity-check.sh"
+cp "$SCRIPT_DIR/codex-config-subset.py" "$SCRIPT_DIR/allowed-mcp.txt" "$WT_MAIN/tests/integrity/"
+WT_MAIN="$(cd "$WT_MAIN" && pwd -P)"
+wt_git() { git -C "$WT_MAIN" -c user.name=t -c user.email=t@example.invalid -c commit.gpgsign=false -c core.hooksPath=/dev/null "$@" >/dev/null 2>&1; }
+wt_git init -q && wt_git config gc.auto 0 && wt_git config maintenance.auto false \
+  && wt_git add -A && wt_git commit -q -m init && wt_git worktree add -q "$BASE/wt-linked"
+WT_LINKED="$(cd "$BASE/wt-linked" && pwd -P)"
+run_checker_unpinned() {
+  # $1=HOME, $2=チェッカーを置いた checkout。INTEGRITY_DOTFILES を渡さない
+  local rc=0
+  INTEGRITY_HOME="$1" bash "$2/tests/integrity/run-integrity-check.sh" >/dev/null 2>&1 || rc=$?
+  printf '%s' "$rc"
+}
+H="$BASE/home-wt-main"; make_good_home "$H" "$WT_MAIN"
+check "worktree-main-checkout-ok" 0 "$(run_checker_unpinned "$H" "$WT_MAIN")"
+check "worktree-linked-expects-main" 0 "$(run_checker_unpinned "$H" "$WT_LINKED")"
+H="$BASE/home-wt-linked"; make_good_home "$H" "$WT_LINKED"
+check "worktree-linked-link-detected" 1 "$(run_checker_unpinned "$H" "$WT_LINKED")"
 
 # ---- verify-settings-codex-domains.sh の selftest (issue #189) ----
 # 検知器が壊れて常に PASS を返す退行を防ぐ。base fixture は全項目を

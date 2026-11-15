@@ -27,8 +27,10 @@ set -uo pipefail
 # ~/.claude が無い環境 (CI・未セットアップ機) では skip (fail-open)。
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-REPO_ROOT="$(cd "$SCRIPT_DIR" && git rev-parse --show-toplevel)"
-DOTFILES="${INTEGRITY_DOTFILES:-$REPO_ROOT}"
+# --show-toplevel にしないのは、linked worktree から走らせるとそれが worktree を返し、
+# 本体を指す正しい symlink を全件 NG にするため (#520)。live の symlink は本体を指す
+MAIN_ROOT="$(cd "$(cd "$SCRIPT_DIR" && git rev-parse --path-format=absolute --git-common-dir)/.." && pwd -P)"
+DOTFILES="${INTEGRITY_DOTFILES:-$MAIN_ROOT}"
 H="${INTEGRITY_HOME:-$HOME}"
 
 if [ ! -d "$H/.claude" ]; then
