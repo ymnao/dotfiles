@@ -97,7 +97,7 @@ bash tests/link-backup/run-link-backup-tests.sh
 # 以下は導入済みの場合のみ (PR14 / PR19 / PR22 / PR23 で追加されるテスト・検査)
 [ -f tests/hooks-glob/run-glob-determinism-tests.sh ] && bash tests/hooks-glob/run-glob-determinism-tests.sh
 [ -f tests/verify-ci/run-verify-ci-tests.sh ] && bash tests/verify-ci/run-verify-ci-tests.sh
-[ -f tests/simplify-gate/run-simplify-gate-tests.sh ] && bash tests/simplify-gate/run-simplify-gate-tests.sh
+bash tests/simplify-gate/run-simplify-gate-tests.sh
 [ -f tests/integrity/run-integrity-check.sh ] && bash tests/integrity/run-integrity-check.sh
 # host 実行される hook 定義の未コミット改変を警告する (warn-only、gate の合否には
 # 影響させない)。issue #207 — codex の trusted_hash はスクリプト本体を検査しない

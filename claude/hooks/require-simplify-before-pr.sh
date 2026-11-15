@@ -34,7 +34,8 @@ transcript=$(printf '%s' "$input" | jq -r --arg re "$PR_RE" \
 
 # 前の PR 作成は「tool_result が error でなく、本文に PR の URL がある」で作成済みとみなす
 # (is_error だけだと PR を作らずに成功した --web 等も数える)。run_in_background の結果は
-# 起動の通知だけで URL を含まないので、error でなければ作成済みに倒す
+# 起動の通知だけで URL を含まないので、error でなければ作成済みに倒す (background の中で
+# 後から失敗しても作成済みとして扱う。/simplify のやり直しを求める側に倒れる)
 # Why not `fromjson?` を外す: 書き込み途中の末尾行や壊れた行で全体が落ちないようにする
 # Why not タグを本文のどこでも数える: subagent の報告や要約の引用で gate が満たされる
 ok=$(jq -Rrn --arg re "$PR_RE" '

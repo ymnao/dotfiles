@@ -26,7 +26,7 @@ trap 'rm -rf "$T"' EXIT
 pass=0
 fail=0
 # 独立した定数として持つ (ケース定義から導出しない)
-EXPECTED_CASES=28
+EXPECTED_CASES=29
 
 # transcript の 1 行を作る helper
 skill_call() { jq -cn --arg s "$1" '{type:"assistant",message:{content:[{type:"tool_use",id:"s1",name:"Skill",input:{skill:$s}}]}}'; }
@@ -142,6 +142,17 @@ run "quoted-mention-not-pr-create" allow 'grep -n "gh pr create" x.md' "$T/none.
 long_tail=$(printf 'x\n%.0s' $(seq 1 40000))
 run "long-multiline-command" block "gh pr create --title t
 $long_tail" "$T/none.jsonl"
+
+# PR_RE が verify-ci の grep -E の式と同じであること (Oniguruma 向けの `\\` を ERE の `\` に戻して比べる)
+pr_re=$(sed -n "s/^PR_RE='\(.*\)'\$/\1/p" "$HOOK")
+ere=$(printf '%s' "$pr_re" | sed 's#/\\\\]#/\\]#')
+if [ -n "$pr_re" ] && [ "$ere" != "$pr_re" ] \
+  && grep -qF -- "grep -oE '$ere" "$REPO_ROOT/agents/hooks/verify-ci-before-pr.sh"; then
+  pass=$((pass + 1))
+else
+  echo "FAIL pr-re-matches-verify-ci: hook の PR_RE ('$pr_re') が verify-ci-before-pr.sh の式と一致しない"
+  fail=$((fail + 1))
+fi
 
 total=$((pass + fail))
 echo "simplify-gate: $pass passed, $fail failed ($total run)"
