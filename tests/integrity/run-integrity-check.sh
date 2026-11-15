@@ -22,13 +22,21 @@ set -uo pipefail
 #
 # 環境変数 (テスト用):
 #   INTEGRITY_HOME     — $HOME の代わりに検査するルート
-#   INTEGRITY_DOTFILES — dotfiles リポジトリルートの上書き
+#   INTEGRITY_DOTFILES — dotfiles リポジトリルートの上書き (リンク先の期待値と中身の検査の両方)
 #
 # ~/.claude が無い環境 (CI・未セットアップ機) では skip (fail-open)。
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-REPO_ROOT="$(cd "$SCRIPT_DIR" && git rev-parse --show-toplevel)"
-DOTFILES="${INTEGRITY_DOTFILES:-$REPO_ROOT}"
+# 基準を 2 つに分ける (#520)。live の symlink が指すのは本体チェックアウトなので、
+# リンク先の期待値 (DOTFILES) は --git-common-dir の親。repo の中身の検査 (TREE) は
+# 走らせた側のツリー。linked worktree ではこの 2 つが食い違う
+if [ -n "${INTEGRITY_DOTFILES:-}" ]; then
+  DOTFILES="$INTEGRITY_DOTFILES"
+  TREE="$INTEGRITY_DOTFILES"
+else
+  { read -r TREE; read -r common_dir; } < <(git -C "$SCRIPT_DIR" rev-parse --show-toplevel --path-format=absolute --git-common-dir)
+  DOTFILES="$(cd "$common_dir/.." && pwd -P)"
+fi
 H="${INTEGRITY_HOME:-$HOME}"
 
 if [ ! -d "$H/.claude" ]; then
@@ -96,7 +104,7 @@ if [ -d "$H/.codex" ]; then
 fi
 
 # codex は skill 探索でファイル symlink を捨てる (openai/codex#15756)。共有は skill ディレクトリごとの symlink で行う
-for d in "$DOTFILES/codex/skills"/*/; do
+for d in "$TREE/codex/skills"/*/; do
   if [ -L "${d}SKILL.md" ]; then
     echo "NG: ${d}SKILL.md がファイル symlink (codex に読まれない)"
     fail=1
@@ -134,5 +142,5 @@ if [ "$fail" = 0 ]; then
   echo "integrity: OK"
   exit 0
 fi
-echo "integrity: FAILED (改ざん・すり替えの可能性を確認すること。設定を作り直す場合は make link)"
+echo "integrity: FAILED (改ざん・すり替えの可能性を確認すること。設定を作り直す場合は本体チェックアウトで make link)"
 exit 1

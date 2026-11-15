@@ -35,6 +35,13 @@ if [ ! -f "$TRUST_CHECKER" ]; then
 fi
 command -v jq >/dev/null 2>&1 || { echo "ERROR: jq is required" >&2; exit 1; }
 
+# worktree ケースの fixture repo を開発者の ~/.gitconfig と呼び出し元 repo から切り離す
+# (tests/hooks-integrity/run-hooks-integrity-tests.sh と同じ規約)
+export GIT_CONFIG_GLOBAL=/dev/null
+export GIT_CONFIG_SYSTEM=/dev/null
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
+  GIT_COMMON_DIR GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
+
 BASE="$(mktemp -d "${TMPDIR:-/tmp}/integrity-tests.XXXXXX")"
 cleanup() { [ -n "${BASE:-}" ] && rm -rf "$BASE"; }
 trap cleanup EXIT
@@ -52,24 +59,27 @@ printf 'sl\n' >"$DF/claude/statusline.sh"
 printf 'codex agents\n' >"$DF/codex/AGENTS.md"
 printf '{}\n' >"$DF/codex/hooks.json"
 printf 'model = "x"\n' >"$DF/codex/config.toml"
+# 空ディレクトリにしないのは、worktree ケースで git が追跡せず linked 側に skill が無くなり、
+# .agents/skills のリンク先の期待値が測れなくなるため
+printf 'pr\n' >"$DF/codex/skills/pr/SKILL.md"
 
-# 正常な偽 HOME を作る。$1=HOME パス
+# 正常な偽 HOME を作る。$1=HOME パス, $2=symlink の指す dotfiles (省略時 $DF)
 make_good_home() {
-  local h="$1"
+  local h="$1" df="${2:-$DF}"
   mkdir -p "$h/.claude" "$h/.codex" "$h/.agents/skills"
-  ln -s "$DF/agents/AGENTS.md"      "$h/.claude/CLAUDE.md"
-  ln -s "$DF/claude/settings.json"  "$h/.claude/settings.json"
-  ln -s "$DF/claude/skills"         "$h/.claude/skills"
-  ln -s "$DF/claude/hooks"          "$h/.claude/hooks"
-  ln -s "$DF/claude/agents"         "$h/.claude/agents"
-  ln -s "$DF/claude/rules"          "$h/.claude/rules"
-  ln -s "$DF/claude/statusline.sh"  "$h/.claude/statusline.sh"
-  ln -s "$DF/codex/AGENTS.md"       "$h/.codex/AGENTS.md"
-  ln -s "$DF/codex/hooks.json"      "$h/.codex/hooks.json"
-  ln -s "$DF/codex/hooks"           "$h/.codex/hooks"
-  ln -s "$DF/codex/skills/pr"       "$h/.agents/skills/pr"
+  ln -s "$df/agents/AGENTS.md"      "$h/.claude/CLAUDE.md"
+  ln -s "$df/claude/settings.json"  "$h/.claude/settings.json"
+  ln -s "$df/claude/skills"         "$h/.claude/skills"
+  ln -s "$df/claude/hooks"          "$h/.claude/hooks"
+  ln -s "$df/claude/agents"         "$h/.claude/agents"
+  ln -s "$df/claude/rules"          "$h/.claude/rules"
+  ln -s "$df/claude/statusline.sh"  "$h/.claude/statusline.sh"
+  ln -s "$df/codex/AGENTS.md"       "$h/.codex/AGENTS.md"
+  ln -s "$df/codex/hooks.json"      "$h/.codex/hooks.json"
+  ln -s "$df/codex/hooks"           "$h/.codex/hooks"
+  ln -s "$df/codex/skills/pr"       "$h/.agents/skills/pr"
   # マージ方式の config.toml (base + 保護セクション)
-  { cat "$DF/codex/config.toml"; printf '\n[projects."/x"]\ntrust_level = "trusted"\n'; } \
+  { cat "$df/codex/config.toml"; printf '\n[projects."/x"]\ntrust_level = "trusted"\n'; } \
     >"$h/.codex/config.toml"
 }
 
@@ -178,6 +188,40 @@ H="$BASE/home-skill-filelink"; make_good_home "$H"
 ln -s "$DF/codex/skills/shared" "$H/.agents/skills/shared"
 check "skill-file-symlink" 1 "$(run_checker "$H")"
 rm -r "$DF/codex/skills/shared"
+
+# 12. linked worktree から上書きなしで走らせる (issue #520)。期待パスは本体チェックアウト
+# (live の symlink は本体を指す)。worktree を指す symlink は NG にならなければならない
+mkdir -p "$BASE/wt-main/tests/integrity"
+WT_MAIN="$(cd "$BASE/wt-main" && pwd -P)"
+cp -R "$DF/." "$WT_MAIN/"
+cp "$CHECKER" "$WT_MAIN/tests/integrity/run-integrity-check.sh"
+cp "$SCRIPT_DIR/codex-config-subset.py" "$SCRIPT_DIR/allowed-mcp.txt" "$WT_MAIN/tests/integrity/"
+wt_git() { git -C "$WT_MAIN" -c user.name=t -c user.email=t@example.invalid "$@" >/dev/null; }
+rc=0
+{ wt_git init -q && wt_git config gc.auto 0 && wt_git config maintenance.auto false \
+  && wt_git add -A && wt_git commit -q -m init && wt_git worktree add -q "$BASE/wt-linked"; } || rc=$?
+check "worktree-fixture-setup" 0 "$rc"
+run_checker_unpinned() {
+  # $1=HOME, $2=チェッカーを置いた checkout。INTEGRITY_DOTFILES を外して走らせる
+  local rc=0
+  env -u INTEGRITY_DOTFILES INTEGRITY_HOME="$1" bash "$2/tests/integrity/run-integrity-check.sh" >/dev/null 2>&1 || rc=$?
+  printf '%s' "$rc"
+}
+# 準備に失敗したら飛ばす (WT_LINKED が空のまま走ると / 直下へ書きに行く)。失敗は上の 1 件で数える
+if [ "$rc" = 0 ]; then
+WT_LINKED="$(cd "$BASE/wt-linked" && pwd -P)"
+H="$BASE/home-wt-main"; make_good_home "$H" "$WT_MAIN"
+check "worktree-main-checkout-ok" 0 "$(run_checker_unpinned "$H" "$WT_MAIN")"
+check "worktree-linked-expects-main" 0 "$(run_checker_unpinned "$H" "$WT_LINKED")"
+H="$BASE/home-wt-linked"; make_good_home "$H" "$WT_LINKED"
+check "worktree-linked-link-detected" 1 "$(run_checker_unpinned "$H" "$WT_LINKED")"
+# 中身の検査は本体ではなく走らせた側のツリーを見る (worktree で足したファイル symlink を merge 前に拾う)
+mkdir -p "$WT_LINKED/codex/skills/wt-only"
+ln -s ../pr "$WT_LINKED/codex/skills/wt-only/SKILL.md"
+H="$BASE/home-wt-main"
+check "worktree-linked-tree-content-checked" 1 "$(run_checker_unpinned "$H" "$WT_LINKED")"
+rm -r "$WT_LINKED/codex/skills/wt-only"
+fi
 
 # ---- verify-settings-codex-domains.sh の selftest (issue #189) ----
 # 検知器が壊れて常に PASS を返す退行を防ぐ。base fixture は全項目を
