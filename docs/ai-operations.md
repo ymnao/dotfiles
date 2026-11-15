@@ -30,7 +30,7 @@ fail-loud になる場所の版数固定はこの規約の対象外**(eval 実�
 | **plan 立案**(非自明タスク) | **Opus 世代(メイン)** | メインと同じ(難所は上げる) | `/dev` step 2 の変更ファイル・実装手順・考慮点の立案。事前調査をしたメインが委譲せずに書く(下記) |
 | 並列 fan-out(中軽度並列) | Sonnet 世代 | high | /simplify の観点別 finder、多点調査 |
 | 独立第二意見(別モデル系統) | Fable 世代など | xhigh | fresh context のレビュー、難しい設計判断 |
-| 探索・情報収集 | Haiku 世代 | - | 軽い調査・ファイル探索 |
+| 探索・情報収集 | Haiku 世代 | 設定上は subagent の既定 (high)。Haiku が env で high になった実測は無く、medium の観測がある (下記) | 軽い調査・ファイル探索 |
 
 **plan 立案を Fable 委譲からメインに切り替えた (2026-10-15、issue #456、user 判断)**。
 根拠は 2 つ: user が実際の `/dev` で見た plan の質と、委譲すると事前調査の事実を
@@ -106,20 +106,38 @@ agent の Bash sandbox 内で `codex-review` が回るかどうか、回すた�
 - 切り替え: `/model`、Agent ツールの `model` パラメータ
   (例: `Agent(subagent_type: "general-purpose", model: "sonnet", prompt: ...)`
   独立第二意見は `model: "fable"`)
-- effort の指定: Agent ツールの `effort` パラメータか、サブエージェント定義
-  (`claude/agents/*.md`) の frontmatter `effort:`。Agent ツールは user か
+- effort の指定: **subagent の既定は `claude/settings.json` の `env` に置いた
+  `CLAUDE_CODE_SUBAGENT_EFFORT=high`** (表の並列 fan-out の値)。既定と違う値が要る
+  ところだけ、Agent ツールの `effort` パラメータか、サブエージェント定義
+  (`claude/agents/*.md`) の frontmatter `effort:` で指定する。Agent ツールは user か
   CLAUDE.md・skill が明示したときだけ `effort` を付けるので、委譲する skill の
   本文にパラメータとして書く (code-reviewer は frontmatter で足りるので書かない)。
-  **どちらも無い subagent はセッションの effort を継ぐ**ので、表の値は指定した箇所
-  でしか保証されない。実測 (2026-10-12 / `claude` 2.1.295、subagent のログ
-  `~/.claude/projects/<proj>/<session>/subagents/agent-<id>.jsonl` の `"effort"`):
-  指定した subagent は指定値 (パラメータの `high`、frontmatter の `xhigh`)、未指定は
-  セッションの値 (`medium`) だった。`model` と違い、frontmatter の `effort` は
-  この方法でセッション内から確かめられる
+  版ごとの挙動 (subagent のログ
+  `~/.claude/projects/<proj>/<session>/subagents/agent-<id>.jsonl` の `"effort"` で測る。
+  `model` と違い、effort はこの方法でセッション内から確かめられる):
+  - 2.1.316 より前: どちらも無い subagent はセッションの effort を継いでいた。
+    実測 (2026-10-12 / 2.1.295): 指定した subagent は指定値 (パラメータの `high`、
+    frontmatter の `xhigh`)、未指定はセッションの値 (`medium`)
+  - 2.1.316: `CLAUDE_CODE_SUBAGENT_EFFORT` が追加された。CHANGELOG の文言は、ほかに
+    effort を指定するものが無い subagent がセッションの値の代わりにこの値で動く
+  - 2.1.317 以降: 本体と別モデルの subagent は、セッションの値ではなくそのモデルの
+    保存値 (`modelSettings`) か既定値で動く (CHANGELOG)。
+    実測 (2026-11-15 / 2.1.325): env 無しでは、別モデルの subagent は `medium` だった
+    (Sonnet の general-purpose 8 本、Sonnet の Explore 5 本、Haiku の web-fetch)。
+    本体もすべて `medium` だったので、継承か既定値かはこの実測では区別できない。
+    env を付けると、本体が `medium` のままでも subagent は `high` になった:
+    process env で起動した CLI セッション (本体は Fable 5.2) で Sonnet の general-purpose と
+    Opus で動いた Explore が各 1 本、`claude/settings.json` に env を書いた後の
+    デスクトップアプリのセッション 2 本 (本体は Opus 5.5、再起動なし) で Sonnet の
+    general-purpose が計 8 本。frontmatter の code-reviewer (Fable) は env の有無に
+    関わらず `xhigh`。例外として、env を書いた後に始まった別のデスクトップのセッション (harvest) で、
+    Haiku の web-fetch が `medium` だった 1 本がある。同じセッションの Sonnet の Explore
+    4 本は `high` だったので env は届いている。Haiku 側か web-fetch 側のどちらが原因かは
+    切り分けていない (Haiku で動く subagent が web-fetch しか無いため)。Agent ツールの `effort` パラメータと env の優先順位は未実測
 - メインの effort: **settings では指定せず、モデルの既定 (Opus 5.5 は `medium`、
-  公式 docs の model-config) で動かす**。独立第二意見の委譲は上のとおり
-  呼び出し側で effort を明示しているので、メインを上げなくても表の値で動く (明示の
-  無い `/simplify` の finder などはセッションの値を継ぐ)。
+  公式 docs の model-config) で動かす**。独立第二意見は上のとおり
+  frontmatter か呼び出し側で effort を明示しているので、メインを上げなくても表の値で動く (明示の
+  無い `/simplify` の finder などは上の env の `high`)。
   難所だけ上げる: CLI は `/effort` のスライダーで `s` (そのセッションだけ)、
   デスクトップアプリはセッションのピッカー。`/effort` を `Enter` で確定すると
   `modelSettings` に保存され (同 model-config)、`~/.claude/settings.json` は symlink

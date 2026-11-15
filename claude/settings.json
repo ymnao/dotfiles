@@ -290,6 +290,7 @@
   "tui": "fullscreen",
   "agentPushNotifEnabled": true,
   "env": {
-    "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1"
+    "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1",
+    "CLAUDE_CODE_SUBAGENT_EFFORT": "high"
   }
 }
