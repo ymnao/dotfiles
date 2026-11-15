@@ -30,7 +30,7 @@ fail-loud になる場所の版数固定はこの規約の対象外**(eval 実�
 | **plan 立案**(非自明タスク) | **Opus 世代(メイン)** | メインと同じ(難所は上げる) | `/dev` step 2 の変更ファイル・実装手順・考慮点の立案。事前調査をしたメインが委譲せずに書く(下記) |
 | 並列 fan-out(中軽度並列) | Sonnet 世代 | high | /simplify の観点別 finder、多点調査 |
 | 独立第二意見(別モデル系統) | Fable 世代など | xhigh | fresh context のレビュー、難しい設計判断 |
-| 探索・情報収集 | Haiku 世代 | 設定上は subagent の既定 (high)。Haiku で high になった実測は無く、medium の観測がある (下記) | 軽い調査・ファイル探索 |
+| 探索・情報収集 | Haiku 世代 | 設定上は subagent の既定 (high)。Haiku が env で high になった実測は無く、medium の観測がある (下記) | 軽い調査・ファイル探索 |
 
 **plan 立案を Fable 委譲からメインに切り替えた (2026-10-15、issue #456、user 判断)**。
 根拠は 2 つ: user が実際の `/dev` で見た plan の質と、委譲すると事前調査の事実を
@@ -130,9 +130,10 @@ agent の Bash sandbox 内で `codex-review` が回るかどうか、回すた�
     Opus で動いた Explore が各 1 本、`claude/settings.json` に env を書いた後の
     デスクトップアプリのセッション 2 本 (本体は Opus 5.5、再起動なし) で Sonnet の
     general-purpose が計 8 本。frontmatter の code-reviewer (Fable) は env の有無に
-    関わらず `xhigh`。例外として、env を書いた後のデスクトップのセッションで Haiku の
-    web-fetch が `medium` だった 1 本がある (同じセッションに比較対象が無く、原因は
-    切り分けていない)。Agent ツールの `effort` パラメータと env の優先順位は未実測
+    関わらず `xhigh`。例外として、env を書いた後に始まった別のデスクトップのセッション (harvest) で、
+    Haiku の web-fetch が `medium` だった 1 本がある。同じセッションの Sonnet の Explore
+    4 本は `high` だったので env は届いている。Haiku 側か web-fetch 側のどちらが原因かは
+    切り分けていない (Haiku で動く subagent が web-fetch しか無いため)。Agent ツールの `effort` パラメータと env の優先順位は未実測
 - メインの effort: **settings では指定せず、モデルの既定 (Opus 5.5 は `medium`、
   公式 docs の model-config) で動かす**。独立第二意見は上のとおり
   frontmatter か呼び出し側で effort を明示しているので、メインを上げなくても表の値で動く (明示の
