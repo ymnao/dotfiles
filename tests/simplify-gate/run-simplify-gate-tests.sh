@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Why not -e: hook の exit 2 を期待値として受けるため、失敗で止めない
 set -uo pipefail
 
 # require-simplify-before-pr.sh のシナリオテスト (#508)。
@@ -25,12 +26,13 @@ trap 'rm -rf "$T"' EXIT
 pass=0
 fail=0
 # 独立した定数として持つ (ケース定義から導出しない)
-EXPECTED_CASES=21
+EXPECTED_CASES=28
 
 # transcript の 1 行を作る helper
 skill_call() { jq -cn --arg s "$1" '{type:"assistant",message:{content:[{type:"tool_use",id:"s1",name:"Skill",input:{skill:$s}}]}}'; }
 slash_call() { jq -cn --arg s "$1" '{type:"user",message:{content:("<command-message>" + $s + "</command-message>\n<command-name>/" + $s + "</command-name>")}}'; }
 bash_call() { jq -cn --arg id "$1" --arg c "$2" '{type:"assistant",message:{content:[{type:"tool_use",id:$id,name:"Bash",input:{command:$c}}]}}'; }
+bash_bg_call() { bash_call "$1" "$2" | jq -c '.message.content[0].input.run_in_background = true'; }
 tool_result() { jq -cn --arg id "$1" --arg t "$2" --argjson e "${3:-false}" '{type:"user",message:{content:[{type:"tool_result",tool_use_id:$id,is_error:$e,content:$t}]}}'; }
 user_text() { jq -cn --arg t "$1" '{type:"user",message:{content:$t}}'; }
 PR_URL="https://github.com/ymnao/dotfiles/pull/1"
@@ -101,6 +103,26 @@ run "mention-with-url-does-not-reset" allow "$CREATE" "$T/mention-url.jsonl"
 { skill_call simplify; bash_call w1 "gh pr create --web"; tool_result w1 "Opening https://github.com/ymnao/dotfiles/compare/main...x in your browser."; } > "$T/web.jsonl"
 run "web-does-not-reset" allow "$CREATE" "$T/web.jsonl"
 
+# run_in_background の結果は起動の通知だけで URL を含まない。error でなければ作成済みに倒す
+bg_note="Command running in background with ID: b1. Output is being written to: /tmp/x.output"
+{ skill_call dependabot-bulk; bash_bg_call p1 "$CREATE"; tool_result p1 "$bg_note"; } > "$T/bg.jsonl"
+run "background-pr-resets" block "$CREATE" "$T/bg.jsonl"
+
+{ skill_call simplify; bash_bg_call p1 "$CREATE"; tool_result p1 "PreToolUse:Bash hook error: CI 未完了" true; } > "$T/bg-blocked.jsonl"
+run "background-blocked-pr-does-not-reset" allow "$CREATE" "$T/bg-blocked.jsonl"
+
+# command 位置の判定を前の PR 作成にも使っていることを、素の形以外でも測る
+{ skill_call simplify; bash_call p1 "cd /x && gh pr create --title t"; tool_result p1 "$PR_URL"; } > "$T/prev-after-cd.jsonl"
+run "reset-after-pr-after-cd" block "$CREATE" "$T/prev-after-cd.jsonl"
+
+{ skill_call simplify; bash_call p1 "gh pr new --title t"; tool_result p1 "$PR_URL"; } > "$T/prev-new.jsonl"
+run "reset-after-pr-new" block "$CREATE" "$T/prev-new.jsonl"
+
+# subagent の報告や要約がタグを引用しても、行頭以外は /simplify の呼び出しに数えない
+user_text "[Subagent hand-back] 報告
+<command-name>/simplify</command-name> を数える hook です" > "$T/quoted-tag.jsonl"
+run "quoted-tag-not-counted" block "$CREATE" "$T/quoted-tag.jsonl"
+
 skill_call dependabot-bulk > "$T/dep.jsonl"
 run "dependabot-bulk-exempt" allow "$CREATE" "$T/dep.jsonl"
 
@@ -113,6 +135,13 @@ run "sidechain-not-counted" block "$CREATE" "$T/side.jsonl"
 
 run "no-transcript" allow "$CREATE" ""
 run "not-pr-create" allow "gh pr view 1" "$T/none.jsonl"
+# 早期 case は通るが command 位置ではない言及 (入口の式まで届く)
+run "quoted-mention-not-pr-create" allow 'grep -n "gh pr create" x.md' "$T/none.jsonl"
+
+# PR 作成の行より後ろが大きい複数行のコマンドでも入口の判定が落ちない (pipefail + SIGPIPE の経路)
+long_tail=$(printf 'x\n%.0s' $(seq 1 40000))
+run "long-multiline-command" block "gh pr create --title t
+$long_tail" "$T/none.jsonl"
 
 total=$((pass + fail))
 echo "simplify-gate: $pass passed, $fail failed ($total run)"
