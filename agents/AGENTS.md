@@ -20,6 +20,8 @@
   - (Claude Code のみ) `gh` は 1 呼び出し 1 コマンド (`&&` / `;` / パイプ / ループ / 前置きの `cd` に混ぜない)。加工は `--jq`、
     対象 repo は `--repo`、CI 待ちは `gh run watch <id> --exit-status` を単独で。コマンド置換 (`x=$(gh ...)`) と監視ツールの中の
     `gh` は hook を通っても sandbox 内で走って TLS で落ち、「pending」にも「完了」にも見える。背景は dotfiles の docs/ai-operations.md §10
+  - 例外: `gh pr create` には `--repo` / `--head` を付けない (付けると `verify-ci-before-pr.sh` が CI を確認できずに止める)。
+    作業ブランチを checkout した cwd から打つ
 
 ## ブランチと開発フロー
 
