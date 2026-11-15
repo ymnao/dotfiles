@@ -69,7 +69,7 @@ sandbox 内では `git init` が完走しない (`<dotfiles>/docs/sandbox-git.md
 user に fish で打ってもらう (`<url>` は出力された URL):
 
 ```fish
-cd <repo-dir>; and git init -b <branch>; and git remote add origin <url>; and git pull origin <branch>
+cd "<repo-dir>"; and git init -b <branch>; and git remote add origin <url>; and git pull origin <branch>
 ```
 
 HANDOFF.md はグローバル gitignore でコミットされないので、残したい内容は step 3 で
