@@ -59,6 +59,9 @@ printf 'sl\n' >"$DF/claude/statusline.sh"
 printf 'codex agents\n' >"$DF/codex/AGENTS.md"
 printf '{}\n' >"$DF/codex/hooks.json"
 printf 'model = "x"\n' >"$DF/codex/config.toml"
+# 空ディレクトリにしないのは、worktree ケースで git が追跡せず linked 側に skill が無くなり、
+# .agents/skills のリンク先の期待値が測れなくなるため
+printf 'pr\n' >"$DF/codex/skills/pr/SKILL.md"
 
 # 正常な偽 HOME を作る。$1=HOME パス, $2=symlink の指す dotfiles (省略時 $DF)
 make_good_home() {
@@ -198,13 +201,15 @@ rc=0
 { wt_git init -q && wt_git config gc.auto 0 && wt_git config maintenance.auto false \
   && wt_git add -A && wt_git commit -q -m init && wt_git worktree add -q "$BASE/wt-linked"; } || rc=$?
 check "worktree-fixture-setup" 0 "$rc"
-WT_LINKED="$(cd "$BASE/wt-linked" && pwd -P)"
 run_checker_unpinned() {
-  # $1=HOME, $2=チェッカーを置いた checkout。INTEGRITY_DOTFILES を渡さない
+  # $1=HOME, $2=チェッカーを置いた checkout。INTEGRITY_DOTFILES を外して走らせる
   local rc=0
-  INTEGRITY_HOME="$1" bash "$2/tests/integrity/run-integrity-check.sh" >/dev/null 2>&1 || rc=$?
+  env -u INTEGRITY_DOTFILES INTEGRITY_HOME="$1" bash "$2/tests/integrity/run-integrity-check.sh" >/dev/null 2>&1 || rc=$?
   printf '%s' "$rc"
 }
+# 準備に失敗したら飛ばす (WT_LINKED が空のまま走ると / 直下へ書きに行く)。失敗は上の 1 件で数える
+if [ "$rc" = 0 ]; then
+WT_LINKED="$(cd "$BASE/wt-linked" && pwd -P)"
 H="$BASE/home-wt-main"; make_good_home "$H" "$WT_MAIN"
 check "worktree-main-checkout-ok" 0 "$(run_checker_unpinned "$H" "$WT_MAIN")"
 check "worktree-linked-expects-main" 0 "$(run_checker_unpinned "$H" "$WT_LINKED")"
@@ -216,6 +221,7 @@ ln -s ../pr "$WT_LINKED/codex/skills/wt-only/SKILL.md"
 H="$BASE/home-wt-main"
 check "worktree-linked-tree-content-checked" 1 "$(run_checker_unpinned "$H" "$WT_LINKED")"
 rm -r "$WT_LINKED/codex/skills/wt-only"
+fi
 
 # ---- verify-settings-codex-domains.sh の selftest (issue #189) ----
 # 検知器が壊れて常に PASS を返す退行を防ぐ。base fixture は全項目を
