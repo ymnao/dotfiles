@@ -3,7 +3,8 @@
 # PreToolUse hook (Claude Code 専用): `gh pr create` (alias `gh pr new` 含む) の前に、
 # このセッションで /simplify が呼ばれているかを transcript から判定し、無ければ止める (#508)
 #
-# - 対象: 入力の cwd の repo ルートに .claude/simplify-gate.conf がある repo だけ (opt-in)
+# - 対象: 入力の cwd の repo ルートに .claude/simplify-gate.conf がある repo だけ (opt-in)。
+#   -R/--repo で別 repo に作る PR は cwd の repo で判定する (gh の引数は解釈しない)
 # - 数える範囲: 直前に作成した `gh pr create` より後 (PR 単位)。compaction ではリセットしない
 #   (/simplify の効果は適用済みの修正としてコードに残るため、やり直させても得るものが無い)
 # - 呼び出しの形: Skill tool の tool_use (agent が呼んだ) と <command-name> タグ (user が打った)
@@ -25,7 +26,8 @@ esac
 command -v jq &>/dev/null || exit 0
 command -v git &>/dev/null || exit 0
 
-# command 位置の `gh pr create|new`。verify-ci-before-pr.sh の grep -E の式と同じ集合を受理する
+# command 位置の `gh pr create|new`。式は verify-ci-before-pr.sh の grep -E と同じ (テストで一致を測る)。
+# jq は文字列全体に当てるので、行単位の grep より改行をまたぐ分だけ広く受理する (止める側に倒れる)
 # Why not 文字クラスの `\` を 1 個: Oniguruma では `\]` がクラスを閉じない (ERE とは逆)
 PR_RE='(^|[;&|({`[:space:]/\\])([A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|]*[[:space:]]+)*gh[[:space:]]+pr[[:space:]]+(create|new)'
 
@@ -85,5 +87,6 @@ cat >&2 <<'EOF'
 PR ごとに /simplify を実行する決まりです。「変更が小さい」はスキップの理由になりません。
 /simplify を実行して指摘を反映 (またはスキップの理由を記録) してから、gh pr create をもう一度実行してください。
 Dependabot の統合 PR は dependabot-bulk skill から作れば免除されます。
+PR を作らず gh pr create に言及しているだけのコマンド (heredoc の本文など) なら、本文をファイル経由 (Write tool) にしてください。
 EOF
 exit 2
