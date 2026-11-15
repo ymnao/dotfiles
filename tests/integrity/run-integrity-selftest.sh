@@ -35,6 +35,13 @@ if [ ! -f "$TRUST_CHECKER" ]; then
 fi
 command -v jq >/dev/null 2>&1 || { echo "ERROR: jq is required" >&2; exit 1; }
 
+# worktree ケースの fixture repo を開発者の ~/.gitconfig と呼び出し元 repo から切り離す
+# (tests/hooks-integrity/run-hooks-integrity-tests.sh と同じ規約)
+export GIT_CONFIG_GLOBAL=/dev/null
+export GIT_CONFIG_SYSTEM=/dev/null
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
+  GIT_COMMON_DIR GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
+
 BASE="$(mktemp -d "${TMPDIR:-/tmp}/integrity-tests.XXXXXX")"
 cleanup() { [ -n "${BASE:-}" ] && rm -rf "$BASE"; }
 trap cleanup EXIT
@@ -186,9 +193,11 @@ WT_MAIN="$(cd "$BASE/wt-main" && pwd -P)"
 cp -R "$DF/." "$WT_MAIN/"
 cp "$CHECKER" "$WT_MAIN/tests/integrity/run-integrity-check.sh"
 cp "$SCRIPT_DIR/codex-config-subset.py" "$SCRIPT_DIR/allowed-mcp.txt" "$WT_MAIN/tests/integrity/"
-wt_git() { git -C "$WT_MAIN" -c user.name=t -c user.email=t@example.invalid -c commit.gpgsign=false -c core.hooksPath=/dev/null "$@" >/dev/null 2>&1; }
-wt_git init -q && wt_git config gc.auto 0 && wt_git config maintenance.auto false \
-  && wt_git add -A && wt_git commit -q -m init && wt_git worktree add -q "$BASE/wt-linked"
+wt_git() { git -C "$WT_MAIN" -c user.name=t -c user.email=t@example.invalid "$@" >/dev/null; }
+rc=0
+{ wt_git init -q && wt_git config gc.auto 0 && wt_git config maintenance.auto false \
+  && wt_git add -A && wt_git commit -q -m init && wt_git worktree add -q "$BASE/wt-linked"; } || rc=$?
+check "worktree-fixture-setup" 0 "$rc"
 WT_LINKED="$(cd "$BASE/wt-linked" && pwd -P)"
 run_checker_unpinned() {
   # $1=HOME, $2=チェッカーを置いた checkout。INTEGRITY_DOTFILES を渡さない
@@ -201,6 +210,12 @@ check "worktree-main-checkout-ok" 0 "$(run_checker_unpinned "$H" "$WT_MAIN")"
 check "worktree-linked-expects-main" 0 "$(run_checker_unpinned "$H" "$WT_LINKED")"
 H="$BASE/home-wt-linked"; make_good_home "$H" "$WT_LINKED"
 check "worktree-linked-link-detected" 1 "$(run_checker_unpinned "$H" "$WT_LINKED")"
+# 中身の検査は本体ではなく走らせた側のツリーを見る (worktree で足したファイル symlink を merge 前に拾う)
+mkdir -p "$WT_LINKED/codex/skills/wt-only"
+ln -s ../pr "$WT_LINKED/codex/skills/wt-only/SKILL.md"
+H="$BASE/home-wt-main"
+check "worktree-linked-tree-content-checked" 1 "$(run_checker_unpinned "$H" "$WT_LINKED")"
+rm -r "$WT_LINKED/codex/skills/wt-only"
 
 # ---- verify-settings-codex-domains.sh の selftest (issue #189) ----
 # 検知器が壊れて常に PASS を返す退行を防ぐ。base fixture は全項目を
