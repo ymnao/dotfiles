@@ -153,6 +153,11 @@
           },
           {
             "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/require-simplify-before-pr.sh\"",
+            "onFailure": "block"
+          },
+          {
+            "type": "command",
             "command": "bash \"$HOME/.claude/hooks/guard-codex-dir.sh\"",
             "onFailure": "block"
           },
