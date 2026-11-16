@@ -29,10 +29,9 @@
 - 実装の終点は commit。push / PR 作成 / merge と、戻しにくい共有状態の変更 (PR・issue の close、release 作成) は
   user の明示語 (「push して」「PR 作って」等) を待つ。plan に「コミット & PR」と書いてあっても "ok" は commit まで。
   「マージしたい」等の状態表明は実行許可ではない。commit と push を 1 コマンドで連結しない
+- (Claude Desktop のみ) PR 作成後の Auto-fix (CI 監視の自動修正) は提案しない。明示語なしで push する経路になるので、user が求めたときだけ有効にする
 - 例外: 手順に push / PR 作成が明記された skill の起動は、その SKILL.md に明記された操作 (close を含む) の明示指示とみなす
   (merge は含まない)。repo 固有の例外はその repo の memory に置く
-- (Claude Desktop のみ) PR 作成後に Auto-fix (CI 監視の自動修正) を提案しない・有効にもしない。user が求めたときだけ有効にする。
-  Auto-fix は merge 前に agent が明示語なしで commit / push する経路になり、上の「push は明示語を待つ」と食い違うため
 
 ## コミットメッセージ
 
