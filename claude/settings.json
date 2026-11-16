@@ -131,6 +131,7 @@
   },
   "requiredMinimumVersion": "2.1.222",
   "crossSessionInbound": "refuse",
+  "language": "japanese",
   "hooks": {
     "PreToolUse": [
       {
@@ -190,6 +191,27 @@
           {
             "type": "command",
             "command": "bash \"$HOME/.claude/hooks/post-format.sh\""
+          }
+        ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/language-reminder.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/language-reminder.sh\"",
+            "timeout": 10
           }
         ]
       }
