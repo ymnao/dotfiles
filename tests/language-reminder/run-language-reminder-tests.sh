@@ -54,31 +54,32 @@ emits_for() {
     '.hookSpecificOutput.hookEventName == $e and (.hookSpecificOutput.additionalContext | test("japanese"))' >/dev/null 2>&1
 }
 
+# PostToolUse を 9 回流し、何も出なかった回数を返す
+silent_9() {
+  local n=0
+  for _ in 1 2 3 4 5 6 7 8 9; do
+    [ -z "$(fire PostToolUse "$@")" ] && n=$((n + 1))
+  done
+  echo "$n"
+}
+
 out=$(fire UserPromptSubmit)
 check "prompt-emits" emits_for UserPromptSubmit "$out"
 check "prompt-stdout-is-single-json" test "$(printf '%s' "$out" | jq -s 'length' 2>/dev/null)" = 1
 
 # 1〜9 回目は出ず、10 回目だけ出る
-silent=0
-for _ in 1 2 3 4 5 6 7 8 9; do
-  [ -z "$(fire PostToolUse)" ] && silent=$((silent + 1))
-done
-check "tool-1-to-9-silent" test "$silent" = 9
+check "tool-1-to-9-silent" test "$(silent_9)" = 9
 check "tool-10-emits" emits_for PostToolUse "$(fire PostToolUse)"
 check "tool-11-silent" test -z "$(fire PostToolUse)"
 
 # プロンプトでカウンタが戻る: 5 回進めてからプロンプト → 次の 10 回目まで出ない
 for _ in 1 2 3 4 5; do fire PostToolUse >/dev/null; done
 fire UserPromptSubmit >/dev/null
-silent=0
-for _ in 1 2 3 4 5 6 7 8 9; do
-  [ -z "$(fire PostToolUse)" ] && silent=$((silent + 1))
-done
-check "reset-by-prompt-silent-until-10" test "$silent" = 9
+check "reset-by-prompt-silent-until-10" test "$(silent_9)" = 9
 check "reset-by-prompt-emits-at-10" emits_for PostToolUse "$(fire PostToolUse)"
 
 # カウンタはセッションごとに別
-for _ in 1 2 3 4 5 6 7 8 9; do fire PostToolUse s2 >/dev/null; done
+silent_9 s2 >/dev/null
 check "other-session-independent" test -z "$(fire PostToolUse s3)"
 
 # session_id のパス区切りはサニタイズされ、カウンタは TMPDIR の外に出ない
