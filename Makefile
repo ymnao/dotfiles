@@ -105,6 +105,7 @@ test: lint-locale-pin ## Verify shell scripts (shellcheck), JSON files (jq), and
 	@bash tests/link-backup/run-link-backup-tests.sh
 	@bash tests/verify-ci/run-verify-ci-tests.sh
 	@bash tests/simplify-gate/run-simplify-gate-tests.sh
+	@bash tests/language-reminder/run-language-reminder-tests.sh
 	@bash tests/lint-gh-body/run-lint-gh-body-tests.sh
 	@bash tests/hooks-integrity/run-hooks-integrity-tests.sh
 	@# 実 repo に対しても 1 回走らせる (warn-only)。Stop hook 経由では
