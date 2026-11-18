@@ -186,10 +186,12 @@ def main():
     since = args.since or (datetime.datetime.now(datetime.timezone.utc).date()
                            - datetime.timedelta(days=args.days)).isoformat()
     try:
-        since_epoch = datetime.datetime.strptime(since, "%Y-%m-%d").replace(
-            tzinfo=datetime.timezone.utc).timestamp()
+        since_dt = datetime.datetime.strptime(since, "%Y-%m-%d").replace(tzinfo=datetime.timezone.utc)
     except ValueError:
         sys.exit(f"--since は YYYY-MM-DD で渡す: {since}")
+    # strptime は 2026-1-5 も通すが、行の timestamp とは零埋めの文字列で比べる
+    since = since_dt.date().isoformat()
+    since_epoch = since_dt.timestamp()
     os.makedirs(args.out_dir, exist_ok=True)
     # 前回の実行のチャンクが残ると、発話 0 件の回でも古いチャンクを読ませてしまう
     for p in glob.glob(os.path.join(args.out_dir, "chunk-*.txt")):
