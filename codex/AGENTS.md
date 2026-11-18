@@ -9,7 +9,7 @@
 ## Shell 環境
 
 - ユーザーの interactive shell は **fish**。手で叩かせるコマンドは fish 構文で提示する
-  (`export` / `alias` / `source ~/.zshrc` 等の bash/zsh 構文は使わない)
+  (`export` / `alias` / `source ~/.zshrc` 等の bash/zsh 構文は使わない)。コマンドと一緒に渡すものは「報告」節
 - Claude Code / codex の Bash tool は zsh 経由なので agent 自身のコマンドは影響を受けない
 - agent の Bash 呼び出しは hook (`agents/hooks/block-dangerous-commands.sh`、Claude Code ではさらに
   `claude/hooks/guard-sandbox-exclusions.sh`) がコマンド文字列を静的に判定する。止まるたびに往復が 1 つ増えるので、止まる形を最初から書かない
@@ -102,6 +102,11 @@
 - **この照合は user への報告だけでなく、docs・コメント・コミットメッセージなど成果物に書き込む主張にも適用する**。永続する文章の方が「設計判断の根拠として引用される」ぶん誤りのコストが高い。書き方の詳細は dotfiles の `claude/rules/written-claims.md` に集約する(ここには複製しない)
 - レビュー指摘への対応は入口を問わず (Copilot / 人間 / レビューツール)、指摘ごとに「修正済み (コミットハッシュ) / 対応しない + 理由」を表形式で報告し、すべての指摘に回答する
 - 同じ内容の指摘・訂正をユーザーから 2 回受けたら、CLAUDE.md または該当 skill への追記を提案する
+- user に作業か判断を頼むときは、同じメッセージに次の 4 つを入れる。「user の作業」とだけ書いて終えない
+  - そのまま打てるコマンド (値は埋める)
+  - 成功したときの見え方
+  - 判断が要るなら、その観点と推奨
+  - 失敗したときの分岐
 
 ## モデル分担ルール
 
