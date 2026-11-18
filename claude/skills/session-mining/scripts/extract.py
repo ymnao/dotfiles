@@ -186,7 +186,8 @@ def main():
     since = args.since or (datetime.datetime.now(datetime.timezone.utc).date()
                            - datetime.timedelta(days=args.days)).isoformat()
     try:
-        since_epoch = datetime.datetime.strptime(since, "%Y-%m-%d").timestamp()
+        since_epoch = datetime.datetime.strptime(since, "%Y-%m-%d").replace(
+            tzinfo=datetime.timezone.utc).timestamp()
     except ValueError:
         sys.exit(f"--since は YYYY-MM-DD で渡す: {since}")
     os.makedirs(args.out_dir, exist_ok=True)

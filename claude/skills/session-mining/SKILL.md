@@ -25,7 +25,7 @@ AGENTS.md の「同じ指摘を 2 回受けたら追記を提案する」を、�
 リテラルで書く。
 
 ```
-python3 -I ~/.claude/skills/session-mining/scripts/extract.py --out-dir <scratchpad>/session-mining <引数>
+python3 -I ~/.claude/skills/session-mining/scripts/extract.py --out-dir "<scratchpad>/session-mining" <引数>
 ```
 
 出力の会計表 (除外理由ごとの件数) は報告にそのまま載せる。何件を見て何件を落としたかが
