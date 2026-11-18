@@ -15,11 +15,22 @@ Run each `gh` command as a bare invocation and substitute prior output literally
    - Run `bash "$HOME/.claude/skills/pr/scripts/gather-branch-info.sh" <default-branch>` substituting the value literally
 2. Check for an existing OPEN PR for this branch (avoids creating a duplicate):
    - Run `gh repo view --json owner --jq '.owner.login'` — yields `<owner>`
-   - Run `gh pr list --state open --limit 100 --json number,url,headRefName,baseRefName,headRepositoryOwner` as a bare invocation, then read the output and keep the rows whose `headRefName` equals `branch_name`, `baseRefName` equals `base_branch`, and `headRepositoryOwner.login` equals `<owner>`
+   - Run `gh pr list --state open --limit 100 --json number,url,headRefName,baseRefName,headRepositoryOwner,files,changedFiles` as a bare invocation, then read the output and keep the rows whose `headRefName` equals `branch_name`, `baseRefName` equals `base_branch`, and `headRepositoryOwner.login` equals `<owner>` (`files` / `changedFiles` は step 2a で使う)
    - **`--limit` を省略しない**。`gh pr list` の既定は 30 件 (`gh pr list --help` の `-L, --limit int ... (default 30)`) なので、既定のままだと open PR が 30 件を超える repo で探している行が出力に入らず、**重複 PR があるのに「0 matches」と読んで作成に進む**
    - **100 は上限ではなく閾値**なので、切り詰めを検出する。**返った行数が `--limit` の値と等しければ truncated とみなし**、limit を上げて打ち直す (一致したまま「0 matches」と結論しない)。`gh` は `--limit 1000` も受け付ける
    - **`--head <branch_name>` は使わない**。**名前をコマンドに渡さず出力側で突き合わせる** (理由は dotfiles の `claude/rules/acceptance-patterns.md` の「外部由来の名前」の項)。同じ理由で `<owner>` の `--jq` 埋め込みもやめている (`gh` を bare 単独で保てる副次効果もある)
-   - 0 matches → proceed / ≥1 match → report the PR URL and stop
+   - 0 matches → step 2a / ≥1 match → report the PR URL and stop
+2a. Check file overlap with the other open PRs (step 2 の出力を使う。`gh pr list` を打ち直さない):
+   - Run `git -c core.quotePath=false diff --name-only <base_branch>...HEAD` — yields this branch's changed files
+   - step 2 の出力から `baseRefName` が `base_branch` と等しい行を取り (owner は問わない。fork からの PR も衝突する)、各行の `files[].path` と上の一覧の共通部分を出す
+   - **`files` の件数が `changedFiles` より少ない行は途中で切れている**。その PR だけ `gh pr diff <number> --name-only` を単独で打って全件を取り直す。`<number>` は出力の数字をそのまま書く (ブランチ名・title は外部由来の名前なのでコマンドに書かない)
+   - 共通部分が全行で 0 件 → step 3 へ
+   - 1 件以上 → 重なる PR の番号・URL・共通ファイルを示し、次のどちらにするかを user に聞いて止まる:
+     - **同じブランチに積む**: この PR は作らず、重なる PR のブランチへ移るかを user と決める
+     - **別 PR のまま出す (既定)**: PR 本文の Summary の後に `## マージ順` 節を置き、次の 3 つを書く。step 6 の merge 判定は要確認に上げる
+       - 推奨マージ順 (重なる PR とこの PR の番号の並び。決め手を 1 文で)
+       - マージしない方がよいもの (この PR に変更が包含される PR など。無ければ「なし」)
+       - 最新化と CI の再実行の見込み回数 (推奨順で後になる PR が、前の merge のたびに最新化と CI の再実行を要する回数)
 3. Pre-check: if `commit_count` is 0 → report no commits from base branch and stop
 4. Classify risk and run tier-appropriate review (do NOT skip this step):
    - Run `bash "$HOME/.claude/skills/pr/scripts/classify-risk.sh" <base_branch>` — yields `{"tier": ..., "reasons": [...]}`。tier と reasons は evidence の「リスク分類」に転記する
@@ -82,6 +93,7 @@ Run each `gh` command as a bare invocation and substitute prior output literally
        - `/dev` の実機確認に未確認の項目がある
        - (b) 起票 / (c) 対応しない の finding がある
        - Draft 判定が draft
+       - step 2a で open PR とファイルが重なった (読むべき箇所は本文の `## マージ順`)
      - script の exit が 0 以外 → `要確認 — merge-gate 失敗: <stderr>` と書く (判定できていないものを `no look merge 可` にしない)
 7. Run `git push origin HEAD` (no-op if origin is already up to date; also syncs review-fix commits made after an early push). **ブランチ名を代入しない**。`git push origin HEAD` は "A handy way to push the current branch to the same name on the remote" (`git help push`) で `<branch_name>` 指定と等価。**`-u` は付けない**。sandbox 内の push は `fatal: failed to store: 100001` を出しながら本体は成功するので、**`fatal:` の文言で失敗と読まず**、`git ls-remote --heads origin "refs/heads/$(git branch --show-current)"` の SHA が `git rev-parse HEAD` と一致することで確かめる。代入を避ける理由と、この `"$(...)"` が代入とは別物で安全な理由は dotfiles の `claude/rules/acceptance-patterns.md` の「外部由来の名前」の項。パターン無しの全件 (`git ls-remote --heads origin`) でも安全だが、remote のブランチ数だけ行が返るので絞る。If the push is rejected as non-fast-forward (origin advanced independently), do NOT force push — report the divergence to the user and stop. `-u` を付けない理由・`refs/heads/` を付ける理由・sandbox 内の git のほかの罠 (checkout / merge / worktree) は dotfiles の `docs/sandbox-git.md`
 8. Create the PR with `gh pr create`. Add `--draft` when step 4 **or** step 5 decided draft (draft-wins). **Exception**: user が PR 作成前の任意の時点(step 5 の walkthrough 応答 / それ以前 いずれも可、tier を問わない)で「step 4 の draft 判定は別 PR で追う。normal で作って」等、draft 判定を明示的に override する指示を出した場合は normal で作成し、その override 内容(受け取った user 指示の要約と受け取った step)を evidence の Draft 判定に記録する。**制約**: normal override でも hook の defer 検査は bypass されないため、未起票 finding が残ったまま normal 化するには (b) 起票または (c) dismiss (「追跡しない (user 指示: <要約>)」の記録) が前提。marker 文字列 `defer(未起票)` を残すと hook が block して deadlock になる。If `linked_issue` exists, include `Closes #<number>` in the body. ただし **tier=high で override が step 5 前に受け取られた場合**、step 5 walkthrough で新 finding が surface した際は override 継続意思を user に再確認する(walkthrough で見えた新事実に対して pre-walkthrough override が sticky にならないよう safety net)。再確認では対象 finding の識別子を添えて override を継続するかを尋ね、その turn では `gh pr create` を実行せず、user の回答を受け取ってから作成する。
@@ -153,6 +165,7 @@ Created PR: <PR URL>
 | Commits | <commit_count> |
 | Changed files | <files_changed> files (+<insertions> -<deletions>) |
 | Risk tier | <tier> |
+| 重なる open PR | <なし / PR 番号と共通ファイル数、推奨マージ順、マージしない方がよいもの、最新化と再 CI の見込み回数> |
 | Review | <PASS / findings summary / skipped reason> |
 | Draft 判定 | <normal / draft> — <step 4 / step 4 pending / step 4 dismiss / step 5 / step 8 override, 理由> |
 | merge 判定 | <no look merge 可 / 要確認 — 当たった条件 / 読むべき file> |
