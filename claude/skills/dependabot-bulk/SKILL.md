@@ -42,6 +42,7 @@ open な Dependabot PR を 1 branch に統合し、push を 1 回にして CI �
    - **major** → 個別維持 (統合対象外)。breaking change の判断は人間がやる (release notes の意味的解釈は skill が肩代わりしない)
    - **patch / minor** → 統合対象。ecosystem 横断で 1 PR にまとめる (ecosystem 別分割はしない)
    - **unknown** (grouped PR / pre-release / パース不能) → 安全側で個別維持
+   - **ecosystem が unknown** (step 7 に取り込み手順が無い pip / cargo 等) → semver を問わず個別維持
    - **security ⚠ (🛡)** → 統合に含めるが表で ⚠ 表示し、user に「単独で先行 merge するか」を明示的に確認する
    - **統合対象が 1 件以下** → 「統合の意味なし。原本 PR をそのまま merge 推奨 (major は release notes を読んでから)」と報告し、「次: user が原本 PR を merge したら main のまま `/next <N>`」を添えて停止
 5. **Walkthrough → user 承認待ち** (pr skill step 5 と同型)

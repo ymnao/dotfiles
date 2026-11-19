@@ -209,7 +209,8 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
    3. この step が前回置いた 2 種類の行 (下の bulk 起動行と個別 merge 行) だけを、
       ここの結果で置き換えさせる。それ以外の Dependabot に触れる行 (実機未確認の項目
       など) は handoff skill の通常の扱いのまま残す
-   - **patch / minor が 2 件以上**: 「`/dependabot-bulk` を単体で起動する (`/dev` に
+   - **patch / minor で ecosystem が unknown でないものが 2 件以上** (bulk step 4 の
+     統合対象と同じ条件): 「`/dependabot-bulk` を単体で起動する (`/dev` に
      包まない。理由は bulk の冒頭)」を「次にやること」の先頭に置かせ、元の作業の
      残りはその後ろに残す
    - **それ以外で 1 件以上**: 「Dependabot PR #N … を user が個別に merge する
