@@ -178,10 +178,11 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      (`git merge-base --is-ancestor <mergeCommit の oid> main`) を打ち、PR が
      手元の main に届いていることを確かめて、ブランチを保留したことと合わせて
      報告する。`<scratchpad>/merged-branch.txt` は通常どおり消す
-4. **学びの昇格チェック**: このセッションで昇格すべき学び (同じ指摘を 2 回
-   受けた・skill の手順が実態とズレていた等) がないか振り返り、あれば
-   AGENTS.md の再発防止の順 (hook・lint・テスト → skill の手順の中の確認 →
-   CLAUDE.md / skill 本文 / memory) で置き場を決めて提案する (勝手に書き換えない)。
+4. **学びの昇格チェック**: このセッションで CLAUDE.md / skill / memory に
+   昇格すべき学び (同じ指摘を 2 回受けた・skill の手順が実態とズレていた等)
+   がないか振り返り、あれば提案する (勝手に書き換えない)。
+   - 同じ指摘を 2 回受けた分は AGENTS.md の再発防止の順で置き場を決める。
+     hook・lint・テストになったものはここで実装せず issue に起票する
    - ここで拾うのは merge 後に判明した分。作業中に事故を踏んでいれば
      その昇格は `/dev` の step 5b で PR 本体に載っているはず。事故が
      なければ 5b は skip されるので、載っていないこと自体は漏れではない
