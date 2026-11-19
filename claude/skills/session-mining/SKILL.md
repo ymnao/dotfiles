@@ -1,6 +1,6 @@
 ---
 name: session-mining
-description: Claude Code のセッションログ (~/.claude/projects/*/*.jsonl) からユーザー発話を取り出し、セッションをまたいで繰り返された訂正と毎回言っている指示を集め、規則化の候補 (CLAUDE.md / skill / hook / memory のどこに置くか) を出す。手動起動専用。提案だけを出し、ファイルは書き換えない
+description: Claude Code のセッションログ (~/.claude/projects/*/*.jsonl) からユーザー発話を取り出し、セッションをまたいで繰り返された訂正と毎回言っている指示を集め、規則化の候補 (hook・lint・テスト / skill / CLAUDE.md / memory のどこに置くか) を出す。手動起動専用。提案だけを出し、ファイルは書き換えない
 argument-hint: "[--since YYYY-MM-DD | --days N] [--project SUBSTR] [--exclude-project SUBSTR]"
 disable-model-invocation: true
 ---
@@ -79,8 +79,8 @@ step 1 の「2 セッション以上で同じ文面の発話」の一覧は、�
 
 | 分類 | 意味 | 打ち手 |
 |---|---|---|
-| 不在 | どこにも書かれていない | AGENTS.md の再発防止の順で検討する (散文の追記は最後) |
-| 事後検知 | 書かれているが、失敗してから気付く形になっている | 手順を事前の確認に変える |
+| 不在 | どこにも書かれていない | 訂正の系統は AGENTS.md の再発防止の順で検討する (散文の追記は最後)。既定化の系統は追記 |
+| 事後検知 | 書かれているが、失敗してから気付く形になっている | hook・lint・テストで止められなければ、手順を事前の確認に変える |
 | 過剰適用 | 規則が広すぎて、当てはめたくない場面にも出ている | 除外の条件を足す |
 | 対応済み | 既に書かれている | `git log -S` で書かれた日を出し、その日より後に再発があるかを見る |
 
@@ -93,9 +93,10 @@ step 1 の「2 セッション以上で同じ文面の発話」の一覧は、�
 
 1. 実測値 (別セッション数・期間、step 4 の grep)
 2. 分類 (step 5) と、対応済みなら規則の入った日
-3. 置き場: 全 repo に共通する振る舞いは `agents/AGENTS.md` か `claude/rules/`、
-   repo 固有はその repo の `CLAUDE.md`、特定の手順の中だけなら該当 skill、
-   機械で判定できて再発しているなら hook・lint・テスト、その repo の事実・経緯なら memory
+3. 置き場: まず手段を step 5 の打ち手で決める。散文にするなら、前の段 (hook・lint・テスト、
+   skill の手順の中の確認) を選ばなかった理由を添え、範囲で分ける: 全 repo に共通する振る舞いは
+   `agents/AGENTS.md` か `claude/rules/`、repo 固有はその repo の `CLAUDE.md`、
+   特定の手順の中だけなら該当 skill、その repo の事実・経緯なら memory
 4. 規則の文面の案 (判定基準と手順。日付・引用・固有名詞は根拠の欄に置き、文面に入れない)
 
 最後に、確かめていない範囲を書く: 打ち切った長い発話、除外した project、
