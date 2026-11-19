@@ -11,6 +11,8 @@ open な Dependabot PR を 1 branch に統合し、push を 1 回にして CI �
 
 これにより「PR 1 件 merge するたびに残 Dependabot PR が全部 CI を再消費する」問題は設定側で解消。このスキルは「既に立った PR の後処理 / cross-ecosystem 統合 / groups 未対応 ecosystem 追加時の後方互換」を担う。
 
+**`/dependabot-bulk` 単体で起動する**。ブランチ作成から push・PR 作成までをこの手順で終えるので、`/dev` に包むとブランチ作成・push・PR 作成が二重になる。前後のつなぎは `/next` と、報告 (step 4 の停止を含む) の「次」行が受け持つ (Claude Code のみ。codex には `/next` も `/dev` も無い)。
+
 ## Steps
 
 1. **前提チェック**
@@ -40,11 +42,13 @@ open な Dependabot PR を 1 branch に統合し、push を 1 回にして CI �
    - **major** → 個別維持 (統合対象外)。breaking change の判断は人間がやる (release notes の意味的解釈は skill が肩代わりしない)
    - **patch / minor** → 統合対象。ecosystem 横断で 1 PR にまとめる (ecosystem 別分割はしない)
    - **unknown** (grouped PR / pre-release / パース不能) → 安全側で個別維持
+   - **ecosystem が unknown** (step 7 に取り込み手順が無い pip / cargo 等) → semver を問わず個別維持
    - **security ⚠ (🛡)** → 統合に含めるが表で ⚠ 表示し、user に「単独で先行 merge するか」を明示的に確認する
-   - **統合対象が 1 件以下** → 「統合の意味なし。原本 PR をそのまま merge 推奨」と報告して停止
+   - **統合対象が 1 件以下** → 「統合の意味なし。原本 PR をそのまま merge 推奨 (major は release notes を読んでから)」と報告し、「次: user が原本 PR を merge したら main のまま `/next <N>`」を添えて停止
 5. **Walkthrough → user 承認待ち** (pr skill step 5 と同型)
    - 統合対象・個別維持・security 単独先行の 3 リストを提示
    - user が `all` 等の明示指示で起動していない限り、次 turn の user 応答を待つ
+   - security 単独先行を選ばれたら、user がその PR を merge するのを待ち、デフォルトブランチを pull してから、残りの統合対象で step 4 の「1 件以下」を判定し直して step 6 へ進む。統合ブランチを先に切ると、後から入る security の lockfile 変更で統合 PR が衝突し、取り込み直しの push で CI がもう 1 回走る
 6. **統合ブランチ作成**
    - base 名 `deps/bulk-$(date +%Y-%m-%d)` を試す
    - 既存の場合 (同日リトライ / 朝夕 2 回運用) は `deps/bulk-<YYYY-MM-DD>-2` `-3` と suffix を付けて空きを探す
@@ -162,3 +166,11 @@ step 7 の cherry-pick / lockfile 更新 / `make test` などが失敗した状�
 - #<N> <pkg> <X>→<Y> (major / unknown / security 単独先行)
 
 **検証**: `make test` PASS / `make lint` clean / CI <run-id> success
+
+**推奨マージ順** (個別維持が 1 件以上あるときだけ): 統合 PR → major / unknown を 1 本ずつ (security 単独先行は step 5 で merge 済み)
+
+**そのまま merge しない方がよいもの** (個別維持が 1 件以上あるときだけ):
+- major: release notes を読んで breaking change を判断するまで
+- 統合 PR と同じ lockfile (`pnpm-lock.yaml` / `uv.lock` 等) を触る PR: 統合 PR の merge 後に conflict したら、`@dependabot recreate` とコメントして作り直させてから (`rebase-strategy: disabled` の repo では自動では直らない。作り直しで CI が 1 回走る)
+
+**次**: 統合 PR を merge したら `/next`。個別維持の PR は user が merge したら main のまま `/next <N>`
