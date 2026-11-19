@@ -40,12 +40,11 @@ simplify / codex-review / pr の個別指示と code-reviewer サブエージェ
     dotfiles の `docs/ai-operations.md` §10)
 - **引数なし**: プロジェクトルートの `HANDOFF.md` を読み、「未完了・次に
   やること」の最優先タスクを対象にする。HANDOFF.md が無い・残タスクが
-  曖昧な場合はタスク内容を user に確認して停止する。最優先が
-  `/dependabot-bulk` (`/next` が Dependabot PR を数えて置く) なら `/dev` では
-  受けず、`/dependabot-bulk` を単体で打つよう案内して停止する (bulk は push と
-  PR 作成まで自分で終えるので、`/dev` で包むと二重になる)。自由文として
-  `/dev /dependabot-bulk` と渡されたときも同じ
+  曖昧な場合はタスク内容を user に確認して停止する
 - **自由文** (`/dev <タスク記述>`): 記述内容をそのままタスクとする
+
+引数なしで取った最優先タスク、または自由文が `/dependabot-bulk` なら `/dev` では
+受けず、`/dependabot-bulk` を単体で打つよう案内して停止する (理由は bulk の冒頭)。
 
 ブランチの扱い:
 
