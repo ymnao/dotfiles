@@ -45,6 +45,8 @@ simplify / codex-review / pr の個別指示と code-reviewer サブエージェ
 
 引数なしで取った最優先タスク、または自由文が `/dependabot-bulk` なら `/dev` では
 受けず、`/dependabot-bulk` を単体で打つよう案内して停止する (理由は bulk の冒頭)。
+最優先タスクが `/next` の置いた「Dependabot PR を user が個別に merge する」行なら、
+それは user の作業なので受けず、その行をそのまま示して停止する。
 
 ブランチの扱い:
 
