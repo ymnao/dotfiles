@@ -15,11 +15,20 @@ Run each `gh` command as a bare invocation and substitute prior output literally
    - Run `bash "$HOME/.agents/skills/pr/scripts/gather-branch-info.sh" <default-branch>` substituting the value literally
 2. Check for an existing OPEN PR for this branch (avoids creating a duplicate):
    - Run `gh repo view --json owner --jq '.owner.login'` — yields `<owner>`
-   - Run `gh pr list --state open --limit 100 --json number,url,headRefName,baseRefName,headRepositoryOwner` as a bare invocation, then read the output and keep the rows whose `headRefName` equals `branch_name`, `baseRefName` equals `base_branch`, and `headRepositoryOwner.login` equals `<owner>`
+   - Run `gh pr list --state open --limit 100 --json number,url,headRefName,baseRefName,headRepositoryOwner,files,changedFiles --jq '.[] | ([.files[].path] | unique) as $p | {number, url, headRefName, baseRefName, owner: .headRepositoryOwner.login, changedFiles, listed: ($p | length), renamed: [.files[] | select(.changeType == "RENAMED") | .path], paths: $p}'` as a bare invocation (1 PR が 1 行で出る), then read the output and keep the rows whose `headRefName` equals `branch_name`, `baseRefName` equals `base_branch`, and `owner` equals `<owner>`
    - **`--limit` を省略しない**。`gh pr list` の既定は 30 件なので、既定のままだと open PR が 30 件を超える repo で探している行が出力に入らず、**重複 PR があるのに「0 matches」と読んで作成に進む**
    - **100 は上限ではなく閾値**なので、切り詰めを検出する。**返った行数が `--limit` の値と等しければ truncated とみなし**、limit を上げて打ち直す (一致したまま「0 matches」と結論しない)
    - **`--head <branch_name>` は使わない**。**名前をコマンドに渡さず出力側で突き合わせる** (理由は dotfiles の `claude/rules/acceptance-patterns.md` の「外部由来の名前」の項)。同じ理由で `<owner>` の `--jq` 埋め込みもやめている
-   - 0 matches → proceed / ≥1 match → report the PR URL and stop
+   - 0 matches → step 2a / ≥1 match → report the PR URL and stop
+2a. Check file overlap with the other open PRs (step 2 の `gh pr list` の絞り込む前の全行を使う。打ち直さない):
+   - Run `git -c core.quotePath=false diff --name-only --no-renames <base_branch>...HEAD` — yields this branch's changed files (`--no-renames` の理由は dotfiles の `claude/rules/shell.md` の rename の項)
+   - `baseRefName` が `base_branch` と等しい行 (owner は問わない。fork からの PR も衝突する。自分の PR の行は除く) ごとに、`paths` と上の一覧の共通部分を出す
+   - **`listed` が `changedFiles` より少ない行 (途中で切れている) と、`renamed` が空でない行 (rename の元パスが `paths` に出ない)** は、その PR だけ `gh pr diff <number>` を単独で打ち、`diff --git a/<元> b/<先>` の行の両方のパスで共通部分を出し直す (`<number>` は出力の数字。ブランチ名・title は使わない。`--name-only` は元パスを出さないので付けない)。取り直しが失敗した PR は 0 件と数えず、`## マージ順` に「重なり未確認: #N」と書く
+   - 共通部分が全行で 0 件、かつ重なり未確認の PR が無い → step 3 へ
+   - それ以外 → 止まらずに別 PR のまま進め、PR 本文の Summary の後に `## マージ順` 節を置いて次の 3 つを書く。同じブランチに積む方がよいかは完了報告で user に委ねる (積み直しはブランチを替えるので user の判断)
+     - 重なる PR の番号・URL・共通ファイルと、推奨マージ順 (決め手を 1 文で)
+     - マージしない方がよいもの (この PR に変更が包含される PR など。無ければ「なし」)。包含と書くのは `gh pr diff <number>` で中身を読んだ PR だけで、読んでいなければ「未判定」と書く (ファイル名の一致は包含を意味しない)
+     - 最新化と CI の再実行の見込み回数 (推奨順で後になる PR 1 本につき 1 回。直前の merge の後にまとめて最新化する前提)
 3. Pre-check: if `commit_count` is 0 → report no commits from base branch and stop
 4. Classify risk and run tier-appropriate review (do NOT skip this step):
    - Run `bash "$HOME/.agents/skills/pr/scripts/classify-risk.sh" <base_branch>` — yields `{"tier": ..., "reasons": [...]}`
@@ -45,6 +54,7 @@ Run each `gh` command as a bare invocation and substitute prior output literally
        - tier が medium / high (この harness では独立レビューができないので、merge 前に Claude Code 側のレビューが要る)
        - evidence の検証に `未実施` か FAIL がある
        - UNRESOLVED の finding が残っている、または draft で作る
+       - step 2a で open PR とファイルが重なった、または重なり未確認の PR がある (読むべき箇所は本文の `## マージ順`)
      - script の exit が 0 以外 → `要確認 — merge-gate 失敗: <stderr>` と書く (判定できていないものを `no look merge 可` にしない)
 7. Run `git push origin HEAD` (no-op if origin is already up to date; also syncs review-fix commits made after an early push). **ブランチ名を代入しない**。`git push origin HEAD` は "A handy way to push the current branch to the same name on the remote" (`git help push`) で `<branch_name>` 指定と等価。**`-u` は付けない**。sandbox 内の push は `fatal: failed to store: 100001` を出しながら本体は成功するので、**`fatal:` の文言で失敗と読まず**、`git ls-remote --heads origin "refs/heads/$(git branch --show-current)"` の SHA が `git rev-parse HEAD` と一致することで確かめる。代入を避ける理由と、この `"$(...)"` が代入とは別物で安全な理由は dotfiles の `claude/rules/acceptance-patterns.md` の「外部由来の名前」の項。If the push is rejected as non-fast-forward (origin advanced independently), do NOT force push — report the divergence to the user and stop. `-u` を付けない理由・`refs/heads/` を付ける理由・sandbox 内の git のほかの罠 (checkout / merge / worktree) は dotfiles の `docs/sandbox-git.md`
 8. Create the PR with `gh pr create` (add `--draft` when step 4/5 decided draft). If `linked_issue` exists, include `Closes #<number>` in the body.
@@ -89,7 +99,7 @@ tier: <tier> — <reasons を列挙>
 Evidence rules (strict):
 - Write ONLY results of commands actually executed in this session. Before writing each row, check it against the actual tool output. If a verification step 4 requires for this tier was not run, write "未実施"; if the tier does not require it or the project has none, write "該当なし" — never leave it blank or omit the row.
 - Transcribe outputs as summaries (counts, last lines), not full logs.
-- PR を作った後に commit を足したら、`/pr` は step 2 で止まるので次を手で行う: step 4 のこの tier の検証を新しい HEAD で回す → step 6 の merge 判定を出し直す → `gh pr edit <PR URL> --body-file <path>` で本文を差し替える。判定は user が diff を読まずに merge する根拠になるので、script だけ走らせ直して前の HEAD の検証結果を流用しない。
+- PR を作った後に commit を足したら、`/pr` は step 2 で止まるので次を手で行う: step 2 の `gh pr list` を打ち直して (PR 作成時の出力を使い回さない) step 2a を新しい HEAD で回す → step 4 のこの tier の検証を新しい HEAD で回す → step 6 の merge 判定を出し直す → `gh pr edit <PR URL> --body-file <path>` で本文を差し替える。判定は user が diff を読まずに merge する根拠になるので、script だけ走らせ直して前の HEAD の検証結果を流用しない。
 
 ## Report format
 
@@ -101,5 +111,6 @@ Created PR: <PR URL>
 | Commits | <commit_count> |
 | Changed files | <files_changed> files (+<insertions> -<deletions>) |
 | Risk tier | <tier> |
+| 重なる open PR | <なし (base が同じ open PR N 件と照合) / PR 番号と推奨マージ順、積むか別 PR のままかの推奨を 1 文 (詳細は本文の `## マージ順`)。積む方がよければ指示を> |
 | Review | <PASS / findings summary / skipped reason> |
 | merge 判定 | <no look merge 可 / 要確認 — 当たった条件 / 読むべき file> |
