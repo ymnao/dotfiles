@@ -43,10 +43,9 @@ simplify / codex-review / pr の個別指示と code-reviewer サブエージェ
   曖昧な場合はタスク内容を user に確認して停止する
 - **自由文** (`/dev <タスク記述>`): 記述内容をそのままタスクとする
 
-引数なしで取った最優先タスク、または自由文が `/dependabot-bulk` なら `/dev` では
-受けず、`/dependabot-bulk` を単体で打つよう案内して停止する (理由は bulk の冒頭)。
-最優先タスクが `/next` の置いた「Dependabot PR を user が個別に merge する」行なら、
-それは user の作業なので受けず、その行をそのまま示して停止する。
+引数なしで取った最優先タスク、または自由文が `/dependabot-bulk` か、`/next` の
+置いた「Dependabot PR を user が個別に merge する」行なら `/dev` では受けず、その
+まま示して停止する (bulk を `/dev` に包まない理由は bulk の冒頭。merge は user の作業)。
 
 ブランチの扱い:
 

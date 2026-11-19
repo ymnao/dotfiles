@@ -197,15 +197,13 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      handoff に引き継ぐ
 5. **handoff**: `/handoff` skill を実行して HANDOFF.md を更新する。
    `.github/dependabot.yml` (か `.yaml`) がある repo では、その前に open の Dependabot PR を
-   bulk と同じ分類器で分け、handoff に渡す内容を決める。件数で決めないのは、
-   `groups` で複数の更新をまとめた PR は分類器が `unknown` (個別維持) にするので、
-   open が 2 件でも統合対象は 1 件で bulk が step 4 で止まるため
+   bulk と同じ分類器で分け、handoff に渡す内容を決める (`groups` でまとめた PR は
+   `unknown` = 個別維持になるので、件数では bulk が step 4 で止まる)
    1. `/dependabot-bulk` の step 2 と同じ `gh pr list ...` を同じ注意 (`run_in_background`、
       リダイレクトなし、exit code で成否判定) で打つ
    2. `jq -n 'input' "<path>" | bash "$HOME/.claude/skills/dependabot-bulk/scripts/list-dependabot-prs.sh" | jq -r '.[] | "#\(.number) \(.semver) \(.ecosystem)"'`
       で分類を出す
-   3. 前回の HANDOFF に残る Dependabot の行は、ここの結果で置き換えさせる (残すと、
-      user が個別に merge した後も古い行が先頭に残る)
+   3. 前回の HANDOFF に残る Dependabot の行は、ここの結果で置き換えさせる
    - **patch / minor が 2 件以上**: 「`/dependabot-bulk` を単体で起動する (`/dev` に
      包まない。理由は bulk の冒頭)」を「次にやること」の先頭に置かせ、元の作業の
      残りはその後ろに残す
@@ -215,7 +213,7 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
    - **0 件**: Dependabot の行を置かない
 6. **次タスク候補の提示**: HANDOFF.md の残タスクと open issues
    (`gh issue list --state open --limit 10`) から次の候補を優先順で並べて
-   **停止する** (bulk も起動せず提示まで)。次サイクルは user が `/clear` → `/dev`
+   **停止する**。次サイクルは user が `/clear` → `/dev`
    で開始する (HANDOFF の先頭が `/dependabot-bulk` なら `/clear` → `/dependabot-bulk`)
    (ai-operations §4「無関係タスク間で /clear」の定石に従い、同一セッション
    での連続実行はしない)。あわせて健康状態を 2 行で報告する
