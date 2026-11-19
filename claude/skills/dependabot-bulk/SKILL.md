@@ -11,6 +11,8 @@ open な Dependabot PR を 1 branch に統合し、push を 1 回にして CI �
 
 これにより「PR 1 件 merge するたびに残 Dependabot PR が全部 CI を再消費する」問題は設定側で解消。このスキルは「既に立った PR の後処理 / cross-ecosystem 統合 / groups 未対応 ecosystem 追加時の後方互換」を担う。
 
+**`/dependabot-bulk` 単体で起動する**。ブランチ作成から push・PR 作成までをこの手順で終えるので、`/dev` に包むと二重になる。前後のつなぎは `/next` (Dependabot PR が 2 件以上あれば提示する) と、step 13 の報告の末尾の行が受け持つ。
+
 ## Steps
 
 1. **前提チェック**
@@ -162,3 +164,16 @@ step 7 の cherry-pick / lockfile 更新 / `make test` などが失敗した状�
 - #<N> <pkg> <X>→<Y> (major / unknown / security 単独先行)
 
 **検証**: `make test` PASS / `make lint` clean / CI <run-id> success
+
+**推奨マージ順** (個別維持が 1 件以上あるときだけ):
+1. security 単独先行の PR
+2. 統合 PR
+3. major / unknown を 1 本ずつ
+
+**そのまま merge しない方がよいもの**:
+- major: release notes を読んで breaking change を判断するまで
+- 統合 PR と同じ lockfile (`pnpm-lock.yaml` / `uv.lock` 等) を触る PR: 統合 PR の merge 後に conflict したら、その PR に `@dependabot recreate` とコメントして作り直させてから (`rebase-strategy: disabled` なので自動では直らない)
+
+**次**: 統合 PR を merge したら `/next`
+
+この末尾の 1 行は省かない。`/next` が HANDOFF の元の作業へ戻す。

@@ -195,10 +195,25 @@ description: merge 後の後始末を 1 コマンドで実行する — merged �
      handoff にその 1 行を書く手間ごと無駄になる
    - 反映結果 (どこに何を書いたか / ブランチ名 / PR URL) を step 5 の
      handoff に引き継ぐ
-5. **handoff**: `/handoff` skill を実行して HANDOFF.md を更新する
+5. **handoff**: `/handoff` skill を実行して HANDOFF.md を更新する。その前に
+   open の Dependabot PR を
+   `gh pr list --author app/dependabot --state open --json number,title --jq '.[] | "#\(.number) \(.title)"'`
+   で数え、件数で handoff に渡す内容を決める (数えるのは HANDOFF に書かせるため。
+   step 6 の後では handoff が済んでいる)
+   - **2 件以上**: 「`/dependabot-bulk` を単体で起動する (`/dev` を付けない)」を
+     「次にやること」の先頭に置かせ、元の作業の残りはその後ろに残す。bulk は
+     push と PR 作成まで自分の手順で終える skill なので、`/dev` に包むと
+     ブランチ作成・push・PR が二重になる
+   - **1 件**: 統合しない (`groups` で ecosystem ごとに 1 本にまとまっており、
+     bulk の step 4 も統合対象が 1 件以下なら原本 PR の merge を勧める)。「#N をそのまま
+     merge」を 1 行置かせる
+   - **0 件**: 何も足さない
+   - bulk を起動するのは user。ここでは提示までにする
 6. **次タスク候補の提示**: HANDOFF.md の残タスクと open issues
    (`gh issue list --state open --limit 10`) から次の候補を優先順で並べて
-   **停止する**。次サイクルは user が `/clear` → `/dev` で開始する
+   **停止する**。step 5 で Dependabot PR が 2 件以上あった場合は `/dependabot-bulk`
+   を第一候補にし、次サイクルを `/clear` → `/dependabot-bulk` と示す。
+   それ以外の次サイクルは user が `/clear` → `/dev` で開始する
    (ai-operations §4「無関係タスク間で /clear」の定石に従い、同一セッション
    での連続実行はしない)。あわせて健康状態を 2 行で報告する
    (`.claude/backlog.conf` がある repo のみ。無ければ省略):
