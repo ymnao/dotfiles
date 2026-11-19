@@ -47,7 +47,7 @@ open な Dependabot PR を 1 branch に統合し、push を 1 回にして CI �
 5. **Walkthrough → user 承認待ち** (pr skill step 5 と同型)
    - 統合対象・個別維持・security 単独先行の 3 リストを提示
    - user が `all` 等の明示指示で起動していない限り、次 turn の user 応答を待つ
-   - security 単独先行を選ばれたら、user がその PR を merge するのを待ち、デフォルトブランチを pull してから step 6 へ進む。統合ブランチを先に切ると、後から入る security の lockfile 変更で統合 PR が衝突し、取り込み直しの push で CI がもう 1 回走る
+   - security 単独先行を選ばれたら、user がその PR を merge するのを待ち、デフォルトブランチを pull してから、残りの統合対象で step 4 の「1 件以下」を判定し直して step 6 へ進む。統合ブランチを先に切ると、後から入る security の lockfile 変更で統合 PR が衝突し、取り込み直しの push で CI がもう 1 回走る
 6. **統合ブランチ作成**
    - base 名 `deps/bulk-$(date +%Y-%m-%d)` を試す
    - 既存の場合 (同日リトライ / 朝夕 2 回運用) は `deps/bulk-<YYYY-MM-DD>-2` `-3` と suffix を付けて空きを探す
