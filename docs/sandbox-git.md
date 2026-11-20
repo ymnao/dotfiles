@@ -103,6 +103,12 @@ HEAD 不動で、`checkout -b` のような半端な状態は残らない)。
    verify-ci-before-pr hook が止める (cwd の HEAD の CI しか見られないため。#382)。
    回避は hook の stderr に従う。`--head` には自分で切ったブランチ名だけを渡す
    (理由は `claude/rules/acceptance-patterns.md` の「外部由来の名前」の項)
+4. `.codex/` を commit している repo の worktree は、セッションの作業ディレクトリ配下へ
+   `git worktree add` すると `fatal: cannot create directory at '.codex': Operation
+   not permitted` で止まる (2026-11-20 実測)。scratchpad に add してから
+   `git worktree move` で作業ディレクトリ配下へ移すと通ってしまうが、これは sandbox が
+   拒否した `.codex/` の配置を迂回して持ち込むことになるので行わない。worktree は
+   scratchpad に置いたまま 3 の形で PR を作る
 
 ## 別 repo のセッションから変更する: scratchpad に clone する
 
