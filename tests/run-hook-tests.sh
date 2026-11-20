@@ -384,20 +384,27 @@ if [ -z "${HOOK_DIR:-}" ] && [ -f "$REPO_ROOT/agents/hooks/guard-codex-dir.sh" ]
   # TMPDIR 由来の根 (issue #547)。TMPDIR が /tmp 系の環境 (agent の sandbox・未設定の CI) では
   # 固定の根 (/tmp) が先に拾い、TMPDIR を足す分岐を消してもケースファイルは全 pass する。
   # /tmp の外の TMPDIR を渡して測る。TMPDIR が空のときは同じパスが allow の対照。
+  # 実在しない TMPDIR は表記どおりの形しか通らないので、pwd -P で解決した形を足す側は
+  # symlink の TMPDIR で測る。macOS の /etc は private/etc への symlink で、file_path の
+  # /etc/... は normalize_path が /private/etc/... に解決するため、解決形だけが一致する
+  # (Linux の /etc は実ディレクトリで、表記どおりの形が一致する)。
   echo "==> guard-codex-dir (TMPDIR が /tmp の外)"
   tmpdir_outside="/private/nonexistent-547-tmpdir"
-  for _tmpdir_case in "2:$tmpdir_outside/" "2:$tmpdir_outside" "0:"; do
-    _want=${_tmpdir_case%%:*}
-    _tmpdir=${_tmpdir_case#*:}
+  for _tmpdir_case in "2|$tmpdir_outside/|$tmpdir_outside" "2|$tmpdir_outside|$tmpdir_outside" \
+    "0||$tmpdir_outside" "2|/etc|/etc" "0||/etc"; do
+    _want=${_tmpdir_case%%|*}
+    _rest=${_tmpdir_case#*|}
+    _tmpdir=${_rest%%|*}
+    _target=${_rest#*|}
     tmpdir_rc=0
-    printf '{"tool_input":{"file_path":"%s/wt/.codex/config.toml"}}' "$tmpdir_outside" \
+    printf '{"tool_input":{"file_path":"%s/wt/.codex/config.toml"}}' "$_target" \
       | (cd "$WORKDIR" && HOME="$FAKE_HOME" TMPDIR="$_tmpdir" \
           bash "$REPO_ROOT/agents/hooks/guard-codex-dir.sh" >/dev/null 2>&1) \
       || tmpdir_rc=$?
     if [ "$tmpdir_rc" = "$_want" ]; then
       pass=$((pass + 1))
     else
-      echo "FAIL guard-codex-dir TMPDIR=${_tmpdir:-(空)}: expected exit $_want, got $tmpdir_rc"
+      echo "FAIL guard-codex-dir TMPDIR=${_tmpdir:-(空)} file_path=$_target/...: expected exit $_want, got $tmpdir_rc"
       fail=$((fail + 1))
     fi
   done
