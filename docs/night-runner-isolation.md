@@ -37,12 +37,12 @@ Keychain が届かない ([ai-operations.md §10](ai-operations.md#sandbox-の-e
 | `~/.ssh` | `ls ~/.ssh` | `Operation not permitted`、exit 1 (設定は読まれている) |
 | `~/.ssh`, `~/Library/Keychains` | `security find-generic-password -s gh:github.com` | `The specified item could not be found in the keychain.`、exit 44 |
 | `~/.ssh`, `~/Library/Keychains` | `gh auth token` | exit 1 |
+| `~` (`allowRead` に dotfiles のチェックアウトだけ) | `security find-generic-password -s gh:github.com` / `ls ~/.ssh` / `ls ~/development/articles` / `ls <dotfiles>` | 44 (`could not be found`) / `Operation not permitted` / `Operation not permitted` / exit 0 (`allowRead` は効いている) |
 
 `srt` は、Keychain をファイル (`~/Library/Keychains`) の読み取りとして塞ぐ。そのため、`denyRead` が
-`~/Library/Keychains` を覆っていることが、この方式の前提になる。`~` を丸ごと塞げば覆えるが、
-`~` での確認はまだしていない (「実機の確認手順」)。home の外 (`/Library/Keychains` など) は `~` では
-覆えないので、別に確かめる。claude 自身の認証も Keychain からは読めなくなる (推定) ので、
-次の節の環境変数で渡す。
+`~/Library/Keychains` を覆っていることが、この方式の前提になる。`~` を丸ごと塞ぐ形でも覆えることは、
+最後の行で確かめた。home の外 (`/Library/Keychains` など) は `~` では覆えないので、別に確かめる。
+claude 自身の認証も Keychain からは読めなくなる (推定) ので、次の節の環境変数で渡す。
 
 ## 資格情報
 
@@ -100,8 +100,8 @@ Keychain が届かない ([ai-operations.md §10](ai-operations.md#sandbox-の-e
 5. `srt` の中で、`GH_TOKEN` を入れた `gh api user --jq .login` が成功し、`gh repo view <対象外の repo>`
    は拒否されること (token の repo が絞れていることの確認)
 
-1〜3 は「前提の実測」で、`denyRead` が `~/.ssh` と `~/Library/Keychains` だけの設定で通した。`~` を
-丸ごと塞ぐ設定での 1〜3 と、4・5 はまだ通していない。
+1〜4 に当たる確認は「前提の実測」で通した (`~` を丸ごと塞ぎ、`allowRead` は dotfiles のチェックアウトだけの設定)。
+ランナーの実際の `allowRead` での 1〜4 と、5 はまだ通していない。
 
 ## #432 に委ねる事項
 
