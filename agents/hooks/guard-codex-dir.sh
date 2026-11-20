@@ -228,12 +228,16 @@ normalize_path() {
 # 一致するかで判定する。cwd 外 (例: 別プロジェクトの ../other/.codex/) は
 # この判定の対象外 (home 配下は is_protected_home_project_codex_path が見る)。
 is_protected_project_path() {
-  local path_lower="$1"
-  local name
+  is_protected_under "$cwd_lower" "$1"
+}
+
+# $1 (小文字の base) の直下か配下に、protected_names の component があるか。
+is_protected_under() {
+  local base="$1" name
 
   for name in "${protected_names[@]}"; do
-    case "$path_lower" in
-      "$cwd_lower/$name"|"$cwd_lower/$name"/*|"$cwd_lower"/*"/$name"|"$cwd_lower"/*"/$name"/*)
+    case "$2" in
+      "$base/$name"|"$base/$name"/*|"$base"/*"/$name"|"$base"/*"/$name"/*)
         return 0
         ;;
     esac
@@ -295,42 +299,36 @@ is_protected_home_project_codex_path() {
 }
 
 # 「home の外で sandbox が書き込みを許す場所 (/tmp 系・$TMPDIR・/opt/homebrew・/usr/local)
-# の保護対象」を指しているかを判定する (issue #547)。ここで作った保護対象は、中身を
-# 持ったディレクトリごと `git worktree move` / `mv` で home 配下へ移せる — Seatbelt は
-# rename で移すディレクトリ自体のパスしか見ないので、移した先の `~/*/**/.codex/**` は
-# 効かない。file 編集 tool の側で作る側を塞ぐ。根は Claude Code のセッションが sandbox に
-# 渡す書き込み許可のうち home の外にあるもの (claude/settings.json の /tmp に、harness が
-# $TMPDIR・/opt/homebrew・/usr/local を足していた。2026-11-21 の system prompt で確認)。
-# Bash で作る経路は塞いでいない — sandbox の denyWrite を /tmp 系に広げると、hook と
-# integrity のテストが fixture の .codex/ を作れなくなるため見送った (docs/ai-operations.md §10)。
+# の保護対象」を指しているかを判定する (issue #547。経路と見送った案は docs/ai-operations.md §10)。
 # Why not home の外すべて: 書き込めない場所 (/Volumes 等) の保護対象は rename の移動元に
 # なれないので塞ぐ理由がなく、外のプロジェクトの .env 編集まで巻き込む。
-outside_home_roots=(/tmp /private/tmp /opt/homebrew /usr/local)
-if [[ -n "${TMPDIR:-}" ]]; then
-  _tmpdir_trimmed=${TMPDIR%/}
-  [[ -n "$_tmpdir_trimmed" ]] && outside_home_roots+=("$_tmpdir_trimmed")
-  _tmpdir_resolved=$(cd "$TMPDIR" 2>/dev/null && pwd -P) || _tmpdir_resolved=""
-  [[ -n "$_tmpdir_resolved" ]] && outside_home_roots+=("$_tmpdir_resolved")
-fi
+# Why not 起動時に根を作る: Bash の呼び出しでは使わないのに、毎回 fork を払うため。
 outside_home_roots_lower=()
-for _root in "${outside_home_roots[@]}"; do
-  outside_home_roots_lower+=("$(printf '%s' "$_root" | tr '[:upper:]' '[:lower:]')")
-done
 is_protected_writable_outside_home_path() {
-  local root name home
-  # home がこれらの根の配下にある環境 (テストの隔離 HOME など) で、codex CLI が正当に書く
-  # ~/.codex/sessions/ 等まで止めないよう、home 配下は home 系判定に任せる。
-  for home in ${home_forms[@]+"${home_forms[@]}"}; do
-    case "$1" in
-      "$home"|"$home"/*) return 1 ;;
-    esac
-  done
-  for root in "${outside_home_roots_lower[@]}"; do
-    for name in "${protected_names[@]}"; do
+  local root home
+
+  if [[ "${#outside_home_roots_lower[@]}" -eq 0 ]]; then
+    outside_home_roots_lower=(/tmp /private/tmp /opt/homebrew /usr/local)
+    if [[ -n "${TMPDIR:-}" ]]; then
+      local _resolved _form
+      _resolved=$(cd "$TMPDIR" 2>/dev/null && pwd -P) || _resolved=""
+      while IFS= read -r _form; do
+        [[ -n "$_form" ]] && outside_home_roots_lower+=("$_form")
+      done < <(printf '%s\n%s\n' "${TMPDIR%/}" "$_resolved" | tr '[:upper:]' '[:lower:]')
+    fi
+  fi
+
+  # 隔離 HOME がこれらの根の配下にあるテスト環境で、~/.codex/sessions/ 等まで止めない
+  if [[ -n "$home_lower" ]]; then
+    for home in "${home_forms[@]}"; do
       case "$1" in
-        "$root/$name"|"$root/$name"/*|"$root"/*"/$name"|"$root"/*"/$name"/*) return 0 ;;
+        "$home"|"$home"/*) return 1 ;;
       esac
     done
+  fi
+
+  for root in "${outside_home_roots_lower[@]}"; do
+    is_protected_under "$root" "$1" && return 0
   done
 
   return 1

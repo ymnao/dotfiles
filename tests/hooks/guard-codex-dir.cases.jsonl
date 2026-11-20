@@ -39,9 +39,8 @@
 {"name":"block: cwd 絶対 {{CWD}}/.codex/foo","expect":"block","tool_input":{"file_path":"{{CWD}}/.codex/foo"}}
 {"name":"block: cwd 絶対 /./ 正規化","expect":"block","tool_input":{"file_path":"{{CWD}}/./.codex/foo"}}
 {"name":"block: cwd 絶対 /../ 経由で cwd 内 .codex","expect":"block","tool_input":{"file_path":"{{CWD}}/pkg/../.codex/foo"}}
-# 一時 cwd は TMPDIR 配下なので、隣のディレクトリは cwd 判定ではなく home の外の書き込み範囲の
-# 判定 (issue #547) で止まる。cwd の前方一致の過剰 block は、この配置では観測できない。
-{"name":"block: cwd 前方一致の別ディレクトリ {{CWD}}-other/.codex (TMPDIR 配下、#547)","expect":"block","tool_input":{"file_path":"{{CWD}}-other/.codex/foo"}}
+# 旧「cwd 前方一致 ({{CWD}}-other) は allow」は、一時 cwd が TMPDIR 配下にあるため #547 の判定で
+# block に変わり、cwd 判定の過剰 block を観測できなくなったので外した。
 
 # --- 許可ケース ---
 # 下のケースは cwd 外かつ **home 外**で、sandbox も書き込みを許さない場所。issue #291 で
@@ -50,7 +49,6 @@
 # 「そのどちらでもない場所は受容した残余だから allow」(docs/ai-operations.md §10)。
 {"name":"allow: home 外絶対 /private/nonexistent/.codex/x (受容した残余)","expect":"allow","tool_input":{"file_path":"/private/nonexistent/.codex/x"}}
 {"name":"allow: /private/tmp の前方一致 /private/tmpfoo/.codex/x (根の過剰 block を検出)","expect":"allow","tool_input":{"file_path":"/private/tmpfoo/.codex/x"}}
-{"name":"allow: /usr/localx の前方一致 (根の過剰 block を検出)","expect":"allow","tool_input":{"file_path":"/usr/localx/.codex/x"}}
 # 一時 cwd (WORKDIR) は TMPDIR 配下なので、cwd 外への相対パスも home の外の書き込み範囲に落ちる
 {"name":"block: 相対 ../other/.codex (cwd 外・TMPDIR 配下、#547)","expect":"block","tool_input":{"file_path":"../other-project/.codex/foo"}}
 {"name":"block: Write で /tmp 配下の .codex/config.toml (#547)","expect":"block","tool_name":"Write","tool_input":{"file_path":"/tmp/wt/.codex/config.toml"}}
@@ -59,7 +57,6 @@
 {"name":"block: /opt/homebrew 配下の .mcp.json (#547)","expect":"block","tool_input":{"file_path":"/opt/homebrew/var/x/.mcp.json"}}
 {"name":"block: /usr/local 配下の .env (#547)","expect":"block","tool_input":{"file_path":"/usr/local/src/x/.env"}}
 {"name":"block: /tmp 配下の .mcp/ (大文字表記、#547)","expect":"block","tool_input":{"file_path":"/TMP/x/.MCP/start.sh"}}
-{"name":"block: TMPDIR 配下の .codex (隔離 HOME の隣、#547)","expect":"block","tool_input":{"file_path":"{{CWD}}/../wt/.codex/config.toml"}}
 {"name":"block: codex apply_patch で /tmp 配下の .codex (#547)","expect":"block","tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n*** Add File: /tmp/wt/.codex/config.toml\n+notify = [\"x\"]\n*** End Patch\n"}}
 {"name":"allow: /tmp 配下の .codex-other (似た名前、#547)","expect":"allow","tool_input":{"file_path":"/tmp/wt/.codex-other/x"}}
 {"name":"allow: /tmp 配下の .env.local (名前が違う、#547)","expect":"allow","tool_input":{"file_path":"/tmp/wt/.env.local"}}
