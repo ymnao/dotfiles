@@ -40,12 +40,9 @@
 {"name":"block: cwd 絶対 {{CWD}}/.codex/foo","expect":"block","tool_input":{"file_path":"{{CWD}}/.codex/foo"}}
 {"name":"block: cwd 絶対 /./ 正規化","expect":"block","tool_input":{"file_path":"{{CWD}}/./.codex/foo"}}
 {"name":"block: cwd 絶対 /../ 経由で cwd 内 .codex","expect":"block","tool_input":{"file_path":"{{CWD}}/pkg/../.codex/foo"}}
-# cwd の前方一致 ({{CWD}}-other) の file 編集形は、一時 cwd が TMPDIR 配下にあるため #547 の
-# 判定で止まり、cwd 判定の過剰 block を測れないので外した。
 
 # --- home の外の書き込み範囲 (/tmp 系・TMPDIR・/opt/homebrew・/usr/local、#547) ---
-# TMPDIR が /tmp の外にある形はケースファイルでは作れないので、runner の
-# 「TMPDIR が /tmp の外」の節が測る。
+# TMPDIR が /tmp の外にある形は runner の「TMPDIR が /tmp の外」の節が測る。
 # 一時 cwd (WORKDIR) は TMPDIR 配下なので、cwd 外への相対パスもこの範囲に落ちる
 {"name":"block: 相対 ../other/.codex (cwd 外・TMPDIR 配下、#547)","expect":"block","tool_input":{"file_path":"../other-project/.codex/foo"}}
 {"name":"block: Write で /tmp 配下の .codex/config.toml (#547)","expect":"block","tool_name":"Write","tool_input":{"file_path":"/tmp/wt/.codex/config.toml"}}

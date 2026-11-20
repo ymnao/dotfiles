@@ -381,9 +381,9 @@ if [ -z "${HOOK_DIR:-}" ] && [ -f "$REPO_ROOT/agents/hooks/guard-codex-dir.sh" ]
     fi
   done
 
-  # TMPDIR 由来の根 (issue #547)。ケースファイルは TMPDIR=/tmp 系で走るので、固定の根 (/tmp) が
-  # 先に拾い、TMPDIR を足す分岐を消しても全 pass する。/tmp の外の TMPDIR を渡して測る
-  # (末尾スラッシュ付きは macOS の既定と同じ形)。TMPDIR が無いときは同じパスが allow の対照。
+  # TMPDIR 由来の根 (issue #547)。TMPDIR が /tmp 系の環境 (agent の sandbox・未設定の CI) では
+  # 固定の根 (/tmp) が先に拾い、TMPDIR を足す分岐を消してもケースファイルは全 pass する。
+  # /tmp の外の TMPDIR を渡して測る。TMPDIR が空のときは同じパスが allow の対照。
   echo "==> guard-codex-dir (TMPDIR が /tmp の外)"
   tmpdir_outside="/private/nonexistent-547-tmpdir"
   for _tmpdir_case in "2:$tmpdir_outside/" "2:$tmpdir_outside" "0:"; do

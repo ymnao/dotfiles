@@ -394,12 +394,13 @@ file 編集 tool 経路は sandbox が効かないので hook が止める。片
   止める (#547)。ここで作った `.codex/` は、中身を持ったディレクトリごと
   `git worktree move` / `mv` で home 配下へ移せる — Seatbelt は rename で移す
   ディレクトリ自体のパスしか見ないので、移した先の `~/*/**/.codex/**` が効かない
-  (別 repo の作業で実際に使われた経路。経緯は #547 の本文)。根の 4 つは、Claude Code の
-  セッションが sandbox に渡す書き込み許可のうち home の外にあるもの (`claude/settings.json`
-  の `/tmp` に、harness が `$TMPDIR`・`/opt/homebrew`・`/usr/local` を足していた。
-  2026-11-21 の system prompt で確認)。harness がこの一覧を変えたら hook の根も見直す。
-  **Bash で作る経路は残っている** — sandbox は止めず、`block-dangerous-commands.sh` も
-  字面に保護名が出ない形 (`git worktree add`・`cd` してからの相対パス・変数・スクリプト) は通す。
+  (別 repo の作業で実際に使われた経路。経緯は #547 の本文)。根は sandbox の allowWrite の
+  うち home の外にあるもの: `/tmp` は `claude/settings.json`、`/opt/homebrew`・`/usr/local` は
+  この repo の `.claude/settings.json`、`$TMPDIR` は harness が足す。hook は全 repo に効くが、
+  根はこの一覧で固定なので、別 repo が project settings で足した home の外の場所は入らない。
+  **Bash で作る経路は残っている** — sandbox は止めず、`block-dangerous-commands.sh` の
+  書き込み系コマンド・リダイレクトの判定に掛からない形 (`git worktree add` での checkout、
+  スクリプトの中の書き込み) は通る。
   一次 (sandbox) の `denyWrite` を `/tmp/**/.codex/**` 等へ広げると塞がり、
   `.codex-other` や `~/.codex` への書き込みは通ることも確かめた (2026-11-21 実測。
   `.codex` の行だけを外した対照では作れた)。ただし同時に、`make test` の hook
@@ -550,7 +551,8 @@ issue #289 の「保護をコマンド文字列の静的解析で担い続ける
    `~/tmp` のように home 配下を指す環境では、hook ではなく **sandbox の EPERM** で
    `mkdir` が落ちる。現在の `TMPDIR` は home 外なので発火していない
 
-**それでも文字列解析の hook は統制から降ろせない。** 残る経路は 4 つ:
+**それでも文字列解析の hook は統制から降ろせない。** 残る経路は 4 つ (これとは別に、保護対象を
+中身に持つディレクトリの rename も sandbox は止めない。#547、上の「二次: hook (file 編集)」の後の箇条書き):
 
 1. **home の外のプロジェクト** (`/Volumes/…` 等) — `~/*/` は home 直下を起点に
    するので届かない
@@ -594,12 +596,6 @@ issue #289 の「保護をコマンド文字列の静的解析で担い続ける
    `block-dangerous-commands.sh` のみ)に戻る。
    `tests/integrity/` の pin は `make test` / CI / Stop gate での**事後**検出で、
    同一ターン内の悪用には間に合わない
-
-この 4 つとは別に、**sandbox の内側の経路でも、保護対象を中身に持つディレクトリの
-rename は止まらない** (#547)。`mv` で止まるのは保護対象の名前そのものへの rename
-だけで、`/tmp` 系で作った `<dir>/.codex/` を `<dir>` ごと home 配下へ移す形は
-通る。file 編集 tool で作る側は hook が止めるが、Bash で作る側は残っている
-(上の「二次: hook (file 編集)」の後の箇条書き)。
 
 つまり #289 の答えは「文字列解析をやめる」ではなく、**Bash 経路のうち
 sandbox が覆える範囲では統制の本体を操作境界へ移し、hook は多層防御 +
