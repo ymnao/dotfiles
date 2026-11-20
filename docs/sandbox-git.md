@@ -109,8 +109,8 @@ HEAD 不動で、`checkout -b` のような半端な状態は残らない)。
    `git worktree move` で作業ディレクトリ配下へ移すと通ってしまうが、これは sandbox が
    拒否した `.codex/` の配置を迂回して持ち込むことになるので行わない。worktree は
    scratchpad に置いたまま 3 の形で PR を作る。scratchpad 側の `.codex/` 配下を
-   Edit / Write で書き換えることも hook が止める (#547)。Bash からの書き込みと移動は
-   仕組みでは止まっていないので、この手順を守ることが前提になる
+   Edit / Write で書き換えることも hook が止める (#547)。Bash からの書き込み
+   (字面に保護名が出ない形) と移動は sandbox も hook も止めないので、この手順を守ることが前提になる
    (残りの経緯は `docs/ai-operations.md` §10)
 
 ## 別 repo のセッションから変更する: scratchpad に clone する

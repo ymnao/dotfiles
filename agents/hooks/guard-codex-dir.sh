@@ -300,8 +300,8 @@ is_protected_home_project_codex_path() {
 
 # 「home の外で sandbox が書き込みを許す場所 (/tmp 系・$TMPDIR・/opt/homebrew・/usr/local)
 # の保護対象」を指しているかを判定する (issue #547。経路と見送った案は docs/ai-operations.md §10)。
-# Why not home の外すべて: 書き込めない場所 (/Volumes 等) の保護対象は rename の移動元に
-# なれないので塞ぐ理由がなく、外のプロジェクトの .env 編集まで巻き込む。
+# Why not home の外すべて: sandbox が書き込みを許さない場所 (/Volumes 等) は Bash から
+# rename の移動元にできないはず (推測、未測定) なので、外のプロジェクトの .env 編集まで巻き込むほうが重い。
 # Why not 起動時に根を作る: Bash の呼び出しでは使わないのに、毎回 fork を払うため。
 outside_home_roots_lower=()
 is_protected_writable_outside_home_path() {

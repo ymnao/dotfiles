@@ -381,6 +381,27 @@ if [ -z "${HOOK_DIR:-}" ] && [ -f "$REPO_ROOT/agents/hooks/guard-codex-dir.sh" ]
     fi
   done
 
+  # TMPDIR 由来の根 (issue #547)。ケースファイルは TMPDIR=/tmp 系で走るので、固定の根 (/tmp) が
+  # 先に拾い、TMPDIR を足す分岐を消しても全 pass する。/tmp の外の TMPDIR を渡して測る
+  # (末尾スラッシュ付きは macOS の既定と同じ形)。TMPDIR が無いときは同じパスが allow の対照。
+  echo "==> guard-codex-dir (TMPDIR が /tmp の外)"
+  tmpdir_outside="/private/nonexistent-547-tmpdir"
+  for _tmpdir_case in "2:$tmpdir_outside/" "2:$tmpdir_outside" "0:"; do
+    _want=${_tmpdir_case%%:*}
+    _tmpdir=${_tmpdir_case#*:}
+    tmpdir_rc=0
+    printf '{"tool_input":{"file_path":"%s/wt/.codex/config.toml"}}' "$tmpdir_outside" \
+      | (cd "$WORKDIR" && HOME="$FAKE_HOME" TMPDIR="$_tmpdir" \
+          bash "$REPO_ROOT/agents/hooks/guard-codex-dir.sh" >/dev/null 2>&1) \
+      || tmpdir_rc=$?
+    if [ "$tmpdir_rc" = "$_want" ]; then
+      pass=$((pass + 1))
+    else
+      echo "FAIL guard-codex-dir TMPDIR=${_tmpdir:-(空)}: expected exit $_want, got $tmpdir_rc"
+      fail=$((fail + 1))
+    fi
+  done
+
   # apply_patch ヘッダーから剥がす空白集合 (hook の ws[]) と、その全要素を行末位置で
   # 測るケース群 (jsonl の「ヘッダー行末」) が一致することを見る。hook 側のコメントは
   # 1:1 対応を宣言しているが、宣言だけだと集合に足したときテスト側の追加を忘れても
