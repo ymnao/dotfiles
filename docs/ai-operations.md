@@ -356,6 +356,8 @@ MEMORY.md 先頭 200 行が自動ロードされる。
 
 ## 10. codex / Claude Code の host 実行面の防御層
 
+無人の夜間ランナー (#432) の隔離 (sandbox-runtime で claude ごと囲む) はこの節の対話セッション向けの層とは別に [night-runner-isolation.md](night-runner-isolation.md) で決めている。
+
 codex CLI の `~/.codex/config.toml` は **sandbox 境界を越えて host 側で
 任意コマンドを実行させられる設定ファイル**。`notify` は turn 終了時に
 外部コマンドを起動し、`mcp_servers` / `hooks` / `shell_environment_policy` も
