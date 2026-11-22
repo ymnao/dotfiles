@@ -362,7 +362,8 @@ if (Test-Path $claudeStatuslineSource) {
 Write-Info "`nLinking Codex CLI configuration..."
 $codexSource = Join-Path $DOTFILES_DIR "codex"
 if (Test-Path $codexSource) {
-    $codexDir = Join-Path $env:USERPROFILE ".codex"
+    # link.sh と同じく、codex 自身が読む CODEX_HOME があればそちらに張る
+    $codexDir = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE ".codex" }
     if (-not (Test-Path $codexDir)) {
         New-Item -ItemType Directory -Path $codexDir -Force | Out-Null
     }
@@ -389,10 +390,10 @@ if (Test-Path $codexSource) {
             & (Join-Path $scriptDir "codex-merge-config.ps1") `
                 -Source $codexConfigSource -Destination $codexConfigDest
             if ($LASTEXITCODE -ne 0) {
-                Write-Warn "Skipped ~/.codex/config.toml merge (exit $LASTEXITCODE, write denied?). Run scripts/codex-merge-config.ps1 outside the sandbox to apply it."
+                Write-Warn "Skipped $codexConfigDest merge (exit $LASTEXITCODE, write denied?). Run scripts/codex-merge-config.ps1 outside the sandbox to apply it."
             }
         } catch {
-            Write-Warn "Skipped ~/.codex/config.toml merge (write denied?): $_"
+            Write-Warn "Skipped $codexConfigDest merge (write denied?): $_"
         }
     }
 

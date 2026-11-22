@@ -12,11 +12,13 @@ set -euo pipefail
 #   hook は隔離 HOME (HOME=$FAKE_HOME) で実行される。実ユーザー環境の
 #   $HOME/.codex の有無に依存しないため CI でも同じ結果になる。
 #   tool_input / command 内の文字列に `{{HOME}}` が含まれる場合、隔離 HOME に置換する。
-#   `{{SYMHOME}}` は「隔離 HOME の .codex を指す (名前に codex を含まない) symlink」に置換する。
+#   `{{FX}}` は fixture 用の保護名 ($FX) に置換する。guard-codex-dir-fs.cases.jsonl だけは、
+#   保護名を $FX に差し替えた guard-codex-dir.sh のコピーへ流す (make_fx_hook)。
+#   `{{SYMHOME}}` は「隔離 HOME の $FX を指す (名前に codex を含まない) symlink」に置換する。
 #   `{{HOMEPROJLINK}}` は「隔離 HOME 配下のプロジェクトを指す、home 外に置かれた symlink」に置換する。
 #   `{{HOMEDIRLINK}}` / `{{CWDDIRLINK}}` は「保護対象ディレクトリ自体を指す、名前に
 #   トークンを含まない symlink」(それぞれ home 配下プロジェクト / cwd 配下) に置換する。
-#   `{{DOTDOTLINK}}` は「home 外に置かれ、home 配下プロジェクトのサブディレクトリを
+#   `{{DOTDOTLINK}}` は「隔離 HOME 直下に置かれ、home 配下プロジェクトのサブディレクトリを
 #   指す symlink」(`/../` を後ろに付ける形の検証用)、`{{LEAFLINK}}` は「保護対象内の
 #   ファイルを指す、末尾要素そのものの symlink」に置換する。
 #   `{{RELLEAFLINK}}` は同じ形で target が相対パスのもの、`{{CHAINLEAFLINK}}` は
@@ -68,6 +70,7 @@ fi
 hook_file_for() {
   case "$1" in
     verify-ci-early-exit) printf '%s' "verify-ci-before-pr.sh" ;;
+    guard-codex-dir-fs) printf '%s' "guard-codex-dir.sh" ;;
     *) printf '%s' "$1.sh" ;;
   esac
 }
@@ -87,18 +90,22 @@ mkdir -p "$WORKDIR"
 # みなされ is_protected_project_path 側にマッチしてしまい、home 判定の
 # allow ケース (sessions/ 等) が project 判定で block されて意味を失う。
 FAKE_HOME="$BASEDIR/home"
-mkdir -p "$FAKE_HOME/.codex/sessions"
+# 保護対象ディレクトリの fixture は .codex ではなく $FX の名前で作り、その名前を保護する
+# hook のコピー (下の FX_HOOK_DIR) に guard-codex-dir-fs.cases.jsonl を流す。sandbox
+# の deny を /tmp 配下の .codex/ へ広げると、.codex の名前では作れない (#547)
+FX='.cdxfx'
+mkdir -p "$FAKE_HOME/$FX/sessions"
 
-# {{SYMHOME}}: 名前に codex を含まない symlink が $HOME/.codex を指す状況。
+# {{SYMHOME}}: 名前に codex を含まない symlink が $HOME/$FX (本番の $HOME/.codex) を指す状況。
 # guard-codex-dir.sh の symlink 解決漏れ (codex-review security 指摘の bypass)
 # の回帰を検出する。target を実在ディレクトリにするため隔離 HOME 側を指す。
 SYMHOME="$BASEDIR/homelink"
-ln -sfn "$FAKE_HOME/.codex" "$SYMHOME"
+ln -sfn "$FAKE_HOME/$FX" "$SYMHOME"
 
 # {{HOMEPROJLINK}}: home の外にある symlink が $HOME 配下のプロジェクトを指す状況。
 # issue #291 の home 配下判定は「home 外は allow」なので、home 外の path 表記から
 # home 配下に入る経路が素通りしないことを pin する ({{SYMHOME}} は逆向き
-# — home 配下の .codex を home 外の名前で指す形 — なので別ケースが要る)。
+# — home 配下の $FX を home 外の名前で指す形 — なので別ケースが要る)。
 HOME_PROJ_LINK="$BASEDIR/projlink"
 mkdir -p "$FAKE_HOME/other-project"
 ln -sfn "$FAKE_HOME/other-project" "$HOME_PROJ_LINK"
@@ -109,38 +116,39 @@ ln -sfn "$FAKE_HOME/other-project" "$HOME_PROJ_LINK"
 # ときだけ {{SYMHOME}} 側の gate が拾っていた)。file 編集 tool 経路が無条件解決に
 # なっていることを pin する。
 HOME_DIR_LINK="$FAKE_HOME/other-project/plainlink"
-mkdir -p "$FAKE_HOME/other-project/.codex"
-ln -sfn "$FAKE_HOME/other-project/.codex" "$HOME_DIR_LINK"
+mkdir -p "$FAKE_HOME/other-project/$FX"
+ln -sfn "$FAKE_HOME/other-project/$FX" "$HOME_DIR_LINK"
 
 CWD_DIR_LINK="$WORKDIR/plainlink"
-mkdir -p "$WORKDIR/.codex"
-ln -sfn "$WORKDIR/.codex" "$CWD_DIR_LINK"
+mkdir -p "$WORKDIR/$FX"
+ln -sfn "$WORKDIR/$FX" "$CWD_DIR_LINK"
 
-# {{DOTDOTLINK}}: home 外に置いた symlink が「隔離 HOME 配下プロジェクトのサブ
-# ディレクトリ」を指す。`{{DOTDOTLINK}}/../.codex/x` は OS 解決だと保護対象に
-# 着地するが、`..` を字句で畳むと home 外のパスに見える。
-DOTDOT_LINK="$BASEDIR/dotdotlink"
+# {{DOTDOTLINK}}: 隔離 HOME 直下の symlink が「隔離 HOME 配下プロジェクトのサブ
+# ディレクトリ」を指す。`{{DOTDOTLINK}}/../{{FX}}/x` は OS 解決だと保護対象
+# (other-project/$FX/x) に着地するが、`..` を字句で畳むと $FAKE_HOME/$FX/x
+# (home 直下の codex 設定ディレクトリの config.toml 以外 = allow) に見える。
+# Why not home 外に置く: 字句側が TMPDIR 配下になり、home の外の書き込み範囲の判定 (#547) が
+# 字句側でも block するので、`cd -P` を外す mutant でも落ちない。
+# 字句側のパス ($FAKE_HOME/$FX) は冒頭で作ってあり実在する。無いと字句解決した cd が失敗し、
+# bash が元パスへフォールバックして物理解決と同じ結果になるため、`cd -P` の有無を測れない。
+DOTDOT_LINK="$FAKE_HOME/dotdotlink"
 mkdir -p "$FAKE_HOME/other-project/sub"
 ln -sfn "$FAKE_HOME/other-project/sub" "$DOTDOT_LINK"
-# `..` を字句で畳んだ側のパス ($BASEDIR/.codex) も**実在させる**。ここが無いと
-# 字句解決した cd が失敗し、bash が元パスへフォールバックして物理解決と同じ結果に
-# なるため、`cd -P` の有無を測れない (mutation で全 pass する形になる)。
-mkdir -p "$BASEDIR/.codex"
 
 # {{LEAFLINK}}: **末尾要素そのもの**が symlink で、保護対象内のファイルを指す。
 # 祖先だけを解決する形だと判定は素通りするのに write は保護対象内へ着地する。
 LEAF_LINK="$FAKE_HOME/other-project/notes.txt"
-: >"$FAKE_HOME/other-project/.codex/config.toml"
-ln -sfn "$FAKE_HOME/other-project/.codex/config.toml" "$LEAF_LINK"
+: >"$FAKE_HOME/other-project/$FX/config.toml"
+ln -sfn "$FAKE_HOME/other-project/$FX/config.toml" "$LEAF_LINK"
 
 # {{RELLEAFLINK}}: 末尾 symlink の target が **相対パス**。readlink の相対分岐
 # (link の親ディレクトリ基準で解決する側) は絶対 target のケースでは通らない。
 REL_LEAF_LINK="$FAKE_HOME/other-project/rel-notes.txt"
-ln -sfn ".codex/config.toml" "$REL_LEAF_LINK"
+ln -sfn "$FX/config.toml" "$REL_LEAF_LINK"
 
 # {{CHAINLEAFLINK}}: 相対 → 絶対の 2 段 symlink chain。1 段しか辿らない実装
 # (while を if にする類の退行) を検出する。
-ln -sfn "$FAKE_HOME/other-project/.codex/config.toml" "$FAKE_HOME/other-project/hop2.txt"
+ln -sfn "$FAKE_HOME/other-project/$FX/config.toml" "$FAKE_HOME/other-project/hop2.txt"
 CHAIN_LEAF_LINK="$FAKE_HOME/other-project/hop1.txt"
 ln -sfn "hop2.txt" "$CHAIN_LEAF_LINK"
 
@@ -200,6 +208,25 @@ run_hook() {
   printf '%s' "$rc"
 }
 
+# guard-codex-dir.sh の保護名を $FX に差し替えたコピーを作り、そのパスを出す。$1 が空なら空を出す。
+# $2 は claude / codex (コピーの置き場を分け、両系統の drift 検出を残す)。
+# 本体に差し替え口 (環境変数など) を作らないのは、guard を無効化するつまみになるため。
+# 変わる行がちょうど 1 行であることを確かめ、置換の空振りと当たりすぎを止める
+FX_HOOK_DIR="$BASEDIR/fx-hooks"
+make_fx_hook() {
+  local src="$1" label="$2" dst changed
+  [ -n "$src" ] || return 0
+  dst="$FX_HOOK_DIR/$label/guard-codex-dir.sh"
+  mkdir -p "$FX_HOOK_DIR/$label"
+  sed "s/^protected_name='\.codex'\$/protected_name='$FX'/" "$src" >"$dst"
+  changed=$(diff "$src" "$dst" | grep -c '^>' || true)
+  if [ "$changed" != 1 ]; then
+    echo "ERROR: $src の保護名の差し替えが $changed 行 (1 行のはず)" >&2
+    return 1
+  fi
+  printf '%s' "$dst"
+}
+
 # {{SETTINGSREAL}}: 隔離 HOME の .claude/settings.json が symlink で指す実体
 # (dotfiles の claude/settings.json と同じ配置。issue #381)。実体側のパスには
 # .claude/ が残らないので、名前ではなく symlink 解決の一致で止まることを測る。
@@ -232,6 +259,7 @@ substitute_cwd() {
   s=${s//\{\{RELLEAFLINK\}\}/$REL_LEAF_LINK}
   s=${s//\{\{CHAINLEAFLINK\}\}/$CHAIN_LEAF_LINK}
   s=${s//\{\{SETTINGSREAL\}\}/$SETTINGS_REAL}
+  s=${s//\{\{FX\}\}/$FX}
   printf '%s' "$s"
 }
 
@@ -247,6 +275,10 @@ for cf in "$@"; do
   fi
   [ -f "$claude_hook" ] || claude_hook=""
   [ -f "$codex_hook" ] || codex_hook=""
+  if [ "$base" = guard-codex-dir-fs ]; then
+    claude_hook=$(make_fx_hook "$claude_hook" claude) || exit 1
+    codex_hook=$(make_fx_hook "$codex_hook" codex) || exit 1
+  fi
   if [ -z "$claude_hook" ] && [ -z "$codex_hook" ]; then
     echo "ERROR: hook not found for $cf ($hook_name)" >&2
     exit 1

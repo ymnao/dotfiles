@@ -79,6 +79,7 @@ set -uo pipefail
 #
 # 環境変数 (テスト用):
 #   INTEGRITY_HOME — $HOME の代わりに検査するルート
+#   CODEX_HOME     — codex 自身と同じく ~/.codex の位置を差し替える (既定は $H/.codex。#547)
 #
 # ~/.codex が無い環境 (CI・codex 未セットアップ機) では skip (fail-open)。
 
@@ -93,11 +94,13 @@ H="${INTEGRITY_HOME:-${HOME:-}}"
 # 面倒を見ない (その環境なら .codex が無く SKIP に倒れる)。
 # 同型の落とし穴は claude/rules/shell.md に規約化済み (issue #225)
 while [ "${H%/}" != "$H" ]; do H="${H%/}"; done
-hooks_json="$H/.codex/hooks.json"
-cfg="$H/.codex/config.toml"
+CX="${CODEX_HOME:-$H/.codex}"
+while [ "${CX%/}" != "$CX" ]; do CX="${CX%/}"; done
+hooks_json="$CX/hooks.json"
+cfg="$CX/config.toml"
 
-if [ ! -d "$H/.codex" ]; then
-  echo "$label: SKIP ($H/.codex が無い未セットアップ環境)"
+if [ ! -d "$CX" ]; then
+  echo "$label: SKIP ($CX が無い未セットアップ環境)"
   exit 0
 fi
 # dangling symlink は SKIP ではなく WARN。~/.codex/hooks.json は repo への

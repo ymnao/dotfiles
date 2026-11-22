@@ -1,0 +1,40 @@
+# guard-codex-dir.sh の回帰ケースのうち、symlink の先に実在の保護対象ディレクトリが要るもの。
+# runner はこのファイルだけ、保護名 (protected_name) を {{FX}} に差し替えた hook のコピーへ流し、
+# fixture も {{FX}} という名前で作る。sandbox の deny を /tmp 配下の .codex/ へ広げると、
+# fixture を .codex という名前では作れない (#547)。文字列だけで判定が決まるケースは
+# guard-codex-dir.cases.jsonl に置き、本物の hook に流す。
+# コピーで差し替わるのは protected_name の 1 行だけで、normalize_path の gate の `*codex*`
+# リテラルは残る。gate の発火に頼るケース (パスに codex を含む形) はここに置かない。
+# {{SYMHOME}} は「隔離 HOME の {{FX}} を指す、名前に codex を含まない symlink」に置換される。
+
+# symlink 経由の回避。
+# 名前に codex を含まない symlink では normalize_path の解決が発火せず block を
+# すり抜けていた (codex-review security 指摘、実測で bypass 確認済み)。
+# 解決の発火条件に「末尾が config.toml」を足して塞いだので、その回帰を pin する。
+{"name":"block: codex を含まない symlink 経由の config.toml","expect":"block","tool_input":{"file_path":"{{SYMHOME}}/config.toml"}}
+{"name":"allow: 同 symlink 経由の sessions 配下 (config.toml 以外は allow)","expect":"allow","tool_input":{"file_path":"{{SYMHOME}}/sessions/x.jsonl"}}
+
+# 名前にトークンを含まない symlink が保護対象ディレクトリ自体を指す形。パス文字列に
+# 手掛かりが出ないため normalize_path の gate 付き解決では発火せず、leaf が
+# config.toml のときだけ block されていた (2026-08-09 に対照付きで実測)。file 編集
+# tool 経路を無条件解決にして塞いだので、その回帰を home 配下と cwd 配下の両方で pin する。
+# gated に差し戻す mutant では、このファイルの 8 件が落ちる: 下の 3 件 (leaf が config.toml
+# 以外)、後ろの DOTDOTLINK の 1 件、末尾 symlink の 4 件。
+{"name":"block: 非トークン symlink 経由 (home 配下) leaf が config.toml 以外","expect":"block","tool_input":{"file_path":"{{HOMEDIRLINK}}/hooks.sh"}}
+{"name":"block: 非トークン symlink 経由 (cwd 配下) leaf が config.toml 以外","expect":"block","tool_input":{"file_path":"{{CWDDIRLINK}}/hooks.sh"}}
+{"name":"block: 非トークン symlink 経由 (home 配下) apply_patch","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Add File: {{HOMEDIRLINK}}/hooks.sh\n+evil\n*** End Patch\n"}}
+# 次の 1 件は対照 — leaf が config.toml なら **gated 側の gate が発火する**ので、
+# 無条件解決の前から block だった。3 件との差が「gate が何を取りこぼすか」を示す
+# ので残すが、無条件解決の pin としては数えない (mutant で落ちない)。
+{"name":"block: 非トークン symlink 経由 (home 配下) leaf が config.toml (対照・旧 gate でも block)","expect":"block","tool_input":{"file_path":"{{HOMEDIRLINK}}/config.toml"}}
+# symlink を跨ぐ `..` と、末尾要素そのものが symlink の形。どちらも 2026-08-09 に
+# 「hook は allow を返すが write は保護対象内に着地する」ことを対照付きで実測した
+# (codex-review shell-senior 指摘)。file 編集 tool 経路を物理解決 (cd -P + 末尾
+# symlink の追跡) に変えて塞いだので、その回帰を pin する。
+{"name":"block: symlink の後ろの .. で home 配下プロジェクトへ着地","expect":"block","tool_input":{"file_path":"{{DOTDOTLINK}}/../{{FX}}/x"}}
+{"name":"block: 末尾要素が保護対象内ファイルを指す symlink","expect":"block","tool_input":{"file_path":"{{LEAFLINK}}"}}
+{"name":"block: 末尾 symlink を apply_patch で更新","expect":"block","tool_input":{"patch":"*** Begin Patch\n*** Update File: {{LEAFLINK}}\n@@\n-old\n+notify = [\"evil\"]\n*** End Patch\n"}}
+# 末尾 symlink の target が相対パスの分岐と、2 段 chain を辿る分岐。
+# 絶対 target の 1 段だけでは readlink の相対解決も反復も一度も通らない。
+{"name":"block: 末尾 symlink の target が相対パス","expect":"block","tool_input":{"file_path":"{{RELLEAFLINK}}"}}
+{"name":"block: 末尾 symlink が 2 段 chain (相対 → 絶対)","expect":"block","tool_input":{"file_path":"{{CHAINLEAFLINK}}"}}
