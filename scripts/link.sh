@@ -173,7 +173,8 @@ fi
 # Codex CLI configuration
 if [[ -d "$DOTFILES_DIR/codex" ]]; then
     # codex 自身と同じく CODEX_HOME があればそちらに張る。テストが fixture を .codex という
-    # 名前で作らずに済むようにするため (sandbox は /tmp 配下の .codex/ も拒否する。#547)
+    # 名前で作らずに済むようにするため (sandbox の deny を /tmp 配下の .codex/ へ広げると作れない。#547)。
+    # 防御側 (guard-codex-dir.sh と sandbox の denyWrite) は ~/.codex 固定のままで、CODEX_HOME には追従しない
     codex_home="${CODEX_HOME:-$HOME/.codex}"
     mkdir -p "$codex_home"
 
@@ -195,7 +196,7 @@ if [[ -d "$DOTFILES_DIR/codex" ]]; then
         if ! bash "$SCRIPT_DIR/codex-merge-config.sh" \
             "$DOTFILES_DIR/codex/config.toml" \
             "$codex_home/config.toml"; then
-            warn "Skipped ~/.codex/config.toml merge (write denied?). Run 'bash scripts/codex-merge-config.sh codex/config.toml ~/.codex/config.toml' outside the sandbox to apply it."
+            warn "Skipped $codex_home/config.toml merge (write denied?). Run 'bash scripts/codex-merge-config.sh codex/config.toml $codex_home/config.toml' outside the sandbox to apply it."
         fi
     fi
 

@@ -72,7 +72,7 @@ make_fake_home() {
 run_link() {
   local root="$1" home="$2" out="$3" err="$4"
   local rc=0
-  # fixture に .codex という名前を作らない (sandbox が /tmp 配下でも拒否する。#547)
+  # fixture に .codex という名前を作らない (sandbox の deny を /tmp 配下へ広げると作れない。#547)
   HOME="$home" CODEX_HOME="$home/codex-home" bash "$root/scripts/link.sh" >"$out" 2>"$err" || rc=$?
   echo "$rc"
 }

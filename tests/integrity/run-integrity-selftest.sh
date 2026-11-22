@@ -39,6 +39,8 @@ command -v jq >/dev/null 2>&1 || { echo "ERROR: jq is required" >&2; exit 1; }
 # (tests/hooks-integrity/run-hooks-integrity-tests.sh と同じ規約)
 export GIT_CONFIG_GLOBAL=/dev/null
 export GIT_CONFIG_SYSTEM=/dev/null
+# 検査器は CODEX_HOME を読むので、開発者の環境の値を持ち込まない (各呼び出しが明示で渡す)
+unset CODEX_HOME
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
   GIT_COMMON_DIR GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
 
@@ -414,8 +416,8 @@ ALL_TRUST_ENTRIES=(
 )
 
 run_trust_checker() {
-  # $1=HOME。stdout を返す (exit code は check_trust_exit で別に見る)
-  INTEGRITY_HOME="$1" CODEX_HOME="$1/codex-home" bash "$TRUST_CHECKER" 2>/dev/null
+  # $1=HOME, $2=CODEX_HOME (省略時 $1/codex-home)。stdout を返す (exit code は check_trust_exit で別に見る)
+  INTEGRITY_HOME="$1" CODEX_HOME="${2:-$1/codex-home}" bash "$TRUST_CHECKER" 2>/dev/null
 }
 
 check_trust_exit() {
@@ -462,15 +464,29 @@ check_trust_exit   "trust-all-approved-exit0" "$H"
 # codex が書いた正規化済みパスと prefix が一致せず全 entry が「未承認」に化ける。
 # 同型の落とし穴は claude/rules/shell.md に規約化済み (issue #225)。
 # 直前の trust-1 と同じ fixture を使い、**変える変数は末尾スラッシュだけ**
-out=$(INTEGRITY_HOME="$H" CODEX_HOME="$H/codex-home/" bash "$TRUST_CHECKER" 2>/dev/null)
+out=$(run_trust_checker "$H" "$H/codex-home/")
 check_stdout_has   "trust-trailing-slash-ok"     "$out" "codex-hook-trust: OK (5 entry すべて承認済み・hash 一致)"
 check_stdout_lacks "trust-trailing-slash-nowarn" "$out" "WARN"
 
 # trust-1c. CODEX_HOME が無いときは HOME の末尾スラッシュを落として $H/.codex を見る。
 # 他のケースは CODEX_HOME を渡すので、この既定の経路を通るのはここだけ。fixture に
-# .codex を作らず (sandbox が /tmp 配下でも拒否する。#547)、SKIP の文言に出るパスで測る
+# .codex を作らず (sandbox の deny を /tmp 配下へ広げると作れない。#547)、SKIP の文言に出るパスで測る
 out=$(env -u CODEX_HOME INTEGRITY_HOME="$H/" bash "$TRUST_CHECKER" 2>/dev/null)
 check_stdout_has "trust-default-codex-home" "$out" "codex-hook-trust: SKIP ($H/.codex が無い未セットアップ環境)"
+
+# 同じことを run-integrity-check.sh でも測る (ここで測るのは check_stdout_has を使うため)。
+# codex の節を飛ばすときの 1 行に既定のパスが出ること、正常な構成では出ないこと
+H="$BASE/home-default-codex"; make_good_home "$H"
+out=$(env -u CODEX_HOME INTEGRITY_HOME="$H" INTEGRITY_DOTFILES="$DF" bash "$CHECKER" 2>/dev/null)
+check_stdout_has   "integrity-default-codex-home" "$out" "integrity: SKIP codex ($H/.codex が無い)"
+out=$(INTEGRITY_HOME="$H" CODEX_HOME="$H/codex-home" INTEGRITY_DOTFILES="$DF" bash "$CHECKER" 2>/dev/null)
+check_stdout_lacks "integrity-codex-not-skipped"  "$out" "SKIP codex"
+# CODEX_HOME の末尾スラッシュ。notify の期待値 ($CX/computer-use/...) に `//` が入ると
+# codex が書き戻しただけの config.toml を NG にする (ケース 6b と同じ fixture)
+H="$BASE/home-toml-reordered"
+rc=0
+INTEGRITY_HOME="$H" CODEX_HOME="$H/codex-home/" INTEGRITY_DOTFILES="$DF" bash "$CHECKER" >/dev/null 2>&1 || rc=$?
+check "toml-reordered-trailing-slash" 0 "$rc"
 
 # trust-2. session_start だけ未承認 → その entry の WARN が出て、承認済みの
 # entry の WARN は出ない (「全部 WARN する」退行と「何も WARN しない」退行の両方を殺す)

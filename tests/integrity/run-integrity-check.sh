@@ -25,7 +25,7 @@ set -uo pipefail
 #   INTEGRITY_DOTFILES — dotfiles リポジトリルートの上書き (リンク先の期待値と中身の検査の両方)
 #   CODEX_HOME         — codex 自身と同じく ~/.codex の位置を差し替える (既定は $H/.codex)。
 #                        selftest が fixture を .codex という名前で作らずに済むよう読む。
-#                        sandbox は /tmp 配下の .codex/ への書き込みも拒否するため (#547)
+#                        sandbox の deny を /tmp 配下の .codex/ へ広げると作れなくなるため (#547)
 #
 # ~/.claude が無い環境 (CI・未セットアップ機) では skip (fail-open)。
 
@@ -42,6 +42,9 @@ else
 fi
 H="${INTEGRITY_HOME:-$HOME}"
 CX="${CODEX_HOME:-$H/.codex}"
+# 末尾スラッシュを落とすのは、codex-config-subset.py が notify の期待値を `$CX/computer-use/...`
+# と組み立てて文字列で比べるため (`//` が入ると一致しない。#225 と同型)
+while [ "${CX%/}" != "$CX" ]; do CX="${CX%/}"; done
 
 if [ ! -d "$H/.claude" ]; then
   echo "integrity: SKIP ($H/.claude が無い未セットアップ環境)"
@@ -105,6 +108,10 @@ if [ -d "$CX" ]; then
       fail=1
     fi
   fi
+else
+  # 黙って飛ばさないのは、CODEX_HOME の誤りや既定パスの組み立ての退行で codex の節が
+  # 丸ごと検査されなくなっても、OK だけでは気付けないため (selftest の integrity-default-codex-home が pin)
+  echo "integrity: SKIP codex ($CX が無い)"
 fi
 
 # codex は skill 探索でファイル symlink を捨てる (openai/codex#15756)。共有は skill ディレクトリごとの symlink で行う
