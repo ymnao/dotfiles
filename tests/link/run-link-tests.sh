@@ -72,7 +72,8 @@ make_fake_home() {
 run_link() {
   local root="$1" home="$2" out="$3" err="$4"
   local rc=0
-  HOME="$home" bash "$root/scripts/link.sh" >"$out" 2>"$err" || rc=$?
+  # fixture に .codex という名前を作らない (sandbox が /tmp 配下でも拒否する。#547)
+  HOME="$home" CODEX_HOME="$home/codex-home" bash "$root/scripts/link.sh" >"$out" 2>"$err" || rc=$?
   echo "$rc"
 }
 
@@ -189,12 +190,12 @@ c6_home="$WORKDIR/c6_home"
 make_fake_root "$c6_root"
 make_fake_home "$c6_home"
 mkdir -p "$c6_root/codex/skills/skillA"
-mkdir -p "$c6_home/.codex" "$c6_home/legacy-skills"
-ln -s "$c6_home/legacy-skills" "$c6_home/.codex/skills"  # 旧挙動: skills 自体を symlink
+mkdir -p "$c6_home/codex-home" "$c6_home/legacy-skills"
+ln -s "$c6_home/legacy-skills" "$c6_home/codex-home/skills"  # 旧挙動: skills 自体を symlink
 rc=$(run_link "$c6_root" "$c6_home" "$c6_home/out" "$c6_home/err")
 ok=1
 [ "$rc" = 0 ] || { echo "FAIL c6: rc=$rc"; ok=0; }
-[ ! -L "$c6_home/.codex/skills" ] || { echo "FAIL c6: legacy skills symlink not removed"; ok=0; }
+[ ! -L "$c6_home/codex-home/skills" ] || { echo "FAIL c6: legacy skills symlink not removed"; ok=0; }
 [ -d "$c6_home/legacy-skills" ] || { echo "FAIL c6: legacy symlink target should be kept"; ok=0; }
 assert_symlink "$c6_home/.agents/skills/skillA" "$c6_root/codex/skills/skillA" "c6: skillA per-skill symlink"
 if [ "$ok" = 1 ]; then pass=$((pass+1)); else fail=$((fail+1)); sed 's/^/  /' "$c6_home/err"; fi
@@ -209,9 +210,9 @@ printf 'model = "base"\n' > "$c7_root/codex/config.toml"
 rc=$(run_link "$c7_root" "$c7_home" "$c7_home/out" "$c7_home/err")
 ok=1
 [ "$rc" = 0 ] || { echo "FAIL c7: rc=$rc"; ok=0; }
-[ -f "$c7_home/.codex/config.toml" ] && [ ! -L "$c7_home/.codex/config.toml" ] \
+[ -f "$c7_home/codex-home/config.toml" ] && [ ! -L "$c7_home/codex-home/config.toml" ] \
   || { echo "FAIL c7: config.toml should be regular file, not symlink"; ok=0; }
-if ! grep -q '^model = "base"$' "$c7_home/.codex/config.toml"; then
+if ! grep -q '^model = "base"$' "$c7_home/codex-home/config.toml"; then
   echo "FAIL c7: base content missing from merged config.toml"; ok=0
 fi
 if [ "$ok" = 1 ]; then pass=$((pass+1)); else fail=$((fail+1)); sed 's/^/  /' "$c7_home/err"; fi
@@ -222,19 +223,19 @@ c8_home="$WORKDIR/c8_home"
 make_fake_root "$c8_root"
 make_fake_home "$c8_home"
 mkdir -p "$c8_root/codex/skills/skillA" "$c8_root/codex/skills/skillB"
-mkdir -p "$c8_home/.codex/skills/.system" "$c8_home/other-skill"
-ln -s "$c8_root/codex/skills/skillA" "$c8_home/.codex/skills/skillA"
-ln -s "$c8_home/other-skill" "$c8_home/.codex/skills/other"
+mkdir -p "$c8_home/codex-home/skills/.system" "$c8_home/other-skill"
+ln -s "$c8_root/codex/skills/skillA" "$c8_home/codex-home/skills/skillA"
+ln -s "$c8_home/other-skill" "$c8_home/codex-home/skills/other"
 mkdir -p "$c8_home/.agents/skills/skillB"
 printf 'stale\n' > "$c8_home/.agents/skills/skillB/SKILL.md"
 rc=$(run_link "$c8_root" "$c8_home" "$c8_home/out" "$c8_home/err")
 ok=1
 [ "$rc" = 0 ] || { echo "FAIL c8: rc=$rc"; ok=0; }
-if [ -e "$c8_home/.codex/skills/skillA" ] || [ -L "$c8_home/.codex/skills/skillA" ]; then
+if [ -e "$c8_home/codex-home/skills/skillA" ] || [ -L "$c8_home/codex-home/skills/skillA" ]; then
   echo "FAIL c8: legacy repo symlink should be removed"; ok=0
 fi
-[ -L "$c8_home/.codex/skills/other" ] || { echo "FAIL c8: non-repo symlink should be kept"; ok=0; }
-[ -d "$c8_home/.codex/skills/.system" ] || { echo "FAIL c8: .system should be kept"; ok=0; }
+[ -L "$c8_home/codex-home/skills/other" ] || { echo "FAIL c8: non-repo symlink should be kept"; ok=0; }
+[ -d "$c8_home/codex-home/skills/.system" ] || { echo "FAIL c8: .system should be kept"; ok=0; }
 assert_symlink "$c8_home/.agents/skills/skillB" "$c8_root/codex/skills/skillB" "c8: skillB symlink"
 grep -qx 'stale' "$c8_home/.agents/skills-backup/skillB.backup/SKILL.md" \
   || { echo "FAIL c8: stale skill not backed up to skills-backup/"; ok=0; }

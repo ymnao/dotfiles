@@ -172,10 +172,13 @@ fi
 
 # Codex CLI configuration
 if [[ -d "$DOTFILES_DIR/codex" ]]; then
-    mkdir -p "$HOME/.codex"
+    # codex 自身と同じく CODEX_HOME があればそちらに張る。テストが fixture を .codex という
+    # 名前で作らずに済むようにするため (sandbox は /tmp 配下の .codex/ も拒否する。#547)
+    codex_home="${CODEX_HOME:-$HOME/.codex}"
+    mkdir -p "$codex_home"
 
     if [[ -f "$DOTFILES_DIR/codex/AGENTS.md" ]]; then
-        link_file "$DOTFILES_DIR/codex/AGENTS.md" "$HOME/.codex/AGENTS.md"
+        link_file "$DOTFILES_DIR/codex/AGENTS.md" "$codex_home/AGENTS.md"
     fi
 
     # config.toml は symlink ではなくマージ方式
@@ -191,25 +194,25 @@ if [[ -d "$DOTFILES_DIR/codex" ]]; then
     if [[ -f "$DOTFILES_DIR/codex/config.toml" ]]; then
         if ! bash "$SCRIPT_DIR/codex-merge-config.sh" \
             "$DOTFILES_DIR/codex/config.toml" \
-            "$HOME/.codex/config.toml"; then
+            "$codex_home/config.toml"; then
             warn "Skipped ~/.codex/config.toml merge (write denied?). Run 'bash scripts/codex-merge-config.sh codex/config.toml ~/.codex/config.toml' outside the sandbox to apply it."
         fi
     fi
 
     if [[ -f "$DOTFILES_DIR/codex/hooks.json" ]]; then
-        link_file "$DOTFILES_DIR/codex/hooks.json" "$HOME/.codex/hooks.json"
+        link_file "$DOTFILES_DIR/codex/hooks.json" "$codex_home/hooks.json"
     fi
 
     if [[ -d "$DOTFILES_DIR/codex/hooks" ]]; then
-        link_file "$DOTFILES_DIR/codex/hooks" "$HOME/.codex/hooks"
+        link_file "$DOTFILES_DIR/codex/hooks" "$codex_home/hooks"
     fi
 
     # 旧配置 ~/.codex/skills も codex は読み続けるため、そこに残る repo 向け link を外さないと同名 skill が二重に載る
     if [[ -d "$DOTFILES_DIR/codex/skills" ]]; then
-        if [[ -L "$HOME/.codex/skills" ]]; then
-            rm "$HOME/.codex/skills"
+        if [[ -L "$codex_home/skills" ]]; then
+            rm "$codex_home/skills"
         else
-            for legacy in "$HOME/.codex/skills"/*; do
+            for legacy in "$codex_home/skills"/*; do
                 if [[ -L "$legacy" && "$(readlink "$legacy")" == "$DOTFILES_DIR/codex/skills/"* ]]; then
                     rm "$legacy"
                 fi

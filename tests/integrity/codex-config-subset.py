@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """~/.codex/config.toml が dotfiles の codex/config.toml から逸脱していないか検査する。
 
-usage: codex-config-subset.py <base.toml> <live.toml> <home>
+usage: codex-config-subset.py <base.toml> <live.toml> <codex_home>
+
+<codex_home> は CODEX_HOME の値 (既定の配置なら ~/.codex)。
 
 次の 2 つを満たせば exit 0。違反があればその内容を stdout に並べて exit 1。
   - base の全キーが live に同じ値で存在する
@@ -20,8 +22,8 @@ except ImportError:
 # トップレベルの非テーブルキーは最初のテーブル見出しより前にしか書けず、notify のように
 # host 側でコマンドを起動するものが含まれる。codex 自身が書き込む既知の値だけを通す。
 ALLOWED_EXTRA = {
-    "notify": lambda home: [
-        f"{home}/.codex/computer-use/Codex Computer Use.app/Contents/SharedSupport/"
+    "notify": lambda codex_home: [
+        f"{codex_home}/computer-use/Codex Computer Use.app/Contents/SharedSupport/"
         "SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient",
         "turn-ended",
     ],
@@ -45,14 +47,14 @@ def walk(base, live, path, out):
             out.append(f"値が違う: {dotted} = {got!r} (dotfiles では {want!r})")
 
 
-def check_extra(base, live, home, out):
+def check_extra(base, live, codex_home, out):
     for key, got in live.items():
         if key in base or isinstance(got, dict):
             continue
         expected = ALLOWED_EXTRA.get(key)
         if expected is None:
             out.append(f"base に無いトップレベルキー: {key}")
-        elif got != expected(home):
+        elif got != expected(codex_home):
             out.append(f"許可外の値: {key} = {got!r}")
 
 

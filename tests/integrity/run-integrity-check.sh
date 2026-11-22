@@ -23,6 +23,9 @@ set -uo pipefail
 # 環境変数 (テスト用):
 #   INTEGRITY_HOME     — $HOME の代わりに検査するルート
 #   INTEGRITY_DOTFILES — dotfiles リポジトリルートの上書き (リンク先の期待値と中身の検査の両方)
+#   CODEX_HOME         — codex 自身と同じく ~/.codex の位置を差し替える (既定は $H/.codex)。
+#                        selftest が fixture を .codex という名前で作らずに済むよう読む。
+#                        sandbox は /tmp 配下の .codex/ への書き込みも拒否するため (#547)
 #
 # ~/.claude が無い環境 (CI・未セットアップ機) では skip (fail-open)。
 
@@ -38,6 +41,7 @@ else
   DOTFILES="$(cd "$common_dir/.." && pwd -P)"
 fi
 H="${INTEGRITY_HOME:-$HOME}"
+CX="${CODEX_HOME:-$H/.codex}"
 
 if [ ! -d "$H/.claude" ]; then
   echo "integrity: SKIP ($H/.claude が無い未セットアップ環境)"
@@ -76,16 +80,16 @@ expect_link "$H/.claude/rules"         "$DOTFILES/claude/rules"
 expect_link "$H/.claude/statusline.sh" "$DOTFILES/claude/statusline.sh"
 
 # 2. ~/.codex 配下 (codex 未セットアップ機ではスキップ)
-if [ -d "$H/.codex" ]; then
-  expect_link "$H/.codex/AGENTS.md"  "$DOTFILES/codex/AGENTS.md"
-  expect_link "$H/.codex/hooks.json" "$DOTFILES/codex/hooks.json"
-  expect_link "$H/.codex/hooks"      "$DOTFILES/codex/hooks"
+if [ -d "$CX" ]; then
+  expect_link "$CX/AGENTS.md"  "$DOTFILES/codex/AGENTS.md"
+  expect_link "$CX/hooks.json" "$DOTFILES/codex/hooks.json"
+  expect_link "$CX/hooks"      "$DOTFILES/codex/hooks"
   for d in "$DOTFILES/codex/skills"/*/; do
     [ -d "$d" ] || continue
     expect_link "$H/.agents/skills/$(basename "$d")" "${d%/}"
   done
 
-  cfg="$H/.codex/config.toml"
+  cfg="$CX/config.toml"
   base="$DOTFILES/codex/config.toml"
   if [ -L "$cfg" ]; then
     echo "NG: $cfg が symlink (マージ方式の実体ファイルのはず)"
@@ -95,7 +99,7 @@ if [ -d "$H/.codex" ]; then
     # キーの並び順を変えるため (Computer Use の有効化で notify が最初のテーブルの直前に入る等)。
     # tomllib が無い環境でプレフィックス比較に落とさないのは、落とし先が上の書き戻しで
     # 必ず NG になり、原因の違う NG を同じ文言で出すだけになるため。
-    if ! subset_diff=$(python3 "$SCRIPT_DIR/codex-config-subset.py" "$base" "$cfg" "$H" 2>&1); then
+    if ! subset_diff=$(python3 "$SCRIPT_DIR/codex-config-subset.py" "$base" "$cfg" "$CX" 2>&1); then
       echo "NG: $cfg に dotfiles の codex/config.toml の設定が残っていない"
       printf '%s\n' "$subset_diff" | sed 's/^/      /'
       fail=1
