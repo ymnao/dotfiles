@@ -253,6 +253,20 @@ fi
 RAW_OUT="$(mktemp "${TMPDIR:-/tmp}/codex-review.XXXXXX")"
 RAW_ERR="$(mktemp "${TMPDIR:-/tmp}/codex-review.err.XXXXXX")"
 PROMPT_TMP="$(mktemp "${TMPDIR:-/tmp}/codex-review.prompt.XXXXXX")"
+# codex は起動ディレクトリから project root (.git のある階層) までの AGENTS.md と
+# .agents/skills/ を読み込み、prompt 中の "$<skill 名>" を skill の明示起動として
+# 扱う。レビュー対象 repo を cwd にすると、diff の文字列がその repo の skill を
+# 起動させる (別の private repo で "$morning" を含む diff が 3 観点とも skill の
+# 手順に流れ、JSON を返さず ERROR になった。2026-11-21)。git の外の空ディレクトリ
+# では project root が見つからず cwd だけが探索対象になるので、repo 側の
+# AGENTS.md と skill は context に入らない (codex-cli 0.170.0、2026-11-22 実測。
+# user 層の ~/.codex/AGENTS.md と ~/.agents/skills は残る)。
+# Why not 設定で切る: AGENTS.md を無効にするキーは公式の config reference に無く、
+# skill は [[skills.config]] で名前かパスを 1 つずつ指定するしかないので、対象
+# repo の skill を列挙し続けることになる。
+# diff は prompt に丸ごと入り、REVIEW.md も base の版を上で足しているので、
+# codex に repo を cwd として渡す必要は無い。
+CODEX_CWD="$(mktemp -d "${TMPDIR:-/tmp}/codex-review.cwd.XXXXXX")"
 CODEX_PID=""
 # codex とその子孫をプロセスグループごと落とす。codex 本体だけに signal を
 # 送ると孫が孤児として残り、実物では API を叩き続ける。SIGTERM を 1 度送って
@@ -293,7 +307,7 @@ terminate_codex() {
   wait "$CODEX_PID" 2>/dev/null || true
   CODEX_PID=""
 }
-cleanup() { terminate_codex; rm -f "$RAW_OUT" "$RAW_ERR" "$PROMPT_TMP"; }
+cleanup() { terminate_codex; rm -f "$RAW_OUT" "$RAW_ERR" "$PROMPT_TMP"; rm -rf "$CODEX_CWD"; }
 trap cleanup EXIT
 # INT / TERM でも codex を道連れにする。EXIT trap だけだと、シグナルで
 # 落とされたときに background の codex が生き残って API を叩き続ける。
@@ -320,8 +334,8 @@ trap 'trap - EXIT; cleanup; exit 143' TERM
     printf '\n\n## Repository review instructions\n\nREVIEW.md of this repository (as of %s) is below. Apply it on top of the focus areas above; where it states the target environment, use that instead of assuming one.\n\n%s\n' \
       "$BASE_BRANCH" "$REVIEW_INSTRUCTIONS"
   fi
-  printf '\n\n## Target\n\nReview the diff below (produced by "git diff %s...HEAD" in %s). Do NOT modify any files. Output only the fenced JSON block per the Output contract above.\n' \
-    "$BASE_BRANCH" "$CWD"
+  printf '\n\n## Target\n\nReview the diff below (produced by "git diff %s...HEAD" in %s). Your working directory is an empty scratch directory; the paths in the diff are relative to %s, so read files there by absolute path if you need surrounding context. Do NOT modify any files. Output only the fenced JSON block per the Output contract above.\n' \
+    "$BASE_BRANCH" "$CWD" "$TOPLEVEL"
   if [ -n "$EXCLUDED_STAT" ]; then
     printf '\n## Excluded from the diff\n\nThe files below are marked linguist-generated in .gitattributes. Their changes are left out of the diff and are NOT reviewed; only the change size is shown.\n\n```\n%s\n```\n' \
       "$EXCLUDED_STAT"
@@ -380,7 +394,8 @@ codex_rc=0
 # set -m は codex を独立したプロセスグループに置くためだけに使う
 # (理由は terminate_codex のコメント)。起動直後に戻す。
 set -m
-codex exec --sandbox read-only - < "$PROMPT_TMP" > "$RAW_OUT" 2> "$RAW_ERR" &
+codex exec --sandbox read-only --skip-git-repo-check -C "$CODEX_CWD" - \
+  < "$PROMPT_TMP" > "$RAW_OUT" 2> "$RAW_ERR" &
 CODEX_PID=$!
 set +m
 waited=0
