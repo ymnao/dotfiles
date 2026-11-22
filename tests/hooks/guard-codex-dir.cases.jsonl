@@ -2,8 +2,9 @@
 # tool_input を直接指定する形式 / command 形式 (Bash) / raw モードを混在。
 # {{CWD}} は runner が hook 実行時の一時 cwd 実パスに置換する (cwd 内絶対パス検証用)。
 #
-# ブロック条件: cwd 配下の Codex 設定ディレクトリ (.codex/) と MCP 起動ファイル (.mcp/ .mcp.json .env) への操作 (Edit/Write/MultiEdit/NotebookEdit/Bash/apply_patch)
-# 許可条件: cwd 外の絶対 / 相対パス、ドット無しの codex/ 相対パス、path 系フィールドなし
+# ブロック条件: cwd 配下の Codex 設定ディレクトリ (.codex/) と MCP 起動ファイル (.mcp/ .mcp.json .env) への操作 (Edit/Write/MultiEdit/NotebookEdit/Bash/apply_patch)。
+#   file 編集 tool では home 配下の別プロジェクト (#291) と home の外の書き込み範囲 (#547) も
+# 許可条件: cwd 外かつ上の範囲外の絶対 / 相対パス、ドット無しの codex/ 相対パス、path 系フィールドなし
 
 # --- Edit/Write/MultiEdit/apply_patch ブロックケース ---
 {"name":"block: 相対 .codex/config.toml (Write file_path)","expect":"block","tool_input":{"file_path":".codex/config.toml"}}
@@ -39,15 +40,27 @@
 {"name":"block: cwd 絶対 {{CWD}}/.codex/foo","expect":"block","tool_input":{"file_path":"{{CWD}}/.codex/foo"}}
 {"name":"block: cwd 絶対 /./ 正規化","expect":"block","tool_input":{"file_path":"{{CWD}}/./.codex/foo"}}
 {"name":"block: cwd 絶対 /../ 経由で cwd 内 .codex","expect":"block","tool_input":{"file_path":"{{CWD}}/pkg/../.codex/foo"}}
-{"name":"allow: cwd 前方一致 (別ディレクトリ) {{CWD}}-other/.codex","expect":"allow","tool_input":{"file_path":"{{CWD}}-other/.codex/foo"}}
+
+# --- home の外の書き込み範囲 (/tmp 系・TMPDIR・/opt/homebrew・/usr/local、#547) ---
+# TMPDIR が /tmp の外にある形は runner の「TMPDIR が /tmp の外」の節が測る。
+# 一時 cwd (WORKDIR) は TMPDIR 配下なので、cwd 外への相対パスもこの範囲に落ちる
+{"name":"block: 相対 ../other/.codex (cwd 外・TMPDIR 配下、#547)","expect":"block","tool_input":{"file_path":"../other-project/.codex/foo"}}
+{"name":"block: Write で /tmp 配下の .codex/config.toml (#547)","expect":"block","tool_name":"Write","tool_input":{"file_path":"/tmp/wt/.codex/config.toml"}}
+{"name":"block: Edit で /private/tmp 配下の .codex/config.toml (#547)","expect":"block","tool_name":"Edit","tool_input":{"file_path":"/private/tmp/claude-501/x/wt/.codex/config.toml"}}
+{"name":"block: /tmp 直下の .codex/config.toml (#547)","expect":"block","tool_input":{"file_path":"/tmp/.codex/config.toml"}}
+{"name":"block: /opt/homebrew 配下の .mcp.json (#547)","expect":"block","tool_input":{"file_path":"/opt/homebrew/var/x/.mcp.json"}}
+{"name":"block: /usr/local 配下の .env (#547)","expect":"block","tool_input":{"file_path":"/usr/local/src/x/.env"}}
+{"name":"block: /tmp 配下の .mcp/ (大文字表記、#547)","expect":"block","tool_input":{"file_path":"/TMP/x/.MCP/start.sh"}}
+{"name":"block: codex apply_patch で /tmp 配下の .codex (#547)","expect":"block","tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n*** Add File: /tmp/wt/.codex/config.toml\n+notify = [\"x\"]\n*** End Patch\n"}}
+{"name":"allow: /tmp 配下の .codex-other (似た名前、#547)","expect":"allow","tool_input":{"file_path":"/tmp/wt/.codex-other/x"}}
+{"name":"allow: /tmp 配下の .env.local (名前が違う、#547)","expect":"allow","tool_input":{"file_path":"/tmp/wt/.env.local"}}
+{"name":"allow: /tmp 配下の通常ファイル (#547)","expect":"allow","tool_input":{"file_path":"/tmp/wt/README.md"}}
 
 # --- 許可ケース ---
-# 下 2 件は cwd 外かつ **home 外**。issue #291 で home 配下は block に変わったので、
-# この 2 件が pin しているのは「cwd 外だから allow」ではなく
-# 「home 外は受容した残余だから allow」(docs/ai-operations.md §10)。
-# 一時 cwd (WORKDIR) は隔離 HOME の配下ではないため、相対パスも home 外に落ちる。
+# 下の 2 件は cwd 外・home 外で、書き込み範囲でもない場所。pin しているのは
+# 「どの範囲でもない場所は受容した残余だから allow」(docs/ai-operations.md §10) と、根の前方一致の過剰 block。
 {"name":"allow: home 外絶対 /private/nonexistent/.codex/x (受容した残余)","expect":"allow","tool_input":{"file_path":"/private/nonexistent/.codex/x"}}
-{"name":"allow: 相対 ../other/.codex (cwd 外かつ home 外、受容した残余)","expect":"allow","tool_input":{"file_path":"../other-project/.codex/foo"}}
+{"name":"allow: /private/tmp の前方一致 /private/tmpfoo/.codex/x (根の過剰 block を検出)","expect":"allow","tool_input":{"file_path":"/private/tmpfoo/.codex/x"}}
 {"name":"allow: ドット無し codex/hooks/x.sh","expect":"allow","tool_input":{"file_path":"codex/hooks/guard-codex-dir.sh"}}
 {"name":"allow: 通常ファイル README.md","expect":"allow","tool_input":{"file_path":"README.md"}}
 {"name":"allow: path 系フィールドなし","expect":"allow","tool_input":{"other":"noop"}}
@@ -225,7 +238,7 @@
 
 # --- MCP の起動に使うファイル (.mcp/ .mcp.json .env、issue #372) ---
 # 次回のクライアント起動時に sandbox の外で実行される / source されるので .codex/ と同じ扱い。
-# 範囲も .codex/ と同じ (cwd 配下 + home 配下の別プロジェクト)。
+# 範囲も .codex/ と同じ (cwd 配下 + home 配下の別プロジェクト + home の外の書き込み範囲)。
 {"name":"block: 相対 .mcp.json (Write)","expect":"block","tool_input":{"file_path":".mcp.json"}}
 {"name":"block: 相対 .mcp/start.sh (Edit)","expect":"block","tool_input":{"file_path":".mcp/start.sh"}}
 {"name":"block: 相対 .env (Write)","expect":"block","tool_input":{"file_path":".env"}}

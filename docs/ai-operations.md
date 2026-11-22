@@ -374,9 +374,9 @@ codex CLI の `~/.codex/config.toml` は **sandbox 境界を越えて host 側�
 | 層 | 実装 | 効くもの | 効かないもの |
 |---|---|---|---|
 | 一次: sandbox | `claude/settings.json` の `.sandbox.filesystem.denyWrite` に `~/.codex/config.toml`(allowWrite の `~/.codex` に対する deny-within-allow) | **Bash tool 経由**の全書き込み経路(リダイレクト / write コマンド / `sed -i` / `mv`)。`cd ~/.codex && printf x > config.toml` のように hook を回避する形も止まる | **Edit / Write / MultiEdit / apply_patch の file 編集 tool には適用されない**(実測: deny 対象の `claude/settings.json` は Bash append は拒否されるが Edit tool では書き換えられた。Claude Code の Edit 経路の扱いは下の #499 の節) |
-| 一次: sandbox (プロジェクト配下) | 同 `denyWrite` に `~/*/**/.codex/**`(2026-08-08 追加) | home 直下 1 階層の作業ディレクトリ配下で `.codex/` を deny。ディレクトリが存在しなくても `mkdir` も `mv` (rename) も拒否される。**測れた範囲は下記節に明記** | 4 経路(home の外 / excludedCommands で sandbox ごと外れる行 / file 編集 tool / この設定自体の改ざん)。内訳と担当は下記「denyWrite のパス表記」節の末尾に 1 箇所だけ書く |
+| 一次: sandbox (プロジェクト配下) | 同 `denyWrite` に `~/*/**/.codex/**`(2026-08-08 追加) | home 直下 1 階層の作業ディレクトリ配下で `.codex/` を deny。ディレクトリが存在しなくても `mkdir` も `mv` (rename) も拒否される (保護対象を中身に持つディレクトリの rename は除く。#547)。**測れた範囲は下記節に明記** | 4 経路(home の外 / excludedCommands で sandbox ごと外れる行 / file 編集 tool / この設定自体の改ざん)。内訳と担当は下記「denyWrite のパス表記」節の末尾に 1 箇所だけ書く |
 | 二次: hook (Bash) | `agents/hooks/block-dangerous-commands.sh` の「書き込み文脈 + `.codex` component」判定。**cwd 配下については `agents/hooks/guard-codex-dir.sh` も Bash matcher に配線されており**、command 文字列から token を抽出して cwd 内の `.codex/` を止める(読み取りも止まる) | tilde / `$HOME` / 絶対パス表記のいずれでも、path token に `.codex` component が現れる書き込みを block(block-dangerous 側は読み取りは allow のまま) | `cd ~/.codex && printf x > config.toml` のように **書き込み segment 側に `.codex` component が現れない形**(一次防御が担当) |
-| 二次: hook (file 編集) | `agents/hooks/guard-codex-dir.sh` の 3 判定: `is_protected_project_path`(cwd 配下)/ `is_protected_home_codex_config`(`~/.codex/config.toml` 1 ファイル)/ `is_protected_home_project_codex_path`(home 配下の別プロジェクト。2026-08-09 追加 / #291) | Edit / Write / MultiEdit / NotebookEdit / apply_patch が (a) cwd 配下の `.codex/`、(b) `~/.codex/config.toml`、(c) `~/<任意のディレクトリ>/…/.codex/` 配下 を指す場合。tilde / `$HOME` / `${HOME}` / 絶対パス / `..` 経由 / 大文字表記を正規化し、**symlink はこの経路では無条件に解決**してから比較する(gate 任せだと、名前に `codex` を含まない symlink + `config.toml` 以外の leaf が素通りする。2026-08-09 に対照付きで実測して塞いだ) | `~/.codex/` 配下の他ファイル(`sessions/` / `auth.json` 等は codex CLI が正当に書くため意図的に allow)、および **home の外**の `.codex/`(`/tmp` / `/Volumes` 等。下記参照) |
+| 二次: hook (file 編集) | `agents/hooks/guard-codex-dir.sh` の 4 判定: `is_protected_project_path`(cwd 配下)/ `is_protected_home_codex_config`(`~/.codex/config.toml` 1 ファイル)/ `is_protected_home_project_codex_path`(home 配下の別プロジェクト。2026-08-09 追加 / #291)/ `is_protected_writable_outside_home_path`(home の外の書き込み範囲。#547) | Edit / Write / MultiEdit / NotebookEdit / apply_patch が (a) cwd 配下の `.codex/`、(b) `~/.codex/config.toml`、(c) `~/<任意のディレクトリ>/…/.codex/` 配下、(d) `/tmp` 系・`$TMPDIR`・`/opt/homebrew`・`/usr/local` 配下の `.codex/` を指す場合。tilde / `$HOME` / `${HOME}` / 絶対パス / `..` 経由 / 大文字表記を正規化し、**symlink はこの経路では無条件に解決**してから比較する(gate 任せだと、名前に `codex` を含まない symlink + `config.toml` 以外の leaf が素通りする。2026-08-09 に対照付きで実測して塞いだ) | `~/.codex/` 配下の他ファイル(`sessions/` / `auth.json` 等は codex CLI が正当に書くため意図的に allow)、および書き込み範囲でない **home の外**の `.codex/`(`/Volumes` 等。下記参照) |
 | 正規の書き込み経路 | `scripts/codex-merge-config.sh` を **ユーザーが手動実行**(sandbox 外) | repo の `codex/config.toml` を正本として `~/.codex/config.toml` へマージ | — |
 
 一次と二次が担当する経路は**意図的に非対称**。Bash 経路は sandbox が包括的に止め、
@@ -389,7 +389,25 @@ file 編集 tool 経路は sandbox が効かないので hook が止める。片
 食い違うと、経路の分業では説明できない穴になる。2026-08-09 に
 `is_protected_home_project_codex_path` を足して二次側を一次側のスコープに揃えた。
 
-- **home の外**(`/tmp` / `/Volumes` / 外部ボリューム等)は**両層とも非カバー**で、
+- **home の外で sandbox が書き込みを許す場所**(`/tmp` 系・`$TMPDIR`・`/opt/homebrew`・
+  `/usr/local`)は、二次 (file 編集) 側だけが `is_protected_writable_outside_home_path` で
+  止める (#547)。ここで作った `.codex/` は、中身を持ったディレクトリごと
+  `git worktree move` / `mv` で home 配下へ移せる — Seatbelt は rename で移す
+  ディレクトリ自体のパスしか見ないので、移した先の `~/*/**/.codex/**` が効かない
+  (別 repo の作業で実際に使われた経路。経緯は #547 の本文)。根は sandbox の allowWrite の
+  うち home の外にあるもの: `/tmp` は `claude/settings.json`、`/opt/homebrew`・`/usr/local` は
+  この repo の `.claude/settings.json`、`$TMPDIR` は harness が足す。hook は全 repo に効くが、
+  根はこの一覧で固定なので、別 repo が project settings で足した home の外の場所は入らない。
+  **Bash で作る経路は残っている** — sandbox は止めず、`block-dangerous-commands.sh` の
+  書き込み系コマンド・リダイレクトの判定に掛からない形 (`git worktree add` での checkout、
+  スクリプトの中の書き込み) は通る。
+  一次 (sandbox) の `denyWrite` を `/tmp/**/.codex/**` 等へ広げると塞がり、
+  `.codex-other` や `~/.codex` への書き込みは通ることも確かめた (2026-11-21 実測。
+  `.codex` の行だけを外した対照では作れた)。ただし同時に、`make test` の hook
+  テスト・hooks-glob・integrity selftest が `$TMPDIR` 配下に fixture の `.codex/` を
+  作れなくなり、integrity selftest は 31 件 FAIL した。sandbox の中では検査を
+  skip するしかなくなるので見送った
+- **それ以外の home の外**(`/Volumes` / 外部ボリューム等)は**両層とも非カバー**で、
   これは層間の非対称ではなく**共通の残余として受容している**。塞ぐと `.codex`
   component を持つ任意のパスを実質グローバル禁止することになり、他 repo を
   クローンして読む作業まで巻き込むため。issue #190 型の攻撃は「次に codex を
@@ -404,7 +422,7 @@ file 編集 tool 経路は sandbox が効かないので hook が止める。片
   の `home-codex-config-*` / `tilde-codex-config-*` ケースが pin する
 - 二次防御 (file 編集) の regression は `tests/hooks/guard-codex-dir.cases.jsonl` の
   `{{HOME}}/.codex/config.toml` 系 (#190) と `{{HOME}}/other-project/.codex/` 系
-  (#291) のケースが pin する(allow 側のラチェット — `sessions/` / `auth.json` /
+  (#291) と `/tmp` 系 (#547) のケースが pin する(allow 側のラチェット — `sessions/` / `auth.json` /
   ドット無し `codex/` / home 外 / Bash 素通し — も含む)
 
 ### denyWrite のパス表記 — 相対は無視され、絶対 / `~` 始まりなら glob が効く
@@ -533,7 +551,8 @@ issue #289 の「保護をコマンド文字列の静的解析で担い続ける
    `~/tmp` のように home 配下を指す環境では、hook ではなく **sandbox の EPERM** で
    `mkdir` が落ちる。現在の `TMPDIR` は home 外なので発火していない
 
-**それでも文字列解析の hook は統制から降ろせない。** 残る経路は 4 つ:
+**それでも文字列解析の hook は統制から降ろせない。** 残る経路は 4 つ (これとは別に、保護対象を
+中身に持つディレクトリの rename も sandbox は止めない。#547、上の「二次: hook (file 編集)」の後の箇条書き):
 
 1. **home の外のプロジェクト** (`/Volumes/…` 等) — `~/*/` は home 直下を起点に
    するので届かない
@@ -561,7 +580,8 @@ issue #289 の「保護をコマンド文字列の静的解析で担い続ける
    あわせて、この経路の symlink 解決を**無条件**に変えた — パス文字列に
    `codex` が現れない symlink 経由の書き込みが、leaf が `config.toml` の
    ときしか止まっていなかった(同日、対照付きで実測)。
-   **この経路で残るのは home の外だけ**(上の経路 1 と同じ範囲)
+   **この経路で残るのは home の外のうち書き込み範囲でない場所だけ**(書き込み範囲は
+   #547 で `is_protected_writable_outside_home_path` を足して塞いだ)
    **さらに、コマンド文字列だけを見る hook は `bash <script>` で中身を隠されると
    素通りする** — hook に渡るのは `bash /path/to/x.sh` という 1 行だけで、
    スクリプトの中身は検査されない。上の「再現方法」が使っているのはこの性質
@@ -2212,7 +2232,7 @@ hook ディレクトリへの新規作成・`agents/hooks` と `claude/settings.
 |---|---|---|---|
 | 一次: sandbox | `denyWrite` に `~/*/**/.mcp.json` / `~/*/**/.mcp/**` / `~/*/**/.env` | Claude Code の Bash 経路。2026-09-26 に repo 配下の probe で、`.mcp.json`(直下 / 2 段ネスト)・`.env`(直下 / 1 段ネスト)の作成と `.mcp` の `mkdir` が拒否され、対照(`ctl.txt` / `.env.example` / `mcp.json`)は書けた | codex の Bash 経路(codex は別の sandbox)。file 編集 tool |
 | 一次: codex sandbox(#375) | `codex/config.toml` の `default_permissions = "guarded"`(`extends = ":workspace"`)で、workspace root 配下の `**/.env` `**/.mcp.json` `**/.mcp` `**/.mcp/**` を `deny`、`~/.claude.json` を `read`(hook 実行面の `read` は #385 で追加。上の段落) | codex の Bash 経路。2026-09-27 に user のターミナルで、merge 済みの `~/.codex/config.toml` に対して `codex sandbox -P guarded`(codex-cli 0.157.1)を実行し、変数経由の `.env`・`.mcp.json`・`mkdir .mcp`・`sub/.env` への追記、既存の `.mcp/launch.sh` と `sub/.mcp/x.sh` への追記、`.mcp/` 配下の新規作成、`.mcp.json` の読み取りが拒否され、対照の通常ファイルは書けた。**`**/.mcp` だけでは既存の `.mcp/` 配下への追記が通った**(`mkdir` は止まる)ので `/**` を併記している。cwd=`$HOME` で起動しても `~/.claude.json` への書き込み(`touch -c`)は拒否され、対照の `$HOME` 直下のファイルは作れた。`--sandbox` 指定なしの `codex exec` は workspace に書けた(read-only に落ちていない)。workspace 外(`$HOME` 直下)への書き込みは profile 無しの `:workspace` でも拒否された(2026-09-26 に同じく user のターミナルで実測)— issue #375 の「home 配下の別プロジェクトへ書ける」は hook 単体の測定で、sandbox は既に止めていた | codex の agent が `.env` / `.mcp.json` / `.mcp/` を**読むこともできなくなる**(glob は `deny` しか受け付けず、完全一致の `read` は書いたパスにしか効かない — `.env` は `sub/.env` を素通りさせた。ネストしたパスやディレクトリを書けば配下まで効く(#385)。読み取りの拒否を測ったのは `sub/.env` の `cat` だけ。いずれも 2026-09-26 に実測)。Claude Code 側は `.mcp` 系を書き込みだけ拒否するので、ここは codex の方が厳しい |
-| 二次: hook | `agents/hooks/guard-codex-dir.sh` の保護対象を `protected_names`(`.codex` `.mcp` `.mcp.json` `.env`)に一般化。範囲は `.codex/` と同じ(cwd 配下 + home 配下の別プロジェクト)。`~/.claude.json`(user スコープの mcpServers)は `~/.codex/config.toml` と同じ完全一致判定で止める(#375) | Claude Code / codex 両方の file 編集 tool(Edit / Write / apply_patch 等)。Bash は cwd 配下を**字面で**指す token だけ。**#381 までは codex の apply_patch に home 側の判定が効いていなかった** — codex は patch 本文を `tool_input.command` で渡す(`codex-rs/core/src/tools/handlers/apply_patch.rs`)が、hook は `.patch` / `.input` しか読まず、本文を Bash token として cwd 配下の判定にだけ掛けていた(2026-09-28 に codex 形の payload を hook に流し、`~/.claude.json` と `~/.codex/config.toml` の Update がどちらも exit 0 だったことを実測) | 変数経由の書き込み先(`p=<保護対象>; printf x > "$p"`)は、この hook も `block-dangerous-commands.sh` も素通りする(2026-09-26 に payload を両 hook へ流して実測、どちらも exit 0)。止めるのは各 harness の一次(sandbox)。ただし codex の permission profile は `.codex` を deny に含めておらず、`.codex/` は従来どおり `block-dangerous-commands.sh` の動的展開判定が補う。home の外は `.codex/` と同じ残余 |
+| 二次: hook | `agents/hooks/guard-codex-dir.sh` の保護対象を `protected_names`(`.codex` `.mcp` `.mcp.json` `.env`)に一般化。範囲は `.codex/` と同じ(cwd 配下 + home 配下の別プロジェクト + home の外の書き込み範囲 (#547))。`~/.claude.json`(user スコープの mcpServers)は `~/.codex/config.toml` と同じ完全一致判定で止める(#375) | Claude Code / codex 両方の file 編集 tool(Edit / Write / apply_patch 等)。Bash は cwd 配下を**字面で**指す token だけ。**#381 までは codex の apply_patch に home 側の判定が効いていなかった** — codex は patch 本文を `tool_input.command` で渡す(`codex-rs/core/src/tools/handlers/apply_patch.rs`)が、hook は `.patch` / `.input` しか読まず、本文を Bash token として cwd 配下の判定にだけ掛けていた(2026-09-28 に codex 形の payload を hook に流し、`~/.claude.json` と `~/.codex/config.toml` の Update がどちらも exit 0 だったことを実測) | 変数経由の書き込み先(`p=<保護対象>; printf x > "$p"`)は、この hook も `block-dangerous-commands.sh` も素通りする(2026-09-26 に payload を両 hook へ流して実測、どちらも exit 0)。止めるのは各 harness の一次(sandbox)。ただし codex の permission profile は `.codex` を deny に含めておらず、`.codex/` は従来どおり `block-dangerous-commands.sh` の動的展開判定が補う。home の外は `.codex/` と同じ残余 |
 
 - **判定は名前の完全一致**: `.env.local` / `.env.example` / `mcp.json` /
   `.mcp.json.bak` は対象外(起動スクリプトが source するのは `.env` なので。

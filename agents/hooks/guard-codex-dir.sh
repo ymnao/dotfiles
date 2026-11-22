@@ -228,12 +228,16 @@ normalize_path() {
 # 一致するかで判定する。cwd 外 (例: 別プロジェクトの ../other/.codex/) は
 # この判定の対象外 (home 配下は is_protected_home_project_codex_path が見る)。
 is_protected_project_path() {
-  local path_lower="$1"
-  local name
+  is_protected_under "$cwd_lower" "$1"
+}
+
+# $1 (小文字の base) の直下か配下に、protected_names の component があるか。
+is_protected_under() {
+  local base="$1" name
 
   for name in "${protected_names[@]}"; do
-    case "$path_lower" in
-      "$cwd_lower/$name"|"$cwd_lower/$name"/*|"$cwd_lower"/*"/$name"|"$cwd_lower"/*"/$name"/*)
+    case "$2" in
+      "$base/$name"|"$base/$name"/*|"$base"/*"/$name"|"$base"/*"/$name"/*)
         return 0
         ;;
     esac
@@ -275,9 +279,9 @@ is_protected_home_codex_config() {
 # config.toml 1 ファイルだけを止め、codex CLI が正当に書く sessions/ /
 # auth.json 等は allow するという別の切り分けを担当している。
 #
-# home の外 (/tmp / /Volumes 等) は allow のまま — sandbox の
-# `~/*/**/.codex/**` も非カバーで、層間の非対称ではなく共通の残余
-# (docs/ai-operations.md §10 に記録)。
+# home の外のうち sandbox が書き込みを許す場所は is_protected_writable_outside_home_path
+# (issue #547) が見る (file 編集 tool のみ)。それ以外 (/Volumes 等) は allow のまま
+# — sandbox も非カバーで、層間の非対称ではなく共通の残余 (docs/ai-operations.md §10 に記録)。
 is_protected_home_project_codex_path() {
   # HOME 不明の環境では判定しない (誤爆を避ける。cwd 判定は引き続き効く)
   [[ -n "$home_lower" ]] || return 1
@@ -289,6 +293,42 @@ is_protected_home_project_codex_path() {
         "$home"/*"/$name"|"$home"/*"/$name"/*) return 0 ;;
       esac
     done
+  done
+
+  return 1
+}
+
+# 「home の外で sandbox が書き込みを許す場所 (/tmp 系・$TMPDIR・/opt/homebrew・/usr/local)
+# の保護対象」を指しているかを判定する (issue #547。経路と見送った案は docs/ai-operations.md §10)。
+# Why not home の外すべて: sandbox の書き込み範囲でない場所 (/Volumes 等) は Bash から
+# rename の移動元にできないはず (推測、未測定) なので、外のプロジェクトの .env 編集まで巻き込むほうが重い。
+# Why not 起動時に根を作る: Bash の呼び出しでは使わないのに、毎回 fork を払うため。
+outside_home_roots_lower=()
+is_protected_writable_outside_home_path() {
+  local root home
+
+  if [[ "${#outside_home_roots_lower[@]}" -eq 0 ]]; then
+    outside_home_roots_lower=(/tmp /private/tmp /opt/homebrew /usr/local)
+    if [[ -n "${TMPDIR:-}" ]]; then
+      local _resolved _form
+      _resolved=$(cd "$TMPDIR" 2>/dev/null && pwd -P) || _resolved=""
+      while IFS= read -r _form; do
+        [[ -n "$_form" ]] && outside_home_roots_lower+=("$_form")
+      done < <(printf '%s\n%s\n' "${TMPDIR%/}" "$_resolved" | tr '[:upper:]' '[:lower:]')
+    fi
+  fi
+
+  # 隔離 HOME がこれらの根の配下にあるテスト環境で、~/.codex/sessions/ 等まで止めない
+  if [[ -n "$home_lower" ]]; then
+    for home in "${home_forms[@]}"; do
+      case "$1" in
+        "$home"|"$home"/*) return 1 ;;
+      esac
+    done
+  fi
+
+  for root in "${outside_home_roots_lower[@]}"; do
+    is_protected_under "$root" "$1" && return 0
   done
 
   return 1
@@ -523,6 +563,10 @@ while IFS= read -r -d '' rec; do
   fi
   if is_protected_home_project_codex_path "$p_lower"; then
     edit_reason="ホーム配下のプロジェクトの Codex 設定ディレクトリ / MCP 起動ファイル (.mcp/ .mcp.json .env) へのファイル操作は禁止されています（次回クライアント起動時の host 側コマンド実行対策、issue #291 / #372）"
+    break
+  fi
+  if is_protected_writable_outside_home_path "$p_lower"; then
+    edit_reason="home の外の書き込み可能な場所 (/tmp 系・TMPDIR・/opt/homebrew・/usr/local) での Codex 設定ディレクトリ / MCP 起動ファイル (.mcp/ .mcp.json .env) へのファイル操作は禁止されています（ディレクトリごと home 配下へ移して持ち込む経路の対策、issue #547）"
     break
   fi
   if is_protected_project_path "$p_lower"; then
