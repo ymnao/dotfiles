@@ -243,6 +243,22 @@ c8_leftover=$(find "$c8_home/.agents/skills" -mindepth 1 -maxdepth 1 -name '*.ba
 [ -z "$c8_leftover" ] || { echo "FAIL c8: backup left inside skills/: $c8_leftover"; ok=0; }
 if [ "$ok" = 1 ]; then pass=$((pass+1)); else fail=$((fail+1)); sed 's/^/  /' "$c8_home/err"; fi
 
+# ---- case 9: CODEX_HOME が無ければ HOME/.codex に張る (実機の make link が通る既定の経路)
+# 他のケースは run_link が CODEX_HOME を渡すので、既定値の組み立てを通るのはここだけ。
+# fixture に .codex を作るので、sandbox の deny を /tmp 配下へ広げるときは扱いを決め直す (#547)
+c9_root="$WORKDIR/c9_root"
+c9_home="$WORKDIR/c9_home"
+make_fake_root "$c9_root"
+make_fake_home "$c9_home"
+mkdir -p "$c9_root/codex"
+printf 'a\n' > "$c9_root/codex/AGENTS.md"
+rc=0
+env -u CODEX_HOME HOME="$c9_home" bash "$c9_root/scripts/link.sh" >"$c9_home/out" 2>"$c9_home/err" || rc=$?
+ok=1
+[ "$rc" = 0 ] || { echo "FAIL c9: rc=$rc"; ok=0; }
+assert_symlink "$c9_home/.codex/AGENTS.md" "$c9_root/codex/AGENTS.md" "c9: default CODEX_HOME"
+if [ "$ok" = 1 ]; then pass=$((pass+1)); else fail=$((fail+1)); sed 's/^/  /' "$c9_home/err"; fi
+
 echo "link tests: $pass passed, $fail failed"
 [ "$fail" = 0 ] || exit 1
 exit 0

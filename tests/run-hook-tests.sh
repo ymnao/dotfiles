@@ -14,7 +14,6 @@ set -euo pipefail
 #   tool_input / command 内の文字列に `{{HOME}}` が含まれる場合、隔離 HOME に置換する。
 #   `{{FX}}` は fixture 用の保護名 ($FX) に置換する。guard-codex-dir-fs.cases.jsonl だけは、
 #   保護名を $FX に差し替えた guard-codex-dir.sh のコピーへ流す (make_fx_hook)。
-#   以下の symlink 系の先にある保護対象ディレクトリは $FX の名前で作ってある。
 #   `{{SYMHOME}}` は「隔離 HOME の $FX を指す (名前に codex を含まない) symlink」に置換する。
 #   `{{HOMEPROJLINK}}` は「隔離 HOME 配下のプロジェクトを指す、home 外に置かれた symlink」に置換する。
 #   `{{HOMEDIRLINK}}` / `{{CWDDIRLINK}}` は「保護対象ディレクトリ自体を指す、名前に
@@ -97,7 +96,6 @@ FAKE_HOME="$BASEDIR/home"
 FX='.cdxfx'
 mkdir -p "$FAKE_HOME/$FX/sessions"
 
-# 以下、symlink の先の保護対象ディレクトリは $FX の名前で作る (-fs のケースだけが使う)。
 # {{SYMHOME}}: 名前に codex を含まない symlink が $HOME/$FX (本番の $HOME/.codex) を指す状況。
 # guard-codex-dir.sh の symlink 解決漏れ (codex-review security 指摘の bypass)
 # の回帰を検出する。target を実在ディレクトリにするため隔離 HOME 側を指す。
@@ -130,7 +128,7 @@ ln -sfn "$WORKDIR/$FX" "$CWD_DIR_LINK"
 # (other-project/$FX/x) に着地するが、`..` を字句で畳むと $FAKE_HOME/$FX/x
 # (home 直下の codex 設定ディレクトリの config.toml 以外 = allow) に見える。
 # Why not home 外に置く: 字句側が TMPDIR 配下になり、home の外の書き込み範囲の判定 (#547) が
-# 字句側でも block するので、`cd -P` を外す mutant でも落ちない (code-reviewer が実測)。
+# 字句側でも block するので、`cd -P` を外す mutant でも落ちない。
 # 字句側のパス ($FAKE_HOME/$FX) は冒頭で作ってあり実在する。無いと字句解決した cd が失敗し、
 # bash が元パスへフォールバックして物理解決と同じ結果になるため、`cd -P` の有無を測れない。
 DOTDOT_LINK="$FAKE_HOME/dotdotlink"

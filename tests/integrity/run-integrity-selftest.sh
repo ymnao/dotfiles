@@ -469,12 +469,12 @@ check_stdout_has   "trust-trailing-slash-ok"     "$out" "codex-hook-trust: OK (5
 check_stdout_lacks "trust-trailing-slash-nowarn" "$out" "WARN"
 
 # trust-1c. CODEX_HOME が無いときは HOME の末尾スラッシュを落として $H/.codex を見る。
-# 他のケースは CODEX_HOME を渡すので、この既定の経路を通るのはここだけ。fixture に
+# 他のケースはほぼ CODEX_HOME を渡すので、既定の経路を通るのはここと trust-9 だけ。fixture に
 # .codex を作らず (sandbox の deny を /tmp 配下へ広げると作れない。#547)、SKIP の文言に出るパスで測る
 out=$(env -u CODEX_HOME INTEGRITY_HOME="$H/" bash "$TRUST_CHECKER" 2>/dev/null)
 check_stdout_has "trust-default-codex-home" "$out" "codex-hook-trust: SKIP ($H/.codex が無い未セットアップ環境)"
 
-# 同じことを run-integrity-check.sh でも測る (ここで測るのは check_stdout_has を使うため)。
+# run-integrity-check.sh の既定の経路 ($H/.codex。こちらは H の末尾スラッシュを落とさない)。
 # codex の節を飛ばすときの 1 行に既定のパスが出ること、正常な構成では出ないこと
 H="$BASE/home-default-codex"; make_good_home "$H"
 out=$(env -u CODEX_HOME INTEGRITY_HOME="$H" INTEGRITY_DOTFILES="$DF" bash "$CHECKER" 2>/dev/null)

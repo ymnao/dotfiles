@@ -74,7 +74,8 @@ def main(argv):
         return 1
     out = []
     walk(base, live, [], out)
-    check_extra(base, live, argv[3], out)
+    # 末尾の / を落とすのは、notify の期待値を文字列連結で組むので `//` が入ると一致しないため
+    check_extra(base, live, argv[3].rstrip("/"), out)
     for line in out:
         print(line)
     return 1 if out else 0
