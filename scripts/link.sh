@@ -196,7 +196,7 @@ if [[ -d "$DOTFILES_DIR/codex" ]]; then
         if ! bash "$SCRIPT_DIR/codex-merge-config.sh" \
             "$DOTFILES_DIR/codex/config.toml" \
             "$codex_home/config.toml"; then
-            warn "Skipped $codex_home/config.toml merge (write denied?). Run 'bash scripts/codex-merge-config.sh codex/config.toml $codex_home/config.toml' outside the sandbox to apply it."
+            warn "Skipped $codex_home/config.toml merge (write denied?). Run 'bash scripts/codex-merge-config.sh codex/config.toml \"$codex_home/config.toml\"' outside the sandbox to apply it."
         fi
     fi
 
