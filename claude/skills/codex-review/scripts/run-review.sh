@@ -334,8 +334,8 @@ trap 'trap - EXIT; cleanup; exit 143' TERM
     printf '\n\n## Repository review instructions\n\nREVIEW.md of this repository (as of %s) is below. Apply it on top of the focus areas above; where it states the target environment, use that instead of assuming one.\n\n%s\n' \
       "$BASE_BRANCH" "$REVIEW_INSTRUCTIONS"
   fi
-  printf '\n\n## Target\n\nReview the diff below (produced by "git diff %s...HEAD" in %s). Your working directory is an empty scratch directory; the paths in the diff are relative to %s, so read files there by absolute path if you need surrounding context. Do NOT modify any files. Output only the fenced JSON block per the Output contract above.\n' \
-    "$BASE_BRANCH" "$CWD" "$TOPLEVEL"
+  printf '\n\n## Target\n\nReview the diff below (produced by "git diff %s...HEAD" in %s). Do NOT modify any files. Output only the fenced JSON block per the Output contract above.\n' \
+    "$BASE_BRANCH" "$CWD"
   if [ -n "$EXCLUDED_STAT" ]; then
     printf '\n## Excluded from the diff\n\nThe files below are marked linguist-generated in .gitattributes. Their changes are left out of the diff and are NOT reviewed; only the change size is shown.\n\n```\n%s\n```\n' \
       "$EXCLUDED_STAT"
