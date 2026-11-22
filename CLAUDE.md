@@ -49,7 +49,7 @@ skill / hook / テスト / CI は、この目的を安全に達成するため�
 - `make link` — シンボリックリンクのみ作成
 - `make update` — パッケージ更新
 - `make brewfile-drift` — 宣言されていないインストール済みパッケージ (brew / uv・cargo・pnpm の global) を検出。agent の sandbox 内では uv と cargo の一覧が取れずエラーになるので、user の shell で走らせる
-- `make lint` — secretlint でシークレット漏洩チェック
+- `make lint` — secretlint でシークレット漏洩チェック。agent の sandbox 内では pnpm の store lock が取れずエラーになる (2026-11-22 実測) ので、user の shell か CI の lint job で走らせる
 - `make clean` — 壊れたシンボリックリンクを削除
 - `make test` — 設定ファイルの検証（hook 回帰テスト含む）
 - `make test-hooks` — hook 回帰テストのみ実行
