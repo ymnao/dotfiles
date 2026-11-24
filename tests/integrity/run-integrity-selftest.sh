@@ -244,7 +244,8 @@ make_good_settings() {
       filesystem: {
         allowWrite: ["~/.codex", "/tmp"],
         denyWrite: ["~/.zshrc", "~/.codex/config.toml", "~/*/**/.codex/**",
-                    "~/*/**/.mcp.json", "~/*/**/.mcp/**", "~/*/**/.env"]
+                    "~/*/**/.mcp.json", "~/*/**/.mcp/**", "~/*/**/.env",
+                    "/tmp/**/.codex/**", "/tmp/**/.mcp.json", "/tmp/**/.mcp/**", "/tmp/**/.env"]
       }
     }
   }' >"$1"
@@ -307,6 +308,13 @@ for mcp_deny_suffix in '/*/**/.mcp.json' '/*/**/.mcp/**' '/*/**/.env'; do
   SF="$BASE/settings-no-mcp-deny.json"; make_good_settings "$SF"
   jq --arg v "$mcp_deny_suffix" '.sandbox.filesystem.denyWrite -= ["~" + $v]' "$SF" >"$SF.tmp" && mv "$SF.tmp" "$SF"
   check "settings-missing-mcp-deny:~${mcp_deny_suffix}" 1 "$(run_settings_verifier "$SF")"
+done
+
+# fixture 5e: /tmp 版の deny を 1 つずつ除外 → FAIL (issue #547)
+for tmp_deny in '/tmp/**/.codex/**' '/tmp/**/.mcp.json' '/tmp/**/.mcp/**' '/tmp/**/.env'; do
+  SF="$BASE/settings-no-tmp-deny.json"; make_good_settings "$SF"
+  jq --arg v "$tmp_deny" '.sandbox.filesystem.denyWrite -= [$v]' "$SF" >"$SF.tmp" && mv "$SF.tmp" "$SF"
+  check "settings-missing-tmp-deny:${tmp_deny}" 1 "$(run_settings_verifier "$SF")"
 done
 
 # fixture 6: denyWrite キー自体を消す → FAIL
@@ -470,7 +478,7 @@ check_stdout_lacks "trust-trailing-slash-nowarn" "$out" "WARN"
 
 # trust-1c. CODEX_HOME が無いときは HOME の末尾スラッシュを落として $H/.codex を見る。
 # 他のケースはほぼ CODEX_HOME を渡すので、既定の経路を通るのはここと trust-9 だけ。fixture に
-# .codex を作らず (sandbox の deny を /tmp 配下へ広げると作れない。#547)、SKIP の文言に出るパスで測る
+# .codex を作らず (sandbox の deny は /tmp 配下も覆うので作れない。#547)、SKIP の文言に出るパスで測る
 out=$(env -u CODEX_HOME INTEGRITY_HOME="$H/" bash "$TRUST_CHECKER" 2>/dev/null)
 check_stdout_has "trust-default-codex-home" "$out" "codex-hook-trust: SKIP ($H/.codex が無い未セットアップ環境)"
 

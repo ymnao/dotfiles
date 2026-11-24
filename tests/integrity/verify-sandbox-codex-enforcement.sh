@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# claude/settings.json の denyWrite エントリ `~/*/**/.codex/**` が
+# claude/settings.json の denyWrite エントリ `~/*/**/.codex/**` と `/tmp/**/.codex/**` が
 # **実際に書き込みを止めているか**を挙動で検査する (issue #289)。
 #
 # verify-settings-codex-domains.sh は「エントリが設定に在ること」しか見ない。
@@ -20,6 +20,7 @@
 #       1 セグメント目に使うと、home 直下に書き込めない環境でもこの合成を踏める)
 #   6. `~/<保護対象>/` 配下への正当な書き込みは通る = codex CLI を壊していない
 #      (glob 解釈が変わって sessions/ / auth.json が書けなくなる退行を拾う)
+#   7. /tmp 配下でも作れない (issue #547)
 #
 # **sandbox の外では skip する**。sandbox が無い環境 (素のターミナル / CI) では
 # どれも成功するのが正しく、そこで fail させると「防御が壊れた」と誤読させる。
@@ -54,6 +55,7 @@ pass=0
 fail=0
 
 SCRATCH=""
+TMP_SCRATCH=""
 HOME_PROBE_FILE=""
 cleanup() {
   # 自分が作ったものだけを消す。rmdir は空でなければ失敗するので、
@@ -63,6 +65,10 @@ cleanup() {
     rmdir "$SCRATCH/$protected" "$SCRATCH/${protected}-other" \
           "$SCRATCH/staged" "$SCRATCH/nest/$protected" "$SCRATCH/nest" 2>/dev/null
     rmdir "$SCRATCH" 2>/dev/null
+  fi
+  if [ -n "$TMP_SCRATCH" ] && [ -d "$TMP_SCRATCH" ]; then
+    rmdir "$TMP_SCRATCH/$protected" "$TMP_SCRATCH/${protected}-other" 2>/dev/null
+    rmdir "$TMP_SCRATCH" 2>/dev/null
   fi
   rmdir "$HOME/$protected/$protected" 2>/dev/null
 }
@@ -157,6 +163,24 @@ if [ -d "$HOME/$protected" ]; then
 else
   echo "SKIP: home 配下の allow 検査 ($HOME/$protected が無い)"
 fi
+
+# --- 7. /tmp 配下 ---
+# /tmp 直下は sandbox から書けない (2026-11-25 実測) ので TMPDIR を使うが、TMPDIR は
+# /tmp の外も指しうるので物理パスで確かめる
+tmp_base=$(cd "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)
+case "$tmp_base" in
+  /tmp | /tmp/* | /private/tmp | /private/tmp/*)
+    TMP_SCRATCH=$(mktemp -d "$tmp_base/sbxprobe.XXXXXX") || {
+      echo "FAIL: $tmp_base に scratch ディレクトリを作成できなかった (検査不能)"
+      exit 1
+    }
+    check_dir_creation "/tmp 配下の保護対象" "$TMP_SCRATCH/$protected" deny
+    check_dir_creation "/tmp 配下の似た名前 (過剰 deny の対照)" "$TMP_SCRATCH/${protected}-other" allow
+    ;;
+  *)
+    echo "SKIP: /tmp 配下の検査 (TMPDIR が /tmp 配下でない: ${tmp_base:-不明})"
+    ;;
+esac
 
 echo "sandbox codex enforcement: $pass passed, $fail failed"
 [ "$fail" = 0 ] || exit 1

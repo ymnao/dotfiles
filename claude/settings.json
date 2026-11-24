@@ -89,7 +89,11 @@
         "~/*/**/.codex/**",
         "~/*/**/.mcp.json",
         "~/*/**/.mcp/**",
-        "~/*/**/.env"
+        "~/*/**/.env",
+        "/tmp/**/.codex/**",
+        "/tmp/**/.mcp.json",
+        "/tmp/**/.mcp/**",
+        "/tmp/**/.env"
       ]
     },
     "network": {
