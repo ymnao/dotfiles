@@ -30,8 +30,16 @@ trap cleanup EXIT
 # cwd 2 種: .codex が「無い」/「ある」
 PLAIN="$BASE/plain"
 WITH_CODEX="$BASE/with-codex"
-mkdir -p "$PLAIN" "$WITH_CODEX/.codex"
-printf 'x\n' >"$WITH_CODEX/.codex/config.toml"
+mkdir -p "$PLAIN" "$WITH_CODEX" || exit 1
+# 失敗を見逃すと両 cwd が同じ中身になり、空振りで pass する (#547)
+if ! { mkdir "$WITH_CODEX/.codex" && printf 'x\n' >"$WITH_CODEX/.codex/config.toml"; } 2>/dev/null; then
+  if [ "${SANDBOX_RUNTIME:-}" = "1" ]; then
+    echo "SKIP glob determinism tests: sandbox の denyWrite で fixture の .codex を作れない"
+    exit 0
+  fi
+  echo "ERROR: fixture を作成できない: $WITH_CODEX/.codex" >&2
+  exit 1
+fi
 
 pass=0
 fail=0

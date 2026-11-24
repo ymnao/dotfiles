@@ -92,7 +92,7 @@ mkdir -p "$WORKDIR"
 FAKE_HOME="$BASEDIR/home"
 # 保護対象ディレクトリの fixture は .codex ではなく $FX の名前で作り、その名前を保護する
 # hook のコピー (下の FX_HOOK_DIR) に guard-codex-dir-fs.cases.jsonl を流す。sandbox
-# の deny を /tmp 配下の .codex/ へ広げると、.codex の名前では作れない (#547)
+# の deny は /tmp 配下の .codex/ も覆うので、.codex の名前では作れない (#547)
 FX='.cdxfx'
 mkdir -p "$FAKE_HOME/$FX/sessions"
 

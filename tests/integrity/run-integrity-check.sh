@@ -25,7 +25,7 @@ set -uo pipefail
 #   INTEGRITY_DOTFILES — dotfiles リポジトリルートの上書き (リンク先の期待値と中身の検査の両方)
 #   CODEX_HOME         — codex 自身と同じく ~/.codex の位置を差し替える (既定は $H/.codex)。
 #                        selftest が fixture を .codex という名前で作らずに済むよう読む。
-#                        sandbox の deny を /tmp 配下の .codex/ へ広げると作れなくなるため (#547)
+#                        sandbox の deny は /tmp 配下の .codex/ も覆うので作れないため (#547)
 #
 # ~/.claude が無い環境 (CI・未セットアップ機) では skip (fail-open)。
 
