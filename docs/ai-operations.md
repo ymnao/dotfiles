@@ -402,10 +402,11 @@ file 編集 tool 経路は sandbox が効かないので hook が止める。片
     同じ理由で `/tmp/**/.mcp.json` `/tmp/**/.mcp/**` `/tmp/**/.env` を置く。
     `/tmp/claude-<uid>` (sandbox 内の `$TMPDIR`) で、`.codex` と `.mcp` の `mkdir`、
     `.mcp.json` と `.env` の作成、`.codex` と `.mcp.json` への rename、`.codex` という
-    symlink の作成、大文字の `.CODEX` と `.MCP.JSON` の作成が拒否された。対照の `.codex-other` `codex` `.mcp.json.bak`
-    `.env.example` は作れ、`~/.codex` 直下にも書けた。`/tmp/…` と `/private/tmp/…` の
+    symlink の作成、大文字の `.CODEX` と `.MCP.JSON` の作成が拒否された。対照の
+    `.codex-other` `codex` `.mcp.json.bak` `.env.example` は作れ、`~/.codex` 直下にも書けた。`/tmp/…` と `/private/tmp/…` の
     どちらの綴りでアクセスしても同じだったので、`/private/tmp` のエントリは置いていない
-    (2026-11-25 実測)
+    (2026-11-25 実測)。止まるのは sandbox の中から新しく作ることだけで、sandbox の外で
+    作られて `/tmp` にあるものを home へ移す rename は止まらない (推定。上の Seatbelt の性質から)
   - **`/opt/homebrew` と `/usr/local` は一次で覆わない** (残る経路)。`/opt/homebrew` 直下には
     sandbox から書ける (2026-11-25 実測)。`/opt/homebrew` は Homebrew/brew の checkout で、
     その main は `.codex/hooks.json` と `.codex/hooks/` を持つ (2026-11-25 に GitHub で確認)。
@@ -561,9 +562,8 @@ issue #289 の「保護をコマンド文字列の静的解析で担い続ける
    (上の「home の外で sandbox が書き込みを許す場所」の箇条書き)
 
 **それでも文字列解析の hook は統制から降ろせない。** 残る経路は 4 つ (これとは別に、保護対象を
-中身に持つディレクトリの rename も sandbox は止めない。`/tmp` では sandbox の中から新しく
-作れないだけで、deny より前からあるものや sandbox の外で作られたもの、下の 1 の場所で作ったものは
-移せる。#547、上の「二次: hook (file 編集)」の後の箇条書き):
+中身に持つディレクトリの rename も sandbox は止めない。#547、上の「home の外で sandbox が書き込みを許す
+場所」の箇条書き):
 
 1. **home と `/tmp` の外** (`/opt/homebrew`・`/usr/local`・`/Volumes/…` 等) — `~/*/` は
    home 直下を起点にするので届かない
