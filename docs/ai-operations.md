@@ -402,7 +402,7 @@ file 編集 tool 経路は sandbox が効かないので hook が止める。片
     同じ理由で `/tmp/**/.mcp.json` `/tmp/**/.mcp/**` `/tmp/**/.env` を置く。
     `/tmp/claude-<uid>` (sandbox 内の `$TMPDIR`) で、`.codex` と `.mcp` の `mkdir`、
     `.mcp.json` と `.env` の作成、`.codex` と `.mcp.json` への rename、`.codex` という
-    symlink の作成が拒否された。対照の `.codex-other` `codex` `.mcp.json.bak`
+    symlink の作成、大文字の `.CODEX` と `.MCP.JSON` の作成が拒否された。対照の `.codex-other` `codex` `.mcp.json.bak`
     `.env.example` は作れ、`~/.codex` 直下にも書けた。`/tmp/…` と `/private/tmp/…` の
     どちらの綴りでアクセスしても同じだったので、`/private/tmp` のエントリは置いていない
     (2026-11-25 実測)
@@ -549,7 +549,8 @@ issue #289 の「保護をコマンド文字列の静的解析で担い続ける
    `git worktree add` だけは測った: `/tmp` 配下の使い捨て repo で、`.codex/config.toml` を含む
    ブランチも `.mcp.json` を含むブランチも rc=128 で止まり、worktree のディレクトリは
    残らなかった。どちらも含まないブランチは通った (2026-11-25 実測)。
-   `/tmp` 配下も覆ったので、scratchpad へ逃がしても同じく止まる
+   `/tmp` 配下も覆ったので、scratchpad へ逃がしても同じく止まる。`.env` や `.mcp/` を
+   commit している repo も止まる見込み (未測定)
 2. **このエントリ文字列を扱う作業自体が hook に止まる** — `~/*/**/.codex/**` を
    引数に書いた書き込み系コマンド (settings をコピーして加工する ad-hoc 作業など) は
    `block-dangerous-commands.sh` の「`.codex` にマッチしうる glob」判定で止まる。
@@ -560,8 +561,9 @@ issue #289 の「保護をコマンド文字列の静的解析で担い続ける
    (上の「home の外で sandbox が書き込みを許す場所」の箇条書き)
 
 **それでも文字列解析の hook は統制から降ろせない。** 残る経路は 4 つ (これとは別に、保護対象を
-中身に持つディレクトリの rename も sandbox は止めない。`/tmp` では保護対象を作れないので、
-rename の元になるのは下の 1 の場所。#547、上の「二次: hook (file 編集)」の後の箇条書き):
+中身に持つディレクトリの rename も sandbox は止めない。`/tmp` では sandbox の中から新しく
+作れないだけで、deny より前からあるものや sandbox の外で作られたもの、下の 1 の場所で作ったものは
+移せる。#547、上の「二次: hook (file 編集)」の後の箇条書き):
 
 1. **home と `/tmp` の外** (`/opt/homebrew`・`/usr/local`・`/Volumes/…` 等) — `~/*/` は
    home 直下を起点にするので届かない
