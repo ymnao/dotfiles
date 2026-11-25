@@ -1166,8 +1166,9 @@ hook が入ったことで、`gh` を使う手順は次の形が書けなくな�
 cask と `brew install` は未実測。手順を書くときは「その script / target が sandbox 内で動くか」を
 別途確かめること。動かないものは user が sandbox 外で手動実行する前提にする。
 
-**除外リストを縮める方向は採っていない**。`gh *` は sandbox 内から macOS
-Keychain が届かず(実測: `gh auth status` が `The token in keyring is invalid`)、
+**除外リストを縮める方向は採っていない**。`gh *` は sandbox 内で認証が通らず
+(実測: `gh auth status` が `The token in keyring is invalid`。Keychain の項目の存在確認は通る
+例がある。[night-runner-isolation.md](night-runner-isolation.md) の「資格情報」)、
 TLS 検証も通らない(実測: 上記 OSStatus -26276)ため外せない。外すと `/pr`
 `/dev` `/next` `dependabot-bulk` が全滅する。`brew *` は sandbox 内で formula の取得までは通った(#393)が、
 `brew install` と cask は未実測。`docker *` / `pnpm test:e2e *` はこの repo では未使用だが、
