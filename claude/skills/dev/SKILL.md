@@ -294,7 +294,7 @@ codex-review は step 5 の /pr が risk tier に応じて実行するため
 ツールでも上の基準で判断する):
 
 - 効果が画面・キー入力・起動する子プロセスにしか現れない設定
-  (`herdr/` `wezterm/` `fish/` `nvim/` `karabiner/` 等)
+  (`wezterm/` `fish/` `nvim/` `karabiner/` 等)
 - 値が妥当でも届かないことがあるもの (キーバインド、IME 連携、
   端末依存のエスケープシーケンス)
 - 設定の検証コマンド (`<tool> config check` 等) が構文しか見ないもの

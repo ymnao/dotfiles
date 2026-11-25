@@ -31,7 +31,6 @@ skill / hook / テスト / CI は、この目的を安全に達成するため�
 - `claude/plugins/` は **symlink しない**（第三者 Claude Code プラグインの vendoring と自作 mod の置き場。`~/.claude/plugins/` は Claude Code 自身が管理するため配線せず、`claude/settings.json` の `extraKnownMarketplaces` に `~/` 始まりの path で宣言し、セッション起動時に local marketplace として登録させる。`claude plugin marketplace add` は path をそのマシンの絶対パスに書き換えるので使わない。手順は各プラグインの README）
 - `claude/statusline.sh` → `~/.claude/statusline.sh` にシンボリックリンク（Claude Code の statusline スクリプト）
 - `starship/starship.toml` → `~/.config/starship.toml` にシンボリックリンク（Starship プロンプト設定、fish から init される）
-- `herdr/config.toml` → `~/.config/herdr/config.toml` にシンボリックリンク（herdr = エージェント用ターミナル multiplexer。**ディレクトリごと symlink しない** — socket が config と同じディレクトリに作られるため）
 - `pnpm/config.yaml` → `~/.config/pnpm/config.yaml` と、macOS では `~/Library/Preferences/pnpm/config.yaml` にもシンボリックリンク（公開直後の版を入れない等の供給網の設定。`npm/npmrc` は pnpm に効かないため別に置く。pnpm は `XDG_CONFIG_HOME` の有無で読む場所が切り替わり、fish だけがそれを export するので両方に張る）
 - `uv/uv.toml` → `~/.config/uv/uv.toml` にシンボリックリンク（同じく供給網の設定）
 - `.claude/stop-gate.conf` はリポジトリごとの Stop hook 検証ゲート設定（`claude/hooks/stop-verify-gate.sh` が参照するオプトインファイル）
