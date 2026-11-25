@@ -341,8 +341,6 @@ check_cmd "codex SessionStart entry が type/timeout/statusMessage/command と�
 # 評価規則は Claude Code 側の実装であって、こちらで再実装したものを
 # 突き合わせても vacuous に緑になるだけ。ここで守れるのは「意図した文字列が
 # そのまま配線されていること」だけであり、それが守りたい状態でもある。
-# 存在確認は **件数** で行う (matcher 値だけを見ると entry を丸ごと削除した
-# mutant を取り逃がす)。
 # 期待値は settings.json から導出せず独立した定数として持つ (claude/rules/shell.md)。
 notif_count=$(jq '
   [.hooks.Notification[]
@@ -733,6 +731,7 @@ assert_case15 "case15j-metachar-no-space" \
 assert_case15 "case15k-var-expansion-in-path" \
   'bash $HOME/.claude/hooks/$EVIL' expect-violation \
   '未分類 command (NON_REPO_EXPECTED に無い): bash $HOME/.claude/hooks/$EVIL'
+
 # 15i: NON_REPO_EXPECTED の **missing 方向** (pin にあるのに配線から消えた) を守る。
 # assert_case15 は「1 件足す」mutation しか作れないので、ここだけ「1 件消す」
 # fixture を別に組む。この分岐を潰した mutant (missing="") は 15a-15h では

@@ -316,7 +316,7 @@ codex-review は step 5 の /pr が risk tier に応じて実行するため
 実機確認が要ると分かるのはたいてい step 2 の plan 時点なので、plan に
 「最後に実機確認を挟む」と書いておくとレビュー 2 周が無駄にならない。
 
-実例: issue #265 — 構文検証・`make test`・CI が green でも、実機では prefix
+実例: issue #265 — 構文検証・`make test`・CI が green でも、実機では herdr の prefix
 モードに一度も入れなかった
 
 **skill の挙動を足した・変えたときの実機確認は、user に別の新しいセッションで
