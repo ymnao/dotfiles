@@ -731,6 +731,10 @@ assert_case15 "case15j-metachar-no-space" \
 assert_case15 "case15k-var-expansion-in-path" \
   'bash $HOME/.claude/hooks/$EVIL' expect-violation \
   '未分類 command (NON_REPO_EXPECTED に無い): bash $HOME/.claude/hooks/$EVIL'
+# 15l: 監視対象内のパスに **引数** を足した形 → 落ちること。
+assert_case15 "case15l-arg" \
+  'bash "$HOME/.claude/hooks/post-format.sh" session' expect-violation \
+  '未分類 command (NON_REPO_EXPECTED に無い): bash "$HOME/.claude/hooks/post-format.sh" session'
 
 # 15i: NON_REPO_EXPECTED の **missing 方向** (pin にあるのに配線から消えた) を守る。
 # assert_case15 は「1 件足す」mutation しか作れないので、ここだけ「1 件消す」
