@@ -14,8 +14,8 @@ turn と時間の上限は #432 の決定事項が正本で、ここでは扱わ
   書いている (<https://code.claude.com/docs/en/sandbox-environments>)。この決定はその 3 つのうちの 1 つ
 - Claude Code の組み込み sandbox は Bash 経路しか囲まない (実測は [ai-operations.md §10](ai-operations.md#denyread-の実測--glob-は効くが削除リネームまで止まる))。
   `srt` は親の `claude` ごと囲むので、hook や MCP のように claude が起動する子プロセスも中に入る (推定。
-  「wraps an entire process」という記述からの読み取り。hook が `srt` の中で発火することは下の
-  「`claude -p` の実測」で見たが、hook から外へ届かないことは測っていない)
+  hook の発火は見たが、hook から外へ届かないことは測っていない)
+- 無人用の設定では、組み込み sandbox を切る (`srt` の中では Seatbelt を重ねて張れない)
 
 ## 選ばなかった方式
 
@@ -30,7 +30,7 @@ turn と時間の上限は #432 の決定事項が正本で、ここでは扱わ
 本体のチェックアウトから切る worktree は使わない。worktree の commit は本体の `.git` (objects / refs)
 に書くので、`allowWrite` に本体の `.git` を入れることになる (推定)。そこを開けたまま何も塞がないと
 `.git/config` と `.git/hooks` を書き換えられ (下の実測)、user が普段 git を打つときに `srt` の外で動く。
-`denyWrite` で 2 つを塞いでも commit と push は通るが、塞ぐ場所の列挙には漏れの実例がある。Cursor の
+`denyWrite` で 2 つを塞ぐ手もあるが、塞ぐ場所の列挙には漏れの実例がある。Cursor の
 sandbox は `.git/config` を塞いでいたが、`git init --separate-git-dir` で作った別名の git ディレクトリから
 `core.fsmonitor` を外で実行された
 (<https://www.pillar.security/blog/git-directories-do-not-have-to-be-called-git>)。
@@ -46,16 +46,15 @@ clone にしても、上の手口は clone の中では防げない。外で動�
 - clone は GitHub から取る。手元のパスからの clone は objects を hardlink で本体と共有し、`--shared` と
   `--reference` は本体の objects を参照する (<https://git-scm.com/docs/git-clone>)
 - `srt` の外では、clone の中で git を打たない。`gh` も clone の外から `--repo` を付けて呼ぶ
-  (`--repo` が無いと、`gh` は手元の git remote から repo を決める)。PR の特定は `gh`、後始末は削除だけにする
+  (`--repo` が無いと、`gh` は手元の git remote から repo を決める)。PR の特定は `gh`、後始末は clone の削除だけにする
 - 失敗した clone を user が調べるときも、ログとファイルだけを見る。shell で中へ `cd` すると、プロンプトが
   git の状態を読みに行く (推測)
-- 終わった clone は消す
 
 ## 前提の実測 (2026-11-20、`@anthropic-ai/sandbox-runtime@0.0.83`)
 
-`srt` の README には、macOS の Keychain を遮断するかどうかの記載が無い。組み込み sandbox の中からは
-Keychain が届かない ([ai-operations.md §10](ai-operations.md#sandbox-の-excludedcommands-が一次防御を丸ごと外す経路)
-の `gh auth status` の実測) が、`srt` も同じとは限らないので、実装の前に確かめた。
+`srt` の README には、macOS の Keychain を遮断するかどうかの記載が無い。組み込み sandbox の中では
+`gh auth status` が失敗する ([ai-operations.md §10](ai-operations.md#sandbox-の-excludedcommands-が一次防御を丸ごと外す経路))
+が、`srt` も同じとは限らないので、実装の前に確かめた。
 
 | 設定の `denyRead` | 実行したもの | 結果 |
 |---|---|---|
@@ -81,20 +80,16 @@ Sonnet、`--permission-mode dontAsk --permission-prompts none`、組み込み sa
 
 | 確かめたこと | 結果 |
 |---|---|
-| 隔離 | `security find-generic-password -s gh:github.com` が 44、`gh auth token` が 1、`ls ~/.ssh` と対象外の repo の `ls` が `Operation not permitted`。対照の作業 dir と hook の `ls` は 0 |
+| 隔離 | 「前提の実測」の最後の行と同じ結果。`gh auth token` は 1、対照の作業 dir と hook の `ls` は 0 |
 | 通信先 | `api.anthropic.com` へは届き、`example.com` は proxy が 403 |
 | 認証 | 完走 (`is_error: false`)。OAuth 用のドメインは許可していない。長時間の実行は未確認 |
 | hook | SessionStart・PreToolUse・Stop が発火。`block-dangerous-commands.sh` は直接呼んで exit 2 (通常コマンドは 0) |
 | skill と git | `CLAUDE_CONFIG_DIR` の skill が動き、Write・ブランチ作成・commit・push が remote に届いた |
 | 無人での拒否 | allow に無い `touch` は拒否され (`permission_denials` に記録)、ファイルも無い |
 | 組み込み sandbox | `srt` の中の `sandbox-exec` は `sandbox_apply: Operation not permitted`、exit 71 |
-| worktree から本体の `.git` (`denyWrite` 無し) | `config` と `hooks` に書けた |
+| worktree から本体の `.git` (`denyWrite` 無し) | `config` と `hooks` に書けた。README はどちらも書き込みの禁止に含めるが、この配置では効かなかった (理由は未確認) |
 | 同上 (`denyWrite` に `config` と `hooks`) | どちらも `Operation not permitted`。ブランチ作成・commit・push は 0 |
 | token の残り | 実行後の作業 dir と設定 dir に token の文字列は無い |
-| 週間枠の残量 | stream-json の `rate_limit_event` に `seven_day` の使用率とリセット時刻が出た (CLI 内の説明では `@internal`) |
-
-`srt` の README は `.git/config` と `.git/hooks` を書き込みの禁止に含めるが、worktree から本体の `.git` に
-書けたとおり、この配置では効かなかった (理由は未確認)。
 
 ## 資格情報
 
@@ -105,13 +100,12 @@ Sonnet、`--permission-mode dontAsk --permission-prompts none`、組み込み sa
 
 | 用途 | 渡すもの | 置き場 (`srt` の外) |
 |---|---|---|
-| claude の認証 | `claude setup-token` で発行した `CLAUDE_CODE_OAUTH_TOKEN` | user の login keychain (#559 で決め直す) |
+| claude の認証 | `claude setup-token` で発行した `CLAUDE_CODE_OAUTH_TOKEN` | 未定 (#559)。候補は user の login keychain |
 | GitHub | 対象 repo だけに絞った fine-grained PAT を `GH_TOKEN` に入れる。権限は Contents・Pull requests・Issues の write (ラベルとコメントに Issues が要る) | 同上 |
 
-- `security` で入れた Keychain の項目は、同じユーザーの別プロセスからも `security` で読めるはず (推測)。
-  対話セッションの組み込み sandbox の中でも、`security find-generic-password -s gh:github.com` が exit 0 になった
-  (2026-11-25、存在の確認だけで値は読んでいない)。上の `gh auth status` の実測と合わせると、Keychain に
-  置けば対話セッションの agent から読まれないとは言えない
+- login keychain に置くと、対話セッションの agent からも `security` で読まれうる (推定)。組み込み sandbox を
+  有効にした対話セッションの Bash で、`security find-generic-password -s gh:github.com` が exit 0 になった
+  (2026-11-25、存在の確認だけで値は読んでいない)
 - 日常の `gh` 認証 (Keychain の `gh:github.com`) と `~/.ssh` は渡さない。push は HTTPS と
   `GH_TOKEN` で行う
 - **PAT では merge を権限で止められない。初版は PAT で始め、merge は運用で防ぐ** (#432 の非対話の
@@ -168,14 +162,13 @@ Sonnet、`--permission-mode dontAsk --permission-prompts none`、組み込み sa
   `srt` の設定ファイルは `claude-night/` に置く
 - `srt` の版の固定と、その宣言の置き場。`srt` は beta で、設定形式は変わりうる (README)
 - repo 固有のレジストリを許可する置き場
-- 無人用の設定では組み込み sandbox を切る (`srt` の中では Seatbelt を重ねて張れない)
-- clone の中の git が `~/.config/git/attributes` を読めず警告を出す (`GIT_CONFIG_GLOBAL` を渡しても出た)。その抑止
-- hook は claude の子プロセスとして `srt` の中で動く (推定) ので、sandbox の外へ出ることを前提にした
+- hook は `srt` の中で動くので、sandbox の外へ出ることを前提にした
   hook (`excludedCommands` の `gh *` を当てにするものなど) は、中では日常の認証を持たない。その扱い
 
 ## 見直す条件
 
 - `srt` の版を上げたとき: 「実機の確認手順」の 1〜3 を打ち直す
+- clone と依存の取得が夜の処理を圧迫したとき: worktree と `denyWrite` の形を再評価する
 - ランナーが merge まで進めた、または `GH_TOKEN` の範囲外へ書き込んだ事故があったとき: 権限で塞ぐ
   形へ移る。候補は次の 2 つで、どちらも未確認
   - GitHub App に required approvals を組み合わせる。PR の作者は自分の PR を approve できない
