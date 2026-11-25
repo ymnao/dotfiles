@@ -15,6 +15,8 @@
 #       繋がる。deny-within-allow で config.toml だけ単点 deny する設計)
 #   5. .sandbox.filesystem.denyWrite に ~/*/**/.codex/** が含まれる
 #      (issue #289: プロジェクト配下の .codex/ を Bash 経路で止める一次防御)
+#   6. 同 denyWrite に MCP の起動に使うファイルの glob が含まれる (issue #372)
+#   7. 同 denyWrite に 5・6 の /tmp 版が含まれる (issue #547)
 #   brew 用: .sandbox.network.allowedDomains に formulae.brew.sh / ghcr.io /
 #      pkg-containers.githubusercontent.com が含まれる (issue #393: codex とは
 #      無関係だが、user 側 allowedDomains の pin として同じ check_contains に載せる)
@@ -114,6 +116,12 @@ check_contains '.sandbox.filesystem.denyWrite' "$project_codex_glob" \
 for mcp_glob in '/*/**/.mcp.json' '/*/**/.mcp/**' '/*/**/.env'; do
   check_contains '.sandbox.filesystem.denyWrite' "$(tilde_literal "$mcp_glob")" \
     "claude/settings.json: .sandbox.filesystem.denyWrite に ~${mcp_glob} が無い (MCP 起動ファイルが sandbox 層で無防備)"
+done
+# Seatbelt は rename で移すディレクトリ自体のパスしか見ないので、/tmp で作ってから
+# ディレクトリごと home へ移すと上の ~ 始まりの deny が効かない (issue #547)
+for tmp_glob in '/tmp/**/.codex/**' '/tmp/**/.mcp.json' '/tmp/**/.mcp/**' '/tmp/**/.env'; do
+  check_contains '.sandbox.filesystem.denyWrite' "$tmp_glob" \
+    "claude/settings.json: .sandbox.filesystem.denyWrite に ${tmp_glob} が無い (/tmp で作って home へ移す経路が開く)"
 done
 
 echo "settings codex domains: $pass passed, $fail failed"

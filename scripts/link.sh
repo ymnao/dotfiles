@@ -173,7 +173,7 @@ fi
 # Codex CLI configuration
 if [[ -d "$DOTFILES_DIR/codex" ]]; then
     # codex 自身と同じく CODEX_HOME があればそちらに張る。テストが fixture を .codex という
-    # 名前で作らずに済むようにするため (sandbox の deny を /tmp 配下の .codex/ へ広げると作れない。#547)。
+    # 名前で作らずに済むようにするため (sandbox の deny は /tmp 配下の .codex/ も覆うので作れない。#547)。
     # 防御側 (guard-codex-dir.sh と sandbox の denyWrite) は ~/.codex 固定のままで、CODEX_HOME には追従しない
     codex_home="${CODEX_HOME:-$HOME/.codex}"
     mkdir -p "$codex_home"

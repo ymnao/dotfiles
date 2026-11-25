@@ -1,6 +1,6 @@
 # guard-codex-dir.sh の回帰ケースのうち、symlink の先に実在の保護対象ディレクトリが要るもの。
 # runner はこのファイルだけ、保護名 (protected_name) を {{FX}} に差し替えた hook のコピーへ流し、
-# fixture も {{FX}} という名前で作る。sandbox の deny を /tmp 配下の .codex/ へ広げると、
+# fixture も {{FX}} という名前で作る。sandbox の deny は /tmp 配下の .codex/ も覆うので、
 # fixture を .codex という名前では作れない (#547)。文字列だけで判定が決まるケースは
 # guard-codex-dir.cases.jsonl に置き、本物の hook に流す。
 # コピーで差し替わるのは protected_name の 1 行だけで、normalize_path の gate の `*codex*`

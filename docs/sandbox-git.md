@@ -93,9 +93,8 @@ HEAD 不動で、`checkout -b` のような半端な状態は残らない)。
 `git worktree add` できる (「削除を拒否するパス」も worktree 側では掛からない)。
 ただし代償がある (1・2 は 2026-09-25 実測)。
 
-1. `make test` の `verify-sandbox-codex-enforcement.sh` と html-brief の outside-tmp
-   ケースは repo の置き場所に依存して必ず落ちる (前者は `SANDBOX_RUNTIME=0` で skip
-   できる。後者は CI で見る)
+1. `make test` の html-brief の outside-tmp ケースは repo の置き場所に依存して必ず落ちる
+   (CI で見る)
 2. 片付けの `git worktree remove` / `prune` は `.git/worktrees/<名前>` の削除を sandbox に
    拒否され、そのブランチも「worktree で使用中」として消せない。`git worktree prune` と
    `git branch -D` は user の Terminal に依頼する
@@ -105,13 +104,10 @@ HEAD 不動で、`checkout -b` のような半端な状態は残らない)。
    (理由は `claude/rules/acceptance-patterns.md` の「外部由来の名前」の項)
 4. `.codex/` を commit している repo の worktree は、セッションの作業ディレクトリ配下へ
    `git worktree add` すると `fatal: cannot create directory at '.codex': Operation
-   not permitted` で止まる (2026-11-20 実測)。scratchpad に add してから
-   `git worktree move` で作業ディレクトリ配下へ移すと通ってしまうが、これは sandbox が
-   拒否した `.codex/` の配置を迂回して持ち込むことになるので行わない。worktree は
-   scratchpad に置いたまま 3 の形で PR を作る。scratchpad 側の `.codex/` 配下を
-   Edit / Write で書き換えることも hook が止める (#547)。`git worktree add` での checkout
-   などの Bash からの書き込みと移動は sandbox も hook も止めないので、この手順を守ることが前提になる
-   (残りの経緯は `docs/ai-operations.md` §10)
+   not permitted` で止まる (2026-11-20 実測)。scratchpad への add も同じ理由で止まる
+   (2026-11-25 実測。`.mcp.json` を commit している repo も同じ)。sandbox が拒否した配置を
+   別の場所で作ってから移す形 (`git worktree move` / `mv`) で持ち込まない。worktree が要るなら
+   user に頼む (経緯は `docs/ai-operations.md` §10)
 
 ## 別 repo のセッションから変更する: scratchpad に clone する
 
