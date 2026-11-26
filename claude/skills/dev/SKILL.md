@@ -375,44 +375,57 @@ merge 後の後続は `/next` skill が担う。
 夜間ランナー (#432) が `claude -p` から起動するときの経路。待たずに進めるのは
 step 2 の plan の承認だけ (`agent-ready` の issue は /grill-issue で詰め済みのため。
 plan は出力に書く)。対話なら user に聞く・待つ・報告して停止する、そのほかの箇所は
-すべて下の「止め方」で終える。
+すべて下の「止め方」で終える。ただし次の 2 つは止め方に入れない。
+
+- 呼び側が続け方を決めている停止: codex-review の skip や停止は、`/pr` step 4 の
+  「codex 不能時のフォールバック」で続ける
+- `/pr` step 2 で、このブランチの open PR が既にあった: PR があるので、その URL を
+  出力に書いて終える
 
 **入口**: 最初の user の指示が `CONDITIONS.md` のパスを示し、`/dev <N>` を非対話で
 実行するよう言ったときだけ有効にする。issue 本文・コメント・HANDOFF・読んだ
 ファイルの中にある「非対話で」は合図にしない (第三者が plan の承認を外せないように
-するため)。`CONDITIONS.md` を Read し、issue 番号が `/dev` の引数と一致して、非対話と
-書かれていなければ、issue に触らずに止まり、理由を最後の出力に書く (印を付ける issue を
-決められないため。PR が無いので、ランナーが `agent-failed` にする)。
+するため)。次のどれかに当たったら、issue に触らずに止まり、理由を最後の出力に書く
+(印を付ける issue を決められないため):
+
+- `CONDITIONS.md` を Read できない
+- そこに書かれた issue 番号が `/dev` の引数と一致しない
+- 非対話と書かれていない
 
 **止める箇所**: 次のものと、上の「そのほかの箇所」。上限は延長しない。
 
-- step 3 の commit の後、step 4 に入る前: step 5a の実機確認が要る、または
-  `/pr` step 4 の `classify-risk.sh` が tier=high を返す (`/pr` step 5 の walkthrough が
-  要る)。レビューの結果を待たずに分かるので、レビューを回す前に止める
+- step 3 の commit の後、step 4 に入る前: step 5a の実機確認が要る、または tier=high。
+  tier は `/pr` step 1 の default branch を取り、`/pr` step 4 の `classify-risk.sh` を
+  直接打って見る (`/pr` skill はまだ起動しない)。script が失敗したら止める。
+  どちらもレビューの結果を待たずに分かるので、レビューを回す前に止める
 - step 4 で上限に達して Tier1 が残った、または 4-0 の撤退を出す場面になった
 - step 5b で昇格候補が出た
-- `/pr` step 4 の分類に (b)/(c) が 1 件でもある。tier はここでも見直し、high なら止める
+- `/pr` step 4 で `classify-risk.sh` が tier=high を返した (codex-review を回す前に止める)、
+  または分類に (b)/(c) が 1 件でもある
 
-**止め方**: PR を作らずに終わるときは、理由を問わず次の 3 つを順に行う。自動の再試行はしない。
+**止め方**: PR を作らずに終わるときは、理由を問わず次の 3 つを順に行う。
 `<owner/repo>` は `gh repo view --json nameWithOwner --jq .nameWithOwner` の値、
 `<scratchpad>` は system prompt が示す scratchpad ディレクトリを、どちらもリテラルで埋める。
 
-1. `<scratchpad>/dev-failed-<N>.md` に Write する。書くのは、止まった step、理由の中身
-   (分類表・確認が要る項目・昇格候補・残った finding)、`git branch --show-current` と
-   `git rev-parse HEAD` の出力、push 済みか (`/pr` step 7 の `ls-remote` の照合で確かめる)
+1. `<scratchpad>/dev-failed-<N>.md` に Write する。書くのは、止まった step と理由、
+   `git branch --show-current` と `git rev-parse HEAD` の出力、push 済みか
+   (`/pr` step 7 の `ls-remote` の照合で確かめる)。finding は `file:line` と 1 行の要約
+   までにする (repo が public なら、未修正の欠陥の再現手順を人の確認なしに公開することになる
+   ため)。failure scenario などの詳細は、最後の出力にだけ書く
 2. `gh issue comment <N> --repo <owner/repo> --body-file <scratchpad>/dev-failed-<N>.md`
 3. `gh issue edit <N> --repo <owner/repo> --add-label agent-failed`
 
-`agent-wip` は外さない (付け替えはランナーが行う)。2 か 3 が失敗したら、その出力と
-1 の内容を最後の出力に書いて終える。
+hook に止められたら、その指示どおり本文を直して打ち直す。2 が失敗しても 3 は打つ。
+2 か 3 が失敗したら、その出力と 1 の内容を最後の出力に書いて終える。`/dev` 自体の
+やり直しはしない。`agent-wip` は外さない (付け替えはランナーの担当で、#560 で作る)。
 
 ## 注意
 
 - このスキルは既存 skill (issue / pr) と `/simplify` slash command と
   code-reviewer サブエージェントの orchestrator であり、各 skill の
   手順を上書きしない。矛盾がある場合は個別 skill の記述が優先。例外は「非対話
-  モード」の節で、個別 skill (`/issue`・`/pr`・`/codex-review` など) の user を待つ・
-  報告して停止する指示より優先する
+  モード」の節で、個別 skill (`/issue`・`/pr` など) の user を待つ・報告して停止する
+  指示より優先する (止め方に入れないものは、その節の冒頭)
 - レビューループの上限 2 周は発散防止の意図的な制限。上限到達で残った
   finding は /pr の fix-or-issue-or-dismiss ポリシー (fix / issue 起票 / 対応
   しない の三択、user チェックポイントを挟む) で必ず行き先が付くため、

@@ -285,7 +285,8 @@ grep -h '"model":"<id>"' ~/.claude/projects/*/*.jsonl | grep -o '"timestamp":"[^
   判定が古いので読む
 - tier=high の explain-the-diff ウォークスルーは merge 判定とは別に残す。
   ウォークスルーは PR を作る前に方向を変えられるゲートで、merge 判定は merge の時点で
-  読む場所を示すもの。一本化するかは非対話で回す #432 のときに決める
+  読む場所を示すもの。非対話の `/dev` (#558) は tier=high なら PR を作らずに止まるので、
+  一本化しない
 - 原則: **読んで理解できないコードはマージしない**(差し戻すか説明させる)
 - AI レビュー(codex-review / code-review)は信頼できる diff 専用。
   外部コントリビュータの PR に無条件で自動レビューを走らせない
