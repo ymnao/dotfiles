@@ -68,6 +68,7 @@ Run each `gh` command as a bare invocation and substitute prior output literally
        | 4 | path/to/h.sh:5 — コメント幅 | (c) 対応しない | nit / 一般許容水準内 |
        ```
      - user の応答が「OK」「進めて」等の明示承認なら分類確定 → 起票 → PR 作成へ。個別修正の指示があれば反映して再提示。この user 承認が (c) の「user 指示」記録および hook 通過書式「追跡しない (user 指示: <承認要約>)」の根拠になる
+     - 非対話の `/dev` (`dev/SKILL.md` の「非対話モード」) から呼ばれたときは、分類表を提示して待たず、起票も PR 作成もしないで、その節の「止め方」で終える
    - Draft 判定は **PR-level triage** で行う(codex-review の per-finding 分類 `REPORT-ONLY` / `UNRESOLVED` を pr の draft 判定に自動流用しない。用語の定義は `$HOME/.claude/skills/codex-review/SKILL.md` を参照)。**上から順に評価し、最初に一致した bullet を採用**する。bullet 内の処理で state が変わった場合(起票成功で URL が付いた等)は変更後の state で bullet 1 から**再評価する**。いずれの判定でも根拠と該当 finding を evidence に記録する:
      - **本 PR で fix すべき finding (a) が残っている**(未対応、または blocker として判断保留): **draft** で作成
      - **(b) 起票対象があり、追跡 issue URL が未起票**: 上記チェックポイントで user 承認済みの分類表に従い起票する。finding (または同根統合単位) ごとに一時ファイル(例: `$TMPDIR/pr-issue-body-<n>.md`)へ body を書き出し、`gh issue create --title "<title>" --body-file <path>` で起票する。**title は finding 原文の verbatim 転記ではなく agent が書き直した平文要約**とし、`"` / `` ` `` / `$` / `\` / `$()` を含めない(finding 原文由来の記号がシェル文字列に展開されると command injection になるため。原文の failure_scenario 等は body-file 側にのみ書く — body-file 経由は shell 展開を通らない)。起票完了後 (成功・失敗とも) に一時 body ファイルは `rm` で削除する (finding 内容の残留防止)。body には `finding の failure_scenario と該当 file:line 抜粋、リンク元 PR/branch` を含める(統合 issue の場合は個別 finding を箇条書きで列挙)。成功分の URL を evidence 追跡先に記載 → bullet 1 から再評価。失敗時(auth / perms / archived / repo 未指定 等)は **draft** に退避し 根拠 `step 4 pending`(起票失敗、user 対応待ち)を記録
@@ -80,6 +81,7 @@ Run each `gh` command as a bare invocation and substitute prior output literally
      - (a) **明示的承認**(「進めて」「OK」等、直前の walkthrough を受けた応答): normal で作成
      - (b) **明示的却下 / 修正要求**: `gh pr create` せず中止し、user と対話
      - (c) **曖昧応答 / 無応答**(「うーん」「そうか」等、interactive で直前の walkthrough を受けたが明確でない): PR を作成せず、user に明示的な yes/no を **聞き返す**
+   - 非対話の `/dev` (`dev/SKILL.md` の「非対話モード」) から呼ばれたときは、walkthrough を出さず PR も作らないで、その節の「止め方」で終える
    - **walkthrough 未提示のタイミングでの入力**(非対話 / no-tty / `/pr` 再実行など、この turn で walkthrough を提示していない): walkthrough を先に出力し、その turn では **`gh pr create` を実行しない**(次 turn の user 応答を上記 3 分岐で処理する)。
 6. Generate PR title and body:
    - **Title**: under 70 characters, summarizing the changes
