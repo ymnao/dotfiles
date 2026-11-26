@@ -7,7 +7,7 @@ Create a pull request from the current branch based on its commit history and di
 
 ## Steps
 
-非対話の `/dev` (`dev/SKILL.md` の「非対話モード」) から呼ばれたときは、この skill の中で user を待つ箇所 (step 4 の user チェックポイント、step 5 の walkthrough) と報告して停止する箇所では、待たず、起票も PR 作成もしないで、その節の「止め方」で終える。
+非対話の `/dev` (`dev/SKILL.md` の「非対話モード」) から呼ばれたときは、この skill の中で user を待つ箇所 (step 4 の user チェックポイント、step 5 の walkthrough) と報告して停止する箇所では、待たず、起票も PR 作成もしないで、その節の「止め方」で終える。止め方に入れないもの (step 2 で、この回の HEAD を含む open PR が見つかったとき・codex 不能時のフォールバック) は、その節の冒頭のとおり。
 
 Run each `gh` command as a bare invocation and substitute prior output literally into the next call (no `VAR=$(...)` wrapping — the permission allow-list matches by command prefix and command-substitution forms break that match).
 

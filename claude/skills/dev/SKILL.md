@@ -379,8 +379,9 @@ plan は出力に書く)。対話なら user に聞く・待つ・報告して�
 
 - 呼び側が続け方を決めている停止: codex-review の skip や停止は、`/pr` step 4 の
   「codex 不能時のフォールバック」で続ける
-- `/pr` step 2 で、このブランチの open PR が既にあった: PR があるので、その URL を
-  出力に書いて終える
+- `/pr` step 2 で、このブランチの open PR が既にあり、step 5c の push が届いている
+  (`/pr` step 7 の `ls-remote` の SHA が HEAD と一致する): PR がこの回の commit を
+  含むので、その URL を出力に書いて終える。一致しなければ止め方で終える
 
 **入口**: 最初の user の指示が `CONDITIONS.md` のパスを示し、`/dev <N>` を非対話で
 実行するよう言ったときだけ有効にする。issue 本文・コメント・HANDOFF・読んだ
@@ -400,16 +401,17 @@ plan は出力に書く)。対話なら user に聞く・待つ・報告して�
   どちらもレビューの結果を待たずに分かるので、レビューを回す前に止める
 - step 4 で上限に達して Tier1 が残った、または 4-0 の撤退を出す場面になった
 - step 5b で昇格候補が出た
-- `/pr` step 4 で `classify-risk.sh` が tier=high を返した (codex-review を回す前に止める)、
-  または分類に (b)/(c) が 1 件でもある
+- `/pr` step 4 で `classify-risk.sh` が tier=high を返した (レビュー修正の commit で
+  tier が上がることがあるので見直す。codex-review を回す前に止める)、または分類に
+  (b)/(c) が 1 件でもある
 
-**止め方**: PR を作らずに終わるときは、理由を問わず次の 3 つを順に行う。
+**止め方**: 入口で止まるときと冒頭の 2 つを除き、PR を作らずに終わるときは次の 3 つを順に行う。
 `<owner/repo>` は `gh repo view --json nameWithOwner --jq .nameWithOwner` の値、
 `<scratchpad>` は system prompt が示す scratchpad ディレクトリを、どちらもリテラルで埋める。
 
 1. `<scratchpad>/dev-failed-<N>.md` に Write する。書くのは、止まった step と理由、
    `git branch --show-current` と `git rev-parse HEAD` の出力、push 済みか
-   (`/pr` step 7 の `ls-remote` の照合で確かめる)。finding は `file:line` と 1 行の要約
+   (step 5c より前なら未 push。後なら `/pr` step 7 の `ls-remote` の照合で確かめる)。finding は `file:line` と 1 行の要約
    までにする (repo が public なら、未修正の欠陥の再現手順を人の確認なしに公開することになる
    ため)。failure scenario などの詳細は、最後の出力にだけ書く
 2. `gh issue comment <N> --repo <owner/repo> --body-file <scratchpad>/dev-failed-<N>.md`
