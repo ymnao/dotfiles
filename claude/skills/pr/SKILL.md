@@ -7,6 +7,8 @@ Create a pull request from the current branch based on its commit history and di
 
 ## Steps
 
+非対話の `/dev` (`dev/SKILL.md` の「非対話モード」) から呼ばれたときは、この skill の中で user を待つ箇所 (step 4 の user チェックポイント、step 5 の walkthrough) と報告して停止する箇所では、待たず、起票も PR 作成もしないで、その節の「止め方」で終える。止め方に入れないもの (step 2 で、この回の HEAD を含む open PR が見つかったとき・codex 不能時のフォールバック) は、その節の冒頭のとおり。
+
 Run each `gh` command as a bare invocation and substitute prior output literally into the next call (no `VAR=$(...)` wrapping — the permission allow-list matches by command prefix and command-substitution forms break that match).
 
 1. Resolve the default branch and gather local branch info:
@@ -80,7 +82,7 @@ Run each `gh` command as a bare invocation and substitute prior output literally
      - (a) **明示的承認**(「進めて」「OK」等、直前の walkthrough を受けた応答): normal で作成
      - (b) **明示的却下 / 修正要求**: `gh pr create` せず中止し、user と対話
      - (c) **曖昧応答 / 無応答**(「うーん」「そうか」等、interactive で直前の walkthrough を受けたが明確でない): PR を作成せず、user に明示的な yes/no を **聞き返す**
-   - **walkthrough 未提示のタイミングでの入力**(非対話 / no-tty / `/pr` 再実行など、この turn で walkthrough を提示していない): walkthrough を先に出力し、その turn では **`gh pr create` を実行しない**(次 turn の user 応答を上記 3 分岐で処理する)。
+   - **walkthrough 未提示のタイミングでの入力**(非対話の `/dev` から呼ばれたときを除く — 冒頭のとおり止める。非対話 / no-tty / `/pr` 再実行など、この turn で walkthrough を提示していない): walkthrough を先に出力し、その turn では **`gh pr create` を実行しない**(次 turn の user 応答を上記 3 分岐で処理する)。
 6. Generate PR title and body:
    - **Title**: under 70 characters, summarizing the changes
    - **Body**: use the repo's PR template if `pr_template` is not null, otherwise the default template below. ALWAYS append the evidence section (below) at the end of the body.
